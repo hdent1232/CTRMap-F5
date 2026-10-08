@@ -69,12 +69,23 @@ public class MutationBaselineTest {
 	private static final Pattern EXCLUDED = Pattern.compile("\\{\\s*\"line\"\\s*:\\s*(\\d+)\\s*,\\s*\"reason\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"\\s*\\}");
 	private static final Pattern EXCLUDED_COUNT = Pattern.compile("\"excluded_count\"\\s*:\\s*(\\d+)");
 
+	/** mutate2.py's own line: the one place the exclusion ceiling is written (F189). */
+	private static final Pattern HARNESS_CEILING = Pattern.compile("(?m)^EXCLUSION_CEILING = (\\d+)\\s*$");
+
 	/**
-	 * How many lines the whole tree may exclude from the measurement. Mirrors
-	 * EXCLUSION_CEILING in tools/mutate2.py; raising either without the other is
-	 * the drift this check exists to catch.
+	 * How many lines the whole tree may exclude from the measurement, read from tools/mutate2.py -
+	 * or -1 when it cannot be read, which the check below refuses. It was a second constant here
+	 * that "mirrored" the harness's while nothing compared the two (F189): one number written twice
+	 * is two numbers, and the harness holds its own list tight.
 	 */
-	private static final int EXCLUSION_CEILING = 4;
+	static int exclusionCeiling(File repo) throws java.io.IOException {
+		File harness = new File(repo, "tools/mutate2.py");
+		if (!harness.isFile()) {
+			return -1;
+		}
+		Matcher m = HARNESS_CEILING.matcher(new String(Files.readAllBytes(harness.toPath()), StandardCharsets.UTF_8));
+		return m.find() ? Integer.parseInt(m.group(1)) : -1;
+	}
 
 	public static void main(String[] args) throws Exception {
 		File root = new File(args.length > 0 ? args[0] : "src");
@@ -224,8 +235,10 @@ public class MutationBaselineTest {
 			filesChecked++;
 		}
 		check(filesChecked > 0, filesChecked + " file(s) and " + linesChecked + " recorded survivor line(s) still match the source");
-		check(excludedTotal <= EXCLUSION_CEILING, excludedTotal + " line(s) excluded from the "
-				+ "measurement, ceiling " + EXCLUSION_CEILING + " - every one is a line nobody is "
+		int exclusionCeiling = exclusionCeiling(repo);
+		check(exclusionCeiling >= 0, "the exclusion ceiling is read from tools/mutate2.py (" + exclusionCeiling + ")");
+		check(exclusionCeiling >= 0 && excludedTotal <= exclusionCeiling, excludedTotal + " line(s) excluded from the "
+				+ "measurement, ceiling " + exclusionCeiling + " - every one is a line nobody is "
 				+ "watching on purpose, so growing the list is a decision for a human");
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -298,8 +311,11 @@ public class MutationBaselineTest {
 		//bottom of the file cannot be read at the top of it. The PROPERTY is unchanged
 		//and is what is checked here: one spelling of the path, built from the
 		//location of the script itself, with the ratchet naming that one and no other.
+		//...and that location is ANCHORED (F216): the repository is the nearest folder holding
+		//.git or CLAUDE.md above the script, not the folder two `.parent`s up from it.
 		check(text.contains("def baseline_path():")
-			&& text.contains("return Path(__file__).resolve().parent.parent / \"mutation_baseline.json\""),
+			&& text.contains("REPO = Path(_tree_root.require(__file__)).resolve()")
+			&& text.contains("return REPO / \"mutation_baseline.json\""),
 			"the sweep finds the baseline beside the repo it lives in, from its own path");
 		check(text.contains("BASELINE = baseline_path()"),
 			"and the ratchet writes THAT one, rather than spelling the path a second time");

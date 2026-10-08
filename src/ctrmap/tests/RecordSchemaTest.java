@@ -60,7 +60,7 @@ public class RecordSchemaTest {
 		shapeIsSane();
 		bitsRoundTrip();
 		unmappedIsWhatWasMeasured();
-		iconSchemaMatchesTheTable();
+		thePlanSaysWhereTheRegistryStopped();
 
 		if (args.length > 0) {
 			File garcFile = new File(args[0] + itemArchive());
@@ -82,9 +82,31 @@ public class RecordSchemaTest {
 		}
 	}
 
-	static void shapeIsSane() {
+	/**
+	 * The registry's schemas, found as its public static methods answering one - not from a list it
+	 * keeps, which a new schema could be left out of.
+	 */
+	static List<RecordSchema> registered() throws Exception {
+		List<java.lang.reflect.Method> methods = new java.util.ArrayList<>();
+		for (java.lang.reflect.Method m : SchemaRegistry.class.getDeclaredMethods()) {
+			if (java.lang.reflect.Modifier.isStatic(m.getModifiers()) && java.lang.reflect.Modifier.isPublic(m.getModifiers())
+					&& m.getReturnType() == RecordSchema.class && m.getParameterCount() == 0) {
+				methods.add(m);
+			}
+		}
+		methods.sort(java.util.Comparator.comparing(java.lang.reflect.Method::getName));
+		List<RecordSchema> out = new java.util.ArrayList<>();
+		for (java.lang.reflect.Method m : methods) {
+			out.add((RecordSchema) m.invoke(null));
+		}
+		return out;
+	}
+
+	static void shapeIsSane() throws Exception {
 		System.out.println("--- every schema describes bytes that exist");
-		for (RecordSchema s : SchemaRegistry.all()) {
+		List<RecordSchema> schemas = registered();
+		check(!schemas.isEmpty(), "control: the registry's schemas are found (" + schemas.size() + ")");
+		for (RecordSchema s : schemas) {
 			boolean fits = true;
 			String worst = "";
 			for (RecordField f : s.fields()) {
@@ -97,19 +119,15 @@ public class RecordSchemaTest {
 					+ (fits ? "" : " (" + worst + ")"));
 			check(!s.fields().isEmpty(), s.name() + ": has fields (" + s.fields().size() + ")");
 			check(!s.about().isEmpty(), s.name() + ": says what it is");
-			//the tier decides the blast radius and the UI must be able to read it
-			check(s.tier() != null, s.name() + ": declares its tier (" + s.tier() + ")");
-			if (s.tier() == RecordSchema.Tier.DATA) {
-				check(s.archive() != null && s.codeFileOffset() < 0,
-						s.name() + ": a data schema names an archive and no code offset");
-			} else {
-				check(s.archive() == null && s.codeFileOffset() >= 0,
-						s.name() + ": a code schema names a file offset and no archive");
-			}
+			check(s.archive() != null, s.name() + ": names the archive its records are in");
 		}
-		//exactly two tiers exist, and the registry must not invent a third
-		check(RecordSchema.Tier.values().length == 2,
-				"there are exactly two tiers - pure data and the code patch - and nothing else");
+		String refused = null;
+		try {
+			RecordSchema.archive("Nowhere", "no archive", null, -1, 4, java.util.Collections.<RecordField>emptyList());
+		} catch (IllegalArgumentException ex) {
+			refused = ex.getMessage();
+		}
+		check(refused != null, "and a schema naming no archive is refused: " + refused);
 	}
 
 	static void bitsRoundTrip() {
@@ -182,17 +200,63 @@ public class RecordSchemaTest {
 				+ " 776 retail records (got " + unmapped + ")");
 	}
 
-	static void iconSchemaMatchesTheTable() {
-		System.out.println("--- the icon schema and the icon patcher agree on the same table");
-		RecordSchema icons = SchemaRegistry.itemIcons();
-		check(icons.codeFileOffset() == ctrmap.formats.codepatch.ItemIconTable.FILE_OFFSET,
-				"same file offset (0x" + Integer.toHexString(icons.codeFileOffset()) + ")");
-		check(icons.recordCount() == ctrmap.formats.codepatch.ItemIconTable.COUNT,
-				"same entry count (" + icons.recordCount() + ")");
-		check(icons.codeFileOffset() + icons.recordCount() * icons.stride()
-				== ctrmap.formats.codepatch.ItemIconTable.NEXT_TABLE,
-				"and the table ends exactly where the next one begins - zero slack, so the count"
-				+ " is a hard bound and not a convention");
+	/**
+	 * docs/items-plan.md says where the registry stopped, and says it of THIS tree (F252).
+	 *
+	 * <p>The plan set out to put every fixed-stride record behind one generic editor, and stopped at
+	 * the item record with nothing saying so: the package read as the direction five other editors were
+	 * going. Its "Where the registry stopped" section names every schema the registry answers, every
+	 * dialog that builds the generic form, and the editors left bespoke - each must be so in the code.
+	 * A schema added, an editor ported or one left behind changes the code, and this then refuses the
+	 * section until it says so.
+	 */
+	static void thePlanSaysWhereTheRegistryStopped() throws Exception {
+		System.out.println("--- the plan says where the registry stopped, of this tree (F252)");
+		String plan = new String(java.nio.file.Files.readAllBytes(new File("docs/items-plan.md").toPath()),
+				java.nio.charset.StandardCharsets.UTF_8).replace("\r\n", "\n");
+		int at = plan.indexOf("\n## Where the registry stopped\n");
+		check(at >= 0, "control: docs/items-plan.md has its \"Where the registry stopped\" section");
+		if (at < 0) {
+			return;
+		}
+		int end = plan.indexOf("\n## ", at + 1);
+		String section = plan.substring(at, end < 0 ? plan.length() : end);
+		java.util.Map<String, java.util.Set<String>> rows = new java.util.HashMap<>();
+		java.util.regex.Matcher row = java.util.regex.Pattern.compile("(?m)^\\| (schema|on the form|bespoke) \\| `([^`]+)`").matcher(section);
+		while (row.find()) {
+			rows.computeIfAbsent(row.group(1), k -> new java.util.TreeSet<>()).add(row.group(2));
+		}
+		java.util.Set<String> schemas = new java.util.TreeSet<>();
+		for (RecordSchema s : registered()) {
+			schemas.add(s.name());
+		}
+		java.util.Set<String> onTheForm = new java.util.TreeSet<>();
+		java.util.Set<String> dialogs = new java.util.TreeSet<>();
+		for (File f : DialogSeamTest.javaSources(new File("src/ctrmap/humaninterface"))) {
+			String code = SourceSeamTest.stripComments(new String(java.nio.file.Files.readAllBytes(f.toPath()),
+					java.nio.charset.StandardCharsets.UTF_8));
+			String cls = f.getName().replace(".java", "");
+			dialogs.add(cls);
+			if (!cls.equals("RecordEditPanel") && code.contains("new RecordEditPanel(")) {
+				onTheForm.add(cls);
+			}
+		}
+		check(!onTheForm.isEmpty(), "control: the dialogs that build the generic form are found: " + onTheForm);
+		check(schemas.equals(rows.getOrDefault("schema", java.util.Collections.emptySet())),
+				"the section names every schema the registry answers, and no other: the registry " + schemas
+				+ ", the section " + rows.get("schema"));
+		check(onTheForm.equals(rows.getOrDefault("on the form", java.util.Collections.emptySet())),
+				"and every dialog that builds the generic form, and no other: the code " + onTheForm + ", the section "
+				+ rows.get("on the form"));
+		java.util.Set<String> bespoke = rows.getOrDefault("bespoke", java.util.Collections.emptySet());
+		java.util.Set<String> wrong = new java.util.TreeSet<>();
+		for (String b : bespoke) {
+			if (!dialogs.contains(b) || onTheForm.contains(b)) {
+				wrong.add(b);
+			}
+		}
+		check(!bespoke.isEmpty() && wrong.isEmpty(), "and each editor it calls bespoke is a dialog that does not build"
+				+ " the form: " + bespoke.size() + " named, not so " + wrong);
 	}
 
 	static void agreesWithItemData(GARC g) {

@@ -64,7 +64,7 @@ public class UiOutputTest {
 	public static void main(String[] args) throws Exception {
 		//before anything can touch AWT: the dialog check below must be able to
 		//throw rather than open a window, whatever the runner was invoked with
-		System.setProperty("java.awt.headless", "true");
+		Headless.require();
 
 		if (args.length > 0 && SAY.equals(args[0])) {
 			Ui.error(null, TEXT, TITLE);

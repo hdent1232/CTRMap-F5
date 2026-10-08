@@ -1,6 +1,5 @@
 package ctrmap.tests;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.LoadedZone;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.scripts.GFLPawnScript;
@@ -236,7 +235,7 @@ public class ScriptAssemblerGuardTest {
 			check(false, "no zone script with a PUSH_C to mistype");
 			return;
 		}
-		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS, ZONE_EDITORS, NAVI);
+		TestWindow.mZonePnl(new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0})));
 		ScriptEditor ed = new ScriptEditor(SAVER);
 		ed.loadScript(s);
 		flush();

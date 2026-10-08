@@ -1,6 +1,5 @@
 package ctrmap.humaninterface;
 
-import static ctrmap.CtrmapMainframe.*;
 import ctrmap.formats.mapmatrix.MapMatrix;
 import java.awt.Color;
 import java.awt.Graphics;
@@ -102,7 +101,7 @@ public class MapMatrixPanel extends JPanel implements MatrixCanvas {
 			return 0;
 		}
 		else {
-			return mm.width * 100;
+			return mm.width * MatrixCanvas.REGION_PX;
 		}
 	}
 	
@@ -111,7 +110,7 @@ public class MapMatrixPanel extends JPanel implements MatrixCanvas {
 			return 0;
 		}
 		else {
-			return mm.height * 100;
+			return mm.height * MatrixCanvas.REGION_PX;
 		}
 	}
 	
@@ -126,9 +125,9 @@ public class MapMatrixPanel extends JPanel implements MatrixCanvas {
 			for (int x = 0; x < mm.width; x++) {
 				for (int y = 0; y < mm.height; y++) {
 					g.setColor(Color.BLACK);
-					int regionX = x * 100 + imgstartx;
-					int regionY = y * 100 + imgstarty;
-					g.drawRect(regionX, regionY, 100, 100);
+					int regionX = x * MatrixCanvas.REGION_PX + imgstartx;
+					int regionY = y * MatrixCanvas.REGION_PX + imgstarty;
+					g.drawRect(regionX, regionY, MatrixCanvas.REGION_PX, MatrixCanvas.REGION_PX);
 				}
 			}
 			if (tools != null) {

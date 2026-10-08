@@ -198,7 +198,7 @@ public class GameFilesSeamTest {
 				continue;
 			}
 			String body = new String(java.nio.file.Files.readAllBytes(j.toPath()),
-				java.nio.charset.StandardCharsets.UTF_8).replace("\\r", "");
+				java.nio.charset.StandardCharsets.UTF_8).replace("\r", ""); //carriage returns, not a backslash and an r (F250)
 			java.util.regex.Matcher m = sig.matcher(body);
 			while (m.find()) {
 				looked++;

@@ -37,7 +37,9 @@ import os
 import sys
 
 LF = chr(10)
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+ROOT = _tree_root.require(__file__)
 #: BESIDE plants.json, not under wt/. This project keeps its worktrees and sweep state
 #: in the SESSION folder; putting a series inside the repository under wt/ created a
 #: stray directory that looked like one of those and would not have travelled with a

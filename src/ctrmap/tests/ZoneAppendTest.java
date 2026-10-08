@@ -1,6 +1,5 @@
 package ctrmap.tests;
 
-import ctrmap.Workspace;
 import ctrmap.ZoneAppender;
 import ctrmap.ZoneCloner;
 import ctrmap.formats.containers.ZO;
@@ -17,7 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
 import java.util.HashMap;
-import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.i32;
 
 /**
  * Headless end-to-end test of the EXPERIMENTAL zone append (ZoneAppender).
@@ -56,7 +55,7 @@ public class ZoneAppendTest {
 		check(masterOld.length == 536 * ZoneCloner.ZONE_HEADER_SIZE, "master table is 536 rows x 0x38, got " + masterOld.length + " bytes");
 
 		//EN rebuild round-trip: count unchanged must be byte-identical
-		byte[] enRoundTrip = ZoneAppender.rebuildEN(enOld, 536, false);
+		byte[] enRoundTrip = ctrmap.formats.encounters.EnPack.parse(enOld, 536).bytes();
 		check(Arrays.equals(enRoundTrip, enOld), "EN rebuild (count unchanged) is byte-identical to the pristine pack");
 
 		//negative tests: invalid inputs must be rejected (no partial payloads)
@@ -71,12 +70,15 @@ public class ZoneAppendTest {
 		byte[] masterBadLen = Arrays.copyOf(masterOld, masterOld.length - ZoneCloner.ZONE_HEADER_SIZE);
 		expectThrow("wrong master table size", srcZo, masterBadLen, enOld, SRC, NEW_INDEX);
 
-		//the production byte transform
-		ZoneAppender.AppendPayloads p = ZoneAppender.buildAppendPayloads(srcZo, masterOld, enOld, SRC, NEW_INDEX);
-		check(p.newZo.length == srcZo.length, "new ZO length == source ZO length");
+		//the production byte transform - the one appendZones runs, for one zone (F041: a single-zone
+		//builder nothing in the program called was tested here as though it shipped)
+		ZoneAppender.MultiAppendPayloads p = ZoneAppender.buildMultiAppendPayloads(srcZo, masterOld, enOld, SRC, NEW_INDEX, 1);
+		byte[] newZo = p.newZos[0];
+		byte[] compressedZo = ctrmap.formats.garc.LZ11.compress(newZo);
+		check(p.newZos.length == 1 && newZo.length == srcZo.length, "one new ZO, its length == source ZO length");
 		check(p.master.length == 537 * ZoneCloner.ZONE_HEADER_SIZE, "grown master is 537 rows");
 		check(p.en.length == enOld.length + 4, "grown EN is exactly 4 bytes longer (one more offset)");
-		check((p.compressedZo[0] & 0xFF) == 0x11, "compressed ZO payload starts with the LZ11 magic byte");
+		check((compressedZo[0] & 0xFF) == 0x11, "the new ZO compresses to an LZ11 payload");
 
 		//---- simulated workspace + the real packDirectory ----
 		File tmp = Files.createTempDirectory("ZoneAppendTest").toFile();
@@ -87,7 +89,7 @@ public class ZoneAppendTest {
 		File f536 = new File(packDir, "536");
 		File f537 = new File(packDir, "537");
 		File f538 = new File(packDir, "538");
-		Files.write(f536.toPath(), p.newZo); //DECOMPRESSED - stays editable; the override compresses it at pack time
+		Files.write(f536.toPath(), newZo); //DECOMPRESSED - stays editable; the override compresses it at pack time
 		Files.write(f537.toPath(), p.master);
 		Files.write(f538.toPath(), p.en);
 		//the pack is told which files are edits and where to stage; no session, no global
@@ -109,7 +111,7 @@ public class ZoneAppendTest {
 		}
 		System.out.println("zones 0..535 decompress byte-identical after repack");
 		byte[] e536 = packed.getDecompressedEntry(536);
-		check(Arrays.equals(e536, p.newZo), "entry 536 decompresses to the patched clone ZO (" + e536.length + " bytes)");
+		check(Arrays.equals(e536, newZo), "entry 536 decompresses to the patched clone ZO (" + e536.length + " bytes)");
 		byte[] e537 = packed.getDecompressedEntry(537);
 		check(Arrays.equals(e537, p.master), "entry 537 == grown master (" + e537.length + " bytes)");
 		byte[] e538 = packed.getDecompressedEntry(538);
@@ -128,8 +130,6 @@ public class ZoneAppendTest {
 		check(hdr.mapmatrixID == srcHdr.mapmatrixID, "new zone mapmatrixID equals source");
 		check(hdr.textID == srcHdr.textID, "new zone textID equals source");
 		ZoneEntities entities = new ZoneEntities(zo.getFile(1));
-		check(entities.npcs.size() == entities.NPCCount, "entities NPC list/count consistent");
-		check(entities.warps.size() == entities.warpCount, "entities warp list/count consistent");
 		GFLPawnScript script = new GFLPawnScript(zo.getFile(2));
 		script.decompressThis();
 		check(!script.instructions.isEmpty(), "new zone script has instructions");
@@ -163,15 +163,15 @@ public class ZoneAppendTest {
 		check(enCount == 537, "EN count == " + enCount + ", expected 537");
 		check(i32(e538, 4) == 0x86C, "EN first offset == 0x86C (table end)");
 		for (int i = 0; i <= 536; i++) {
-			int oldOff = i32(enOld, 4 + i * 4);
-			int newOff = i32(e538, 4 + i * 4);
+			int oldOff = ctrmap.formats.containers.ContainerBytes.offsets(enOld)[i];
+			int newOff = ctrmap.formats.containers.ContainerBytes.offsets(e538)[i];
 			if (newOff != oldOff + 4) {
 				check(false, "EN offset " + i + " not shifted by exactly +4");
 			}
 		}
 		System.out.println("EN offsets 0..536 all shifted by +4");
-		int off536 = i32(e538, 4 + 536 * 4);
-		int off537 = i32(e538, 4 + 537 * 4);
+		int off536 = ctrmap.formats.containers.ContainerBytes.offsets(e538)[536];
+		int off537 = ctrmap.formats.containers.ContainerBytes.offsets(e538)[537];
 		check(off536 == off537, "EN offsets[536] == offsets[537] (empty new blob)");
 		check(off537 == e538.length, "EN end sentinel == file length");
 		int oldDataStart = i32(enOld, 4);
@@ -186,7 +186,7 @@ public class ZoneAppendTest {
 		//raw storage: entry 536 stored LZ11-compressed, 537/538 stored uncompressed
 		RawEntry[] raw = parseRawEntries(garcCopy);
 		check(raw.length == 539, "raw FATB parse found 539 entries");
-		check(raw[536].len == p.compressedZo.length, "raw entry 536 length == compressed ZO length");
+		check(raw[536].len == compressedZo.length, "raw entry 536 length == compressed ZO length");
 		check((raw[536].firstByte & 0xFF) == 0x11, "raw entry 536 starts with LZ11 magic (stored compressed)");
 		check(raw[537].len == p.master.length, "raw entry 537 length == grown master length (stored uncompressed)");
 		check(raw[537].firstByte == p.master[0], "raw entry 537 first byte == master first byte");
@@ -201,31 +201,12 @@ public class ZoneAppendTest {
 		System.out.println("stats: packed " + garcCopy.length() + " bytes (pristine " + pristineFile.length()
 				+ "), new zone " + NEW_INDEX + " from source " + SRC + ", master " + e537.length
 				+ " bytes, EN " + e538.length + " bytes");
-		chainedAppend(pristine, srcZo, masterOld, enOld);
 		System.out.println("PASS");
-	}
-
-	/**
-	 * Verifies zone append CHAINS: a first append's grown master/EN must be
-	 * valid input to a second append (536 -> 537 -> 538), so multiple new zones
-	 * can be created over successive pack cycles.
-	 */
-	private static void chainedAppend(GARC pristine, byte[] srcZo, byte[] masterOld, byte[] enOld) {
-		ZoneAppender.AppendPayloads c1 = ZoneAppender.buildAppendPayloads(srcZo, masterOld, enOld, SRC, 536);
-		ZoneAppender.AppendPayloads c2 = ZoneAppender.buildAppendPayloads(pristine.getDecompressedEntry(25), c1.master, c1.en, 25, 537);
-		check(c2.master.length == 538 * 0x38, "chained append: master grows to 538 rows");
-		ZoneAppender.validateEN(c2.en, 538);
-		boolean rowsKept = true;
-		for (int r = 0; r < 537 * 0x38; r++) {
-			if (c1.master[r] != c2.master[r]) { rowsKept = false; break; }
-		}
-		check(rowsKept, "chained append: second append preserves the first appended row");
-		check(c2.en.length == enOld.length + 8, "chained append: EN grew by 8 bytes over two appends");
 	}
 
 	private static void expectThrow(String what, byte[] srcZo, byte[] master, byte[] en, int srcIndex, int newIndex) {
 		try {
-			ZoneAppender.buildAppendPayloads(srcZo, master, en, srcIndex, newIndex);
+			ZoneAppender.buildMultiAppendPayloads(srcZo, master, en, srcIndex, newIndex, 1);
 		} catch (IllegalArgumentException ex) {
 			System.out.println("ok: rejected " + what + " (" + ex.getMessage() + ")");
 			return;

@@ -31,15 +31,19 @@ Profile contract: a value of null/-1/false means "not present or NOT YET
 VERIFIED for this game", and callers must treat that as absence, never guess.
 
 Verified-feature declarations today:
-    ORAS  28     the reference implementation
-    XY    12     declared; of the editor's features only map viewing and geometry editing
+    ORAS  15     the reference implementation
+    XY     1     declared; of the editor's features only map viewing and geometry editing
                  is switched on - the rest refuse until measured on an XY dump (F150)
-    SM     1     stub
+    SM     0     stub
     USUM   0     stub - UsumProfile says "Fill from an USUM dump"
 
-So Gen 7 is not blocked on architecture. It is blocked on MEASUREMENTS, which
-need SM/USUM dumps. Nothing in this project is allowed to be filled in by
-assumption, and the profile contract makes that a rule rather than a habit.
+So Gen 7 is blocked on MEASUREMENTS, which need SM/USUM dumps - and on the
+archive writer: a version-6 GARC, the kind Gen 7 ships, is read but not written
+back (F054). Until both are done the two profiles are placeholders that detection
+never returns, and the editor cannot open either game.
+
+Nothing in this project is allowed to be filled in by assumption, and the
+profile contract makes that a rule rather than a habit.
 
 ## Measured: the species tables
 

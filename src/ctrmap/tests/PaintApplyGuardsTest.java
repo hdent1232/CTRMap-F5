@@ -1,6 +1,5 @@
 package ctrmap.tests;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.GR;
@@ -10,13 +9,12 @@ import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.BchTexturePack;
 import ctrmap.formats.h3d.BuildingCatalog;
 import ctrmap.formats.propdata.PropDatabase;
-import ctrmap.formats.tilemap.PaintedRegionBuilder;
+import ctrmap.formats.tilemap.PaintedGeometry;
 import ctrmap.formats.tilemap.TerrainCatalog;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
 import ctrmap.formats.zone.Zone;
 import ctrmap.gamedef.ArchiveType;
-import ctrmap.humaninterface.TilePainterForm;
 import ctrmap.humaninterface.ZoneLoadingPanel;
 import java.io.File;
 import java.nio.file.Files;
@@ -81,7 +79,7 @@ public class PaintApplyGuardsTest {
 	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
 
 
-	static final int DIM = PaintedRegionBuilder.DIM;
+	static final int DIM = PaintedGeometry.DIM;
 
 	static int fails = 0;
 	/** What the last {@link #apply} told the user, or null when it was stopped. */
@@ -98,7 +96,7 @@ public class PaintApplyGuardsTest {
 			Skip.suite("no pristine dump at " + dump);
 			return;
 		}
-		System.setProperty("java.awt.headless", "true");
+		Headless.require();
 		openWorkspace(dump);
 
 		refusedCarryWritesNothing();
@@ -136,7 +134,7 @@ public class PaintApplyGuardsTest {
 		open(74);
 		paintSand();
 		List<String> before = new ArrayList<>(Workspace.persistPaths());
-		Exception stop = apply(74, new ArrayList<TilePainterForm.Placed>());
+		Exception stop = apply(74, new ArrayList<ctrmap.MapPainter.Placed>());
 		check(stop != null, "Apply on a shared-area zone does not report success (stopped by: " + stop + ")");
 		check(newlyPersisted(before).isEmpty(), "nothing was persisted by the refused Apply: " + newlyPersisted(before));
 		check(pristine(ArchiveType.FIELD_DATA, gr, 272), "region 272 is byte-identical to the archive");
@@ -177,7 +175,7 @@ public class PaintApplyGuardsTest {
 		List<String> said = ctrmap.Ui.record("Edit the shared area anyway");
 		Exception stop;
 		try {
-			stop = apply(74, new ArrayList<TilePainterForm.Placed>());
+			stop = apply(74, new ArrayList<ctrmap.MapPainter.Placed>());
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
@@ -211,8 +209,8 @@ public class PaintApplyGuardsTest {
 			check(false, "no Gym in the building catalogue");
 			return;
 		}
-		List<TilePainterForm.Placed> placed = new ArrayList<>();
-		placed.add(new TilePainterForm.Placed(gym, 20, 20));
+		List<ctrmap.MapPainter.Placed> placed = new ArrayList<>();
+		placed.add(new ctrmap.MapPainter.Placed(gym, 20, 20));
 		List<String> before = new ArrayList<>(Workspace.persistPaths());
 		Exception stop = apply(6, placed);
 		check(stop != null, "Apply with a door prop on a shared-area zone does not report success (stopped by: " + stop + ")");
@@ -237,7 +235,7 @@ public class PaintApplyGuardsTest {
 		File donorFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, sand.donorArea);
 		Files.write(donorFile.toPath(), ad.getDecompressedEntry(lacking));
 		List<String> before = new ArrayList<>(Workspace.persistPaths());
-		Exception stop = apply(15, new ArrayList<TilePainterForm.Placed>());
+		Exception stop = apply(15, new ArrayList<ctrmap.MapPainter.Placed>());
 		donorFile.delete();
 		check(stop != null && stop.getMessage() != null && stop.getMessage().contains(needed.get(0)),
 				"a carry that cannot find its texture stops the Apply and names it (stopped by: " + stop + ")");
@@ -251,11 +249,11 @@ public class PaintApplyGuardsTest {
 		open(15);
 		paintSand();
 		//what the pristine map will need, read before anything paints it
-		List<String> needed = TerrainCatalog.ensureMaterial(Workspace.session(), PropDatabase.getSubfile(
+		List<String> needed = TerrainCatalog.ensureMaterial(Workspace.session(), ctrmap.formats.containers.ContainerBytes.subfile(
 				gr.getDecompressedEntry(153), 1), TilePalette.SAND).texturesNeeded;
 		forget(ArchiveType.FIELD_DATA, 153);
 		List<String> before = new ArrayList<>(Workspace.persistPaths());
-		Exception stop = apply(15, new ArrayList<TilePainterForm.Placed>());
+		Exception stop = apply(15, new ArrayList<ctrmap.MapPainter.Placed>());
 		check(stop == null, "Apply on a private zone succeeds (stopped by: " + stop + ")");
 		File region = Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, 153);
 		check(newlyPersisted(before).contains(region.getAbsolutePath()), "region 153 was written");
@@ -277,7 +275,7 @@ public class PaintApplyGuardsTest {
 	static void retryStillAsksForTheTextures() throws Exception {
 		byte[] painted = new GR(Workspace.getWorkspaceFile(
 				ArchiveType.FIELD_DATA, 153), Workspace.session()).getFile(1);
-		List<String> needed = TerrainCatalog.ensureMaterial(Workspace.session(), PropDatabase.getSubfile(
+		List<String> needed = TerrainCatalog.ensureMaterial(Workspace.session(), ctrmap.formats.containers.ContainerBytes.subfile(
 				gr.getDecompressedEntry(153), 1), TilePalette.SAND).texturesNeeded;
 		TerrainCatalog.ImportResult again = TerrainCatalog.ensureMaterial(Workspace.session(), painted, TilePalette.SAND);
 		check(!again.injected && again.texturesNeeded.equals(needed),
@@ -286,7 +284,7 @@ public class PaintApplyGuardsTest {
 		forget(ArchiveType.AREA_DATA, 21);
 		open(15);
 		paintSand();
-		Exception stop = apply(15, new ArrayList<TilePainterForm.Placed>());
+		Exception stop = apply(15, new ArrayList<ctrmap.MapPainter.Placed>());
 		check(stop == null, "the retry applies (stopped by: " + stop + ")");
 		File area = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, 21);
 		check(!needed.isEmpty() && areaTextures(Files.readAllBytes(area.toPath())).containsAll(needed),
@@ -302,7 +300,7 @@ public class PaintApplyGuardsTest {
 		open(0);
 		paintSand();
 		List<String> before = new ArrayList<>(Workspace.persistPaths());
-		Exception stop = apply(0, new ArrayList<TilePainterForm.Placed>());
+		Exception stop = apply(0, new ArrayList<ctrmap.MapPainter.Placed>());
 		check(stop == null, "Apply on a shared-matrix zone succeeds (stopped by: " + stop + ")");
 		check(pristine(ArchiveType.FIELD_DATA, gr, 0), "the shared region 0 is byte-identical to the archive");
 		File painted = null;
@@ -385,8 +383,8 @@ public class PaintApplyGuardsTest {
 		forget(ArchiveType.AREA_DATA, 21);
 		open(15);
 		paintSand();
-		List<TilePainterForm.Placed> placed = new ArrayList<>();
-		placed.add(new TilePainterForm.Placed(gym, 20, 20));
+		List<ctrmap.MapPainter.Placed> placed = new ArrayList<>();
+		placed.add(new ctrmap.MapPainter.Placed(gym, 20, 20));
 		File zone = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, 15);
 		check(zone.setWritable(false) && !zone.canWrite(), "fixture: zone 15's own file cannot be written");
 		Exception stop;
@@ -417,8 +415,8 @@ public class PaintApplyGuardsTest {
 		if (gym == null) {
 			return;
 		}
-		List<TilePainterForm.Placed> placed = new ArrayList<>();
-		placed.add(new TilePainterForm.Placed(gym, 20, 20));
+		List<ctrmap.MapPainter.Placed> placed = new ArrayList<>();
+		placed.add(new ctrmap.MapPainter.Placed(gym, 20, 20));
 
 		forget(ArchiveType.FIELD_DATA, 153);
 		forget(ArchiveType.AREA_DATA, 21);
@@ -485,7 +483,7 @@ public class PaintApplyGuardsTest {
 				height[y][x] = 1;
 			}
 		}
-		Exception stop = apply(15, new ArrayList<TilePainterForm.Placed>());
+		Exception stop = apply(15, new ArrayList<ctrmap.MapPainter.Placed>());
 		for (int[] row : height) {
 			Arrays.fill(row, 0);
 		}
@@ -517,7 +515,7 @@ public class PaintApplyGuardsTest {
 				continue;
 			}
 			for (int sub : new int[]{11, 1}) {
-				byte[] pk = PropDatabase.getSubfile(c, sub);
+				byte[] pk = ctrmap.formats.containers.ContainerBytes.subfile(c, sub);
 				if (pk == null || !BchTexturePack.isTexturePack(pk)) {
 					continue;
 				}
@@ -552,7 +550,7 @@ public class PaintApplyGuardsTest {
 				"importing a name the target already holds with different pixels is refused: " + stop);
 		int zone = privateAreaZone(holder);
 		BchTexturePack.Carry carry = BchTexturePack.planCarry(Workspace.session(), other, holder, one,
-				areaPack(holder), PropDatabase.getSubfile(ad.getDecompressedEntry(holder), 1), zone);
+				areaPack(holder), ctrmap.formats.containers.ContainerBytes.subfile(ad.getDecompressedEntry(holder), 1), zone);
 		check(carry.note.contains(name) && carry.note.contains(String.valueOf(other)),
 				"a carry that meets one reports it, naming the texture and both areas: " + carry.note.trim());
 	}
@@ -570,8 +568,8 @@ public class PaintApplyGuardsTest {
 	/** An area's world texture pack, or its prop pack when it has no world one. */
 	static byte[] areaPack(int area) {
 		byte[] c = ad.getDecompressedEntry(area);
-		byte[] p11 = PropDatabase.getSubfile(c, 11);
-		return BchTexturePack.isTexturePack(p11) ? p11 : PropDatabase.getSubfile(c, 1);
+		byte[] p11 = ctrmap.formats.containers.ContainerBytes.subfile(c, 11);
+		return BchTexturePack.isTexturePack(p11) ? p11 : ctrmap.formats.containers.ContainerBytes.subfile(c, 1);
 	}
 
 	/** What assertNotShared does to the zone's area, or null when it allows it. */
@@ -629,7 +627,7 @@ public class PaintApplyGuardsTest {
 		GR region = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, 154), Workspace.session());
 		int borrowed = PaintedHeights.borrowedGroundTiles(region.getFile(2), region.getFile(0), touched);
 		check(borrowed > 0, "fixture: the painted tiles include " + borrowed + " with no ground of their own");
-		Exception stop = apply(17, new ArrayList<TilePainterForm.Placed>());
+		Exception stop = apply(17, new ArrayList<ctrmap.MapPainter.Placed>());
 		check(stop == null, "the Apply went through (stopped by: " + stop + ")");
 		check(report != null && report.contains(borrowed + " painted tile(s) had no ground under them"),
 				"and says the " + borrowed + " tiles took a neighbour's ground: " + report);
@@ -655,7 +653,7 @@ public class PaintApplyGuardsTest {
 		check(region.setWritable(false) && !region.canWrite(), "fixture: region 153's workspace file is read-only");
 		Exception stop;
 		try {
-			stop = apply(15, new ArrayList<TilePainterForm.Placed>());
+			stop = apply(15, new ArrayList<ctrmap.MapPainter.Placed>());
 		} finally {
 			region.setWritable(true);
 		}
@@ -696,7 +694,7 @@ public class PaintApplyGuardsTest {
 		check(area.setWritable(false) && !area.canWrite(), "fixture: area 21's workspace file is read-only");
 		Exception stop;
 		try {
-			stop = apply(15, new ArrayList<TilePainterForm.Placed>());
+			stop = apply(15, new ArrayList<ctrmap.MapPainter.Placed>());
 		} finally {
 			area.setWritable(true);
 		}
@@ -762,9 +760,9 @@ public class PaintApplyGuardsTest {
 		}
 		//nothing left to carry: every texture this paint needs is already there
 		java.util.Map<Integer, Set<String>> carried = new java.util.LinkedHashMap<>();
-		List<TilePainterForm.Placed> none = new ArrayList<>();
-		List<TilePainterForm.Placed> one = new ArrayList<>();
-		one.add(new TilePainterForm.Placed(door, 20, 20));
+		List<ctrmap.MapPainter.Placed> none = new ArrayList<>();
+		List<ctrmap.MapPainter.Placed> one = new ArrayList<>();
+		one.add(new ctrmap.MapPainter.Placed(door, 20, 20));
 		check(!needsAreaWrite(unregistered, none, carried),
 				"an Apply that places nothing and carries nothing does not have to write the area");
 		check(needsAreaWrite(unregistered, one, carried),
@@ -775,10 +773,10 @@ public class PaintApplyGuardsTest {
 	}
 
 	/** needsAreaWrite, reporting a throw as the failed check it is. */
-	static boolean needsAreaWrite(int area, List<TilePainterForm.Placed> placed,
+	static boolean needsAreaWrite(int area, List<ctrmap.MapPainter.Placed> placed,
 			java.util.Map<Integer, Set<String>> texNeeds) {
 		try {
-			return TilePainterForm.needsAreaWrite(loaded, area, placed, texNeeds);
+			return ctrmap.MapPainter.needsAreaWrite(loaded, area, placed, texNeeds);
 		} catch (Exception ex) {
 			check(false, "needsAreaWrite(" + area + ", " + placed.size() + " placed) threw " + ex);
 			return false;
@@ -812,7 +810,7 @@ public class PaintApplyGuardsTest {
 		List<String> said = ctrmap.Ui.record("Cancel");
 		Exception stop;
 		try {
-			stop = apply(74, new ArrayList<TilePainterForm.Placed>());
+			stop = apply(74, new ArrayList<ctrmap.MapPainter.Placed>());
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
@@ -831,7 +829,7 @@ public class PaintApplyGuardsTest {
 		List<String> said = ctrmap.Ui.record("Give this zone its own area");
 		Exception stop;
 		try {
-			stop = apply(74, new ArrayList<TilePainterForm.Placed>());
+			stop = apply(74, new ArrayList<ctrmap.MapPainter.Placed>());
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
@@ -885,9 +883,9 @@ public class PaintApplyGuardsTest {
 			throw new IllegalStateException("prop database did not build");
 		}
 		loaded = new LoadedZone();
-		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel(loaded, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
+		TestWindow.mZonePnl(new ZoneLoadingPanel(loaded, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0})));
 		for (int[] row : ramp) {
-			Arrays.fill(row, PaintedRegionBuilder.NO_RAMP);
+			Arrays.fill(row, PaintedGeometry.NO_RAMP);
 		}
 	}
 
@@ -912,9 +910,10 @@ public class PaintApplyGuardsTest {
 	}
 
 	/** One click of Apply: the exception that stopped it, or null. */
-	static Exception apply(int zoneIndex, List<TilePainterForm.Placed> placed) {
+	static Exception apply(int zoneIndex, List<ctrmap.MapPainter.Placed> placed) {
 		try {
-			report = TilePainterForm.applyToZone(loaded, zoneIndex, grid, height, ramp, TerrainLighting.daytime(), false, placed, touched, ZONES);
+			report = ctrmap.MapPainter.applyToZone(loaded, zoneIndex, grid, height, ramp, TerrainLighting.daytime(), false, placed, touched,
+					new ctrmap.humaninterface.PaintForm.Prompts(ZONES));
 			return null;
 		} catch (Exception ex) {
 			report = null;
@@ -957,7 +956,7 @@ public class PaintApplyGuardsTest {
 	static Set<String> areaTextures(byte[] container) {
 		Set<String> names = new TreeSet<>();
 		for (int sub : new int[]{11, 1}) {
-			byte[] p = PropDatabase.getSubfile(container, sub);
+			byte[] p = ctrmap.formats.containers.ContainerBytes.subfile(container, sub);
 			if (p != null && BchTexturePack.isTexturePack(p)) {
 				for (BchTexturePack.Texture t : BchTexturePack.parse(p)) {
 					names.add(t.name);

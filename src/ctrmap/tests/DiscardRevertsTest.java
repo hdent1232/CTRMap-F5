@@ -480,7 +480,7 @@ public class DiscardRevertsTest {
 		System.out.println("--- the camera form's No puts the cameras back, on the camera shown (F106)");
 		MapResizeTest.game("discardcam");
 		List<String> said = ctrmap.Ui.record();
-		CameraEditForm form = new CameraEditForm(DataSafetyGuardsTest.REDRAW);
+		CameraEditForm form = new CameraEditForm(DataSafetyGuardsTest.REDRAW, UndoHistoryTest.overOneNumber(new int[]{0}));
 		JComboBox<?> entries = (JComboBox<?>) MatrixEditFormGuardsTest.field(form, "entryBox");
 		CameraData second = CameraFormTest.oddCamera();
 		byte[] secondBytes = second.bytes();
@@ -514,7 +514,7 @@ public class DiscardRevertsTest {
 		File file = fake.staged(ArchiveType.MAP_MATRIX, 0);
 		byte[] onDisk = Files.readAllBytes(file.toPath());
 		MapMatrix mm = new MapMatrix(new MM(file, fake), null);
-		MatrixEditForm form = new MatrixEditForm(new LoadedZone(), MatrixEditFormGuardsTest.CANVAS);
+		MatrixEditForm form = new MatrixEditForm(new LoadedZone(), MatrixEditFormGuardsTest.CANVAS, UndoHistoryTest.overOneNumber(new int[]{0}));
 		form.loadMatrix(mm);
 		mm.ids.set(1, 0, (short) 9);
 		List<String> said = ctrmap.Ui.record(JOptionPane.NO_OPTION);
@@ -581,7 +581,7 @@ public class DiscardRevertsTest {
 	static void theEditorsThatNeedAScreenPutBackWhatTheyHold() throws Exception {
 		System.out.println("--- the editors that need a screen put back what they hold (F106)");
 		String tiles = CollisionReadTest.body(source("src/ctrmap/humaninterface/TileMapPanel.java"), "private void discardTiles(");
-		check(tiles != null && tiles.contains("tm.discard()") && tiles.contains("TileUndo.clear()") && tiles.contains("perfScale("),
+		check(tiles != null && tiles.contains("tm.discard()") && tiles.contains("mapReplaced.run()") && tiles.contains("perfScale("),
 				"the map view reads each changed region's tiles again, redraws them and lets their undo go");
 
 		String prop = source("src/ctrmap/humaninterface/PropEditForm.java");
@@ -621,7 +621,7 @@ public class DiscardRevertsTest {
 				"and on a discard puts those tiles, its model and the map view's model back");
 
 		String mf = source("src/ctrmap/CtrmapMainframe.java");
-		String views = CollisionReadTest.body(mf, "private static ZoneEditors buildZoneEditors(");
+		String views = CollisionReadTest.body(mf, "private ZoneEditors buildZoneEditors(");
 		List<String> missed = new ArrayList<>();
 		int shown = 0;
 		for (String view : views == null ? new String[0] : views.split("new ZoneEditors\\.ZoneView\\(\\)")) {

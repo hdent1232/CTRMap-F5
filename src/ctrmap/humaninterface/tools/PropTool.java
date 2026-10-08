@@ -40,11 +40,10 @@ public class PropTool extends AbstractTool {
 		if (host.map().loaded && form.loaded){
 			for (int i = 0; i < form.props.props.size(); i++){
 				GRProp prop = form.props.props.get(i);
-				double transformFrom720Space = 400d/720d;
 				g.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, (int)globimgdim));
 				int textWidth = g.getFontMetrics().stringWidth(prop.name);
-				int x = (int)(imgstartx + prop.x * host.map().tilemapScale * transformFrom720Space - textWidth/2d);
-				int y = (int)(imgstarty + prop.z * host.map().tilemapScale * transformFrom720Space);
+				int x = (int)(imgstartx + host.map().toScreen(prop.x) - textWidth/2d);
+				int y = (int)(imgstarty + host.map().toScreen(prop.z));
 				prop.nameWidth = textWidth;
 				prop.nameHeight = (int)globimgdim;
 				g.setColor(Color.WHITE);
@@ -71,10 +70,11 @@ public class PropTool extends AbstractTool {
 		if (form.loaded){
 			for (int i = 0; i < form.props.props.size(); i++){
 				GRProp prop = form.props.props.get(i);
-				int imgstartx = (host.map().getWidth() - host.map().tilemapScaledImage.getWidth()) / 2;
-				int imgstarty = (host.map().getHeight() - host.map().tilemapScaledImage.getHeight()) / 2;
-				double xBase = prop.x * 400d/720d * host.map().tilemapScale + imgstartx;
-				double yBase = prop.z * 400d/720d * host.map().tilemapScale + imgstarty;
+				java.awt.Point origin = host.map().imageOrigin();
+				int imgstartx = origin.x;
+				int imgstarty = origin.y;
+				double xBase = host.map().toScreen(prop.x) + imgstartx;
+				double yBase = host.map().toScreen(prop.z) + imgstarty;
 				if (e.getX() > xBase - prop.nameWidth/2 && e.getX() < xBase + prop.nameWidth/2 && e.getY() > yBase && e.getY() < yBase + prop.nameHeight){
 					isDownOnProp = true;
 					xshift = (xBase - e.getX()); //xBase is in the center
@@ -97,10 +97,11 @@ public class PropTool extends AbstractTool {
 	public void onTileMouseDragged(MouseEvent e) {
 		if (form.prop == null || !form.loaded || !isDownOnProp) return;
 		dragging = true;
-		int imgstartx = (host.map().getWidth() - host.map().tilemapScaledImage.getWidth()) / 2;
-		int imgstarty = (host.map().getHeight() - host.map().tilemapScaledImage.getHeight()) / 2;
-		form.prop.x = (float)((e.getX() - imgstartx + xshift) * (720f/400f) / host.map().tilemapScale);
-		form.prop.z = (float)((e.getY() - imgstarty + yshift) * (720f/400f) / host.map().tilemapScale);
+		java.awt.Point origin = host.map().imageOrigin();
+		int imgstartx = origin.x;
+		int imgstarty = origin.y;
+		form.prop.x = host.map().toWorld(e.getX() - imgstartx + xshift);
+		form.prop.z = host.map().toWorld(e.getY() - imgstarty + yshift);
 		form.props.modified = true;
 		form.showProp(form.propIndex);
 		host.map().renderTileMap();

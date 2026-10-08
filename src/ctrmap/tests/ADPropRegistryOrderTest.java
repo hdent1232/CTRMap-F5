@@ -8,7 +8,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Arrays;
-import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.i32;
 import java.nio.file.Files;
 
 /**

@@ -42,6 +42,12 @@ public class MapResizeTest {
 			everyWriteGoesToTheGameItIsHanded();
 			aRenameIsBoundedByTheGameItIsHanded();
 			aResizeThatFailsHalfWayLeavesNothing();
+			aPrivateMapIsShrunkAndWhatItDropsIsSaid();
+			aSharedMapIsCroppedBeforeItIsCopied();
+			aMapGrowsOneWayAndShrinksTheOther();
+			aShrinkOverTheZonesOwnContentIsRefused();
+			aZoneWhoseEntitiesCannotBeReadIsNotShrunk();
+			theHeadlessResizeCropsEveryGridAndCutsTheCamera();
 		} finally {
 			Workspace.reset();
 		}
@@ -51,16 +57,36 @@ public class MapResizeTest {
 
 	/** Zones 0 and 1 on map 0 (region 0), zone 2 on map 1 (region 1); ORAS's two trailing tables. */
 	static WorkspaceSession game(String name) throws Exception {
+		return game(name, new byte[][]{zone(0), zone(0), zone(1)}, new int[]{0, 0, 1},
+				new byte[][]{matrix(0), matrix(1)}, region("region zero"), region("region one"));
+	}
+
+	/**
+	 * Zones 0 and 1 on map 0, two cells wide over regions 0 and 1; zone 2 on map 1, two cells wide over
+	 * regions 2 and 3. Zones 0 and 2 carry the entities given, zone 1 none - a shrink must read them.
+	 */
+	static WorkspaceSession wideGame(String name, byte[] zone0, byte[] zone2) throws Exception {
+		return game(name, new byte[][]{zone0, zone(0), zone2}, new int[]{0, 0, 1},
+				new byte[][]{matrix(2, 1, 0, 1), matrix(2, 1, 2, 3)},
+				region("region zero"), region("region one"), region("region two"), region("region three"));
+	}
+
+	/** The zones, their master rows' maps, the maps and the regions, as archives under a fresh workspace. */
+	static WorkspaceSession game(String name, byte[][] zones, int[] maps, byte[][] matrices, byte[]... regions)
+			throws Exception {
 		File root = Scratch.dir("ctrmap_resize_" + name);
 		File gameDir = new File(root, "game");
 		File archives = new File(root, "archives");
 		archives.mkdirs();
 		File zo = new File(archives, "zonedata");
-		HandedGameTest.writeGarc(zo, zone(0), zone(0), zone(1), master(0, 0, 1), "EN".getBytes("US-ASCII"));
+		byte[][] zoEntries = Arrays.copyOf(zones, zones.length + 2);
+		zoEntries[zones.length] = master(maps);
+		zoEntries[zones.length + 1] = "EN".getBytes("US-ASCII");
+		HandedGameTest.writeGarc(zo, zoEntries);
 		File mm = new File(archives, "matrices");
-		HandedGameTest.writeGarc(mm, matrix(0), matrix(1));
+		HandedGameTest.writeGarc(mm, matrices);
 		File fd = new File(archives, "regions");
-		HandedGameTest.writeGarc(fd, region("region zero"), region("region one"));
+		HandedGameTest.writeGarc(fd, regions);
 		new File(root, "workspace").mkdirs();
 		WorkspaceSession ws = Sessions.bare(new File(root, "workspace"), gameDir, GameType.ORAS)
 				.withArchive(ArchiveType.ZONE_DATA, new GARC(zo))
@@ -202,7 +228,176 @@ public class MapResizeTest {
 				"and zone 0 is still on map 0");
 	}
 
+	// ------------------------------------------------------------ 4. F020
+	static void aPrivateMapIsShrunkAndWhatItDropsIsSaid() throws Exception {
+		System.out.println("--- a map the zone owns is shrunk, and the region it drops is named (F020)");
+		WorkspaceSession ws = wideGame("shrink", zoneWith(0, npcAt(5, 5)), zoneWith(1, npcAt(30, 12)));
+		check(Arrays.equals(MapResizer.currentSize(ws, 2), new int[]{2, 1}), "control: zone 2's map is 2x1");
+		MapResizer.ResizeResult r = MapResizer.resize(ws, 2, 1, 1);
+		check(Arrays.equals(grid(ws, r.newMatrix), new int[]{2}) && Arrays.equals(MapResizer.currentSize(ws, 2), new int[]{1, 1}),
+				"the zone's map is now 1x1, its kept cell still drawing region 2 " + Arrays.toString(grid(ws, r.newMatrix)));
+		check(Arrays.equals(r.droppedRegions, new int[]{3}) && r.newRegions.length == 0 && r.ownRegions.length == 0,
+				"the dropped cell's region 3 is named, and nothing was added or copied "
+				+ Arrays.toString(r.droppedRegions) + Arrays.toString(r.newRegions) + Arrays.toString(r.ownRegions));
+		check(MasterTable.read(ws).id(ZoneResource.MAP, 2) == r.newMatrix && Arrays.equals(grid(ws, 1), new int[]{2, 3}),
+				"the master table points zone 2 at the new map, and the old one is as it was");
+	}
+
+	static void aSharedMapIsCroppedBeforeItIsCopied() throws Exception {
+		System.out.println("--- a shared map is cropped before the zone's own copies are made (F020)");
+		WorkspaceSession ws = wideGame("shrinkshared", zoneWith(0, npcAt(5, 5)), zoneWith(1, npcAt(5, 5)));
+		MapResizer.ResizeResult r = MapResizer.resize(ws, 0, 1, 1);
+		check(Arrays.equals(r.ownRegions, new int[]{4}) && Arrays.equals(grid(ws, r.newMatrix), new int[]{4}),
+				"the kept cell draws the zone's own copy, region 4 " + Arrays.toString(r.ownRegions));
+		check(!new File(ws.getExtractionDirectory(ArchiveType.FIELD_DATA), "5").exists(),
+				"and the dropped cell was not copied: there is no region 5");
+		check(Arrays.equals(grid(ws, 0), new int[]{0, 1}) && MasterTable.read(ws).id(ZoneResource.MAP, 1) == 0,
+				"zone 1 still draws both cells of map 0");
+	}
+
+	static void aMapGrowsOneWayAndShrinksTheOther() throws Exception {
+		System.out.println("--- one resize can drop a column and add a row (F020)");
+		WorkspaceSession ws = wideGame("reshape", zoneWith(0, npcAt(5, 5)), zoneWith(1, npcAt(30, 12)));
+		MapResizer.ResizeResult r = MapResizer.resize(ws, 2, 1, 2);
+		check(Arrays.equals(grid(ws, r.newMatrix), new int[]{2, 4}) && Arrays.equals(r.newRegions, new int[]{4})
+				&& Arrays.equals(r.droppedRegions, new int[]{3}),
+				"the kept cell draws region 2, the new one below it region 4, and region 3 is named dropped "
+				+ Arrays.toString(grid(ws, r.newMatrix)));
+	}
+
+	static void aShrinkOverTheZonesOwnContentIsRefused() throws Exception {
+		System.out.println("--- a shrink that would leave the zone's own NPC over nothing is refused (F020)");
+		WorkspaceSession ws = wideGame("stranded", zoneWith(0, npcAt(5, 5)), zoneWith(1, npcAt(45, 12)));
+		List<String> before = new java.util.ArrayList<>(ws.persistPaths());
+		String refused = null;
+		try {
+			MapResizer.resize(ws, 2, 1, 1);
+		} catch (java.io.IOException ex) {
+			refused = ex.getMessage();
+		}
+		check(refused != null && refused.contains("cell (1,0)") && refused.contains("not shrunk"),
+				"refused, naming the cells the zone's content reaches: " + refused);
+		check(ws.persistPaths().equals(before) && MasterTable.read(ws).id(ZoneResource.MAP, 2) == 1,
+				"and nothing was written: zone 2 is still on map 1");
+	}
+
+	static void aZoneWhoseEntitiesCannotBeReadIsNotShrunk() throws Exception {
+		System.out.println("--- a zone whose entities cannot be read is not shrunk: unknown is not empty (F020)");
+		WorkspaceSession ws = wideGame("unread", zoneWith(0, npcAt(5, 5)), zone(1));
+		String refused = null;
+		try {
+			MapResizer.resize(ws, 2, 1, 1);
+		} catch (java.io.IOException ex) {
+			refused = ex.getMessage();
+		}
+		check(refused != null && refused.contains("could not be read") && ws.persistPaths().isEmpty(),
+				"refused in words, nothing written: " + refused);
+	}
+
+	static void theHeadlessResizeCropsEveryGridAndCutsTheCamera() throws Exception {
+		System.out.println("--- the headless resize crops every grid of a LOD map and cuts its camera boxes (F020)");
+		//2x2, LOD: ids 10..13, zone-switch segments numbered by position, LOD ids 20..23; a full-extent
+		//containment box, one reaching into the dropped column, one wholly in it, and a repulsor
+		byte[] lod = lodMatrix(2, 2, new float[][]{
+			{0, 1440, 0, 1440, 0}, {100, 600, 200, 1000, 0}, {100, 600, 900, 1300, 0}, {0, 1440, 0, 1440, 1}});
+		byte[] out = MapResizer.buildResizedMatrix(lod, 1, 2, new int[0], 7);
+		int sub0 = i32(out, 4);
+		check(u16(out, sub0) == 1 && u16(out, sub0 + 4) == 1 && u16(out, sub0 + 6) == 2
+				&& u16(out, sub0 + 8) == 10 && u16(out, sub0 + 10) == 12,
+				"the main grid keeps column 0: regions 10 and 12");
+		int zBase = sub0 + 8 + 2 * 2;
+		boolean zonesKept = true;
+		for (int zy = 0; zy < 8; zy++) {
+			for (int zx = 0; zx < 4; zx++) {
+				zonesKept &= u16(out, zBase + (zy * 4 + zx) * 2) == zy * 8 + zx;
+			}
+		}
+		check(zonesKept, "the zone-switch grid keeps the 4x8 segments under column 0, each where it was");
+		int lBase = zBase + 4 * 8 * 2;
+		check(u16(out, lBase) == 20 && u16(out, lBase + 2) == 22, "the LOD grid keeps 20 and 22");
+		int cam = i32(out, 8);
+		check(f32(out, cam + 4 + 12) == 720f && f32(out, cam + 4 + 4) == 1440f,
+				"the full-extent box now ends at the new east edge, 720, and keeps its south, 1440");
+		check(f32(out, cam + 24 + 12) == 720f && f32(out, cam + 24 + 8) == 200f,
+				"a box reaching past the new edge is cut at it (east 1000 -> 720)");
+		check(f32(out, cam + 44 + 8) == 720f && f32(out, cam + 44 + 12) == 720f,
+				"a box wholly past it shrinks to nothing on the edge, not inside out");
+		check(f32(out, cam + 64 + 12) == 1440f, "and the repulsor is left alone");
+		boolean sameRefused = false, emptyRefused = false;
+		try {
+			MapResizer.buildResizedMatrix(lod, 2, 2, new int[0], 7);
+		} catch (IllegalArgumentException ex) {
+			sameRefused = true;
+		}
+		try {
+			MapResizer.buildResizedMatrix(lod, 0, 2, new int[0], 7);
+		} catch (IllegalArgumentException ex) {
+			emptyRefused = true;
+		}
+		check(sameRefused && emptyRefused, "the same size, and a size of no cells, are refused");
+	}
+
 	// ------------------------------------------------------------ the game's bytes
+
+	/** A zone container: the header naming map {@code matrix}, the given entities and an empty script. */
+	static byte[] zoneWith(int matrix, byte[] entities) throws Exception {
+		byte[] header = new byte[MasterTable.ROW];
+		putU16(header, ZoneResource.MAP.headerOffset, matrix);
+		return container(0x5a4f, header, entities, HandedGameTest.amx());
+	}
+
+	/** A zone's entities: one NPC, standing at a tile. */
+	static byte[] npcAt(int xTile, int yTile) {
+		ctrmap.formats.zone.ZoneEntities e = EditorBench.emptyEntities();
+		ctrmap.formats.zone.ZoneEntities.NPC n = new ctrmap.formats.zone.ZoneEntities.NPC();
+		n.xTile = xTile;
+		n.yTile = yTile;
+		e.npcs.add(n);
+		return e.assembleData();
+	}
+
+	/** A map of {@code w}x{@code h} cells with no LOD layer, drawing these regions row by row. */
+	static byte[] matrix(int w, int h, int... regions) {
+		byte[] grid = new byte[8 + w * h * 2 + (w * h % 2 == 1 ? 2 : 0)];
+		putU16(grid, 4, w);
+		putU16(grid, 6, h);
+		for (int k = 0; k < w * h; k++) {
+			putU16(grid, 8 + k * 2, regions[k]);
+		}
+		return container(0x4D4D, grid, new byte[4]);
+	}
+
+	/**
+	 * A LOD map of {@code w}x{@code h}: regions 10.., zone-switch segments numbered by position,
+	 * LOD ids 20.., and these camera entries {north, south, west, east, isRepulsor}.
+	 */
+	static byte[] lodMatrix(int w, int h, float[][] camera) {
+		int zw = w * 4, zh = h * 4;
+		byte[] grid = new byte[(8 + w * h * 2 + zw * zh * 2 + w * h * 2 + 3) & ~3];
+		putU16(grid, 0, 1);
+		putU16(grid, 4, w);
+		putU16(grid, 6, h);
+		for (int k = 0; k < w * h; k++) {
+			putU16(grid, 8 + k * 2, 10 + k);
+			putU16(grid, 8 + w * h * 2 + zw * zh * 2 + k * 2, 20 + k);
+		}
+		for (int k = 0; k < zw * zh; k++) {
+			putU16(grid, 8 + w * h * 2 + k * 2, (k / zw) * 8 + k % zw);
+		}
+		byte[] cam = new byte[4 + camera.length * 20];
+		putI32(cam, 0, camera.length);
+		for (int e = 0; e < camera.length; e++) {
+			for (int f = 0; f < 4; f++) {
+				putI32(cam, 4 + e * 20 + f * 4, Float.floatToIntBits(camera[e][f]));
+			}
+			putI32(cam, 4 + e * 20 + 16, (int) camera[e][4]);
+		}
+		return container(0x4D4D, grid, cam);
+	}
+
+	static float f32(byte[] b, int o) {
+		return Float.intBitsToFloat(i32(b, o));
+	}
 
 	/** A zone container whose header names map {@code matrix}. */
 	static byte[] zone(int matrix) {

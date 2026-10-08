@@ -5,6 +5,9 @@ import ctrmap.formats.GameFiles;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameProfile;
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.util.List;
 
 /**
  * Accessor class for obtaining location names from GAMETEXT files. The entry
@@ -21,11 +24,18 @@ import java.io.File;
  * rewrote the entry and forgot on reset - a lifetime of its own, kept by three
  * callers remembering to. Now a different game is a different store, a pack
  * empties it, and a writer of the entry says so through {@link #loadFromGarc}.
+ *
+ * <p>ONE CODEC (F089). The names were read by a second GameText decoder, a
+ * read-only port kept for this class alone, which named the text variables
+ * differently from {@link GFMessageFile} (the text editor's), appended the
+ * digits "9792" where a female sign belonged, and handed back null for an
+ * empty file. They are read by GFMessageFile now, with the private-use glyphs
+ * mapped for display, and an id past the table is said in words.
  */
 public class LocationNames {
 
 	/** The handed game's table, read from its staged GAMETEXT entry and kept in its store. */
-	private static final GameCache.Key<TextFile> TABLE = new GameCache.Key<>("location names");
+	private static final GameCache.Key<List<String>> TABLE = new GameCache.Key<>("location names");
 
 	private static GameFiles handed(GameFiles game, String what) {
 		if (game == null) {
@@ -60,19 +70,29 @@ public class LocationNames {
 	 * left as it was
 	 */
 	public static void loadFromGarc(GameFiles game) {
-		TextFile read = read(handed(game, "loadFromGarc"));
+		List<String> read = read(handed(game, "loadFromGarc"));
 		game.cache().forget(TABLE);
 		game.cache().get(TABLE, () -> read);
 	}
 
-	private static TextFile read(GameFiles game) {
+	private static List<String> read(GameFiles game) {
 		int index = gametextIndex(game);
 		File extracted = game.staged(ArchiveType.GAMETEXT, index);
 		if (extracted == null || !extracted.isFile()) {
 			throw new IllegalStateException("Location names: GAMETEXT entry " + index
 					+ " could not be read from the game handed in (" + game + ").");
 		}
-		return new TextFile(extracted);
+		return parse(extracted);
+	}
+
+	/** One GameText file's lines, private-use glyphs mapped for display; a file that will not read is said. */
+	private static List<String> parse(File extracted) {
+		try {
+			return new GFMessageFile(Files.readAllBytes(extracted.toPath()), true).getLines();
+		} catch (IOException | RuntimeException cannot) {
+			throw new IllegalStateException("Location names: " + extracted + " could not be read as GameText: "
+					+ ctrmap.util.Bytes.reason(cannot), cannot);
+		}
 	}
 
 	/**
@@ -80,7 +100,7 @@ public class LocationNames {
 	 * suite made for itself, standing in for the game's own.
 	 */
 	public static void load(GameFiles game, File extracted) {
-		TextFile read = new TextFile(extracted);
+		List<String> read = parse(extracted);
 		handed(game, "load").cache().forget(TABLE);
 		game.cache().get(TABLE, () -> read);
 	}
@@ -89,16 +109,23 @@ public class LocationNames {
 	 * The name of a location in the handed game: its table, read the first time a name is asked
 	 * for and kept until a pack or a rewrite of the entry.
 	 *
+	 * An id the table has no line for is named as one - "unknown location #n" - where this used to
+	 * answer the words "NullPointerException", an exception's name standing in for a place's.
+	 *
 	 * @throws IllegalStateException when the game's location names cannot be read - in words,
 	 * never a blank or another game's name
 	 */
 	public static String getLocName(GameFiles game, int parentLoc) {
 		GameFiles g = handed(game, "getLocName");
-		String out = g.cache().get(TABLE, () -> read(g)).getLine(parentLoc);
-		if (out == null) {
-			return "NullPointerException";
-		} else {
-			return out;
+		List<String> lines = g.cache().get(TABLE, () -> read(g));
+		if (parentLoc < 0 || parentLoc >= lines.size()) {
+			return unknown(parentLoc);
 		}
+		return lines.get(parentLoc);
+	}
+
+	/** What a location id the table has no line for is called. */
+	public static String unknown(int parentLoc) {
+		return "unknown location #" + parentLoc;
 	}
 }

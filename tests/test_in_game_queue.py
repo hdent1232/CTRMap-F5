@@ -14,10 +14,13 @@ Comments are not warnings a user sees, so the scan reads literals only, through 
 answer on a known snippet is checked before its answer on the tree is believed.
 """
 import os
+import sys
 import re
 import unittest
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+HERE = _tree_root.require(__file__)
 SOURCES = os.path.join(HERE, "src")
 QUEUE = os.path.join(HERE, "OUTSTANDING.md")
 HEADING = "## In-game verification owed"

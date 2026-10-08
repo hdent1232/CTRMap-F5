@@ -1,6 +1,5 @@
 package ctrmap.formats.recordschema;
 
-import ctrmap.Workspace;
 import ctrmap.gamedef.ArchiveType;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -9,66 +8,45 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * One fixed-stride record array, described as data instead of as a class.
+ * One fixed-stride record array in an archive, one record per entry, described
+ * as data instead of as a class.
  *
- * <p>WHY THIS EXISTS. Every structure the ORAS investigations have turned up so
- * far has the same shape - N records of a fixed size, laid out back to back,
- * indexed by position: items are 776 x 0x24 in a GARC, species are 826 x 0x50 in
- * another, the item-to-icon table is 776 x 4 inside the executable, shop stock is
- * 215 x 2 behind a string anchor. CTRMap has been encoding each discovery as a
- * new hand-written Java class and a new hand-built form, which is why every one
- * of them needs a developer and why no two of them behave the same. Describing
- * the discovery instead means the next one is a few lines here and inherits an
- * editor that already works.
+ * <p>WHY THIS EXISTS. Many structures the ORAS investigations turned up have the
+ * same shape - N records of a fixed size, indexed by position: items are 776 x
+ * 0x24 in a GARC, species 826 x 0x50 in another. Describing such a discovery
+ * means the next one is a few lines in {@link SchemaRegistry} and inherits an
+ * editor that already works. How far that went, and why it stopped at the item
+ * record, is docs/items-plan.md's "Where the registry stopped" (F252): the
+ * other record editors' records are not this shape, or need what the generic
+ * form does not have.
  *
  * <p>WHAT A SCHEMA DELIBERATELY DOES NOT PROMISE. It says where the bytes are
  * and what they are called. It does NOT say what the engine will do with them.
  * That distinction is the whole point for items: the hold-effect byte selects
  * one of 183 behaviours that already exist in code, and no schema, editor or
  * patch can add a 184th - some behaviour is not in the record at all but keyed
- * on the item id at scattered code sites. A tool that blurred that would promise
- * an evening's work it cannot deliver, so {@link Tier} is part of the schema and
- * the editor is required to show it.
+ * on the item id at scattered code sites.
+ *
+ * <p>Only archive data. A table in the executable was described here too - the
+ * item icons - and nothing rendered it: the item editor's icon panel reads
+ * {@link ctrmap.formats.codepatch.ItemIconTable}, which refuses a build whose
+ * stock bytes do not match. That description, and the tier it alone used,
+ * went in F252.
  */
 public final class RecordSchema {
 
-	/**
-	 * How far the blast radius of an edit reaches. There are two, and the
-	 * editor must never imply a third.
-	 */
-	public enum Tier {
-		/**
-		 * Pure data in an archive. Reversible, deploys through the normal
-		 * pipeline, no executable patch. Because the records are fixed-size and
-		 * contiguous, a writer pokes bytes in place and never repacks the
-		 * archive - which also sidesteps the stale-pack corruption this project
-		 * has already been bitten by once.
-		 */
-		DATA,
-		/**
-		 * In the executable. Ships as an IPS merged into the same code.ips as
-		 * the zone-limit and shop patches, needs Game Patching enabled, and is
-		 * refused outright against a build whose stock bytes do not match.
-		 */
-		CODE_PATCH
-	}
-
 	private final String name;
 	private final String about;
-	private final Tier tier;
 	private final ArchiveType archive;
-	private final int codeFileOffset;
 	private final int recordCount;
 	private final int stride;
 	private final List<RecordField> fields;
 
-	private RecordSchema(String name, String about, Tier tier, ArchiveType archive,
-			int codeFileOffset, int recordCount, int stride, List<RecordField> fields) {
+	private RecordSchema(String name, String about, ArchiveType archive, int recordCount, int stride,
+			List<RecordField> fields) {
 		this.name = name;
 		this.about = about;
-		this.tier = tier;
 		this.archive = archive;
-		this.codeFileOffset = codeFileOffset;
 		this.recordCount = recordCount;
 		this.stride = stride;
 		this.fields = Collections.unmodifiableList(new ArrayList<>(fields));
@@ -99,14 +77,10 @@ public final class RecordSchema {
 	 */
 	public static RecordSchema archive(String name, String about, ArchiveType archive,
 			int recordCount, int stride, List<RecordField> fields) {
-		return new RecordSchema(name, about, Tier.DATA, archive, -1, recordCount, stride, fields);
-	}
-
-	/** A schema over a table at a fixed file offset in the decompressed executable. */
-	public static RecordSchema code(String name, String about, int fileOffset,
-			int recordCount, int stride, List<RecordField> fields) {
-		return new RecordSchema(name, about, Tier.CODE_PATCH, null, fileOffset, recordCount,
-				stride, fields);
+		if (archive == null) {
+			throw new IllegalArgumentException(name + ": a schema describes records in an archive, and names none");
+		}
+		return new RecordSchema(name, about, archive, recordCount, stride, fields);
 	}
 
 	public String name() {
@@ -118,23 +92,9 @@ public final class RecordSchema {
 		return about;
 	}
 
-	public Tier tier() {
-		return tier;
-	}
-
-	/** The archive holding the records, or null for a {@link Tier#CODE_PATCH} schema. */
+	/** The archive holding the records, one per entry. */
 	public ArchiveType archive() {
 		return archive;
-	}
-
-	/** File offset in the decompressed code.bin, or -1 for a {@link Tier#DATA} schema. */
-	public int codeFileOffset() {
-		return codeFileOffset;
-	}
-
-	/** Records the table is known to hold, or -1 when the container decides. */
-	public int recordCount() {
-		return recordCount;
 	}
 
 	public int stride() {
@@ -191,7 +151,7 @@ public final class RecordSchema {
 
 	@Override
 	public String toString() {
-		return name + " [" + tier + "] " + (recordCount < 0 ? "?" : String.valueOf(recordCount))
+		return name + " [" + archive + "] " + (recordCount < 0 ? "?" : String.valueOf(recordCount))
 				+ " x " + stride + " bytes, " + fields.size() + " field(s)";
 	}
 }

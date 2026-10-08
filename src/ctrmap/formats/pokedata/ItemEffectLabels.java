@@ -163,19 +163,6 @@ public final class ItemEffectLabels {
 		return sb.toString();
 	}
 
-	/** Labels for every id in use, ready for a dropdown, ascending. */
-	public List<String> labels() {
-		List<String> out = new ArrayList<>();
-		for (Integer id : ids()) {
-			out.add(label(id));
-		}
-		return out;
-	}
-
-	public Kind kind() {
-		return kind;
-	}
-
 	/** How many ids are described by a single item, i.e. named but not defined. */
 	public int singletonCount() {
 		int n = 0;

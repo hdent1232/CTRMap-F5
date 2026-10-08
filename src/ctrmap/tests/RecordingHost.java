@@ -47,7 +47,7 @@ class RecordingHost implements ToolHost {
 	public void showToolUi(JComponent form) {
 		shown.add(form);
 		if (alsoReally) {
-			ctrmap.CtrmapMainframe.switchToolUI(form);
+			TestWindow.switchToolUI(form);
 		}
 	}
 

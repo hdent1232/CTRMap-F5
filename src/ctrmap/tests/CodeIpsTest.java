@@ -4,6 +4,7 @@ import ctrmap.formats.codepatch.CodeIps;
 import ctrmap.formats.codepatch.ItemIconTable;
 import ctrmap.formats.codepatch.ShopData;
 import ctrmap.formats.codepatch.ZoneLimitPatch;
+import ctrmap.formats.codepatch.Ips;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -33,7 +34,7 @@ public class CodeIpsTest {
 	static int fails = 0;
 
 	public static void main(String[] args) throws Exception {
-		System.setProperty("java.awt.headless", "true");
+		Headless.require();
 		File root = new File(args.length > 0 ? args[0] : "src");
 		byte[] code = executable();
 		File dir = Files.createTempDirectory("codeips").toFile();
@@ -78,7 +79,7 @@ public class CodeIpsTest {
 				"control: the shop table is 215 items of 2 bytes, 430 bytes owned");
 		check(span(ItemIconTable.owned()) == 3104 && ItemIconTable.owned()[0][1] == ItemIconTable.NEXT_TABLE,
 				"the icon table is 776 words, 3104 bytes, ending where the next table starts");
-		List<int[]> zone = ShopData.parseIPS(ZoneLimitPatch.buildIPS(4, code));
+		List<int[]> zone = Ips.parse(ZoneLimitPatch.buildIPS(4, code));
 		int written = 0;
 		boolean inside = true;
 		for (int[] rec : zone) {
@@ -101,14 +102,14 @@ public class CodeIpsTest {
 				&& Arrays.equals(Files.readAllBytes(out.toPath()), zoneIps),
 				"with no file there, the save is the patch itself");
 		int[][] shops = edited(ShopData.read(code), 18, new int[]{50, 51, 52, 53});
-		String note = CodeIps.save(out, ShopData.diffIPS(code, ShopData.write(code, shops)), ShopData.owned());
+		String note = CodeIps.save(out, Ips.diff(code, ShopData.write(code, shops)), ShopData.owned());
 		check(note.contains("kept"), "a save into a file already there says the patches in it were kept: '" + note + "'");
 		int[] icons = ItemIconTable.read(code);
 		int[] iconsEdited = icons.clone();
 		iconsEdited[50] = icons[2];
 		CodeIps.save(out, ItemIconTable.diffIPS(code, iconsEdited), ItemIconTable.owned());
 
-		byte[] all = ShopData.applyIPS(code, Files.readAllBytes(out.toPath()));
+		byte[] all = Ips.apply(code, Files.readAllBytes(out.toPath()));
 		byte[] zoneOnly = ZoneLimitPatch.applyToCode(4, code);
 		boolean zoneKept = true;
 		for (int[] r : ZoneLimitPatch.owned()) {
@@ -120,7 +121,7 @@ public class CodeIpsTest {
 				"the icon edit is there, and an icon nobody edited is not touched");
 
 		CodeIps.save(out, ZoneLimitPatch.buildIPS(8, code), ZoneLimitPatch.owned());
-		byte[] again = ShopData.applyIPS(code, Files.readAllBytes(out.toPath()));
+		byte[] again = Ips.apply(code, Files.readAllBytes(out.toPath()));
 		check(Arrays.equals(Arrays.copyOfRange(again, 0x012bc0, 0x012bc4),
 				Arrays.copyOfRange(ZoneLimitPatch.applyToCode(8, code), 0x012bc0, 0x012bc4))
 				&& Arrays.equals(ShopData.read(again)[18], shops[18]) && ItemIconTable.read(again)[50] == icons[2],
@@ -131,20 +132,20 @@ public class CodeIpsTest {
 		System.out.println("--- a shop slot put back to the game's own is put back in code.ips too (F152)");
 		int[][] stock = ShopData.read(code);
 		int[][] first = edited(stock, 18, new int[]{50, 51, 52, 53});
-		CodeIps.save(out, ShopData.diffIPS(code, ShopData.write(code, first)), ShopData.owned());
+		CodeIps.save(out, Ips.diff(code, ShopData.write(code, first)), ShopData.owned());
 		int[][] second = edited(stock, 18, new int[]{50, stock[18][1], stock[18][2], stock[18][3]});
-		byte[] secondIps = ShopData.diffIPS(code, ShopData.write(code, second));
+		byte[] secondIps = Ips.diff(code, ShopData.write(code, second));
 
-		byte[] plain = ShopData.applyIPS(code, ShopData.mergeIPS(Files.readAllBytes(out.toPath()), secondIps));
+		byte[] plain = Ips.apply(code, Ips.merge(Files.readAllBytes(out.toPath()), secondIps));
 		check(ShopData.read(plain)[18][1] == 51,
 				"control: merging the new save over the old keeps the slot the new save no longer writes");
 		CodeIps.save(out, secondIps, ShopData.owned());
-		byte[] saved = ShopData.applyIPS(code, Files.readAllBytes(out.toPath()));
+		byte[] saved = Ips.apply(code, Files.readAllBytes(out.toPath()));
 		check(Arrays.equals(ShopData.read(saved)[18], second[18]),
 				"the save puts the 3 slots back: " + Arrays.toString(ShopData.read(saved)[18]));
 
-		CodeIps.save(out, ShopData.diffIPS(code, ShopData.write(code, stock)), ShopData.owned());
-		check(ShopData.parseIPS(Files.readAllBytes(out.toPath())).isEmpty(),
+		CodeIps.save(out, Ips.diff(code, ShopData.write(code, stock)), ShopData.owned());
+		check(Ips.parse(Files.readAllBytes(out.toPath())).isEmpty(),
 				"and every list put back takes the shop table out of the file - a save with nothing changed is still a save");
 	}
 
@@ -153,7 +154,7 @@ public class CodeIpsTest {
 		int at = ShopData.FILE_OFFSET;
 		int end = ShopData.owned()[0][1];
 		byte[] existing = ips(new int[]{at - 2, 6, 1, 2, 3, 4, 5, 6}, new int[]{end - 2, 4, 7, 8, 9, 10});
-		List<int[]> left = ShopData.parseIPS(CodeIps.merged(existing, empty(), ShopData.owned()));
+		List<int[]> left = Ips.parse(CodeIps.merged(existing, empty(), ShopData.owned()));
 		check(left.size() == 2 && left.get(0)[0] == at - 2 && left.get(0)[1] == 2 && left.get(0)[2] == 1 && left.get(0)[3] == 2
 				&& left.get(1)[0] == end && left.get(1)[1] == 2 && left.get(1)[2] == 9 && left.get(1)[3] == 10,
 				"the 2 bytes before the table and the 2 after it stay, the 6 inside go: " + describe(left));
@@ -176,13 +177,13 @@ public class CodeIpsTest {
 		System.out.println("--- removing the added zones takes the zone-limit patch out and keeps the rest (F152)");
 		CodeIps.save(out, ZoneLimitPatch.buildIPS(4, code), ZoneLimitPatch.owned());
 		int[][] shops = edited(ShopData.read(code), 18, new int[]{50, 51, 52, 53});
-		CodeIps.save(out, ShopData.diffIPS(code, ShopData.write(code, shops)), ShopData.owned());
+		CodeIps.save(out, Ips.diff(code, ShopData.write(code, shops)), ShopData.owned());
 		int left = CodeIps.strip(out, ZoneLimitPatch.owned());
-		byte[] after = ShopData.applyIPS(code, Files.readAllBytes(out.toPath()));
+		byte[] after = Ips.apply(code, Files.readAllBytes(out.toPath()));
 		check(Arrays.equals(Arrays.copyOfRange(after, 0x012bc0, 0x012bc4), Arrays.copyOfRange(code, 0x012bc0, 0x012bc4))
 				&& Arrays.equals(ShopData.read(after)[18], shops[18]) && left > 0,
 				"the zone-limit sites are stock again, the shop edit stays, " + left + " patched byte(s) left");
-		check(CodeIps.strip(out, ShopData.owned()) == 0 && ShopData.parseIPS(Files.readAllBytes(out.toPath())).isEmpty(),
+		check(CodeIps.strip(out, ShopData.owned()) == 0 && Ips.parse(Files.readAllBytes(out.toPath())).isEmpty(),
 				"and with the shops taken out too, the file patches nothing");
 	}
 
@@ -203,7 +204,7 @@ public class CodeIpsTest {
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
-		byte[] after = ShopData.applyIPS(code, Files.readAllBytes(out.toPath()));
+		byte[] after = Ips.apply(code, Files.readAllBytes(out.toPath()));
 		check(zoneKept(code, after) && Arrays.equals(ShopData.read(after)[18], shops[18]),
 				"the shop editor's Save writes the shops into the code.ips there and keeps its zone-limit patch: " + said);
 
@@ -222,7 +223,7 @@ public class CodeIpsTest {
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
-		after = ShopData.applyIPS(code, Files.readAllBytes(out.toPath()));
+		after = Ips.apply(code, Files.readAllBytes(out.toPath()));
 		check(Arrays.deepEquals(ShopData.read(after), stock) && zoneKept(code, after),
 				"every list put back and saved takes the shops out of the file, zone patch kept - it said there was"
 				+ " nothing to save and left the old edit in: " + said);
@@ -236,7 +237,7 @@ public class CodeIpsTest {
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
-		after = ShopData.applyIPS(code, Files.readAllBytes(out.toPath()));
+		after = Ips.apply(code, Files.readAllBytes(out.toPath()));
 		check(ItemIconTable.read(after)[50] == icons[2] && zoneKept(code, after),
 				"the icon editor's Save writes the icon and keeps the zone-limit patch: " + said);
 		said = ctrmap.Ui.record(out);
@@ -245,14 +246,15 @@ public class CodeIpsTest {
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
-		after = ShopData.applyIPS(code, Files.readAllBytes(out.toPath()));
+		after = Ips.apply(code, Files.readAllBytes(out.toPath()));
 		check(Arrays.equals(ItemIconTable.read(after), icons) && zoneKept(code, after),
 				"every icon put back and saved takes the icons out of the file too: " + said);
 
 		String mf = SourceSeamTest.stripComments(DialogSeamTest.read(new File(root, "ctrmap/CtrmapMainframe.java")));
-		int at = mf.indexOf("private static void removeAddedZonesAction()");
-		int end = at < 0 ? -1 : mf.indexOf("\n\tprivate static void ", at + 1);
-		String body = at < 0 || end < 0 ? "" : mf.substring(at, end);
+		//BY ITS BRACES, not by where the next "private static void" starts: that marker stopped existing
+		//when the window became an object (F007), and the action read as 0 characters
+		String found = CollisionReadTest.body(mf, "private void removeAddedZonesAction()");
+		String body = found == null ? "" : found;
 		check(body.contains("stripZoneLimit();") && !body.toLowerCase().contains("delete the deployed code.ips"),
 				"removing the added zones takes the zone-limit patch out of code.ips, and no longer says to delete"
 				+ " the file (" + body.length() + " chars of the action read)");
@@ -272,6 +274,15 @@ public class CodeIpsTest {
 	static final Pattern RAW_IPS_WRITE = Pattern.compile(
 			"(?:Files\\.write|replaceFile|FileOutputStream)\\s*\\([^;]*\\bips\\b");
 
+	/**
+	 * The IPS markers, spelled by hand: as strings, as the EOF word, or as their bytes one by one -
+	 * as characters, or as the numbers the cheapest way past a check of characters would use.
+	 */
+	static final Pattern IPS_SPELLED = Pattern.compile(
+			"\"PATCH\"|\"EOF\"|0x454F46|'P'.{0,80}'A'.{0,80}'T'.{0,80}'C'.{0,80}'H'"
+			+ "|0x50\\W{1,80}0x41\\W{1,80}0x54\\W{1,80}0x43\\W{1,80}0x48"
+			+ "|\\b80\\W{1,80}65\\W{1,80}84\\W{1,80}67\\W{1,80}72\\b", Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
+
 	static void everyWriterGoesThroughTheOne(File root) throws Exception {
 		System.out.println("--- every code.ips writer goes through CodeIps (F152)");
 		check(RAW_IPS_WRITE.matcher("Files.write(out.toPath(), ips);").find()
@@ -288,12 +299,31 @@ public class CodeIpsTest {
 			if (RAW_IPS_WRITE.matcher(src).find()) {
 				raw.add(f.getName());
 			}
-			if (src.contains("mergeIPS(") && !f.getName().equals("ShopData.java")) {
+			if (src.contains("Ips.merge(")) {
 				merges.add(f.getName());
 			}
 		}
 		check(raw.isEmpty(), "nothing writes a code patch's bytes itself: " + raw);
 		check(merges.isEmpty(), "and nothing merges one but CodeIps: " + merges);
+		//ONE PLACE SPELLS THE FORMAT (F047). Three writers wrote PATCH, the records and EOF by hand
+		//and a fourth kept an empty patch as eight typed bytes; every one goes through Ips now.
+		check(IPS_SPELLED.matcher("writeAscii(b, \"PATCH\");").find()
+				&& IPS_SPELLED.matcher("b.write('P');\n\t\tb.write('A');\n\t\tb.write('T');\n\t\tb.write('C');\n\t\tb.write('H');").find()
+				&& IPS_SPELLED.matcher("{'P', 'A', 'T', 'C', 'H', 'E', 'O', 'F'}").find()
+				&& IPS_SPELLED.matcher("{0x50, 0x41, 0x54, 0x43, 0x48, 0x45, 0x4F, 0x46}").find()
+				&& IPS_SPELLED.matcher("new byte[]{80, 65, 84, 67, 72}").find()
+				&& !IPS_SPELLED.matcher("return Ips.write(records);").find(),
+				"control: the old hand-written PATCH/EOF spellings are seen, a write through Ips is not");
+		List<String> spelled = new ArrayList<>();
+		for (File f : CollisionReadTest.javaFiles(new File(root, "ctrmap"), new ArrayList<>())) {
+			if (f.getPath().contains(File.separator + "tests" + File.separator) || f.getName().equals("Ips.java")) {
+				continue;
+			}
+			if (IPS_SPELLED.matcher(SourceSeamTest.stripComments(DialogSeamTest.read(f))).find()) {
+				spelled.add(f.getName());
+			}
+		}
+		check(spelled.isEmpty(), "nothing spells the IPS format but Ips: " + spelled);
 		String[][] writers = {
 			{"humaninterface/ShopEditDialog.java", "save", "ShopData"},
 			{"humaninterface/ItemEditDialog.java", "save", "ItemIconTable"},

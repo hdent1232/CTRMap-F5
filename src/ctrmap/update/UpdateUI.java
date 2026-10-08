@@ -7,7 +7,6 @@ import java.io.File;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
-import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
@@ -78,13 +77,13 @@ public class UpdateUI {
 					Throwable why = ex instanceof java.util.concurrent.ExecutionException && ex.getCause() != null
 							? ex.getCause() : ex;
 					ctrmap.Ui.error(parent, "Could not check for updates: " + ctrmap.Ui.reason(why) + "\n\n"
-							+ "You are on CTRMap-F5 " + AppVersion.current() + ". Nothing was downloaded or changed.",
+							+ "You are on CTRMap-F5 " + AppVersion.described() + ". Nothing was downloaded or changed.",
 							"Check for updates");
 					return;
 				}
 				if (rel == null) {
 					ctrmap.Ui.message(parent,
-							"You are on CTRMap-F5 " + AppVersion.current() + ", which is the latest release.",
+							"You are on CTRMap-F5 " + AppVersion.described() + ", which is the latest release.",
 							"No update available", JOptionPane.INFORMATION_MESSAGE);
 					return;
 				}
@@ -110,7 +109,7 @@ public class UpdateUI {
 		JPanel body = new JPanel();
 		body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
 		body.add(new JLabel("<html><b>CTRMap-F5 " + ctrmap.Ui.html(rel.version) + "</b> is available."
-				+ "<br>You have " + ctrmap.Ui.html(AppVersion.current()) + ".</html>"));
+				+ "<br>You have " + ctrmap.Ui.html(AppVersion.described()) + ".</html>"));
 		body.add(Box.createVerticalStrut(8));
 		if (rel.notes != null && !rel.notes.trim().isEmpty()) {
 			JTextArea notes = new JTextArea(rel.notes.trim(), 10, 58);
@@ -233,7 +232,7 @@ public class UpdateUI {
 				} catch (Exception ex) {
 					Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
 					ctrmap.Ui.error(parent,
-							"The update was not installed.\n\n" + cause.getMessage()
+							"The update was not installed.\n\n" + ctrmap.util.Bytes.reason(cause)
 							+ "\n\nNothing on your machine was changed.",
 							"Update failed");
 					return;

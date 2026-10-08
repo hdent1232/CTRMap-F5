@@ -1,6 +1,6 @@
 package ctrmap.tests;
 
-import ctrmap.LittleEndianDataOutputStream;
+import ctrmap.util.LittleEndianDataOutputStream;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.gfcollision.GRCollisionFile;
 import ctrmap.formats.scripts.GFLPawnScript;
@@ -10,7 +10,6 @@ import ctrmap.humaninterface.TileMapPanel;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * The guards around the NPC record and the zone entity block. Each of these
@@ -104,19 +103,34 @@ public class NpcEntityGuardsTest {
 		check(new ZoneEntities(e.assembleData()).npcs.get(0).z3DCoordinate == 12.5f, "a finite altitude round-trips");
 	}
 
+	/** A matrix of blank collisions, each with its ground at 0. */
+	static GRCollisionFile[][] grounded(int w, int h) {
+		GRCollisionFile[][] m = new GRCollisionFile[w][h];
+		for (GRCollisionFile[] column : m) {
+			for (int z = 0; z < column.length; z++) {
+				column[z] = GRCollisionFile.blank(null);
+			}
+		}
+		return m;
+	}
+
 	/**
 	 * The height lookup indexes colls[width][height], so each axis has its
-	 * own bound. Null cells stand in for collision files: in range reads 0,
-	 * out of range reads NaN, and nothing throws.
+	 * own bound. Blank collisions - ground at 0 - fill the cells: in range reads
+	 * 0, out of range reads NaN, and nothing throws. A cell with NO collision
+	 * reads NaN too: unknown, not ground at 0 (F246).
 	 */
 	static void heightLookupBounds() {
-		GRCollisionFile[][] tall = new GRCollisionFile[2][4]; //matrix 21 (zones 33-35): 2 wide, 4 tall
+		GRCollisionFile[][] empty = new GRCollisionFile[1][1];
+		check(Float.isNaN(TileMapPanel.getHeightAtWorldLoc(empty, 100f, 100f)),
+				"a cell with no collision has no ground: unknown, not 0 (F246)");
+		GRCollisionFile[][] tall = grounded(2, 4); //matrix 21 (zones 33-35): 2 wide, 4 tall
 		check(!Float.isNaN(TileMapPanel.getHeightAtWorldLoc(tall, 100f, 720f + 10f)), "tall matrix: a row inside the width is in range");
 		check(!Float.isNaN(TileMapPanel.getHeightAtWorldLoc(tall, 100f, 2 * 720f + 10f)), "tall matrix: the first row past the width is still in range");
 		check(!Float.isNaN(TileMapPanel.getHeightAtWorldLoc(tall, 100f, 4 * 720f - 1f)), "tall matrix: the last row is in range");
 		check(Float.isNaN(TileMapPanel.getHeightAtWorldLoc(tall, 100f, 4 * 720f)), "tall matrix: past the last row is NaN");
 		check(Float.isNaN(TileMapPanel.getHeightAtWorldLoc(tall, 2 * 720f, 100f)), "tall matrix: past the width is NaN");
-		GRCollisionFile[][] wide = new GRCollisionFile[4][2]; //matrix 8 (14x8) shape
+		GRCollisionFile[][] wide = grounded(4, 2); //matrix 8 (14x8) shape
 		check(Float.isNaN(TileMapPanel.getHeightAtWorldLoc(wide, 100f, 3 * 720f)), "wide matrix: a row past the height is NaN, not an exception");
 		check(Float.isNaN(TileMapPanel.getHeightAtWorldLoc(wide, -800f, 100f)), "a negative position is NaN, not an exception");
 	}
@@ -170,7 +184,7 @@ public class NpcEntityGuardsTest {
 			e.npcs.add(npc);
 		}
 		e.removeNPC(1);
-		check(e.npcs.size() == 2 && e.NPCCount == 2, "removeNPC drops the record and the count");
+		check(e.npcs.size() == 2, "removeNPC drops the record and the count");
 		check(e.npcs.get(0).model == 100 && e.npcs.get(1).model == 102, "removeNPC removed the NPC asked for, by position");
 		check(e.firstMisnumberedNPC() == -1 && e.npcs.get(1).uid == 1, "the NPC after the hole took its uid");
 		check(new ZoneEntities(e.assembleData()).npcs.get(1).uid == 1, "and it assembles");
@@ -234,7 +248,7 @@ public class NpcEntityGuardsTest {
 			e.furniture.add(new ZoneEntities.Prop());
 		}
 		ZoneEntities back = new ZoneEntities(e.assembleData());
-		check(back.furnitureCount == 255 && back.furniture.size() == 255, "255 props assemble and read back as 255");
+		check(back.furniture.size() == 255, "255 props assemble and read back as 255");
 
 		e.furniture.add(new ZoneEntities.Prop());
 		try {
@@ -266,17 +280,8 @@ public class NpcEntityGuardsTest {
 		if (zo == null || zo.length < 4 || (((zo[0] & 0xFF) << 8) | (zo[1] & 0xFF)) != 0x5A4F) {
 			return null;
 		}
-		int count = (zo[2] & 0xFF) | ((zo[3] & 0xFF) << 8);
-		if (count <= index || zo.length < 4 + (count + 1) * 4) {
-			return null;
-		}
-		int start = i32(zo, 4 + index * 4), end = i32(zo, 4 + (index + 1) * 4);
-		if (start < 0 || end > zo.length || end <= start) {
-			return null;
-		}
-		byte[] sub = new byte[end - start];
-		System.arraycopy(zo, start, sub, 0, sub.length);
-		return sub;
+		byte[] sub = ctrmap.formats.containers.ContainerBytes.subfile(zo, index);
+		return sub == null || sub.length == 0 ? null : sub;
 	}
 
 	static ZoneEntities zoneEntities(GARC garc, int z) {

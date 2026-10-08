@@ -6,9 +6,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
-import static ctrmap.formats.LittleEndian.putI32;
-import static ctrmap.formats.LittleEndian.putU16;
-import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.putI32;
+import static ctrmap.util.LittleEndian.putU16;
+import static ctrmap.util.LittleEndian.u16;
 
 /**
  * Adversarial tests for GFMessageFile. Run with:

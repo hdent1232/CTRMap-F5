@@ -8,7 +8,6 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Headless test for ZoneScriptAnalyzer against the PRISTINE ORAS ZoneData
@@ -154,17 +153,10 @@ public class ZoneScriptAnalyzerTest {
 		if (magic != 0x5A4F) {
 			return null;
 		}
-		int count = (zo[2] & 0xFF) | ((zo[3] & 0xFF) << 8);
-		if (count < 3 || zo.length < 4 + (count + 1) * 4) {
+		byte[] scr = ctrmap.formats.containers.ContainerBytes.subfile(zo, 2);
+		if (scr == null || scr.length == 0) {
 			return null;
 		}
-		int start = i32(zo, 4 + 2 * 4);
-		int end = i32(zo, 4 + 3 * 4);
-		if (start < 0 || end > zo.length || end <= start) {
-			return null;
-		}
-		byte[] scr = new byte[end - start];
-		System.arraycopy(zo, start, scr, 0, scr.length);
 		GFLPawnScript s = new GFLPawnScript(scr);
 		s.decompressThis();
 		return s;

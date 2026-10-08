@@ -86,6 +86,13 @@ public abstract class AbstractTool {
 
 	public abstract void onTileMouseDragged(MouseEvent e);
 
-	public abstract void updateComponents();
+	/**
+	 * Called by the 3D view after a navigator drag that moved this tool's target, to put the new
+	 * number into the tool's own form. Nothing by default: a tool that drops the navigator never
+	 * hears it (the Warp and Trigger tools each carried the Camera tool's body here, refreshing the
+	 * camera form, from a line no drag could reach - F148).
+	 */
+	public void updateComponents() {
+	}
 	public boolean CM2DNoUpdate = false;
 }

@@ -1,6 +1,6 @@
 package ctrmap.tests;
 
-import ctrmap.LittleEndianDataOutputStream;
+import ctrmap.util.LittleEndianDataOutputStream;
 import ctrmap.formats.zone.ZoneEntities;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -12,8 +12,8 @@ import java.util.Arrays;
  * Builds a synthetic, %4-aligned entities blob (header + 1 furniture + 2 NPCs
  * + 1 warp + 2 trigger1 + 1 trigger2 + minimal valid pawn script), parses it
  * with ZoneEntities and asserts that assembleData() reproduces it
- * byte-identically. Then verifies that header counts are derived from live
- * list sizes after an add without touching the count fields.
+ * byte-identically. Then verifies that the header's counts are the lists'
+ * sizes after an add - there are no count fields to touch (F249).
  */
 public class ZoneEntitiesRoundTripTest {
 
@@ -27,8 +27,6 @@ public class ZoneEntitiesRoundTripTest {
 		ZoneEntities e = new ZoneEntities(data);
 
 		//sanity checks on the parsed triggers
-		check(e.trigger1Count == 2, "trigger1Count == 2, got " + e.trigger1Count);
-		check(e.trigger2Count == 1, "trigger2Count == 1, got " + e.trigger2Count);
 		check(e.triggers1.size() == 2, "triggers1.size() == 2, got " + e.triggers1.size());
 		check(e.triggers2.size() == 1, "triggers2.size() == 1, got " + e.triggers2.size());
 		ZoneEntities.Trigger t0 = e.triggers1.get(0);
@@ -52,19 +50,42 @@ public class ZoneEntitiesRoundTripTest {
 			System.exit(1);
 		}
 
-		//count-desync check: mutate the lists only, never the count fields
+		//a list grown is a header grown: the count written is the list's size
 		ZoneEntities e2 = new ZoneEntities(data);
 		e2.triggers1.add(new ZoneEntities.Trigger());
 		byte[] out2 = e2.assembleData();
+		check((out2[7] & 0xFF) == 3, "the header's trigger count is the list's size after an add, got " + (out2[7] & 0xFF));
 		ZoneEntities e3 = new ZoneEntities(out2);
-		check(e3.trigger1Count == 3, "post-add reparse trigger1Count == 3, got " + e3.trigger1Count);
 		check(e3.triggers1.size() == 3, "post-add reparse triggers1.size() == 3, got " + e3.triggers1.size());
-		check(e3.trigger2Count == 1, "post-add reparse trigger2Count == 1, got " + e3.trigger2Count);
+		check(e3.triggers2.size() == 1, "post-add reparse triggers2.size() == 1, got " + e3.triggers2.size());
 		check(e3.totalLength == 220 + 0x18, "post-add reparse totalLength == 244, got " + e3.totalLength);
 		ZoneEntities.Trigger added = e3.triggers1.get(2);
 		check(added.w == 1 && added.h == 1 && added.script == 0, "default Trigger round-trips as w=1,h=1,script=0");
 
+		noNumberIsKeptBesideTheLists();
 		System.out.println("PASS");
+	}
+
+	/**
+	 * Each record list IS its count (F249). Five count fields stood beside the lists: read from
+	 * the header, stepped by hand in four forms, set right only when the block was written - two
+	 * answers to one question, which disagreed whenever a form forgot. By SHAPE, not by name: the
+	 * one number the entities may hold is the block's length, which is the header's own; any
+	 * other is a count kept beside a list, whatever it is called.
+	 */
+	private static void noNumberIsKeptBesideTheLists() {
+		java.util.List<String> held = new java.util.ArrayList<>();
+		for (java.lang.reflect.Field f : ZoneEntities.class.getDeclaredFields()) {
+			Class<?> t = f.getType();
+			while (t.isArray()) {
+				t = t.getComponentType();   //an array of counts is as many counts
+			}
+			boolean number = (t.isPrimitive() && t != boolean.class) || Number.class.isAssignableFrom(t);
+			if (number && !java.lang.reflect.Modifier.isStatic(f.getModifiers()) && !f.getName().equals("totalLength")) {
+				held.add(f.getName());
+			}
+		}
+		check(held.isEmpty(), "no number is kept beside the record lists - each list is its count: " + held);
 	}
 
 	private static void check(boolean cond, String what) {

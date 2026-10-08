@@ -41,7 +41,8 @@ import bundle_shell      # noqa: E402  - an agent launch, found by shape
 import guard_fanout      # noqa: E402  - the one reader of the one launch counter
 import request_ledger    # noqa: E402  - the one launch the ledger itself demands
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+ROOT = _tree_root.require(__file__)
 
 #: Where this campaign's durable state lives: OUTSIDE the repository, beside it, one folder per
 #: project - so a `git reset --hard` or a fresh clone cannot take it with the tree.
@@ -50,7 +51,7 @@ STATE_FILE = os.path.join(os.path.dirname(ROOT), "_state", os.path.basename(ROOT
 #: The round log: {"rounds": [{"scope", "n", "findings", "recorded"}]}.
 CONVERGENCE_LOG = os.path.join(ROOT, "docs", "audit-convergence.json")
 
-#: Adapted per project: see ADAPT.md.
+#: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("STATE_FILE", "CONVERGENCE_LOG")
 
 

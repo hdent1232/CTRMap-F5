@@ -3,6 +3,7 @@ package ctrmap.tests;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.RegionFactory;
+import ctrmap.formats.tilemap.PaintedGeometry;
 import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
@@ -108,7 +109,7 @@ public class CompositeLeftoverTest {
 			}
 			swept++;
 
-			float ox = PaintedRegionBuilder.ORIGIN;
+			float ox = PaintedGeometry.ORIGIN;
 			float px0 = x0 * TILE + ox, px1 = (x1 + 1) * TILE + ox;
 			float pz0 = y0 * TILE + ox, pz1 = (y1 + 1) * TILE + ox;
 			BchMapModel out = new BchMapModel(bc.model);

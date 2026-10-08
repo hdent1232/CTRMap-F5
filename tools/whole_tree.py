@@ -61,7 +61,9 @@ import sys
 if __name__ == "__main__":
     sys.dont_write_bytecode = True     # run from its folder, a tool leaves no bytecode there
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+HERE = _tree_root.require(__file__)
 
 #: YOUR APPLICATION'S ROOT, relative to the project. Every record is measured against what is
 #: actually in here - never against a list of what somebody thought was in here.
@@ -73,10 +75,16 @@ RECORDS = "."
 #: The file extension your source uses.
 SOURCE = ".java"
 
+#: THE PROGRAM'S PROOFS ARE NOT THE PROGRAM (F191). Sources under a directory of this name inside the
+#: package are its tests, and a record that scores the program is not short of them: counted, they
+#: made the mutation record read "missing 385 of 418" - a little of everything - when its gap was 232
+#: of the 265 production modules, seven eighths of the program unscored. None counts every source.
+PROOFS = "tests"
+
 BASELINE = os.path.join("tools", "guard", "whole_tree_baseline.json")
 
-#: Adapted per project: see ADAPT.md.
-ADAPT = ("PACKAGE", "RECORDS", "SOURCE", "BASELINE")
+#: Adapted per project: see the bootstrap's ADAPT.md.
+ADAPT = ("PACKAGE", "RECORDS", "SOURCE", "PROOFS", "BASELINE")
 
 #: How many real module paths a dict needs before it counts as keyed BY MODULE. Below this, a
 #: record that merely mentions a couple of modules in passing would be held to covering the
@@ -95,11 +103,12 @@ def _root(project=None):
 
 
 def modules(project=None):
-    """Every source file under the package, WALKED. What every record is measured against."""
+    """Every source file of the program under the package, WALKED - its PROOFS left out. What every
+    record is measured against."""
     root = _root(project)
     found = set()
     for base, dirs, names in os.walk(os.path.join(root, PACKAGE)):
-        dirs[:] = [d for d in dirs if not d.startswith(".") and d != "__pycache__"]
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d != "__pycache__" and d != PROOFS]
         for name in sorted(names):
             if name.endswith(SOURCE):
                 rel = os.path.relpath(os.path.join(base, name), root)
@@ -195,8 +204,9 @@ def regressions(project=None, found=None):
             out.append(
                 "%s is keyed by module and nobody has said WHAT IT IS. A record that should "
                 "describe every module and one that lists exceptions ratchet in OPPOSITE "
-                "directions, and guessing bounds one of them backwards. Record it as %s."
-                % (label, " or ".join(KINDS)))
+                "directions, and guessing bounds one of them backwards. Classify it: "
+                "`python -B tools/whole_tree.py classify %s %s`, then `record`."
+                % (label, label, "|".join(KINDS)))
             continue
         if label not in ceilings:
             out.append(
@@ -388,10 +398,47 @@ def record(project=None):
     return 0
 
 
+def classify(label, kind, project=None):
+    """(code, said): register what one record is FOR - the remedy the unclassified refusal names.
+
+    THE REMEDY A REFUSAL NAMES MUST BE ONE THAT CAN BE RUN (F200): the refusal said 'Record it as
+    covers or exempts', and no command recorded a kind - the one kind in a project's baseline had
+    been typed into its install commit. Refused: a kind not in KINDS, a label that is not a
+    module-keyed record in this tree, and a label already classified - switching a record's kind
+    is a ceiling moved by hand, which `baseline_rises` refuses too. `record` then measures it.
+    """
+    if kind not in KINDS:
+        return 2, "REFUSING: %r is not a kind - %s" % (kind, " or ".join(KINDS))
+    found = gaps(project)
+    if label not in found:
+        return 2, ("REFUSING: %s is not a module-keyed record in this tree (%s)"
+                   % (label, ", ".join(sorted(found)) or "none"))
+    baseline = held(project)
+    kinds = dict(baseline.get("kind") or {})
+    if label in kinds:
+        return 2, ("REFUSING: %s is already %s - switching a record's kind moves its ceiling by hand"
+                   % (label, kinds[label]))
+    kinds[label] = kind
+    baseline["kind"] = kinds
+    path = os.path.join(_root(project), BASELINE)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with io.open(path, "w", encoding="utf-8", newline=LF) as handle:
+        handle.write(json.dumps(baseline, indent=1, sort_keys=True) + LF)
+    return 0, "classified %s as %s - run `record` to measure its ceiling" % (label, kind)
+
+
 def main(argv):
     command = argv[1] if len(argv) > 1 else "check"
     if command == "record":
         return record()
+    if command == "classify":
+        if len(argv) < 4:
+            sys.stdout.write("REFUSING: classify takes a record and a kind (%s)%s"
+                             % ("|".join(KINDS), LF))
+            return 2
+        code, said = classify(argv[2], argv[3])
+        sys.stdout.write(said + LF)
+        return code
 
     tree = modules()
     found = gaps(tree=tree)

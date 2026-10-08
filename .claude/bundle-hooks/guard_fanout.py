@@ -55,7 +55,7 @@ WINDOW = 6 * 3600
 ALLOW_UNMEASURED = bundle_env.name("ALLOW_FANOUT_UNMEASURED")
 ALLOW_WORKFLOW = bundle_env.name("ALLOW_WORKFLOW")
 
-#: Adapted per project: see ADAPT.md.
+#: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("STATE", "WINDOW")
 
 

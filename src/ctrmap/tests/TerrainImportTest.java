@@ -3,8 +3,6 @@ package ctrmap.tests;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.h3d.BchMapModel;
-import ctrmap.formats.h3d.BchModelAppender;
-import ctrmap.formats.h3d.RegionFactory;
 import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainCatalog;
 import ctrmap.formats.tilemap.TerrainLighting;

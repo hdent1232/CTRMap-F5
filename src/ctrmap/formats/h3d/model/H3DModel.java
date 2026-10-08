@@ -53,13 +53,6 @@ public class H3DModel {
 	
 	public H3DSkeleton skeleton;
 	
-	public int verticesCount() {
-		int count = 0;
-		for (H3DMesh obj : meshes) {
-			count += obj.vertices.size();
-		}
-		return count;
-	}
 	
 	/**
 	 * Reads one model out of a BCH: the model header, the object-name
@@ -212,7 +205,7 @@ public class H3DModel {
 			int facesTableOffset = 0;
 			if (!hasFaces) {
 				in.seek(modelHeader.verticesTableOffset + modelHeader.verticesTableEntries * 0x38);
-				in.seek(objIndex * 0x1c + 0x10 + in.position);
+				in.seek(objIndex * 0x1c + 0x10 + in.position());
 				
 				facesTableOffset = in.readInt();
 				facesCount = in.readInt();
@@ -229,7 +222,9 @@ public class H3DModel {
 					if (hasFaces) {
 						int baseOffset = obj.facesHeaderOffset + f * 0x34;
 						in.seek(baseOffset);
-						skinningMode = SkinningMode.values()[in.readUnsignedShort()];
+						//a mode the port does not list is drawn as stored, unposed (F079): it threw, and the
+						//whole model failed to open
+						skinningMode = ctrmap.util.Bytes.enumOf(SkinningMode.values(), in.readUnsignedShort(), SkinningMode.none);
 						int nodeIdEntries = in.readUnsignedShort();
 						for (int n = 0; n < nodeIdEntries; n++) {
 							nodeList.add(in.readUnsignedShort());
@@ -298,7 +293,7 @@ public class H3DModel {
 								break;
 						}
 						
-						int dataPosition = in.position;
+						int dataPosition = in.position();
 						int vertexOffset = vshAttributesBufferOffset + (index * vshAttributesBufferStride);
 						in.seek(vertexOffset);
 						
@@ -412,43 +407,6 @@ public class H3DModel {
 		OhanaMeshUtils.makeBox(boxVectors, minVector, maxVector);
 	}
 
-	/**
-	 * Deprecated. Replaced by fixed rigid skinning instead.
-	 */
-	public void adjustBoneVerticesToMatrix() {
-		for (int i = 0; i < meshes.size(); i++) {
-			for (int j = 0; j < meshes.get(i).vertices.size(); j++) {
-				H3DVertex v = meshes.get(i).vertices.get(j);
-				if (!v.node.isEmpty()) {
-					Vec3f alter = new Vec3f();
-					float weightSum = 0;
-					int weightIndex = 0;
-					for (int node = 0; node < v.node.size(); node++) {
-						if (skeleton.transform.size() <= v.node.get(node)) {
-							break; //weird model
-						}
-						float weight = 0;
-						if (weightIndex < v.weight.size()) {
-							weight = v.weight.get(weightIndex++);
-						}
-						weightSum += weight;
-						alter.x += v.position.x * weight;
-						alter.y += v.position.y * weight;
-						alter.z += v.position.z * weight;
-						alter.x += skeleton.transform.get(v.node.get(node)).getMatrix()[12] * weight;
-						alter.y += skeleton.transform.get(v.node.get(node)).getMatrix()[13] * weight;
-						alter.z += skeleton.transform.get(v.node.get(node)).getMatrix()[14] * weight;
-					}
-					if (weightSum < 1) {
-						alter.x += v.position.x * (1 - weightSum);
-						alter.y += v.position.y * (1 - weightSum);
-						alter.z += v.position.z * (1 - weightSum);
-					}
-					v.position = alter;
-				}
-			}
-		}
-	}
 	
 	public void makeAllBOs() {
 		for (int i = 0; i < meshes.size(); i++) {
@@ -498,13 +456,6 @@ public class H3DModel {
 		}
 	}
 	
-	public static Vec3f transformVec3f(Vec3f input, Matrix4 matrix) {
-		Vec3f output = new Vec3f();
-		output.x = input.x * matrix.getMatrix()[0] + input.y * matrix.getMatrix()[1] + input.z * matrix.getMatrix()[2] + matrix.getMatrix()[3];
-		output.y = input.x * matrix.getMatrix()[4] + input.y * matrix.getMatrix()[5] + input.z * matrix.getMatrix()[6] + matrix.getMatrix()[7];
-		output.z = input.x * matrix.getMatrix()[8] + input.y * matrix.getMatrix()[9] + input.z * matrix.getMatrix()[10] + matrix.getMatrix()[11];
-		return output;
-	}
 	
 	public enum SkinningMode {
 		none,
@@ -734,19 +685,10 @@ public class H3DModel {
 				gl.glGenTextures(1, textureptr, 0);
 				glTexturePtrs.put(gl, textureptr);
 			}
+			//THE NAMES ARE KEPT (F078): each upload deleted the buffer and texture it had been given
+			//and then bound the deleted names; glBufferData and glTexImage2D below re-specify both
 			int[] vboPtr = glBufPtrs.get(gl);
-			int[] texturePtr = glTexturePtrs.get(gl);
-			gl.glDeleteTextures(1, texturePtr, 0);
-			gl.glDeleteBuffers(1, vboPtr, 0);
-			vbo.rewind();
-			vcbo.rewind();
-			tcbo[0].rewind();
-			tcbo[1].rewind();
-			tcbo[2].rewind();
-			long cap = vbo.capacity() * Float.BYTES + vcbo.capacity();
-			if (tcbo[0] != null) {
-				cap += tcbo[0].capacity() * Double.BYTES;
-			}
+			long cap = rewound();
 			gl.glBindBuffer(GL2.GL_ARRAY_BUFFER, vboPtr[0]);
 			gl.glBufferData(GL2.GL_ARRAY_BUFFER, cap, null, GL2.GL_STATIC_DRAW);
 			gl.glBufferSubData(GL2.GL_ARRAY_BUFFER, 0, vbo.capacity() * Float.BYTES, vbo);
@@ -760,6 +702,36 @@ public class H3DModel {
 			}
 		}
 		
+		/**
+		 * Every buffer this mesh uploads, rewound, and the bytes they take together. A mesh with
+		 * no material has no texture coordinates (makeBOs leaves them null): uploadVBO rewound them
+		 * before asking, a NullPointerException on the render thread (F078). Apart from the upload
+		 * so that it can be asked without a GL context.
+		 */
+		long rewound() {
+			vbo.rewind();
+			vcbo.rewind();
+			for (DoubleBuffer t : tcbo) {
+				if (t != null) {
+					t.rewind();
+				}
+			}
+			long cap = vbo.capacity() * Float.BYTES + vcbo.capacity();
+			if (tcbo[0] != null) {
+				cap += tcbo[0].capacity() * Double.BYTES;
+			}
+			return cap;
+		}
+
+		/**
+		 * Whether the immediate-mode draw colours this mesh's vertices from their own colour - not
+		 * for tall grass, which is drawn white - asked of a mesh that may have no material (F078: it
+		 * read the null material's name).
+		 */
+		boolean vertexColoured(H3DMaterial mat) {
+			return hasColor && (mat == null || !(mat.name.contains("blc") || mat.name0.equals("enc_grass")));
+		}
+
 		public void render(GL2 gl, H3DMaterial mat) {
 			/*
 			Stuff involving checking for "blc" in material name is a workaround for tall grass rendering, which uses weird vertex coloring and alpha testing
@@ -820,7 +792,7 @@ public class H3DModel {
 				gl.glBegin(GL2.GL_TRIANGLES);
 				for (int i = 0; i < vertices.size(); i++) {
 					H3DVertex v = vertices.get(i);
-					if (hasColor && !(mat.name.contains("blc") || mat.name0.equals("enc_grass"))) {
+					if (vertexColoured(mat)) {
 						gl.glColor4ub((byte) (v.diffuseColor >> 16 & 0xFF), (byte) (v.diffuseColor >> 8 & 0xFF), (byte) (v.diffuseColor & 0xFF), (byte) (v.diffuseColor >> 24 & 0xFF));
 					} else {
 						gl.glColor3f(1f, 1f, 1f);

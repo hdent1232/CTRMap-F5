@@ -5,14 +5,22 @@ import ctrmap.formats.h3d.BCHHeader;
 import ctrmap.formats.h3d.PICACommandReader;
 import ctrmap.formats.h3d.RandomAccessBAIS;
 import ctrmap.formats.h3d.StringUtils;
-import ctrmap.formats.h3d.model.OhanaMeshUtils;
-import java.awt.Color;
-import java.io.ByteArrayOutputStream;
+import ctrmap.util.Bytes;
 import java.io.IOException;
-import java.nio.charset.Charset;
-import java.util.ArrayList;
-import java.util.List;
 
+/**
+ * One material of an H3D model, as the 3D view draws it: its names, its three textures' wrap
+ * modes, its blend mode and its alpha test. Ported from Ohana3DS.
+ *
+ * <p>DECODES WHAT IS DRAWN (F079). The port decoded every field of the material - texture
+ * coordinators, six TEV combiner stages, twelve colours, lighting and fog flags and indices,
+ * filters, LOD, border colours, stencil, depth, culling, logic op and the user metadata - and
+ * nothing read any of it. Each enum among them was decoded by indexing values() with raw bits, so
+ * a value the port did not list (a magnification filter byte of 0x80 or more read through a
+ * signed shift, for one) threw and the whole BCH failed to open over a field nothing drew. The
+ * bytes are still stepped over exactly as they were; what is drawn is pinned by BchSectionsTest's
+ * BCHFile materials line, measured on the old decoder.
+ */
 public class H3DMaterial {
 
 	public String name;
@@ -25,21 +33,9 @@ public class H3DMaterial {
 	public H3DTexture texture1;
 	public H3DTexture texture2;
 
-	public boolean isFragmentLightEnabled;
-	public boolean isVertexLightEnabled;
-	public boolean isHemiSphereLightEnabled;
-	public boolean isHemiSphereOcclusionEnabled;
-	public boolean isFogEnabled;
-
-	public int lightSetIndex;
-	public int fogIndex;
-
 	public Params params = new Params();
-	public List<MatMetaData> userData;
 
-	public TextureCoordinator[] coordinators = new TextureCoordinator[3];
 	public TextureMapper[] mappers = new TextureMapper[3];
-	public TextureCombiner[] combiners = new TextureCombiner[6];
 
 	public H3DMaterial(RandomAccessBAIS in, byte[] data, BCHHeader properties) throws IOException {
 		int materialParametersOffset = in.readInt();
@@ -51,299 +47,64 @@ public class H3DMaterial {
 
 		int materialMapperOffset;
 		if (properties.backwardCompatibility < 0x21) {
-			materialMapperOffset = in.position;
+			materialMapperOffset = in.position();
 			in.seek(0x30 + materialMapperOffset);
 		} else {
 			materialMapperOffset = in.readInt();
 		}
 
-		name0 = StringUtils.readString(in.readInt(), data);
-		name1 = StringUtils.readString(in.readInt(), data);
-		name2 = StringUtils.readString(in.readInt(), data);
-		name = StringUtils.readString(in.readInt(), data);
+		//A ZERO POINTER IS NO NAME (F228): offset 0 of a BCH is its header, never a string. An unused
+		//texture slot read whatever sat there - the relocation's stray write until that was fixed,
+		//and the magic "BCH" after - as the name of a texture to look for
+		int p0 = in.readInt(), p1 = in.readInt(), p2 = in.readInt(), pn = in.readInt();
+		name0 = p0 == 0 ? "" : StringUtils.readString(p0, data);
+		name1 = p1 == 0 ? "" : StringUtils.readString(p1, data);
+		name2 = p2 == 0 ? "" : StringUtils.readString(p2, data);
+		name = pn == 0 ? "" : StringUtils.readString(pn, data);
 
 		if (materialParametersOffset != 0) {
-			in.seek(materialParametersOffset);
-			int hash = in.readInt();
-
-			short materialFlags = in.readShort();
-			isFragmentLightEnabled = (materialFlags & 1) > 0;
-			isVertexLightEnabled = (materialFlags & 2) > 0;
-			isHemiSphereLightEnabled = (materialFlags & 4) > 0;
-			isHemiSphereOcclusionEnabled = (materialFlags & 8) > 0;
-			isFogEnabled = (materialFlags & 0x10) > 0;
-			params.isPolygonOffsetEnabled = (materialFlags & 0x20) > 0;
-
+			//past the hash and the material flags (lighting, fog, polygon offset: nothing here draws them)
+			in.seek(materialParametersOffset + 4 + 2);
 			short fragmentFlags = in.readShort();
-			BlendOperation.BlendMode blendMode = BlendOperation.BlendMode.values()[(fragmentFlags >> 10) & 3];
+			params.blendop.mode = Bytes.enumOf(BlendOperation.BlendMode.values(), (fragmentFlags >> 10) & 3, null);
 
-			in.readInt();
-
-			for (int i = 0; i < 3; i++) {
-				TextureCoordinator coordinator = new TextureCoordinator();
-				int projectionAndCamera = in.readInt();
-				coordinator.projection = TextureCoordinator.TextureProjection.values()[(projectionAndCamera >> 16) & 0xff];
-				coordinator.referenceCamera = projectionAndCamera >> 24;
-				coordinator.scaleU = in.readFloat();
-				coordinator.scaleV = in.readFloat();
-				coordinator.rotate = in.readFloat();
-				coordinator.translateU = in.readFloat();
-				coordinator.translateV = in.readFloat();
-
-				coordinators[i] = coordinator;
-			}
-
-			lightSetIndex = in.readUnsignedShort();
-			fogIndex = in.readUnsignedShort();
-
-			params.colEmission = OhanaMeshUtils.getColor(in);
-			params.colAmbient = OhanaMeshUtils.getColor(in);
-			params.colDiffuse = OhanaMeshUtils.getColor(in);
-			params.colSpecular0 = OhanaMeshUtils.getColor(in);
-			params.colSpecular1 = OhanaMeshUtils.getColor(in);
-			params.colConstant0 = OhanaMeshUtils.getColor(in);
-			params.colConstant1 = OhanaMeshUtils.getColor(in);
-			params.colConstant2 = OhanaMeshUtils.getColor(in);
-			params.colConstant3 = OhanaMeshUtils.getColor(in);
-			params.colConstant4 = OhanaMeshUtils.getColor(in);
-			params.colConstant5 = OhanaMeshUtils.getColor(in);
-			Color blendColor = OhanaMeshUtils.getColor(in);
-			params.colorScale = in.readFloat();
-
-			in.readInt();
-			in.readInt();
-			in.readInt();
-			in.readInt();
-			in.readInt();
-			in.readInt();
-
-			in.readInt();
-			int position = in.position;
-			in.seek(position + 24);
-			in.readInt();
-
-			params.polygonOffsetUnit = in.readFloat();
+			//stepped over, as the port read them: an int; three texture coordinators (an int and five
+			//floats each); the light set and fog indices (two shorts); twelve colours (four bytes
+			//each); the colour scale; six ints, an int, 24 bytes and an int; the polygon offset unit
+			in.seek(materialParametersOffset + 8 + 4 + 3 * 24 + 2 * 2 + 12 * 4 + 4 + 6 * 4 + 4 + 24 + 4 + 4);
 			int fshCommandsOffset = in.readInt();
 			int fshCommandsWordCount = in.readInt();
-
-			in.skip(52); //fragment shader useless shit
-
-			in.skip(8); //shader and model references, don't need those
-
-			//User Data
-			if (properties.backwardCompatibility > 6) {
-				int metaDataPointerOffset = in.readInt();
-				if (metaDataPointerOffset != 0) {
-					in.seek(metaDataPointerOffset);
-					userData = getMetaData(in, data);
-				}
-			}
 
 			//Mapper
 			in.seek(materialMapperOffset);
 			for (int i = 0; i < 3; i++) {
 				TextureMapper mapper = new TextureMapper();
+				in.seek(materialMapperOffset + i * 16); //each mapper: this word, LOD and min filter, LOD bias, border colour
 				int wrapAndMagFilter = in.readInt();
-				int levelOfDetailAndMinFilter = in.readInt();
-				mapper.wrapU = TextureMapper.TextureWrap.values()[(wrapAndMagFilter >> 8) & 0xff];
-				mapper.wrapV = TextureMapper.TextureWrap.values()[(wrapAndMagFilter >> 16) & 0xff];
-				mapper.magFilter = TextureMapper.TextureMagFilter.values()[wrapAndMagFilter >> 24];
-				mapper.minFilter = TextureMapper.TextureMinFilter.values()[levelOfDetailAndMinFilter & 0xff];
-				mapper.minLOD = (levelOfDetailAndMinFilter >> 8) & 0xff;
-				mapper.LODBias = in.readFloat();
-				mapper.borderColor = OhanaMeshUtils.getColor(in);
+				mapper.wrapU = TextureMapper.wrapOf((wrapAndMagFilter >> 8) & 0xff);
+				mapper.wrapV = TextureMapper.wrapOf((wrapAndMagFilter >> 16) & 0xff);
 
 				mappers[i] = mapper;
 			}
 
 			//Fragment Shader commands
 			in.seek(fshCommandsOffset);
-			PICACommandReader fshCommands = new PICACommandReader(in, fshCommandsWordCount, false);
-			for (byte stage = 0; stage < 6; stage++) {
-				combiners[stage] = fshCommands.getTevStage(stage);
-			}
-			params.fragBufferColor = fshCommands.getFragmentBufferColor();
-			params.blendop = fshCommands.getBlendOperation();
-			params.blendop.mode = blendMode;
-			params.blendop.blendColor = blendColor;
-			params.blendop.logicalOperation = fshCommands.getColorLogicOperation();
-			params.alphaTest = fshCommands.getAlphaTest();
-			params.stencilTest = fshCommands.getStencilTest();
-			params.depthTest = fshCommands.getDepthTest();
-			params.cullMode = fshCommands.getCullMode();
-		}
-	}
-
-	public static List<MatMetaData> getMetaData(RandomAccessBAIS input, byte[] data) throws IOException {
-		List<MatMetaData> output = new ArrayList<>();
-
-		int metaDataOffset = input.readInt();
-		int metaDataEntries = input.readInt();
-		int metaDataNameOffset = input.readInt();
-
-		for (int index = 0; index < metaDataEntries; index++) {
-			input.seek(metaDataOffset + (index * 0xc));
-
-			MatMetaData metaData = new MatMetaData();
-
-			metaData.name = StringUtils.readString(input.readInt(), data);
-			metaData.type = MatMetaData.MetaDataValueType.values()[input.readShort()];
-			short entries = input.readShort();
-			int dataOffset = input.readInt();
-
-			input.seek(dataOffset);
-			for (int i = 0; i < entries; i++) {
-				switch (metaData.type) {
-					case integer:
-						metaData.values.add(input.readInt());
-						break;
-					case single:
-						metaData.values.add(input.readFloat());
-						break;
-					case utf16String:
-					case utf8String:
-						int offset = input.readInt();
-						int oldPosition = input.position;
-						input.seek(offset);
-
-						ByteArrayOutputStream strStream = new ByteArrayOutputStream();
-						byte strChar = input.readByte();
-						byte oldChar = (byte) 0xff;
-						while ((metaData.type == MatMetaData.MetaDataValueType.utf8String && strChar != 0) || !(oldChar == 0 && strChar == 0)) {
-							oldChar = strChar;
-							strStream.write(strChar);
-							strChar = input.readByte();
-						}
-
-						if (metaData.type == MatMetaData.MetaDataValueType.utf16String) {
-							metaData.values.add(new String(strStream.toByteArray(), Charset.forName("UTF-16")));
-						} else {
-							metaData.values.add(new String(strStream.toByteArray(), Charset.forName("UTF-8")));
-						}
-
-						strStream.close();
-						input.seek(oldPosition);
-						break;
-				}
-			}
-
-			output.add(metaData);
-		}
-
-		return output;
-	}
-
-	public static class TextureCombiner {
-
-		public short rgbScale, alphaScale;
-		public ConstantColor constantColor;
-		public CombineOperator combineRgb, combineAlpha;
-		public CombineSource[] rgbSource = new CombineSource[3];
-		public CombineOperandRgb[] rgbOperand = new CombineOperandRgb[3];
-		public CombineSource[] alphaSource = new CombineSource[3];
-		public CombineOperandAlpha[] alphaOperand = new CombineOperandAlpha[3];
-
-		public enum ConstantColor {
-			constant0,
-			constant1,
-			constant2,
-			constant3,
-			constant4,
-			constant5,
-			emission,
-			ambient,
-			diffuse,
-			specular0,
-			specular1
-		}
-
-		public enum CombineOperator {
-			replace,
-			modulate,
-			add,
-			addSigned,
-			interpolate,
-			subtract,
-			dot3Rgb,
-			dot3Rgba,
-			multiplyAdd,
-			addMultiply
-		}
-
-		public enum CombineSource {
-			primaryColor,
-			fragmentPrimaryColor,
-			fragmentSecondaryColor,
-			texture0,
-			texture1,
-			texture2,
-			texture3,
-			dummy7,
-			dummy8,
-			dummy9,
-			dummy0xa,
-			dummy0xb,
-			dummy0xc,
-			previousBuffer,
-			constant,
-			previous
-		}
-
-		public enum CombineOperandRgb {
-			color,
-			oneMinusColor,
-			alpha,
-			oneMinusAlpha,
-			red,
-			oneMinusRed,
-			dummy6,
-			dummy7,
-			green,
-			oneMinusGreen,
-			dummy0xa,
-			dummy0xb,
-			blue,
-			oneMinusBlue
-		}
-
-		public enum CombineOperandAlpha {
-			alpha,
-			oneMinusAlpha,
-			red,
-			oneMinusRed,
-			green,
-			oneMinusGreen,
-			blue,
-			oneMinusBlue
-		}
-	}
-
-	public static class TextureCoordinator {
-
-		public TextureProjection projection;
-		public int referenceCamera;
-		public float scaleU, scaleV;
-		public float rotate;
-		public float translateU, translateV;
-
-		public enum TextureProjection {
-			uvMap,
-			cameraCubeMap,
-			cameraSphereMap,
-			projectionMap,
-			shadowMap,
-			shadowCubeMap
+			params.alphaTest = new PICACommandReader(in, fshCommandsWordCount, false).getAlphaTest();
 		}
 	}
 
 	public static class TextureMapper {
 
-		public TextureMinFilter minFilter;
-		public TextureMagFilter magFilter;
 		public TextureWrap wrapU, wrapV;
-		public int minLOD;
-		public float LODBias;
-		public Color borderColor;
+
+		/**
+		 * The wrap mode {@code raw} names, or repeat for one the port did not list (F079): repeat is
+		 * what {@link #getGlTextureWrap} has always drawn for an unlisted mode, and a texture drawn
+		 * repeating is a better answer than a model that does not open.
+		 */
+		static TextureWrap wrapOf(int raw) {
+			return Bytes.enumOf(TextureWrap.values(), raw, TextureWrap.repeat);
+		}
 
 		public static int getGlTextureWrap(TextureWrap wrap) {
 			switch (wrap) {
@@ -359,20 +120,6 @@ public class H3DMaterial {
 			}
 		}
 
-		public enum TextureMinFilter {
-			nearest,
-			nearestMipmapNearest,
-			nearestMipmapLinear,
-			linear,
-			linearMipmapNearest,
-			linearMipmapLinear
-		}
-
-		public enum TextureMagFilter {
-			nearest,
-			linear
-		}
-
 		public enum TextureWrap {
 			clampToEdge,
 			clampToBorder,
@@ -381,46 +128,10 @@ public class H3DMaterial {
 		}
 	}
 
-	public static class MatMetaData {
-
-		public String name;
-		public MetaDataValueType type;
-		public List<Object> values = new ArrayList<>();
-
-		public enum MetaDataValueType {
-			integer,
-			single,
-			utf8String,
-			utf16String
-		}
-	}
-
 	public static class Params {
 
-		public boolean isPolygonOffsetEnabled;
-		public float polygonOffsetUnit;
-
 		public BlendOperation blendop = new BlendOperation();
-
-		public float colorScale;
-
-		public Color fragBufferColor;
-		public Color colEmission;
-		public Color colAmbient;
-		public Color colDiffuse;
-		public Color colSpecular0;
-		public Color colSpecular1;
-		public Color colConstant0;
-		public Color colConstant1;
-		public Color colConstant2;
-		public Color colConstant3;
-		public Color colConstant4;
-		public Color colConstant5;
-
 		public AlphaTest alphaTest;
-		public StencilOperation stencilTest;
-		public DepthOperation depthTest;
-		public CullMode cullMode;
 	}
 
 	public static class AlphaTest {
@@ -464,152 +175,15 @@ public class H3DMaterial {
 		greaterOrEqual
 	}
 
-	public static class StencilOperation {
-
-		public boolean isTestEnabled;
-		public TestFunction testFunction;
-		public int testReference;
-		public int testMask;
-		public StencilOp failOperation;
-		public StencilOp zFailOperation;
-		public StencilOp passOperation;
-
-		public enum StencilOp {
-			keep,
-			zero,
-			replace,
-			increase,
-			decrease,
-			increaseWrap,
-			decreaseWrap
-		}
-	}
-
-	public static class DepthOperation {
-
-		public boolean isTestEnabled;
-		public TestFunction testFunction;
-		public boolean isMaskEnabled;
-	}
-
-	public enum CullMode {
-		never,
-		frontFace,
-		backFace
-	}
-
-	public enum LogicalOperation {
-		clear,
-		and,
-		andReverse,
-		copy,
-		set,
-		copyInverted,
-		noOperation,
-		invert,
-		notAnd,
-		or,
-		notOr,
-		exclusiveOr,
-		equiv,
-		andInverted,
-		orReverse,
-		orInverted
-	}
-
 	public static class BlendOperation {
 
 		public BlendMode mode;
-		public LogicalOperation logicalOperation;
-		public BlendFunction rgbFunctionSource, rgbFunctionDestination;
-		public BlendEquation rgbBlendEquation;
-		public BlendFunction alphaFunctionSource, alphaFunctionDestination;
-		public BlendEquation alphaBlendEquation;
-		public Color blendColor;
-
-		public static int getGlBlendFunc(BlendFunction func) {
-			switch (func) {
-				default:
-				case zero:
-					return GL2.GL_ZERO;
-				case one:
-					return GL2.GL_ONE;
-				case sourceColor:
-					return GL2.GL_SRC_COLOR;
-				case oneMinusSourceColor:
-					return GL2.GL_ONE_MINUS_SRC_COLOR;
-				case destinationColor:
-					return GL2.GL_DST_COLOR;
-				case oneMinusDestinationColor:
-					return GL2.GL_ONE_MINUS_DST_COLOR;
-				case sourceAlpha:
-					return GL2.GL_SRC_ALPHA;
-				case oneMinusSourceAlpha:
-					return GL2.GL_ONE_MINUS_SRC_ALPHA;
-				case destinationAlpha:
-					return GL2.GL_DST_ALPHA;
-				case oneMinusDestinationAlpha:
-					return GL2.GL_ONE_MINUS_DST_ALPHA;
-				case constantColor:
-					return GL2.GL_CONSTANT_COLOR;
-				case oneMinusConstantColor:
-					return GL2.GL_ONE_MINUS_CONSTANT_COLOR;
-				case constantAlpha:
-					return GL2.GL_CONSTANT_ALPHA;
-				case oneMinusConstantAlpha:
-					return GL2.GL_ONE_MINUS_CONSTANT_ALPHA;
-				case sourceAlphaSaturate:
-					return GL2.GL_SRC_ALPHA_SATURATE;
-			}
-		}
-
-		public static int getGlBlendEqt(BlendEquation eqt) {
-			switch (eqt) {
-				default:
-				case add:
-					return GL2.GL_FUNC_ADD;
-				case subtract:
-					return GL2.GL_FUNC_SUBTRACT;
-				case reverseSubtract:
-					return GL2.GL_FUNC_REVERSE_SUBTRACT;
-				case min:
-					return GL2.GL_MIN;
-				case max:
-					return GL2.GL_MAX;
-			}
-		}
 
 		public enum BlendMode {
 			logical,
 			dummy,
 			notUsed,
 			blend
-		}
-
-		public enum BlendFunction {
-			zero,
-			one,
-			sourceColor,
-			oneMinusSourceColor,
-			destinationColor,
-			oneMinusDestinationColor,
-			sourceAlpha,
-			oneMinusSourceAlpha,
-			destinationAlpha,
-			oneMinusDestinationAlpha,
-			constantColor,
-			oneMinusConstantColor,
-			constantAlpha,
-			oneMinusConstantAlpha,
-			sourceAlphaSaturate
-		}
-
-		public enum BlendEquation {
-			add,
-			subtract,
-			reverseSubtract,
-			min,
-			max
 		}
 	}
 }

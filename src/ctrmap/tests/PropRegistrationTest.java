@@ -1,6 +1,6 @@
 package ctrmap.tests;
 
-import ctrmap.LittleEndianDataOutputStream;
+import ctrmap.util.LittleEndianDataOutputStream;
 import ctrmap.formats.containers.AD;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.propdata.ADPropRegistry;
@@ -400,7 +400,7 @@ public class PropRegistrationTest {
 		check(here != null && here.contains("PropRegistration.register(") && here.indexOf("refuseSharedArea(") >= 0
 				&& here.indexOf("refuseSharedArea(") < here.indexOf("ctrmap.Ui.confirm("),
 				"and the form's question refuses a shared area before it is asked");
-		String tpf = source("src/ctrmap/humaninterface/TilePainterForm.java");
+		String tpf = source("src/ctrmap/MapPainter.java");
 		String door = CollisionReadTest.body(tpf, "public static int ensureDoorPropRegistered(");
 		check(door != null && door.contains("PropRegistration.register("), "the painter's doors through it");
 		String commit = CollisionReadTest.body(tpf, "void commit(");

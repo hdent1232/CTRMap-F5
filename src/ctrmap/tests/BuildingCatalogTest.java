@@ -5,6 +5,7 @@ import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.BuildingCatalog;
 import ctrmap.formats.h3d.MapPrefab;
+import ctrmap.formats.tilemap.PaintedGeometry;
 import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
@@ -42,7 +43,7 @@ import static ctrmap.formats.containers.ContainerBytes.subfile;
  */
 public class BuildingCatalogTest {
 
-	static final int DIM = PaintedRegionBuilder.DIM;
+	static final int DIM = PaintedGeometry.DIM;
 
 	public static void main(String[] args) throws Exception {
 		File garcFile = new File(args.length > 0 ? args[0]
@@ -193,7 +194,9 @@ public class BuildingCatalogTest {
 				}
 				String hint = best != null && bestTris > biggestUnnamed ? best
 						: (c.tilesW() <= 2 && c.tilesH() <= 2 ? "decor" : "structure");
-				byBox.put(box(c.tx0, c.ty0, c.tx1, c.ty1), BuildingHarvester.categoryOf(hint));
+				//and a small thing's kind is its box's too (F251): the catalog refiles a lamp of a room
+				byBox.put(box(c.tx0, c.ty0, c.tx1, c.ty1),
+						BuildingCatalog.kindFor(BuildingHarvester.categoryOf(hint), c.tilesW(), c.tilesH()));
 			}
 			dominantByRegion.put(e.donorRegion, byBox);
 		}

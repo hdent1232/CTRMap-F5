@@ -1,9 +1,15 @@
 package ctrmap.formats.h3d;
 
-import java.util.*;
-import static ctrmap.formats.LittleEndian.i32;
-import static ctrmap.formats.LittleEndian.putI32;
-import static ctrmap.formats.LittleEndian.putU16;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeSet;
+import static ctrmap.util.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.putI32;
+import static ctrmap.util.LittleEndian.putU16;
 
 /**
  * Appends a MESH + MATERIAL copied from a donor map model into a target map
@@ -179,7 +185,14 @@ public class BchModelAppender {
      */
     public static byte[] append(byte[] T, byte[] D, int dj, String newName){
         BchMapModel t=new BchMapModel(T), d=new BchMapModel(D);
-        if (!t.validate().isEmpty() || !d.validate().isEmpty()) throw new IllegalStateException("parse problems");
+        //WHAT DID NOT PARSE IS SAID (F229): this threw "parse problems" and dropped both lists on the
+        //same line, so an OBJ import's report could not tell the map's model from the template donor
+        if (!t.validate().isEmpty()) throw new IllegalStateException("the map's model does not parse: " + t.validate());
+        if (!d.validate().isEmpty()) throw new IllegalStateException("the donor model does not parse: " + d.validate());
+        //A MESH THE DONOR HAS (F226): an index past its meshes was an IndexOutOfBoundsException that an
+        //OBJ import reported per group as "skipped: Index 5 out of bounds for length 3"
+        if (dj < 0 || dj >= d.meshCount) throw new IllegalArgumentException("the template model has " + d.meshCount
+                + " mesh(es), numbered 0-" + (d.meshCount - 1) + "; mesh " + dj + " is not one of them");
         int C=0x44;
         int N=t.matCount, M=t.meshCount;
 

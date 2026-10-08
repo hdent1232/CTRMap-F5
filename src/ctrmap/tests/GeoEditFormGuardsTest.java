@@ -1,6 +1,5 @@
 package ctrmap.tests;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.GR;
@@ -94,8 +93,8 @@ public class GeoEditFormGuardsTest {
 		}
 		ScratchGame.open(dump);
 		ctrmap.formats.text.LocationNames.loadFromGarc(Workspace.session());
-		CtrmapMainframe.mTilemapScrollPane = new javax.swing.JScrollPane();
-		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel(LOADED, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
+		TestWindow.mTilemapScrollPane(new javax.swing.JScrollPane());
+		TestWindow.mZonePnl(new ZoneLoadingPanel(LOADED, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0})));
 
 		theRegionIsTheOneTheseChecksDescribe();
 		aSelectionNamesItsRegionAndCountsWhatIsInIt();
@@ -162,9 +161,9 @@ public class GeoEditFormGuardsTest {
 	static void anOffsetOfZeroIsRefusedAndSaysSo() throws Exception {
 		Fixture f = open();
 		f.form.setSelection(T0, T0, T1, T1);
-		button(f.form, "btnMove").doClick();
+		click(f, "btnMove");
 		check(label(f.form, "status").equals("Set a non-zero offset first."), "Move with no offset says: " + label(f.form, "status"));
-		button(f.form, "btnDup").doClick();
+		click(f, "btnDup");
 		check(label(f.form, "status").equals("Set a non-zero offset first."), "so does Duplicate: " + label(f.form, "status"));
 		check(!button(f.form, "btnUndo").isEnabled() && !button(f.form, "btnSave").isEnabled(), "and neither is undoable or saveable");
 		check(Arrays.equals(f.gr.getFile(1), f.model0), "the model on disk is untouched");
@@ -178,13 +177,13 @@ public class GeoEditFormGuardsTest {
 		Fixture f = open();
 		f.form.setSelection(T0, T0, T1, T1);
 		spinner(f.form, "dx").setValue((double) STEP);
-		button(f.form, "btnMove").doClick();
+		click(f, "btnMove");
 		check(label(f.form, "status").equals("Moved +collision +576 tiles.  (unsaved)"),
 				"the status line accounts for all three layers and says it is unsaved: " + label(f.form, "status"));
 		check(button(f.form, "btnSave").isEnabled() && button(f.form, "btnUndo").isEnabled(), "Save and Undo are now offered");
 		check(Arrays.equals(f.gr.getFile(1), f.model0), "and nothing is on disk until Save");
 
-		button(f.form, "btnSave").doClick();
+		click(f, "btnSave");
 		check(label(f.form, "status").startsWith("Saved."), "Save says so: " + label(f.form, "status"));
 		check(!button(f.form, "btnSave").isEnabled(), "and stops offering itself");
 
@@ -210,9 +209,9 @@ public class GeoEditFormGuardsTest {
 		Fixture f = open();
 		f.form.setSelection(T0, T0, T1, T1);
 		spinner(f.form, "dx").setValue((double) STEP);
-		button(f.form, "btnMove").doClick();
-		button(f.form, "btnUndo").doClick();
-		check(label(f.form, "status").equals("Undone."), "Undo says so: " + label(f.form, "status"));
+		click(f, "btnMove");
+		click(f, "btnUndo");
+		check(label(f.form, "status").startsWith("Undone: the geometry of region "), "Undo says what it took back: " + label(f.form, "status"));
 		check(!button(f.form, "btnUndo").isEnabled() && !button(f.form, "btnSave").isEnabled(),
 				"there is nothing left to undo and nothing left to save");
 		check(Arrays.equals((byte[]) field(f.form, "currentModel"), f.model0), "the model in hand is the one that was read");
@@ -225,10 +224,10 @@ public class GeoEditFormGuardsTest {
 	static void deleteVoidsTheTilesItCovers() throws Exception {
 		Fixture f = open();
 		f.form.setSelection(T0, T0, T1, T1);
-		button(f.form, "btnDel").doClick();
+		click(f, "btnDel");
 		check(label(f.form, "status").equals("Deleted +collision +tiles voided.  (unsaved)"),
 				"Delete accounts for the tiles it voided: " + label(f.form, "status"));
-		button(f.form, "btnSave").doClick();
+		click(f, "btnSave");
 
 		byte[] wantModel = GeoBoxOps.delete(f.model0, box());
 		byte[] wantColl = GfColl.deleteBox(f.coll0, box().minX, box().minZ, box().maxX, box().maxZ);
@@ -259,9 +258,9 @@ public class GeoEditFormGuardsTest {
 		checkbox(f.form, "chkTiles").setSelected(false);
 		f.form.setSelection(T0, T0, T1, T1);
 		spinner(f.form, "dx").setValue((double) STEP);
-		button(f.form, "btnMove").doClick();
+		click(f, "btnMove");
 		check(label(f.form, "status").equals("Moved.  (unsaved)"), "with both cleared the status names no other layer: " + label(f.form, "status"));
-		button(f.form, "btnSave").doClick();
+		click(f, "btnSave");
 		byte[] wantModel = GeoBoxOps.move(f.model0, box(), STEP, 0, 0);
 		check(Arrays.equals(Arrays.copyOf(f.gr.getFile(1), wantModel.length), wantModel), "the model still moved");
 		check(Arrays.equals(f.gr.getFile(2), f.coll0), "the collision is byte for byte the one that was read");
@@ -276,7 +275,7 @@ public class GeoEditFormGuardsTest {
 		Fixture f = open();
 		f.form.setSelection(T0, T0, T1, T1);
 		spinner(f.form, "dx").setValue((double) STEP);
-		button(f.form, "btnMove").doClick();
+		click(f, "btnMove");
 
 		List<String> said = ctrmap.Ui.record(JOptionPane.CANCEL_OPTION);
 		boolean ok;
@@ -323,7 +322,7 @@ public class GeoEditFormGuardsTest {
 		f.form.setSelection(T0, T0, T1, T1);
 		List<String> said = ctrmap.Ui.record("GuardPrefab", JOptionPane.NO_OPTION);
 		try {
-			button(f.form, "btnCopyPrefab").doClick();
+			click(f, "btnCopyPrefab");
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
@@ -336,7 +335,7 @@ public class GeoEditFormGuardsTest {
 		f.form.setSelection(T0 - 1, T0 - 1, T1 - 1, T1 - 1);
 		said = ctrmap.Ui.record(JOptionPane.YES_OPTION);
 		try {
-			button(f.form, "btnStampPrefab").doClick();
+			click(f, "btnStampPrefab");
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
@@ -344,7 +343,7 @@ public class GeoEditFormGuardsTest {
 		check(label(f.form, "status").startsWith("Stamped ") && label(f.form, "status").endsWith("(unsaved)"),
 				"and says how much of it landed: " + label(f.form, "status"));
 		check(button(f.form, "btnSave").isEnabled(), "with the result waiting to be saved");
-		button(f.form, "btnSave").doClick();
+		click(f, "btnSave");
 		byte[] stamped = f.gr.getFile(1);
 		check(!Arrays.equals(stamped, f.model0), "and the saved model is not the one that was read");
 		check(new BchMapModel(Arrays.copyOf(stamped, stamped.length)).validate().isEmpty(), "and still parses clean");
@@ -380,12 +379,22 @@ public class GeoEditFormGuardsTest {
 	/** A geometry form over a scratch copy of region {@link #REGION}, with the bytes it started from. */
 	static class Fixture {
 
+		/** The zone's history over the map view, which the form's region is a document of. */
+		ctrmap.humaninterface.UndoHistory history;
+
 		GeoEditForm form;
 		GR gr;
 		/** The three subfiles as the padded container held them when it was opened. */
 		byte[] model0;
 		byte[] coll0;
 		byte[] tiles0;
+	}
+
+	/** A button pressed as the user presses it: the history settles before the press and after the release (F209). */
+	static void click(Fixture f, String name) throws Exception {
+		f.history.settle();
+		button(f.form, name).doClick();
+		f.history.settle();
 	}
 
 	/**
@@ -404,12 +413,18 @@ public class GeoEditFormGuardsTest {
 		f.tiles0 = f.gr.getFile(0);
 		f.model0 = f.gr.getFile(1);
 		f.coll0 = f.gr.getFile(2);
-		TileMapPanel view = new TileMapPanel(LOADED, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+		TileMapPanel view = new TileMapPanel(LOADED, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null);
 		view.mainGR = f.gr;
 		view.tilemaps = new Tilemap[][]{{new Tilemap(f.gr)}};
-		CtrmapMainframe.mTileMapPanel = view;
-		f.form = new GeoEditForm(LOADED, CtrmapMainframe.mTileMapPanel);
-		CtrmapMainframe.mGeoEditForm = f.form;
+		TestWindow.mTileMapPanel(view);
+		//the zone's history, as the window builds it over the map view (F209)
+		f.history = new ctrmap.humaninterface.UndoHistory(ctrmap.humaninterface.ZoneDocuments.scope(LOADED, () -> view),
+				UndoHistoryTest.zone(LOADED, () -> view, () -> {
+				}, () -> {
+				}));
+		f.form = new GeoEditForm(LOADED, TestWindow.mTileMapPanel(), f.history);
+		f.history.settle();
+		TestWindow.mGeoEditForm(f.form);
 		return f;
 	}
 

@@ -25,6 +25,7 @@ A hook never imports this: the hooks import nothing from the project, and read t
 from where they sit (`bundle_shell.FOLDER`, `bundle_rules.HOOKS`).
 """
 import os
+import sys
 
 #: Where the bundle's hooks go when a project has not said otherwise.
 DEFAULT = ".claude/hooks"
@@ -33,8 +34,17 @@ DEFAULT = ".claude/hooks"
 MARK = "bundle_rules.py"
 
 
-#: The project this file is installed in: it sits in that project's `tools/`.
-HOME = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+#: The project this file is installed in - ANCHORED, never counted (F216), and None for a copy
+#: sitting in no project, which then answers `DEFAULT`. `_tree_root` is imported from beside this
+#: file with that folder on the path for the import only: a hook loads this file by its path, and
+#: must not find `tools/` shadowing its own modules afterwards.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)
+try:
+    import _tree_root  # noqa: E402
+finally:
+    sys.path.remove(_HERE)
+HOME = _tree_root.repo_root(__file__)
 
 
 def _held(root):
@@ -58,7 +68,7 @@ def folder(root):
     Raises ValueError when two folders hold the bundle's hooks, and OSError when `.claude`
     exists and cannot be listed - "I could not look" is not "there is nothing there".
     """
-    return _held(root) or _held(HOME) or DEFAULT
+    return _held(root) or (_held(HOME) if HOME else None) or DEFAULT
 
 
 def path(root):

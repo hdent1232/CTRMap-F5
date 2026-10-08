@@ -1,6 +1,6 @@
 # PROPERTIES.md — what is supposed to be true
 
-The battery answers *"would anything notice if this broke?"* for 128 suites. It
+The battery answers *"would anything notice if this broke?"* for every suite in it. It
 has never answered *"what is supposed to be true?"*, and those are different
 questions. A suite can be green because the property it guards holds, or because
 the property was never written down and the suite guards something adjacent.
@@ -180,6 +180,7 @@ because they are the ones that decay quietly.
 |---|---|
 | No game-detected constant lives outside `ctrmap.gamedef`. | `SourceSeamTest` |
 | The format layer never reaches the global, the UI, the window or the dialog seam. | `SourceSeamTest`, `GameFilesSeamTest` |
+| No format package is in a dependency cycle with a package above it, and the largest package cycle only shrinks. | `PackageCycleTest` |
 | The editing tools never reach the window. | `SourceSeamTest` |
 | Nothing the window builds is handed a static that method has not assigned yet. | `MainframeEdgesTest` |
 | Nothing outside the window reads a window static: the count is zero and may not rise. | `MainframeEdgesTest` |

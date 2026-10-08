@@ -1,70 +1,23 @@
 package ctrmap.formats.tilemap;
 
 import ctrmap.formats.h3d.BCHFile;
-import ctrmap.formats.h3d.model.H3DModel;
 import ctrmap.formats.h3d.texturing.H3DMaterial;
 import ctrmap.formats.h3d.texturing.H3DTexture;
 import java.awt.image.BufferedImage;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
- * Resolves each {@link TilePalette} terrain to the decoded texture image its
- * material uses in the tileset donor region, so the tile painter can show a
- * top-down "in-game" textured preview (grass looks like grass, water like
- * water) instead of flat swatches. The mapping matches the geometry builder:
- * a terrain -&gt; the donor material whose name contains a terrain hint -&gt; that
- * material's texture (name0) -&gt; the decoded {@link H3DTexture} from the zone's
- * world textures. Falls back silently (returns null) when a texture is absent,
- * and the caller draws the flat color instead.
+ * What a map material looks like: the decoded image of a named material's base
+ * texture, for the blank-canvas material picker.
+ *
+ * <p>This class used to promise a top-down textured preview in the tile painter
+ * - grass drawn as grass - built per terrain by a name-substring match. Nothing
+ * ever called that builder, and its match had none of the geometry builder's
+ * filters, so it would have previewed the very cliff and sprite materials the
+ * builder rejects. It was deleted with its resolver (F094, F204); the picker's
+ * one method is what is left.
  */
 public class TerrainTextures {
-
-	private final Map<TilePalette, BufferedImage> images = new HashMap<>();
-
-	/** Builds the terrain-&gt;image map from the donor model and the zone's world textures. */
-	public static TerrainTextures build(byte[] donorModel, List<H3DTexture> worldTextures) {
-		TerrainTextures tt = new TerrainTextures();
-		if (donorModel == null || worldTextures == null || worldTextures.isEmpty()) {
-			return tt;
-		}
-		try {
-			BCHFile bch = new BCHFile(donorModel);
-			if (bch.errorlevel != 0 || bch.models.isEmpty()) {
-				return tt;
-			}
-			H3DModel model = bch.models.get(0);
-			Map<String, H3DTexture> byName = new HashMap<>();
-			for (H3DTexture t : worldTextures) {
-				byName.putIfAbsent(t.textureName, t);
-			}
-			for (TilePalette terrain : TilePalette.values()) {
-				H3DMaterial mat = resolveMaterial(model, terrain);
-				if (mat == null || mat.name0 == null) {
-					continue;
-				}
-				H3DTexture tex = byName.get(mat.name0);
-				if (tex != null) {
-					BufferedImage img = toImage(tex);
-					if (img != null) {
-						tt.images.put(terrain, img);
-					}
-				}
-			}
-		} catch (Exception ex) {
-			// leave whatever resolved; the painter falls back to flat colors
-		}
-		return tt;
-	}
-
-	public BufferedImage image(TilePalette terrain) {
-		return images.get(terrain);
-	}
-
-	public boolean any() {
-		return !images.isEmpty();
-	}
 
 	/**
 	 * Decoded image of the NAMED material's base texture - what that material
@@ -91,18 +44,6 @@ public class TerrainTextures {
 			}
 		} catch (Exception ex) {
 			// no preview - the caller shows text only
-		}
-		return null;
-	}
-
-	private static H3DMaterial resolveMaterial(H3DModel model, TilePalette terrain) {
-		for (String hint : terrain.matHints) {
-			for (H3DMaterial mat : model.materials) {
-				String n = mat.name != null ? mat.name.toLowerCase() : "";
-				if (n.contains(hint)) {
-					return mat;
-				}
-			}
 		}
 		return null;
 	}

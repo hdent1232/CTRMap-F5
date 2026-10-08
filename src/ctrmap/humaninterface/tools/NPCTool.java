@@ -37,7 +37,7 @@ public class NPCTool extends AbstractTool {
 	public void drawOverlay(Graphics g, int imgstartx, int imgstarty, double globimgdim) {
 		int gidround = (int) Math.round(globimgdim);
 		if (form.loaded) {
-			for (int i = 0; i < form.e.NPCCount; i++) {
+			for (int i = 0; i < form.e.npcs.size(); i++) {
 				ZoneEntities.NPC npc = form.e.npcs.get(i);
 				g.setColor(Color.WHITE);
 				g.fillRect(imgstartx + (int) (npc.xTile * globimgdim), imgstarty + (int) (npc.yTile * globimgdim), gidround, gidround);

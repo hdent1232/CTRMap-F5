@@ -36,6 +36,8 @@ import subprocess
 import sys
 if __name__ == "__main__":
     sys.dont_write_bytecode = True     # run from its folder, a tool leaves no bytecode there
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
 
 LF = chr(10)
 
@@ -53,17 +55,10 @@ _VALID = set("diouxXeEfFgGcrsa%")
 
 
 def root():
-    """The repository this file sits in, ANCHORED on `.git` - never counted in `dirname`s,
-    because a copy installed one folder deeper would otherwise sweep the wrong tree and say it
-    was clean."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    while True:
-        if os.path.exists(os.path.join(here, ".git")):
-            return here
-        parent = os.path.dirname(here)
-        if parent == here:
-            return None
-        here = parent
+    """The repository this file sits in, ANCHORED - never counted in `dirname`s, because a copy
+    installed one folder deeper would otherwise sweep the wrong tree and say it was clean.
+    `_tree_root.repo_root`, the one definition (F216)."""
+    return _tree_root.repo_root(__file__)
 
 
 def folded(node):

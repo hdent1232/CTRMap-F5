@@ -1,39 +1,52 @@
 package ctrmap.formats.tilemap;
 
 import ctrmap.formats.GameFiles;
-import ctrmap.formats.gfcollision.GfColl;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.MapModelObj;
-import ctrmap.formats.h3d.MapModelObjImporter;
-import ctrmap.formats.h3d.RegionFactory;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import static ctrmap.formats.LittleEndian.f32;
-import static ctrmap.formats.tilemap.PaintedRegionBuilder.*;
-import static ctrmap.formats.tilemap.PaintedCliffMesh.*;
-import static ctrmap.formats.tilemap.PaintedCollision.*;
-import static ctrmap.formats.tilemap.PaintedHeights.*;
-import static ctrmap.formats.tilemap.PaintedMaterials.*;
-import static ctrmap.formats.tilemap.PaintedTiles.*;
+import static ctrmap.util.LittleEndian.f32;
+import static ctrmap.util.LittleEndian.putU16;
+import static ctrmap.util.LittleEndian.putF32;
+import static ctrmap.util.LittleEndian.u16;
+import static ctrmap.formats.tilemap.PaintedGeometry.BANK_RUN;
+import static ctrmap.formats.tilemap.PaintedGeometry.COMP_BYTES;
+import static ctrmap.formats.tilemap.PaintedGeometry.CliffEdge;
+import static ctrmap.formats.tilemap.PaintedGeometry.DIM;
+import static ctrmap.formats.tilemap.PaintedGeometry.EDGE_LIFT;
+import static ctrmap.formats.tilemap.PaintedGeometry.EDGE_W;
+import static ctrmap.formats.tilemap.PaintedGeometry.FLOOR_UV;
+import static ctrmap.formats.tilemap.PaintedGeometry.GRP_DIRT;
+import static ctrmap.formats.tilemap.PaintedGeometry.GRP_GRASS;
+import static ctrmap.formats.tilemap.PaintedGeometry.ORIGIN;
+import static ctrmap.formats.tilemap.PaintedGeometry.Quad;
+import static ctrmap.formats.tilemap.PaintedGeometry.SHORE_PULL;
+import static ctrmap.formats.tilemap.PaintedGeometry.STEP;
+import static ctrmap.formats.tilemap.PaintedGeometry.ShoreEdge;
+import static ctrmap.formats.tilemap.PaintedGeometry.TILE;
+import static ctrmap.formats.tilemap.PaintedGeometry.WATER_SINK;
+import static ctrmap.formats.tilemap.PaintedGeometry.fixWindingTowards;
+import static ctrmap.formats.tilemap.PaintedGeometry.roundOutline;
+import static ctrmap.formats.tilemap.PaintedHeights.cornerAO;
+import static ctrmap.formats.tilemap.PaintedMaterials.measureUvScale;
+import static ctrmap.formats.tilemap.PaintedMaterials.resolveMesh;
 
 /**
- * The painter's the floor quads, their edges, the water and the shore bands.
+ * The painter's stage for the floor quads, their edges, the water and the shore bands.
  *
  * <p>One stage of {@link PaintedRegionBuilder}, which was 3750 lines and 106
- * methods in one file. Every method here is exactly the one that was there,
- * moved and not rewritten: the split is about which file you open to read a
- * stage, not about what the pipeline does. The constants and the other stages
- * are imported statically for the same reason - a body that called a helper
- * still calls the same helper.
- *
- * <p>What this is NOT is decoupling. PaintedRegionBuilder was never a god
- * object by coupling: it is pure, it holds no state, and it has six callers.
- * It was simply too long to read.
+ * methods in one file. The split first moved every method unchanged and left
+ * each stage importing the builder and every other stage whole, one class
+ * cycle however many files it was in. It is a split now (F090): what the
+ * stages share - the frame, the constants, the quad and edge types, flipping a
+ * quad and rounding an outline - is {@link PaintedGeometry}, which needs no
+ * stage; no stage needs the builder that calls it; and each file imports by
+ * name exactly the members it uses, so its imports are its edges.
+ * PackageCycleTest refuses a class cycle it has not recorded, and
+ * SourceDebrisTest a wildcard import.
  */
 public final class PaintedFloorMesh {
 
@@ -51,7 +64,7 @@ public final class PaintedFloorMesh {
 				switch (a.type) {
 					case 0: out[c++] = raw[o]; break;
 					case 1: out[c++] = raw[o] & 0xFF; break;
-					case 2: out[c++] = (short) ((raw[o] & 0xFF) | (raw[o + 1] << 8)); break;
+					case 2: out[c++] = (short) u16(raw, o); break;
 					default: out[c++] = f32(raw, o); break;
 				}
 			}
@@ -72,16 +85,11 @@ public final class PaintedFloorMesh {
 					case 1: out[o] = (byte) Math.max(0, Math.min(255, Math.round(v))); break;
 					case 2: {
 						int s = Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, Math.round(v)));
-						out[o] = (byte) s;
-						out[o + 1] = (byte) (s >> 8);
+						putU16(out, o, s);
 						break;
 					}
 					default: {
-						int bits = Float.floatToIntBits(v);
-						out[o] = (byte) bits;
-						out[o + 1] = (byte) (bits >> 8);
-						out[o + 2] = (byte) (bits >> 16);
-						out[o + 3] = (byte) (bits >> 24);
+						putF32(out, o, v);
 						break;
 					}
 				}
@@ -160,7 +168,7 @@ public final class PaintedFloorMesh {
 			q.nrm[c] = new float[]{0f, 1f, 0f};
 			q.ao[c] = 1f;
 		}
-		fixWindingUp(q);
+		fixWindingTowards(q, 0f, 1f, 0f);
 		return q;
 	}
 
@@ -179,68 +187,8 @@ public final class PaintedFloorMesh {
 			q.nrm[c] = new float[]{0f, 1f, 0f};
 			q.ao[c] = 1f;
 		}
-		fixWindingUp(q);
+		fixWindingTowards(q, 0f, 1f, 0f);
 		return q;
-	}
-
-	/**
-	 * Winds a quad so its face points along an arbitrary 3D direction, carrying
-	 * UVs, normals and AO with the swap.
-	 *
-	 * <p>{@link #fixWindingOut} only compares the horizontal part, which is
-	 * right for a vertical wall and wrong for a sloped one: a shallow face's
-	 * normal is nearly all +Y, so the horizontal comparison decides on noise.
-	 */
-	static void fixWindingTowards(Quad q, float wx, float wy, float wz) {
-		float[] a = q.pos[0], b = q.pos[2], c = q.pos[1];
-		float ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
-		float vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
-		float gx = uy * vz - uz * vy;
-		float gy = uz * vx - ux * vz;
-		float gz = ux * vy - uy * vx;
-		if (gx * wx + gy * wy + gz * wz < 0) {
-			float[] tp = q.pos[1]; q.pos[1] = q.pos[2]; q.pos[2] = tp;
-			float[] tu = q.uv[1]; q.uv[1] = q.uv[2]; q.uv[2] = tu;
-			float[] tn = q.nrm[1]; q.nrm[1] = q.nrm[2]; q.nrm[2] = tn;
-			float ta = q.ao[1]; q.ao[1] = q.ao[2]; q.ao[2] = ta;
-		}
-	}
-
-	/**
-	 * Ensures a vertical quad's triangles wind so its face points OUT along
-	 * {@code (nx, nz)}, not into the terrain it walls off.
-	 *
-	 * <p>Unlike {@link #fixWindingUp} this carries the per-corner AO across the
-	 * swap as well. That helper is only used on quads whose AO is uniform, so
-	 * it can leave shading alone; a cliff is deliberately darker toward its
-	 * base, and moving the positions without the shading would light the wall
-	 * upside down - a fault no geometry check would catch, because every
-	 * triangle would be facing the right way.
-	 */
-	static void fixWindingOut(Quad q, float nx, float nz) {
-		float[] a = q.pos[0], b = q.pos[2], c = q.pos[1];
-		float ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
-		float vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
-		float gx = uy * vz - uz * vy; // x of cross(u,v)
-		float gz = ux * vy - uy * vx; // z of cross(u,v)
-		if (gx * nx + gz * nz < 0) {
-			float[] tp = q.pos[1]; q.pos[1] = q.pos[2]; q.pos[2] = tp;
-			float[] tu = q.uv[1]; q.uv[1] = q.uv[2]; q.uv[2] = tu;
-			float[] tn = q.nrm[1]; q.nrm[1] = q.nrm[2]; q.nrm[2] = tn;
-			float ta = q.ao[1]; q.ao[1] = q.ao[2]; q.ao[2] = ta;
-		}
-	}
-
-	/** Ensures a flat quad's triangles wind so its face points +Y (up). */
-	static void fixWindingUp(Quad q) {
-		float[] a = q.pos[0], b = q.pos[2], c = q.pos[1];
-		float ux = b[0] - a[0], uz = b[2] - a[2];
-		float vx = c[0] - a[0], vz = c[2] - a[2];
-		float ny = uz * vx - ux * vz; // y of cross(u,v)
-		if (ny < 0) {
-			float[] tp = q.pos[1]; q.pos[1] = q.pos[2]; q.pos[2] = tp;
-			float[] tu = q.uv[1]; q.uv[1] = q.uv[2]; q.uv[2] = tu;
-		}
 	}
 
 	/** Assembles an ObjMesh (positions/UVs/normals/tris) from a list of quads.
@@ -641,34 +589,8 @@ public final class PaintedFloorMesh {
 		px[n] = chain.get(n - 1).bx;
 		pz[n] = chain.get(n - 1).bz;
 
-		float[] sx = px.clone(), sz = pz.clone();
-		for (int pass = 0; pass < 3; pass++) {
-			float[] ax = sx.clone(), az = sz.clone();
-			for (int i = 0; i < vc; i++) {
-				if (!loop && (i == 0 || i == vc - 1)) {
-					continue;   //ends stay put so neighbouring chains still meet
-				}
-				int prev = i == 0 ? vc - 2 : i - 1;
-				int next = i == vc - 1 ? 1 : i + 1;
-				ax[i] = sx[i] * 0.5f + sx[prev] * 0.25f + sx[next] * 0.25f;
-				az[i] = sz[i] * 0.5f + sz[prev] * 0.25f + sz[next] * 0.25f;
-			}
-			sx = ax;
-			sz = az;
-		}
-		//Never wander more than a third of a tile from the grid. A river two
-		//tiles wide would otherwise have both banks pulled toward each other
-		//until they met, and the same cap keeps the bands narrow enough that
-		//they cannot reach past the tile they are covering.
-		final float MAX_PULL = TILE * 0.34f;
-		for (int i = 0; i < vc; i++) {
-			float dx = sx[i] - px[i], dz = sz[i] - pz[i];
-			float d = (float) Math.hypot(dx, dz);
-			if (d > MAX_PULL) {
-				sx[i] = px[i] + dx * (MAX_PULL / d);
-				sz[i] = pz[i] + dz * (MAX_PULL / d);
-			}
-		}
+		float[][] rounded = roundOutline(px, pz, loop, SHORE_PULL);
+		float[] sx = rounded[0], sz = rounded[1];
 
 		for (int i = 0; i < n; i++) {
 			int j = i + 1;
@@ -757,13 +679,13 @@ public final class PaintedFloorMesh {
 	 * <p>A RAMP tile is the same quad with two of its corners dropped. Which two
 	 * is the whole of {@code rd}: the pair on the edge the ramp descends over
 	 * goes to {@code yLo}, so the tile is a plane tilted the way the player
-	 * walks it. {@code rd} of {@link #NO_RAMP} leaves all four at {@code yHi}
+	 * walks it. {@code rd} of {@link PaintedGeometry#NO_RAMP} leaves all four at {@code yHi}
 	 * and the tile is flat.
 	 *
 	 * @param h  the tile's height LEVEL, used only to score its corners' AO
 	 *           against the neighbours - the geometry comes from yHi/yLo
 	 * @param rd the way DOWN (0 east, 1 west, 2 south, 3 north), or
-	 *           {@link #NO_RAMP} for a flat tile
+	 *           {@link PaintedGeometry#NO_RAMP} for a flat tile
 	 */
 	static Quad floorQuad(TilePalette[][] grid, int[][] height, int tx, int ty, int h, int rd, float yHi, float yLo) {
 		float x0 = tx * TILE + ORIGIN, x1 = x0 + TILE;

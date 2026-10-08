@@ -22,17 +22,7 @@ public final class TalkerForm {
 	private final JTextArea text = Forms.textArea("", 5);
 	private final ModelPicker model;
 
-	/** The registry the model picker lists, and the previews it registers - the editor's, handed in. */
-	private final NPCRegistry reg;
-	private final List<CustomH3DPreview> livePreviews;
-
-	/** The open game the model picker browses; handed in, never fetched. */
-	private final ctrmap.formats.GameFiles game;
-
 	public TalkerForm(ctrmap.formats.GameFiles game, NPCRegistry reg, List<CustomH3DPreview> livePreviews, int defaultModel) {
-		this.game = game;
-		this.reg = reg;
-		this.livePreviews = livePreviews;
 		model = new ModelPicker(reg, livePreviews, game, defaultModel);
 		Forms.addLabeled(panel, "Dialogue text:", new JScrollPane(text));
 		Forms.addLabeled(panel, "Model (type to search) - preview below:", model);

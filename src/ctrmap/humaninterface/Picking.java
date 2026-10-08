@@ -1,6 +1,8 @@
 package ctrmap.humaninterface;
 
 import com.jogamp.opengl.glu.gl2.GLUgl2;
+import ctrmap.formats.h3d.model.H3DModel;
+import ctrmap.formats.h3d.model.H3DVertex;
 import ctrmap.formats.vectors.Vec3f;
 import java.awt.Component;
 import java.awt.Point;
@@ -31,12 +33,8 @@ public final class Picking {
 		GLUgl2 glu = new GLUgl2();
 		float[][] winPosArray = new float[box.length][3];
 		for (int j = 0; j < box.length; j++) {
-			Vec3f vec = new Vec3f(box[j][0] * scale.x, box[j][1] * scale.y, box[j][2] * scale.z);
-			Vec3f rotatedVec = noGlRotatef(noGlRotatef(noGlRotatef(vec,
-					new Vec3f(0f, 1f, 0f), Math.toRadians(rotate.y)),
-					new Vec3f(1f, 0f, 0f), Math.toRadians(rotate.x)),
-					new Vec3f(0f, 0f, 1f), Math.toRadians(rotate.z));
-			glu.gluProject(rotatedVec.x + position.x, rotatedVec.y + position.y, rotatedVec.z + position.z, mvMatrix, 0, projMatrix, 0, view, 0, winPosArray[j], 0);
+			Vec3f at = place(box[j][0], box[j][1], box[j][2], position, scale, rotate);
+			glu.gluProject(at.x, at.y, at.z, mvMatrix, 0, projMatrix, 0, view, 0, winPosArray[j], 0);
 			winPosArray[j][1] = parent.getHeight() - winPosArray[j][1];
 		}
 		List<Polygon> polys = new ArrayList<>();
@@ -50,20 +48,67 @@ public final class Picking {
 				polygon.addPoint(pts.get(k).x, pts.get(k).y);
 			}
 			if (polygon.contains(e.getPoint())) {
-				//GLU is buggy and sometimes completely fucks up the maths in certain camera angles. We can work around this by checking if the actual object is seen by the camera.
 				return true;
 			}
 		}
 		return false;
 	}
 
-	/** The distance between two points, both offset from the origin the caller has in mind. */
-	public static double getDistanceFromVector(Vec3f loc, Vec3f comp) {
-		double dist = Math.pow((Math.pow(loc.x + comp.x, 2)
-				+ Math.pow(loc.y + comp.y, 2)
-				+ Math.pow(loc.z + comp.z, 2)
-				* 1.0), 0.5);
-		return Math.abs(dist);
+	/**
+	 * Whether a click picks a model: its selection box, placed as the model is, contains the click,
+	 * AND some vertex of the model, placed the same way, lands inside the panel. The second half is a
+	 * workaround - at some camera angles the projected box contains a click on an object the camera
+	 * cannot see - and it was pasted into the NPC form and the prop form instead of living here (F113).
+	 * Both copies placed the vertices without the model's rotation, and the prop copy without its
+	 * scale, though each handed both to the box test; here box and vertices go through {@link #place}.
+	 */
+	public static boolean isPicked(float[][] box, List<H3DModel.H3DMesh> meshes, MouseEvent e, Component parent,
+			Vec3f position, Vec3f scale, Vec3f rotate, float[] mvMatrix, float[] projMatrix, int[] view) {
+		return isBoxSelected(box, e, parent, position, scale, rotate, mvMatrix, projMatrix, view)
+				&& isSeen(meshes, parent, position, scale, rotate, mvMatrix, projMatrix, view);
+	}
+
+	/** Whether any vertex of the meshes, placed by {@link #place}, projects inside the panel. */
+	public static boolean isSeen(List<H3DModel.H3DMesh> meshes, Component parent, Vec3f position, Vec3f scale,
+			Vec3f rotate, float[] mvMatrix, float[] projMatrix, int[] view) {
+		GLUgl2 glu = new GLUgl2();
+		float[] win = new float[3];
+		for (H3DModel.H3DMesh mesh : meshes) {
+			for (H3DVertex v : mesh.vertices) {
+				Vec3f at = place(v.position.x, v.position.y, v.position.z, position, scale, rotate);
+				glu.gluProject(at.x, at.y, at.z, mvMatrix, 0, projMatrix, 0, view, 0, win, 0);
+				if (win[0] > 0 && win[0] < parent.getWidth() && win[1] > 0 && win[1] < parent.getHeight()) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * A model-space point placed in the world as a model is: scaled, turned about Y, then X, then Z
+	 * (degrees), then moved to its position. The selection box and the model's own vertices are both
+	 * placed by this, so the two halves of {@link #isPicked} agree on where the model is.
+	 */
+	public static Vec3f place(float x, float y, float z, Vec3f position, Vec3f scale, Vec3f rotate) {
+		Vec3f turned = noGlRotatef(noGlRotatef(noGlRotatef(new Vec3f(x * scale.x, y * scale.y, z * scale.z),
+				new Vec3f(0f, 1f, 0f), Math.toRadians(rotate.y)),
+				new Vec3f(1f, 0f, 0f), Math.toRadians(rotate.x)),
+				new Vec3f(0f, 0f, 1f), Math.toRadians(rotate.z));
+		return new Vec3f(turned.x + position.x, turned.y + position.y, turned.z + position.z);
+	}
+
+	/**
+	 * How far {@code point} is from the camera, given the scene's translation - which is the
+	 * NEGATIVE of the camera's position, so the sum is the camera-to-point vector (F250). It was
+	 * called getDistanceFromVector and pinned by a suite as a suspected defect for adding where a
+	 * distance between two points subtracts; the arithmetic was right and the name was not.
+	 */
+	public static double cameraDistance(Vec3f point, Vec3f sceneTranslation) {
+		double x = point.x + sceneTranslation.x;
+		double y = point.y + sceneTranslation.y;
+		double z = point.z + sceneTranslation.z;
+		return Math.sqrt(x * x + y * y + z * z);
 	}
 
 	/*

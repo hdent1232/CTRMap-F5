@@ -5,8 +5,6 @@ import ctrmap.formats.containers.MM;
 import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.npcreg.NPCRegistry;
 import ctrmap.gamedef.ArchiveType;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Map;
@@ -30,6 +28,8 @@ public class NPCRegistryEditor extends ctrmap.humaninterface.FormPanel {
 	 */
 	public NPCRegistryEditor() {
 		initComponents();
+		Forms.bound(uid, 0, 0xFFFF); //unsigned 16-bit in the registry: -1 was saved as 0xFFFF (F124)
+		Forms.bound(mdl, 0, 0xFFFF);
 		setUnsignedByteValueClass(new JFormattedTextField[]{shadowType, areaW, areaH});
 	}
 
@@ -50,10 +50,9 @@ public class NPCRegistryEditor extends ctrmap.humaninterface.FormPanel {
 	}
 
 	public void setUnsignedByteValueClass(JFormattedTextField[] fields) {
-		for (int i = 0; i < fields.length; i++) {
-			NumberFormatter formatter = (NumberFormatter) fields[i].getFormatter();
-			formatter.setValueClass(Integer.class);
-			formatter.setMaximum(255);
+		Forms.numberClass(Integer.class, fields);
+		for (JFormattedTextField f : fields) {
+			((NumberFormatter) f.getFormatter()).setMaximum(255);
 		}
 	}
 
@@ -414,41 +413,6 @@ public class NPCRegistryEditor extends ctrmap.humaninterface.FormPanel {
 			shadowType.setValue(0);
 		}
     }//GEN-LAST:event_shadowActionPerformed
-
-	/**
-	 * @param args the command line arguments
-	 */
-	public static void main(String args[]) {
-		/* Set the Nimbus look and feel */
-		//<editor-fold defaultstate="collapsed" desc=" Look and feel setting code (optional) ">
-		/* If Nimbus (introduced in Java SE 6) is not available, stay with the default look and feel.
-         * For details see http://download.oracle.com/javase/tutorial/uiswing/lookandfeel/plaf.html 
-		 */
-		//on the event thread, ahead of the form queued below: the look and feel is Swing's too (F220)
-		java.awt.EventQueue.invokeLater(() -> {
-			try {
-				for (javax.swing.UIManager.LookAndFeelInfo info : javax.swing.UIManager.getInstalledLookAndFeels()) {
-					if ("Nimbus".equals(info.getName())) {
-						javax.swing.UIManager.setLookAndFeel(info.getClassName());
-						break;
-					}
-				}
-			} catch (ClassNotFoundException | InstantiationException | IllegalAccessException | javax.swing.UnsupportedLookAndFeelException ex) {
-				java.util.logging.Logger.getLogger(NPCRegistryEditor.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-			}
-		});
-		//</editor-fold>
-
-		//</editor-fold>
-
-		/* Create and display the form */
-		java.awt.EventQueue.invokeLater(new Runnable() {
-			@Override
-			public void run() {
-				new NPCRegistryEditor().setVisible(true);
-			}
-		});
-	}
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JFormattedTextField areaH;

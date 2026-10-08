@@ -8,7 +8,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 
 /**
  * An area's prop registry keeps what it does not model, its order and its entries, and says when
@@ -127,7 +126,7 @@ public class PropRegistryTest {
 		check(save != null && !save.contains("(Short)") && !save.contains("(Integer)"),
 				"and reads every field as a Number, never through a cast to the class one field commits");
 		check(add != null && add.contains("reg.register(") && !add.contains("put(-1"), "New entry registers a free reference");
-		String painter = source("src/ctrmap/humaninterface/TilePainterForm.java");
+		String painter = source("src/ctrmap/MapPainter.java");
 		String stage = CollisionReadTest.body(painter, "void stageRegistry()");
 		check(stage != null && stage.contains("serialize()") && !stage.contains(".write(dos)"),
 				"the map painter stages the registry's own bytes, not a second copy of its layout");

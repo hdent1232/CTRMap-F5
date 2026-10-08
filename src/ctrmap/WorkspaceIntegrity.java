@@ -6,7 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
-import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.u16;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
@@ -42,8 +42,6 @@ import static ctrmap.formats.containers.ContainerBytes.subfile;
 public class WorkspaceIntegrity {
 
 	public static final int MASTER_ROW = ctrmap.formats.zone.ZoneHeader.SIZE;
-	public static final int HDR_AREA_OFF = 2;
-	public static final int HDR_MATRIX_OFF = 4;
 
 	/**
 	 * Every violated invariant, as a human sentence. Empty means consistent.
@@ -275,19 +273,17 @@ public class WorkspaceIntegrity {
 				//Reading the container's own header as the grid's gave w=16 h=0
 				//for all 431 retail matrices, so every one failed the shape test
 				//below and this pass scanned nothing at all - silently, which is
-				//the one thing a check must never do.
-				byte[] grid = subfile(mat, 0);
-				if (grid == null || grid.length < 8) {
-					continue;
-				}
-				int w = u16(grid, 4), h = u16(grid, 6);
-				long cells = (long) w * h;
-				if (w <= 0 || h <= 0 || cells > 4096 || 8 + cells * 2 > grid.length) {
-					continue; //not a shape this check understands; leave it alone
+				//the one thing a check must never do. The Grid reads it (F248):
+				//this was a copy of its checks, one more parser of the layout
+				ctrmap.formats.mapmatrix.MapMatrix.Grid grid;
+				try {
+					grid = ctrmap.formats.mapmatrix.MapMatrix.Grid.of(mat);
+				} catch (IllegalArgumentException notThisShape) {
+					continue; //not a shape this check understands; leave it alone - counted below
 				}
 				scanned++;
-				for (int i = 0; i < cells; i++) {
-					int region = u16(grid, 8 + i * 2);
+				for (int i = 0; i < grid.cells(); i++) {
+					int region = grid.id(i);
 					if (region != 0xFFFF && region >= gr.length) {
 						badRegion++;
 						firstBadMatrix = firstBadMatrix < 0 ? m : firstBadMatrix;

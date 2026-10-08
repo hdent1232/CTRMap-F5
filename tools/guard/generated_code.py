@@ -23,8 +23,9 @@ import os
 import re
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                                ".claude", "hooks"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
+sys.path.insert(0, os.path.join(_tree_root.require(__file__), ".claude", "hooks"))
 import hook_env  # noqa: E402  - the one prefix every owner switch carries
 
 BYPASS = hook_env.name("ALLOW_GENERATED_EDIT")

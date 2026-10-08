@@ -31,6 +31,10 @@ import java.util.List;
  * A doc on the wrong member that has neither shape - the .bch import's doc on the mod deploy
  * action was one - only a reader can see.
  *
+ * <p>AND AN IMPORT NOTHING CAN JUDGE (F090): a wildcard. The same split left each of its seven
+ * files importing the other six whole, so an edge the file had and one it did not read the same,
+ * and no import check could tell them apart. Every import names what it brings in.
+ *
  * <p>SCOPE is the tree, walked: production and suites alike, because a suite's doc that
  * describes the wrong check misleads the same way.
  *
@@ -54,8 +58,24 @@ public class SourceDebrisTest {
 		List<String> lost = new ArrayList<>();
 		List<String> gaps = new ArrayList<>();
 		List<String> astray = new ArrayList<>();
+		List<String> unusedImports = new ArrayList<>();
+		List<String> wildcards = new ArrayList<>();
+		List<String> commentedOut = new ArrayList<>();
+		List<String> csharp = new ArrayList<>();
 		for (File f : files) {
 			String src = DialogSeamTest.read(f);
+			for (int[] c : commentedOutCode(src)) {
+				commentedOut.add(f.getName() + ":" + c[0] + " (" + c[1] + " lines of code)");
+			}
+			for (int line : csharpDocs(src)) {
+				csharp.add(f.getName() + ":" + line);
+			}
+			for (String u : unusedImports(src)) {
+				unusedImports.add(f.getName() + ": " + u);
+			}
+			for (int line : wildcardImports(src)) {
+				wildcards.add(f.getName() + ":" + line);
+			}
 			for (int[] o : orphans(src)) {
 				lost.add(f.getName() + ":" + o[0] + " (before " + KINDS[o[1]] + ")");
 			}
@@ -73,6 +93,19 @@ public class SourceDebrisTest {
 				+ (gaps.isEmpty() ? "" : " - these do: " + gaps));
 		check(astray.isEmpty(), "every javadoc touches its declaration, and every form stub is on its constructor"
 				+ (astray.isEmpty() ? "" : " - these are not: " + astray));
+		check(unusedImports.isEmpty(), "no file imports a name it never uses"
+				+ (unusedImports.isEmpty() ? "" : " - " + unusedImports.size() + " do: " + unusedImports + ". Delete the"
+				+ " import: one the file does not use is a dependency edge nothing has, and a bare name it"
+				+ " would make available is one keystroke from a reach the file was meant not to have"));
+		check(wildcards.isEmpty(), "no file imports by wildcard"
+				+ (wildcards.isEmpty() ? "" : " - these do: " + wildcards + ". Import each name the file uses: a"
+				+ " wildcard declares an edge to everything in the class or package, so neither this suite nor"
+				+ " a reader can tell which of them the file has"));
+		check(commentedOut.isEmpty(), "no comment is code put away"
+				+ (commentedOut.isEmpty() ? "" : " - these are: " + commentedOut + ". Delete it: the history keeps it,"
+				+ " and a reader takes code in a comment for something that still runs, or was meant to"));
+		check(csharp.isEmpty(), "no doc comment is C#'s '///', which javadoc does not read"
+				+ (csharp.isEmpty() ? "" : " - these are: " + csharp + ". Write it as a javadoc"));
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -81,8 +114,168 @@ public class SourceDebrisTest {
 
 	static final String[] KINDS = {"another javadoc", "a closing brace", "the end of the file"};
 
+	private static final java.util.regex.Pattern CODE_LINE = java.util.regex.Pattern.compile("[;{}]\\s*$");
+
+	/**
+	 * {line, code lines} of each comment that is code put away (F071, F079): a block comment - not
+	 * a javadoc - or a run of line comments each on a line of its own, at least three of whose lines
+	 * end in ';', '{' or '}'. Read as javac reads comments, so '//*35ms' is a line comment and a
+	 * comment opener inside a string is text. Measured when this was written: nine in 501 files -
+	 * five commented-out C# methods in the PICA command reader, a BCH material dump, a collision
+	 * render, an ETC1 debug print and the mesh optimiser - and none in a suite.
+	 */
+	static List<int[]> commentedOutCode(String src) {
+		List<int[]> out = new ArrayList<>();
+		int n = src.length();
+		int line = 1;
+		boolean codeBefore = false; //something other than whitespace earlier on this line
+		int runFirst = 0, runLast = -10, runCode = 0;
+		for (int i = 0; i < n; i++) {
+			char c = src.charAt(i);
+			if (c == '\n') {
+				line++;
+				codeBefore = false;
+			} else if (c == '"' || c == '\'') {
+				codeBefore = true;
+				int j = i + 1;
+				while (j < n && src.charAt(j) != c && src.charAt(j) != '\n') {
+					j += src.charAt(j) == '\\' ? 2 : 1;
+				}
+				i = j < n && src.charAt(j) == '\n' ? j - 1 : j;
+			} else if (src.startsWith("//", i)) {
+				int end = src.indexOf('\n', i);
+				end = end < 0 ? n : end;
+				if (!codeBefore) {
+					if (runLast != line - 1) {
+						if (runCode >= 3) {
+							out.add(new int[]{runFirst, runCode});
+						}
+						runFirst = line;
+						runCode = 0;
+					}
+					runLast = line;
+					runCode += CODE_LINE.matcher(src.substring(i + 2, end).trim()).find() ? 1 : 0;
+				}
+				i = end - 1;
+			} else if (src.startsWith("/*", i)) {
+				int end = src.indexOf("*/", i + 2);
+				end = end < 0 ? n : end;
+				if (!src.startsWith("/**", i) || src.startsWith("/**/", i)) {
+					int code = 0;
+					for (String l : src.substring(i + 2, end).split("\n")) {
+						String t = l.trim();
+						while (t.startsWith("*")) {
+							t = t.substring(1);
+						}
+						code += CODE_LINE.matcher(t.trim()).find() ? 1 : 0;
+					}
+					if (code >= 3) {
+						out.add(new int[]{line, code});
+					}
+				}
+				for (int k = i; k < end; k++) {
+					line += src.charAt(k) == '\n' ? 1 : 0;
+				}
+				codeBefore = true;
+				i = end + 1;
+			} else if (!Character.isWhitespace(c)) {
+				codeBefore = true;
+			}
+		}
+		if (runCode >= 3) {
+			out.add(new int[]{runFirst, runCode});
+		}
+		return out;
+	}
+
+	/** The lines that open with C#'s XML doc comment, '///', which javadoc does not read (F071). */
+	static List<Integer> csharpDocs(String src) {
+		List<Integer> out = new ArrayList<>();
+		String[] lines = src.split("\n", -1);
+		for (int i = 0; i < lines.length; i++) {
+			if (lines[i].trim().startsWith("///")) {
+				out.add(i + 1);
+			}
+		}
+		return out;
+	}
+
+	private static final java.util.regex.Pattern IMPORT = java.util.regex.Pattern.compile(
+			"(?m)^import\\s+(?:static\\s+)?[\\w.]+\\.(\\w+)\\s*;[ \\t]*$");
+
+	private static final java.util.regex.Pattern WILDCARD = java.util.regex.Pattern.compile(
+			"(?m)^[ \\t]*import\\s+(?:static\\s+)?[\\w.]+\\.\\*\\s*;");
+
+	/**
+	 * The line of each wildcard import (F090) - read with comments and string literals blanked, so
+	 * a suite's sample text is not one. A wildcard names no type, so {@link #unusedImports} cannot
+	 * judge what it brings in: the painter's split gave each of its seven files a wildcard of the
+	 * other six, 42 declared edges of which 24 carried nothing, and that is how a stage depending on
+	 * its driver through a cycle read as a tidy split. Measured when this was written: 49 static
+	 * wildcards in those seven files and 3 type wildcards elsewhere, all now explicit.
+	 */
+	static List<Integer> wildcardImports(String src) {
+		String code = SourceSeamTest.stripComments(src).replaceAll("\"(?:\\\\.|[^\"\\\\\\n])*\"", "\"\"");
+		List<Integer> out = new ArrayList<>();
+		java.util.regex.Matcher m = WILDCARD.matcher(code);
+		while (m.find()) {
+			int line = 1;
+			for (int i = 0; i < m.start(); i++) {
+				line += code.charAt(i) == '\n' ? 1 : 0;
+			}
+			out.add(line);
+		}
+		return out;
+	}
+
+	/**
+	 * The single-type and static-member imports whose simple name the file never uses outside its
+	 * imports, comments and string literals (F203) - a javadoc {@code {@link X}} counts as a use.
+	 * Measured when this was written: 213 in 80 files, 63 of the audit's naming a ctrmap type, 11
+	 * of them the window. A wildcard import names no type and is refused by {@link #wildcardImports}.
+	 */
+	static List<String> unusedImports(String src) {
+		StringBuilder links = new StringBuilder();
+		java.util.regex.Matcher l = java.util.regex.Pattern.compile("\\{@link(?:plain)?\\s+([\\w.#$]+)").matcher(src);
+		while (l.find()) {
+			links.append(' ').append(l.group(1));
+		}
+		String body = SourceSeamTest.stripComments(src.replaceAll("(?m)^import[^\\n]*\\n", ""))
+				.replaceAll("\"(?:\\\\.|[^\"\\\\\\n])*\"", "\"\"") + links;
+		List<String> out = new ArrayList<>();
+		java.util.regex.Matcher m = IMPORT.matcher(src);
+		while (m.find()) {
+			if (!java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(m.group(1)) + "\\b")
+					.matcher(body).find()) {
+				out.add(m.group(1));
+			}
+		}
+		return out;
+	}
+
 	/** The known answers: every shape that counts is found, and every one that does not, is not. */
 	static void controls() {
+		check(commentedOutCode("/*\n a();\n b();\n c();\n*/\n").size() == 1
+				&& commentedOutCode("short t; //*35ms\nint a;\nint b;\nint c;\n").isEmpty()
+				&& commentedOutCode("/* this is prose; with one semicolon\n and more words\n*/\n").isEmpty()
+				&& commentedOutCode("\t//a();\n\t//b();\n\t//c();\nx();\n").size() == 1
+				&& commentedOutCode("String s = \"/* a(); b(); c(); */\";\n").isEmpty()
+				&& commentedOutCode("/** a();\n b();\n c(); */\nint x;\n").isEmpty()
+				&& commentedOutCode("int a; //a();\nint b; //b();\nint c; //c();\n").isEmpty(),
+				"control: a block of three statements and a run of three // statements are code put away; '//*35ms',"
+				+ " prose, an opener in a string, a javadoc and trailing comments after code are not");
+		check(csharpDocs("class A {\n\t/// <summary>\n\t/** ok */\n\tint x; // ///\n}\n").equals(java.util.Arrays.asList(2)),
+				"control: a line opening with /// is C#'s doc comment; /// after code is not");
+		check(unusedImports("import java.util.List;\nimport java.util.Map;\nclass A { List<String> a; }\n")
+				.equals(java.util.Arrays.asList("Map"))
+				&& unusedImports("import java.util.Map;\n/** {@link Map} */\nclass A { }\n").isEmpty()
+				&& unusedImports("import java.util.Map;\nclass A { String s = \"Map\"; }\n").equals(java.util.Arrays.asList("Map")),
+				"control: an unused import is found, a used one and one a javadoc links are not, and a name in a string"
+				+ " is not a use");
+		check(wildcardImports("package a;\n\nimport java.util.List;\nimport static a.B.*;\nimport java.util.*;\n"
+				+ "/*\nimport x.*;\n*/\nclass A { String s = \"\\nimport y.*;\"; }\n").equals(java.util.Arrays.asList(4, 5)),
+				"control: a static and a type wildcard are found on their lines; a single-type import, one in a"
+				+ " comment and one in a string are not");
 		Object[][] docs = {
 			{"class A {\n\t/** lost */\n\t/** kept */\n\tint x;\n}\n", "2:0"},
 			{"class A {\n\tint x;\n\t/** lost */\n}\n", "3:1"},
@@ -91,6 +284,8 @@ public class SourceDebrisTest {
 			{"class A {\n\t/** doc */\n\t@Override\n\tpublic String toString() {\n\t\treturn \"/** no */ }\";\n\t}\n}\n", ""},
 			{"class A {\n\tchar q = '\"';\n\t/** doc */\n\tint x;\n}\n", ""},
 			{"class A {\n\tString s = \"\\\"/** no */\";\n\t/** doc */\n\tint x;\n}\n", ""},
+			{"class A {\n\t/** lost */\n\t//a note\n\t/** kept */\n\tint x;\n}\n", "2:0"},
+			{"class A {\n\t/** doc */\n\t//a note\n\tint x;\n}\n", ""},
 		};
 		int right = 0;
 		for (Object[] c : docs) {
@@ -215,8 +410,18 @@ public class SourceDebrisTest {
 		List<int[]> out = new ArrayList<>();
 		for (int d = 0; d < docs.size(); d++) {
 			int k = docs.get(d)[1];
-			while (k < n && Character.isWhitespace(src.charAt(k))) {
-				k++;
+			//PAST LINE COMMENTS TOO (F158): a javadoc, a line comment, then another javadoc was
+			//stacked exactly like two javadocs and read as fine, because the comment was the
+			//"next text"; a line comment documents nothing and hides nothing
+			while (k < n) {
+				if (Character.isWhitespace(src.charAt(k))) {
+					k++;
+				} else if (src.startsWith("//", k)) {
+					int j = src.indexOf('\n', k);
+					k = j < 0 ? n : j;
+				} else {
+					break;
+				}
 			}
 			int kind = k >= n ? 2 : d + 1 < docs.size() && docs.get(d + 1)[0] == k ? 0 : src.charAt(k) == '}' ? 1 : -1;
 			if (kind >= 0) {

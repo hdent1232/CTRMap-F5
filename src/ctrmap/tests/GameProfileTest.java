@@ -74,6 +74,7 @@ public class GameProfileTest {
 		anUnmeasuredGameGetsBaseMoveRowsNotOras();
 		anUnmeasuredGameHasNoNumbersAndNoFeatures();
 		theDemoIsAnEditionNotAGame();
+		theOneGameWithAFeatureIsAskedByTheFeature();
 
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
@@ -597,6 +598,27 @@ public class GameProfileTest {
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * The one game with a feature is asked for by the feature, and asking fails when there is not
+	 * exactly one (F207). Five classes named GameType.ORAS for a count or an index of a feature only
+	 * ORAS has; nothing tied the pin to the gate.
+	 */
+	static void theOneGameWithAFeatureIsAskedByTheFeature() {
+		System.out.println("--- the one game with a feature is asked for by the feature (F207)");
+		check(GameProfile.onlyGameWith(GameProfile.Feature.ZONE_APPEND) == GameProfile.of(GameType.ORAS)
+				&& GameProfile.onlyGameWith(GameProfile.Feature.AREA_FORK) == GameProfile.of(GameType.ORAS),
+				"adding zones and forking areas are Omega Ruby / Alpha Sapphire's alone, and their profile answers");
+		String why;
+		try {
+			GameProfile.onlyGameWith(GameProfile.Feature.H3D_MAPS);
+			why = null;
+		} catch (IllegalStateException more) {
+			why = more.getMessage();
+		}
+		check(why != null && why.contains(GameProfile.of(GameType.XY).displayName()),
+				"and a feature two games support has no one game to answer it - refused, naming them: " + why);
 	}
 
 	static void check(boolean ok, String what) {

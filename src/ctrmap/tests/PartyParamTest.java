@@ -9,7 +9,6 @@ import ctrmap.formats.scripts.PawnInstruction;
 import ctrmap.formats.scripts.PawnSubroutine;
 import java.io.File;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -17,7 +16,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
-import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Guards the PokePartyGetParam / PokePartySetParam selector table against the
@@ -342,15 +340,8 @@ public class PartyParamTest {
 			if ((((zo[0] & 0xFF) << 8) | (zo[1] & 0xFF)) != 0x5A4F) {
 				return null;
 			}
-			int count = (zo[2] & 0xFF) | ((zo[3] & 0xFF) << 8);
-			if (count < 3 || zo.length < 4 + (count + 1) * 4) {
-				return null;
-			}
-			int start = i32(zo, 4 + 2 * 4), end = i32(zo, 4 + 3 * 4);
-			if (start < 0 || end > zo.length || end <= start) {
-				return null;
-			}
-			return new GFLPawnScript(java.util.Arrays.copyOfRange(zo, start, end));
+			byte[] scr = ctrmap.formats.containers.ContainerBytes.subfile(zo, 2);
+			return scr == null || scr.length == 0 ? null : new GFLPawnScript(scr);
 		} catch (Throwable t) {
 			return null;
 		}

@@ -1,87 +1,107 @@
 package ctrmap.formats.h3d;
 
-import ctrmap.LittleEndianDataInputStream;
+import ctrmap.util.LittleEndian;
+import java.io.EOFException;
 import java.io.IOException;
-import java.io.InputStream;
 
 /**
- * A class to imitate RandomAccessFile for byte array streams
+ * A cursor over a BCH's bytes: little-endian reads at a position that can be moved.
+ *
+ * <p>THE POSITION IS THE INDEX (F228). This was a LittleEndianDataInputStream over a
+ * ByteArrayInputStream that kept a count of its own beside the stream's, by overriding nine of its
+ * read methods. The two drifted: skip added what it was asked for whatever the stream skipped (100
+ * on six bytes said 100), read() at the end added one, read(byte[]) at the end added its -1 and went
+ * backwards, a seek before the start said -2 while the stream read from 0, and readFully, skipFully
+ * and read(byte[], int, int) were never overridden at all. Here every read takes its bytes from the
+ * array at {@link #position()} through {@link LittleEndian} and moves it by what it took, so there is
+ * no second count to forget. BchSectionsTest holds each case.
+ *
+ * <p>A read that runs past the end throws EOFException, as the stream's did; read() and read(byte[])
+ * answer -1 there, as a stream's do, and do not move.
  */
-public class RandomAccessBAIS extends LittleEndianDataInputStream {
+public class RandomAccessBAIS {
 
-	private InputStream input;
-	public int position = 0;
+	private final byte[] data;
+	private int position = 0;
 
-	public RandomAccessBAIS(InputStream in) {
-		super(in);
-		input = in;
-		if (!in.markSupported()) {
-			throw new IllegalArgumentException("This class only supports resettable streams");
+	/** Reads {@code data} itself, not a copy: a write to the array is seen by the next read of it. */
+	public RandomAccessBAIS(byte[] data) {
+		this.data = data;
+	}
+
+	/** Where the next read starts. */
+	public int position() {
+		return position;
+	}
+
+	/** The index {@code n} bytes are read from, moving past them; or EOFException, not moving. */
+	private int take(int n) throws EOFException {
+		if (n > data.length - position) {
+			throw new EOFException(n + " byte(s) at " + position + " run past the end of the data (" + data.length
+					+ " bytes)");
 		}
-	}
-
-	@Override
-	public int readInt() throws IOException {
-		position += 4;
-		return super.readInt();
-	}
-
-	@Override
-	public int read4Bytes() throws IOException {
-		position += 4;
-		return super.read4Bytes();
-	}
-
-	@Override
-	public short readShort() throws IOException {
-		position += 2;
-		return super.readShort();
-	}
-
-	@Override
-	public int readUnsignedShort() throws IOException {
-		return Short.toUnsignedInt(readShort());
-	}
-
-	@Override
-	public short read2Bytes() throws IOException {
-		position += 2;
-		return super.read2Bytes();
-	}
-
-	@Override
-	public byte readByte() throws IOException {
-		position++;
-		return super.readByte();
-	}
-
-	@Override
-	public int read() throws IOException {
-		position++;
-		return super.read();
-	}
-
-	@Override
-	public int read(byte[] b) throws IOException {
-		int read = super.read(b);
-		position += read;
-		return read;
-	}
-
-	@Override
-	public float readFloat() throws IOException {
-		return Float.intBitsToFloat(readInt());
-	}
-
-	@Override
-	public long skip(long n) throws IOException {
+		int at = position;
 		position += n;
-		return super.skip(n);
+		return at;
 	}
 
+	public int readInt() throws IOException {
+		return LittleEndian.i32(data, take(4));
+	}
+
+	public short readShort() throws IOException {
+		return (short) LittleEndian.u16(data, take(2));
+	}
+
+	public int readUnsignedShort() throws IOException {
+		return LittleEndian.u16(data, take(2));
+	}
+
+	public byte readByte() throws IOException {
+		return data[take(1)];
+	}
+
+	public float readFloat() throws IOException {
+		return LittleEndian.f32(data, take(4));
+	}
+
+	/** The next byte, 0 to 255; or -1 at the end of the data, where the position stays. */
+	public int read() throws IOException {
+		return position < data.length ? data[position++] & 0xFF : -1;
+	}
+
+	/**
+	 * As much of {@code b} as the data still holds, moving past it: the count read, or -1 at the end
+	 * of the data, where the position stays.
+	 */
+	public int read(byte[] b) throws IOException {
+		if (b.length == 0) {
+			return 0;
+		}
+		int n = Math.min(b.length, data.length - position);
+		if (n <= 0) {
+			return -1;
+		}
+		System.arraycopy(data, position, b, 0, n);
+		position += n;
+		return n;
+	}
+
+	/** Moves forward {@code n} bytes, or to the end of the data if that comes first; answers how far it moved. */
+	public long skip(long n) throws IOException {
+		long k = Math.max(0, Math.min(n, (long) data.length - position));
+		position += (int) k;
+		return k;
+	}
+
+	/**
+	 * Moves to {@code offset}. Past the end is allowed, as a file's seek allows it - the next read
+	 * there answers the end - but before the start there is nothing to read, and it is refused.
+	 */
 	public void seek(int offset) throws IOException {
-		input.reset();
+		if (offset < 0) {
+			throw new IOException("seek to " + offset + ": before the start of the data");
+		}
 		position = offset;
-		input.skip(offset);
 	}
 }

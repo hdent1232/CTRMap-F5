@@ -54,37 +54,64 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 
 LF = chr(10)
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+ROOT = _tree_root.require(__file__)
 
-#: SOURCE AND THE DATA THE PROGRAM SHIPS. The shell scripts and the shipped binaries were absent
-#: from this list, so a scope naming their directory expanded to nothing for them and a census
-#: could report the directory covered having opened no part of it. Two of those binaries are
-#: written into a user's game files, which makes them the last place a coverage claim should be
-#: cheap: a census that skips `build.ps1`, `run.bat` and `DummyKAGE.bin` has skipped the build,
-#: the launcher and bytes that reach a save file.
-SOURCE_SUFFIXES = (".java", ".py", ".ps1", ".tsv", ".md", ".properties", ".form", ".xml",
-                   ".bat", ".sh", ".json", ".txt", ".bin", ".bch", ".cmvd")
+#: WHAT A CENSUS DOES NOT ASK TO HAVE OPENED - each kind with its reason. Everything else git
+#: lists is in scope, whatever its name, and whether or not it has a suffix at all.
+#:
+#: This was the other way round: a hand list of suffixes to INCLUDE. It was short once already -
+#: `build.ps1`, `run.bat` and `DummyKAGE.bin` were added after a census skipped the build, the
+#: launcher and bytes that reach a save file - and it stayed short: measured 2026-10-08, 52 of 729
+#: listed files could never count as unread, the git hooks that gate every commit among them, the
+#: licence, the manifest and the models and tileset the program loads (F185). A kind nobody has
+#: named here is IN scope, so the next one is read rather than skipped.
+NOT_READ = {
+    ".png": "an image - pixels, not code or data the program parses",
+    ".ico": "the window icon - pixels, not code or data the program parses",
+    ".jar": "a third-party library, compiled - its source is not in this repository to read",
+}
+#: Folders a claimed file is looked for in by name (`fabricated`), not a scope.
 SKIP_DIRS = ("build", ".git", "dist", "__pycache__", "lib", "wt")
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
 
-def expand(scope):
-    """Every source file under the named directories, repo-relative, forward slashes."""
+def listed(root=None):
+    """Every file git lists - tracked, and untracked but not ignored - repo-relative, or None
+    when git cannot answer: a tree nobody could list is not a tree with nothing in it."""
+    root = root or ROOT
+    try:
+        done = subprocess.run(["git", "ls-files", "-co", "--exclude-standard", "-z"], cwd=root,
+                              capture_output=True, timeout=60, creationflags=NO_WINDOW)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    return sorted(rel for rel in done.stdout.decode("utf-8", "replace").split(chr(0))
+                  if rel and os.path.isfile(os.path.join(root, rel)))
+
+
+def expand(scope, root=None):
+    """Every file under the named paths a census must open, repo-relative with forward slashes,
+    or None when the tree cannot be listed. A path named outright is in scope whatever its kind."""
+    root = root or ROOT
+    files = listed(root)
+    if files is None:
+        return None
     out = set()
     for rel in scope:
-        base = os.path.join(ROOT, rel.replace("/", os.sep))
-        if os.path.isfile(base):
-            out.add(rel.replace(os.sep, "/"))
+        rel = rel.replace(os.sep, "/").strip("/")
+        if rel not in ("", ".") and os.path.isfile(os.path.join(root, rel)):
+            out.add(rel)
             continue
-        for dirpath, dirs, files in os.walk(base):
-            dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
-            for name in files:
-                if not name.endswith(SOURCE_SUFFIXES):
-                    continue
-                full = os.path.join(dirpath, name)
-                out.add(os.path.relpath(full, ROOT).replace(os.sep, "/"))
+        under = "" if rel in ("", ".") else rel + "/"
+        out.update(path for path in files if path.startswith(under)
+                   and os.path.splitext(path)[1].lower() not in NOT_READ)
     return out
 
 
@@ -99,15 +126,36 @@ def path_of(entry):
     therefore unusable on real input. Two functions reading one format is the defect this
     project's own README spends a page on.
     """
-    return str(entry).replace(chr(92), "/").split("(")[0].strip()
+    text = str(entry).replace(chr(92), "/").strip()
+    # ONLY A TRAILING GROUP IS AN ANNOTATION. This cut at the FIRST "(", so a file whose own name
+    # holds one - `nbproject/configs/GfmapMainframe (1).properties`, two of them here - could
+    # never be named in a read list and stayed unread whatever was opened (F185, 2026-10-08).
+    note = _ANNOTATION.match(text)
+    return (note.group(1) if note else text).strip()
+
+
+#: A read-list entry's size annotation: one parenthesised group that ENDS the entry.
+_ANNOTATION = re.compile(r"^(.*?\S)\s*\([^()]*\)\s*$")
 
 
 def normalise(paths):
     """Read lists arrive with backslashes, absolute paths and repo prefixes. Compare by tail."""
     out = set()
+    top = ROOT.replace(os.sep, "/").rstrip("/") + "/"
     for p in paths or []:
         q = path_of(p)
         if not q:
+            continue
+        # A PATH THAT NAMES A FILE OF THIS TREE KEEPS ITS PATH. Everything outside src/ and tools/
+        # was cut to its basename, and these are a set - so the five copies of `_tree_root.py`,
+        # all read, were ONE bare name covering one file, and a census of the whole tree could
+        # never pass however much it read (measured 2026-10-08, F185: 11 such files).
+        if q.lower().startswith(top.lower()):
+            q = q[len(top):]
+        if q.startswith("./"):
+            q = q[2:]
+        if os.path.isfile(os.path.join(ROOT, q.replace("/", os.sep))):
+            out.add(q)
             continue
         low = q.lower()
         cut = low.find("/src/")
@@ -214,6 +262,10 @@ def judge(result):
             "NO SCOPE. A census must say which directories it covered, because that is the list"
             " its coverage is checked against. Without it there is nothing to check and the"
             " word clean means nothing.")
+    elif expand(scope) is None:
+        problems.append(
+            "THE TREE COULD NOT BE LISTED. git did not answer, so which files the scope holds is"
+            " UNKNOWN - and an unknown scope covered is not a covered scope.")
     else:
         wanted = expand(scope)
         #: A BARE BASENAME COUNTS FOR ONE FILE, NOT FOR EVERY FILE OF THAT NAME. It used to
@@ -238,8 +290,8 @@ def judge(result):
         if missed:
             shown = sorted(missed)
             problems.append(
-                "%d FILE(S) IN SCOPE WERE NOT READ, out of %d. Scope is expanded from disk here,"
-                " so a census cannot pass by looking at less: %s%s"
+                "%d FILE(S) IN SCOPE WERE NOT READ, out of %d. Scope is expanded from the tree"
+                " git lists, so a census cannot pass by looking at less: %s%s"
                 % (len(missed), len(wanted), ", ".join(shown[:12]),
                    " (+%d more)" % (len(shown) - 12) if len(shown) > 12 else ""))
 
@@ -307,6 +359,27 @@ def selftest():
     expect("a census that skipped a file in scope",
            {"scope": ["tools/guard"], "filesRead": ["census.py"],
             "critic": {"rounds": 1, "gaps": []}}, False)
+    # THE WHOLE TREE, FROM WHAT GIT LISTS (F185): the suffix list this replaced left out every
+    # git hook - the commit gate itself - so a census of "." could pass without opening them.
+    whole = expand(["."]) or set()
+    for known in (".githooks/pre-commit", "LICENSE", "tools/guard/census.py"):
+        if known not in whole:
+            fails.append("control: the whole-tree scope does not hold %s" % known)
+    skipped = {"scope": ["."], "filesRead": sorted(whole - {".githooks/pre-commit"}),
+               "critic": {"rounds": 2, "gaps": []}}
+    expect("a census of the whole tree that skipped a git hook", skipped, False)
+    said = " ".join(judge(skipped)[1])
+    if not said.startswith("1 FILE(S) IN SCOPE WERE NOT READ") or ".githooks/pre-commit" not in said:
+        fails.append("a census of the whole tree that skipped a git hook was not refused for "
+                     "exactly that hook: " + said[:160])
+    expect("a census of the whole tree that read all of it",
+           {"scope": ["."], "filesRead": sorted(whole), "critic": {"rounds": 2, "gaps": []}}, True)
+    import tempfile
+    nowhere = os.path.join(tempfile.mkdtemp(prefix="census-unlisted-"), "missing")
+    if expand(["."], nowhere) is not None:
+        fails.append("a tree git cannot list was given a scope - unknown read as empty")
+    else:
+        print("  ok: a tree git cannot list -> no scope, UNKNOWN")
     everything = sorted(expand(["tools/guard"]))
     expect("a census that read all of its scope but never asked what it missed",
            {"scope": ["tools/guard"], "filesRead": everything,

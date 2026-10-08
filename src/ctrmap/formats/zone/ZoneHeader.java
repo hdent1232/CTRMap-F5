@@ -1,7 +1,7 @@
 package ctrmap.formats.zone;
 
-import ctrmap.LittleEndianDataInputStream;
-import ctrmap.LittleEndianDataOutputStream;
+import ctrmap.util.LittleEndianDataInputStream;
+import ctrmap.util.LittleEndianDataOutputStream;
 import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.AD;
 import ctrmap.formats.containers.MM;
@@ -10,6 +10,7 @@ import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.h3d.texturing.H3DTexture;
 import ctrmap.formats.npcreg.NPCRegistry;
 import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameProfile;
 import ctrmap.gamedef.GameType;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -18,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import ctrmap.util.LittleEndian;
 
 /**
  * From pk3DS source
@@ -97,7 +99,7 @@ public class ZoneHeader {
 	 * repurpose scanner and the atmosphere picker each spelled it themselves (F225, lead 55).
 	 */
 	public static int parentMapOf(byte[] header) {
-		return ((header[0x1C] & 0xFF) | (header[0x1D] & 0xFF) << 8) & 0x3FF;
+		return LittleEndian.u16(header, 0x1C) & 0x3FF;
 	}
 
 	/**
@@ -159,19 +161,17 @@ public class ZoneHeader {
 			cameraFlags = dis.readShort();
 
 			unknownFlags = dis.readInt();
-			// >> 13 in OA
-			int relocator = (game == GameType.XY) ? 0 : 1;
-			enableDowsingMachine = (unknownFlags >> (12 + relocator) & 1) == 1;
-			// >> 12 in OA
-			enableBreathFX = (unknownFlags >> (11 + relocator) & 1) == 1;
-			enable3D = (unknownFlags >> (15 + relocator) & 1) == 1;
-			// means flashable darkness in OA
-			if (game == GameType.XY) {
-				enableSpecialWalking = (unknownFlags >> 2 & 1) == 0;
-			} else {
-				enableFlashableDarkness = (unknownFlags >> 1 & 1) == 1;
+			//WHERE EACH FLAG SITS IS THE GAME'S, asked of its profile (F207): this was "X/Y, or else
+			//ORAS", so a game nobody measured was read with ORAS's bits. Unmeasured, none is decoded
+			GameProfile.ZoneFlagLayout l = flagLayout();
+			if (l != null) {
+				enableGhosting = bit(unknownFlags, l.ghosting);
+				enableBreathFX = bit(unknownFlags, l.breathFx);
+				enableDowsingMachine = bit(unknownFlags, l.dowsing);
+				enable3D = bit(unknownFlags, l.stereo3d);
+				enableSpecialWalking = l.specialWalkingOff >= 0 && !bit(unknownFlags, l.specialWalkingOff);
+				enableFlashableDarkness = bit(unknownFlags, l.flashableDarkness);
 			}
-			enableGhosting = (unknownFlags & 1) == 1;
 			//OA exclusive zone ID
 			OAZoneNumber = (unknownFlags >> 21);
 
@@ -184,6 +184,24 @@ public class ZoneHeader {
 		} catch (IOException ex) {
 			Logger.getLogger(ZoneHeader.class.getName()).log(Level.SEVERE, null, ex);
 		}
+	}
+
+	/**
+	 * Sets the zone's music (F221). The header carries a track for each season and the Zone tab showed
+	 * and wrote Spring's alone, so a change could miss the slot the game plays. Every slot that held
+	 * Spring's track moves with it; a slot set to a different track was set apart, and stays.
+	 */
+	public void setMusic(int track) {
+		if (BGMSummer == BGMSpring) {
+			BGMSummer = track;
+		}
+		if (BGMAutumn == BGMSpring) {
+			BGMAutumn = track;
+		}
+		if (BGMWinter == BGMSpring) {
+			BGMWinter = track;
+		}
+		BGMSpring = track;
 	}
 
 	public byte[] assembleData() {
@@ -258,21 +276,42 @@ public class ZoneHeader {
 	private int unnamed1E, unnamed20;
 	private byte[] tail = new byte[0];
 
+	/**
+	 * Writes the named flags into the flag word at the game's bit positions (F207). For a game with
+	 * no measured layout the word is carried as read - none was decoded from it - and a flag set
+	 * anyway is refused: there is no bit it could be written to that is not a guess.
+	 */
 	public void calculateFlags() {
-		if (game == GameType.XY) {
-			unknownFlags = unknownFlags & 0xFFFFFFFE | ((enableGhosting) ? 1 : 0);
-			unknownFlags = unknownFlags & 0xFFFFF7FF | ((enableBreathFX) ? 1 : 0) << 11;
-			unknownFlags = unknownFlags & 0xFFFFEFFF | ((enableDowsingMachine) ? 1 : 0) << 12;
-			unknownFlags = unknownFlags & 0xFFFF7FFF | ((enable3D) ? 1 : 0) << 15;
-			unknownFlags = unknownFlags & 0xFFFFFFFB | ((enableSpecialWalking) ? 0 : 1) << 2;
-		} else {
-			unknownFlags = unknownFlags & 0xFFFFFFFE | ((enableGhosting) ? 1 : 0);
-			unknownFlags = unknownFlags & 0xFFFFEFFF | ((enableBreathFX) ? 1 : 0) << 12;
-			unknownFlags = unknownFlags & 0xFFFFDFFF | ((enableDowsingMachine) ? 1 : 0) << 13;
-			unknownFlags = unknownFlags & 0xFFFEFFFF | ((enable3D) ? 1 : 0) << 16;
-			unknownFlags = unknownFlags & 0xFFFFFFFD| ((enableFlashableDarkness) ? 1 : 0) << 1;
+		GameProfile.ZoneFlagLayout l = flagLayout();
+		if (l == null) {
+			if (enableGhosting || enableBreathFX || enableDowsingMachine || enable3D || enableSpecialWalking
+					|| enableFlashableDarkness) {
+				throw new IllegalStateException("A zone flag (ghosting, cold breath, dowsing, 3D, special walking or"
+						+ " flashable darkness) was set, and where " + (game == null ? "a zone opened with no game"
+						: GameProfile.of(game).displayName()) + " keeps it in the header was never recorded - it was"
+						+ " not written. Edit the raw flag word instead.");
+			}
+			return;
 		}
-		//unknownFlags = unknownFlags & 0x7FFFFF | (OAZoneNumber << 21);
+		unknownFlags = put(unknownFlags, l.ghosting, enableGhosting);
+		unknownFlags = put(unknownFlags, l.breathFx, enableBreathFX);
+		unknownFlags = put(unknownFlags, l.dowsing, enableDowsingMachine);
+		unknownFlags = put(unknownFlags, l.stereo3d, enable3D);
+		unknownFlags = put(unknownFlags, l.specialWalkingOff, !enableSpecialWalking);
+		unknownFlags = put(unknownFlags, l.flashableDarkness, enableFlashableDarkness);
+	}
+
+	/** This header's game's flag layout, or null when the game is not known or its layout was never recorded. */
+	public GameProfile.ZoneFlagLayout flagLayout() {
+		return game == null ? null : GameProfile.of(game).zoneFlagLayout();
+	}
+
+	private static boolean bit(int word, int bit) {
+		return bit >= 0 && (word >>> bit & 1) == 1;
+	}
+
+	private static int put(int word, int bit, boolean on) {
+		return bit < 0 ? word : on ? word | 1 << bit : word & ~(1 << bit);
 	}
 
 	/**

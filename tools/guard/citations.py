@@ -72,7 +72,9 @@ import sys
 import tempfile
 
 LF = chr(10)
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+ROOT = _tree_root.require(__file__)
 
 #: EVERY function here takes the tree it is judging. The first draft had `root` on the public
 #: functions and a hard-coded constant inside the one that lists the files, so asking it about
@@ -119,11 +121,23 @@ def _text_files(root=ROOT):
     for rel in out.decode("utf-8", "replace").replace(chr(13), "").split(LF):
         if not rel or rel.endswith("/"):
             continue
-        if os.path.splitext(rel)[1].lower() not in (
-                ".md", ".py", ".java", ".ps1", ".txt", ".json", ".bat", ".sh", ".properties"):
-            continue
-        names.append(rel)
+        if _is_text(os.path.join(root, rel)):
+            names.append(rel)
     return names
+
+
+def _is_text(path):
+    """Whether a file can hold a citation, asked of its own bytes: no NUL in its first 8 KB.
+
+    DERIVED, NOT LISTED. This kept nine suffixes, and a different nine from the census beside it:
+    a citation in a `.form`, a `.tsv`, an `.xml` or a git hook - which has no suffix at all - was
+    never looked for (F185: 85 of 729 listed files, 2026-10-08). A file that cannot be opened is
+    read as text, so `citations()` reports it unreadable rather than passing over it."""
+    try:
+        with io.open(path, "rb") as handle:
+            return chr(0).encode() not in handle.read(8192)
+    except OSError:
+        return True
 
 
 def _is_the_record(rel, root=ROOT):
@@ -227,6 +241,7 @@ def judge(root=ROOT):
     #: A FACT ABOUT THE TREE, so it runs before the disk is consulted and still runs on a
     #: checkout where the session folder is absent.
     problems = _forbidden_citers(problems, cited, declared)
+    problems = _unmarked_outside(problems, cited, declared, root)
 
     folder = session_dir(root)
     if folder is None:
@@ -255,6 +270,40 @@ def judge(root=ROOT):
                 "exists. Cited by %s." % (path, ", ".join(cited.get(path, ["(nothing)"]))))
 
     return (problems, unknowns)
+
+
+#: What a document's line says when the thing it cites is not in the repository.
+OUTSIDE_SAID = re.compile(r"outside (?:the|this) repository|not in (?:the|this) (?:repository|tree)", re.I)
+
+
+def _unmarked_outside(problems, cited, declared, root):
+    """A document that cites a path declared `outside` says so on the line that cites it (F139).
+
+    The manifest records why a probe or its output stays outside - it is derived from the owner's
+    game dump, which is never committed - but a reader of the document never opens the manifest:
+    the docs cited eleven probes, an executable's RTTI scans and a 79 KB findings file as if a
+    clone could re-run them, and none could. Markdown only: that is what is read as the account
+    of how a figure was got."""
+    for path in sorted(cited):
+        if (declared.get(path) or {}).get("status") != "outside":
+            continue
+        for rel in cited[path]:
+            if not rel.endswith(".md"):
+                continue
+            try:
+                with io.open(os.path.join(root, rel), encoding="utf-8", errors="replace") as handle:
+                    lines = handle.read().split(LF)
+            except OSError as unread:
+                problems.append("UNREAD: %s cites %s, declared outside, and could not be read again to see"
+                                " whether it says so (%s)" % (rel, path, unread))
+                continue
+            for number, line in enumerate(lines, 1):
+                if path in line and not OUTSIDE_SAID.search(line):
+                    problems.append(
+                        "UNMARKED: %s:%d cites %s, which lives outside the repository, without saying so"
+                        " there - a reader takes the figure as one a clone can re-run. Say on that line"
+                        " that it is outside the repository." % (rel, number, path))
+    return problems
 
 
 def _forbidden_citers(problems, cited, declared):
@@ -289,7 +338,7 @@ def _forbidden_citers(problems, cited, declared):
     return problems
 
 
-def _scratch(tmp, cited, declared, on_disk, with_session_folder=True):
+def _scratch(tmp, cited, declared, on_disk, with_session_folder=True, marked=True):
     """Build a throwaway tree and judge it. Returns (problems, unknowns).
 
     The tree is a real git repository, because the file list comes from git and a fixture that
@@ -301,7 +350,8 @@ def _scratch(tmp, cited, declared, on_disk, with_session_folder=True):
     subprocess.check_output(["git", "init", "-q", root], stderr=subprocess.STDOUT, timeout=60)
     with io.open(os.path.join(root, "docs", "note.md"), "w", encoding="utf-8") as handle:
         handle.write(
-            LF.join("see `%s` for the evidence" % c for c in cited) + LF)
+            LF.join("see `%s` for the evidence%s" % (c, ", outside the repository" if marked else "")
+                    for c in cited) + LF)
     with io.open(manifest_path(root), "w", encoding="utf-8") as handle:
         handle.write(json.dumps(declared) + LF)
     if with_session_folder:
@@ -379,6 +429,9 @@ def selftest():
          dict(cited=[there], declared={there: {"status": "outside", "why": reason},
                                        gone: {"status": "outside", "why": reason}},
               on_disk=[there, gone]), "nothing in this tree cites"),
+        ("an outside citation its line hides",
+         dict(cited=[there], declared={there: {"status": "outside", "why": reason}},
+              on_disk=[there], marked=False), "UNMARKED"),
         ("declared with no reason",
          dict(cited=[there], declared={there: {"status": "outside", "why": "because"}},
               on_disk=[there]), "no reason worth reading"),

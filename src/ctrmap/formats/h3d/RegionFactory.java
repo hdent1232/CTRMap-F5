@@ -1,6 +1,7 @@
 package ctrmap.formats.h3d;
 
 import ctrmap.formats.gfcollision.GfColl;
+import ctrmap.formats.tilemap.Tilemap;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -212,7 +213,7 @@ public class RegionFactory {
 
 	/** An all-blocked tilemap (for blanked-out extra layers), retail-padded size. */
 	public static byte[] voidTilemap() {
-		byte[] out = new byte[6528];
+		byte[] out = new byte[Tilemap.REGION_BYTES];
 		out[0] = 40;
 		out[2] = 40;
 		for (int t = 0; t < 1600; t++) {
@@ -230,7 +231,7 @@ public class RegionFactory {
 
 	/** All-walkable tilemap with a one-tile blocked border, retail-padded size. */
 	public static byte[] blankTilemap() {
-		byte[] out = new byte[6528];
+		byte[] out = new byte[Tilemap.REGION_BYTES];
 		out[0] = 40;
 		out[2] = 40;
 		for (int y = 0; y < 40; y++) {

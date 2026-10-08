@@ -61,7 +61,7 @@ STATE_DIR = os.path.join(tempfile.gettempdir(), "bundle-agent-writers")
 #: live agent waits on in the suites measured here.
 STALE = 30 * 60
 
-#: Adapted per project: see ADAPT.md.
+#: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("STALE",)
 
 

@@ -66,7 +66,8 @@ import bundle_rules      # noqa: E402  - RULE_DIRS, where a record's tools live
 import bundle_shell      # noqa: E402  - the command, found by shape, at any depth
 import time
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+ROOT = _tree_root.require(__file__)
 BLOCKED = os.path.join(ROOT, ".sweep", "blocked.json")
 
 #: Where this guard sits, relative to the project: the hooks folder, found rather than spelled.
@@ -104,7 +105,7 @@ ESCAPES = (
     _TOOL,
 )
 
-#: Adapted per project: see ADAPT.md.
+#: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("BLOCKED", "ESCAPES")
 
 #: A `git status` that never returns must not hang every tool call behind it. README section 16:

@@ -305,9 +305,11 @@ measurement is held on a game nobody here can boot.
   and run a streak far enough to draw from the added trainers.
 - Challenge NPC - "UNPROVEN IN-GAME - test it first." (ChallengeForm.java), shipped 2026-09-08. In
   Azahar: talk to it, win, and talk again - the battle follows the current streak.
-- Resize map - "EXPERIMENTAL: multi-region retail maps prove the engine path, but a grown"
-  (CtrmapMainframe.java), shipped 2026-08-27. In Azahar: grow a retail map by a column and a row,
-  pack, and walk the new cells - collision, camera, no crash at the edge.
+- Resize map - "EXPERIMENTAL: multi-region retail maps prove the engine path, but a resized"
+  (CtrmapMainframe.java), shipped 2026-08-27, shrinking 2026-10-08 (F020). In Azahar: grow a
+  retail map by a column and a row, pack, and walk the new cells - collision, camera, no crash at
+  the edge. Then shrink it back by the column, pack, and walk to the new east edge - the ground
+  ends there and the camera stops at it.
 - Import map model (.bch) - "EXPERIMENTAL - untested on real hardware." (CtrmapMainframe.java),
   shipped 2026-07-22. In Azahar, and on a 3DS if one is to hand: import a model for one region,
   pack, and walk the region.

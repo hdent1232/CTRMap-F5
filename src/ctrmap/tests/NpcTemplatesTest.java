@@ -11,7 +11,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Headless dry run of the sign and item-giver script templates plus the
@@ -293,8 +292,6 @@ public class NpcTemplatesTest {
 		e.npcs.add(pair);
 		e.npcs.add(giverNpc);
 		e.furniture.add(sign);
-		e.NPCCount = e.npcs.size();
-		e.furnitureCount = e.furniture.size();
 		e.modified = true;
 
 		byte[] bytes = e.assembleData();
@@ -366,17 +363,6 @@ public class NpcTemplatesTest {
 		if (magic != 0x5A4F) {
 			return null;
 		}
-		int count = (zo[2] & 0xFF) | ((zo[3] & 0xFF) << 8);
-		if (count <= sub || zo.length < 4 + (count + 1) * 4) {
-			return null;
-		}
-		int start = i32(zo, 4 + sub * 4);
-		int end = i32(zo, 4 + (sub + 1) * 4);
-		if (start < 0 || end > zo.length || end < start) {
-			return null;
-		}
-		byte[] out = new byte[end - start];
-		System.arraycopy(zo, start, out, 0, out.length);
-		return out;
+		return ctrmap.formats.containers.ContainerBytes.subfile(zo, sub);
 	}
 }

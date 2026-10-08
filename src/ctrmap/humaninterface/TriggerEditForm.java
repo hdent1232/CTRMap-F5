@@ -1,8 +1,6 @@
 package ctrmap.humaninterface;
 
-import static ctrmap.CtrmapMainframe.*;
 import ctrmap.LoadedZone;
-import ctrmap.formats.scripts.TalkerScriptWizard;
 import ctrmap.formats.zone.ZoneEntities;
 import java.awt.Point;
 import java.util.ArrayList;
@@ -17,7 +15,8 @@ public class TriggerEditForm extends javax.swing.JPanel {
 	public ZoneEntities e;
 	public ZoneEntities.Trigger trigger;
 	public boolean loaded = false;
-	private boolean scriptDropdownLoading = false;
+	/** The Script dropdown beside the script number, filled from the open zone; set after initComponents. */
+	private ScriptIdDropdown scriptIds;
 
 	/** The zone owner this form was handed; its open zone's script fills the script dropdown. */
 	private final LoadedZone loadedZone;
@@ -46,13 +45,14 @@ public class TriggerEditForm extends javax.swing.JPanel {
 		this.viewportCentre = viewportCentre;
 		this.loadedZone = loadedZone;
 		initComponents();
-		setIntegerValueClass(new JFormattedTextField[]{script, u2, constant, u6, u8, x, y, w, h, u14, u16f});
-	}
-
-	public void setIntegerValueClass(JFormattedTextField[] fields) {
-		for (int i = 0; i < fields.length; i++) {
-			((NumberFormatter) fields[i].getFormatter()).setValueClass(Integer.class);
-		}
+		Forms.numberClass(Integer.class, new JFormattedTextField[]{script, u2, constant, u6, u8, x, y, w, h, u14, u16f});
+		//RAW BYTES ARE SAID TO BE RAW, AND FOLDED AWAY (F221)
+		Forms.unknownField(u2Label, "Unknown 0x02", "Bytes 0x02-0x03 of the trigger record", u2);
+		Forms.unknownField(u6Label, "Unknown 0x06", "Bytes 0x06-0x07 of the trigger record", u6);
+		Forms.unknownField(u8Label, "Unknown 0x08", "Bytes 0x08-0x09 of the trigger record", u8);
+		Forms.unknownField(u14Label, "Unknown 0x14", "Bytes 0x14-0x15 of the trigger record", u14);
+		Forms.unknownField(u16Label, "Unknown 0x16", "Bytes 0x16-0x17 of the trigger record", u16f);
+		scriptIds = new ScriptIdDropdown(scriptDropdown);
 	}
 
 	public void loadFromEntities(ZoneEntities e) {
@@ -82,39 +82,7 @@ public class TriggerEditForm extends javax.swing.JPanel {
 	}
 
 	private void populateScriptDropdown() {
-		scriptDropdownLoading = true;
-		scriptDropdown.removeAllItems();
-		ctrmap.formats.zone.Zone open = loadedZone.open();
-		if (ctrmap.Workspace.isValid() && open != null && open.s != null) {
-			open.s.decompressThis();
-			for (String item : TalkerScriptWizard.buildScriptIdItems(open.s)) {
-				scriptDropdown.addItem(item);
-			}
-		}
-		scriptDropdown.setSelectedIndex(-1);
-		scriptDropdownLoading = false;
-	}
-
-	private void syncScriptDropdown(int scriptId) {
-		scriptDropdownLoading = true;
-		int match = -1;
-		for (int i = 0; i < scriptDropdown.getItemCount(); i++) {
-			if (parseLeadingInt(scriptDropdown.getItemAt(i)) == scriptId) {
-				match = i;
-				break;
-			}
-		}
-		scriptDropdown.setSelectedIndex(match);
-		scriptDropdownLoading = false;
-	}
-
-	private static int parseLeadingInt(String item) {
-		try {
-			int space = item.indexOf(' ');
-			return Integer.parseInt(space == -1 ? item : item.substring(0, space));
-		} catch (NumberFormatException ex) {
-			return Integer.MIN_VALUE;
-		}
+		scriptIds.fill(ctrmap.Workspace.isValid() ? loadedZone.open() : null);
 	}
 
 	public void showEntry(int index) {
@@ -123,7 +91,7 @@ public class TriggerEditForm extends javax.swing.JPanel {
 		}
 		trigger = currentList().get(index);
 		script.setValue(trigger.script);
-		syncScriptDropdown(trigger.script);
+		scriptIds.show(trigger.script);
 		u2.setValue(trigger.u2);
 		constant.setValue(trigger.constant);
 		u6.setValue(trigger.u6);
@@ -407,9 +375,9 @@ public class TriggerEditForm extends javax.swing.JPanel {
 	}
 
 	private void scriptDropdownActionPerformed(java.awt.event.ActionEvent evt) {
-		if (loaded && !scriptDropdownLoading && scriptDropdown.getSelectedIndex() != -1) {
-			int id = parseLeadingInt((String) scriptDropdown.getSelectedItem());
-			if (id != Integer.MIN_VALUE) {
+		if (loaded) {
+			int id = scriptIds.picked();
+			if (id >= 0) {
 				script.setValue(id);
 			}
 		}
@@ -443,11 +411,6 @@ public class TriggerEditForm extends javax.swing.JPanel {
 			t.x = defaultPos.x;
 			t.y = defaultPos.y;
 			currentList().add(t);
-			if (typeBox.getSelectedIndex() == 1) {
-				e.trigger2Count++;
-			} else {
-				e.trigger1Count++;
-			}
 			addNamedTriggerEntry(t, currentList().size() - 1);
 			setTrigger(entryBox.getItemCount() - 1);
 			redraw.all();
@@ -463,11 +426,6 @@ public class TriggerEditForm extends javax.swing.JPanel {
 				return;
 			}
 			currentList().remove(idx);
-			if (typeBox.getSelectedIndex() == 1) {
-				e.trigger2Count--;
-			} else {
-				e.trigger1Count--;
-			}
 			entryBox.removeItemAt(entryBox.getSelectedIndex());
 			if (entryBox.getItemCount() == 0) {
 				trigger = null;

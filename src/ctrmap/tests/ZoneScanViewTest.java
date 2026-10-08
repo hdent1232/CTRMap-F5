@@ -137,7 +137,7 @@ public class ZoneScanViewTest {
 		check(mf.contains("ZoneRemover.referencesToAdded(Workspace.session())") && mf.contains("ZoneRepurposeScanner.scanZones(session)")
 				&& mf.contains("new javax.swing.SwingWorker<ZoneRepurposeScanner.Scan, Void>()"),
 				"the removal warning and the reusable-zone scan read the session, the scan off the event thread");
-		String tp = SourceSeamTest.stripComments(DialogSeamTest.read(new File(root, "ctrmap/humaninterface/TilePainterForm.java")));
+		String tp = SourceSeamTest.stripComments(DialogSeamTest.read(new File(root, "ctrmap/MapPainter.java")));
 		check(tp.contains("!edited.contains(new File(zoDir, String.valueOf(c.index)).getAbsolutePath())"),
 				"and the painter's interior slots skip zones EDITED this session, not every zone with a file");
 	}

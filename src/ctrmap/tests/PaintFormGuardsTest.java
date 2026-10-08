@@ -1,15 +1,14 @@
 package ctrmap.tests;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.h3d.BuildingCatalog;
-import ctrmap.formats.tilemap.PaintedRegionBuilder;
+import ctrmap.formats.tilemap.PaintedGeometry;
 import ctrmap.formats.tilemap.TilePalette;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.humaninterface.PaintForm;
-import ctrmap.humaninterface.TilePainterForm;
+import ctrmap.humaninterface.UndoHistory;
 import ctrmap.humaninterface.ZoneLoadingPanel;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
@@ -74,21 +73,29 @@ public class PaintFormGuardsTest {
 	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
 
 
-	static final int DIM = PaintedRegionBuilder.DIM;
+	static final int DIM = PaintedGeometry.DIM;
 	static final int ZONE = 7;
-	static final Color ARROW = new Color(255, 210, 40);
+	/**
+	 * The arrow's colour, (255, 210, 40), as the int a pixel reads. AN INT, NOT A COLOR: a Color built
+	 * when this class loads asks AWT whether there is a screen before main's Headless.require() can say
+	 * there is not - measured, and this suite's switch had never been in force until Headless asked.
+	 */
+	static final int ARROW = 0xFFFFD228;
 
 	static int fails = 0;
 
 	public static void main(String[] args) throws Exception {
-		System.setProperty("java.awt.headless", "true");
+		Headless.require();
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		aDocumentWithNoMapView();
 		thePainterRefusesToBeBuiltWithoutTheEditors();
+		thePainterRefusesToBeBuiltWithoutAHistory();
 		rampToolTurnsAndSays();
 		dragSettlesRamps();
 		fillAllSettlesRamps();
 		undoRestoresRamps();
+		aStrokeAndAZoneEditAreOneHistory();
+		aReseedForgetsTheCanvasAndKeepsTheZone();
 		overlayMarksRampsOnly();
 		pickingABuildingArmsTheNextClick();
 		aRefusedApplySaysSoAndPutsTheMapBack();
@@ -111,7 +118,7 @@ public class PaintFormGuardsTest {
 		System.out.println("--- the painter refuses to be built without the editors it flushes");
 		String said = "(nothing was thrown)";
 		try {
-			new PaintForm(new LoadedZone(), null, ZONES, CtrmapMainframe.mTileMapPanel);
+			new PaintForm(new LoadedZone(), null, ZONES, TestWindow.mTileMapPanel(), history());
 		} catch (IllegalArgumentException refused) {
 			said = String.valueOf(refused.getMessage());
 		}
@@ -121,12 +128,17 @@ public class PaintFormGuardsTest {
 
 	/** A form seeded by hand: zone ZONE open, cell (0,0), all grass at level 0, no ramps. */
 	static PaintForm document() throws Exception {
+		return document(history());
+	}
+
+	/** The same, its canvas a document of {@code history}. */
+	static PaintForm document(UndoHistory history) throws Exception {
 		LoadedZone lz = new LoadedZone();
 		lz.open(ZONE, null);                      //zone ZONE's index and no zone object: the document reads the index
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
-		CtrmapMainframe.mZonePnl = pnl;
-		CtrmapMainframe.mTileMapPanel = null;
-		PaintForm form = new PaintForm(lz, EDITORS, ZONES, CtrmapMainframe.mTileMapPanel);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		TestWindow.mZonePnl(pnl);
+		TestWindow.mTileMapPanel(null);
+		PaintForm form = new PaintForm(lz, EDITORS, ZONES, TestWindow.mTileMapPanel(), history);
 		set(form, "seededZone", ZONE);
 		TilePalette[][] grid = (TilePalette[][]) get(form, "grid");
 		for (TilePalette[] row : grid) {
@@ -137,7 +149,11 @@ public class PaintFormGuardsTest {
 
 	/** The notch: a level-1 plateau over y &lt;= 18 with one more plateau tile at (20,19). */
 	static PaintForm notch() throws Exception {
-		PaintForm form = document();
+		return notch(history());
+	}
+
+	static PaintForm notch(UndoHistory history) throws Exception {
+		PaintForm form = document(history);
 		int[][] height = (int[][]) get(form, "height");
 		for (int y = 0; y <= 18; y++) {
 			Arrays.fill(height[y], 1);
@@ -178,7 +194,7 @@ public class PaintFormGuardsTest {
 		form.gesturePress(20, 19, false);
 		check(ramp[19][20] == 1, "the third turns it west (" + ramp[19][20] + ")");
 		form.gesturePress(5, 5, false);
-		check(ramp[5][5] == PaintedRegionBuilder.NO_RAMP, "a flat tile cannot be a ramp");
+		check(ramp[5][5] == PaintedGeometry.NO_RAMP, "a flat tile cannot be a ramp");
 		check(status.getText().contains("No lower ground"), "and the painter says so: \"" + status.getText() + "\"");
 	}
 
@@ -219,15 +235,99 @@ public class PaintFormGuardsTest {
 		}
 	}
 
+	/** A history over one number of its own; a painter built over it adds its canvas to it. */
+	static UndoHistory history() {
+		return UndoHistoryTest.overOneNumber(new int[]{0});
+	}
+
+	/**
+	 * The painter refuses to be built without the zone's history (F209). Built with none, its strokes
+	 * would be taken back by nothing, or by stacks of its own that Ctrl+Z on the map never reaches.
+	 */
+	static void thePainterRefusesToBeBuiltWithoutAHistory() {
+		System.out.println("--- the painter refuses to be built without the zone's history");
+		String said = "(nothing was thrown)";
+		try {
+			new PaintForm(new LoadedZone(), EDITORS, ZONES, TestWindow.mTileMapPanel(), null);
+		} catch (RuntimeException refused) {   //any throw is caught, so one that is not the refusal fails in words
+			said = refused.getClass().getSimpleName() + ": " + refused.getMessage();
+		}
+		check(said.startsWith("IllegalArgumentException") && said.contains("must be handed the zone's history"), "because its canvas is a document of it: " + said);
+	}
+
+	/**
+	 * A stroke and an edit to the zone are one history (F209): Undo takes back the newest, whichever
+	 * editor made it, and the painter's buttons light from that history. The painter kept two stacks of
+	 * its own, so its Undo never reached an NPC moved before the stroke, and Ctrl+Z on the map never
+	 * reached the stroke.
+	 */
+	static void aStrokeAndAZoneEditAreOneHistory() throws Exception {
+		System.out.println("--- a stroke and an edit to the zone are taken back by one Undo, newest first");
+		int[] npc = {0};
+		UndoHistory zone = UndoHistoryTest.overOneNumber(npc);
+		PaintForm form = notch(zone);
+		int[][] ramp = (int[][]) get(form, "ramp");
+		JButton undo = (JButton) get(form, "undoBtn");
+		JButton redo = (JButton) get(form, "redoBtn");
+		check(!undo.isEnabled() && !redo.isEnabled(), "control: nothing done, both buttons dark");
+		npc[0] = 5;
+		zone.settle();
+		set(form, "ptool", 4);
+		form.gesturePress(20, 19, false);
+		zone.settle();
+		check(ramp[19][20] == 2 && "the painter's canvas".equals(zone.undoName()),
+				"the stroke is the newest edit of the zone's history: " + zone.undoName());
+		check(undo.isEnabled() && !redo.isEnabled(), "and the painter's Undo lights from that history");
+		undo.doClick();
+		check(ramp[19][20] == PaintedGeometry.NO_RAMP && npc[0] == 5,
+				"the painter's Undo takes back the stroke and leaves the zone's edit (ramp " + ramp[19][20] + ", npc " + npc[0] + ")");
+		undo.doClick();
+		check(npc[0] == 0 && ramp[19][20] == PaintedGeometry.NO_RAMP,
+				"and the next takes back the edit made before it, in another editor (npc " + npc[0] + ")");
+		check(!undo.isEnabled() && redo.isEnabled(), "the buttons follow: nothing left to take back, two to put again");
+		redo.doClick();
+		redo.doClick();
+		check(npc[0] == 5 && ramp[19][20] == 2, "and Redo puts both again, in the order they were made");
+	}
+
+	/**
+	 * Re-seeding starts the canvas over in place (F209): its old strokes leave the history, because none
+	 * of them could be put on the new canvas, while the zone's own edits stay. The history cannot see a
+	 * canvas start over - the subject is the same painter - so the painter has to say so.
+	 */
+	static void aReseedForgetsTheCanvasAndKeepsTheZone() throws Exception {
+		System.out.println("--- a re-seed forgets the canvas's strokes and keeps the zone's edits");
+		int[] npc = {0};
+		UndoHistory zone = UndoHistoryTest.overOneNumber(npc);
+		PaintForm form = notch(zone);
+		npc[0] = 5;
+		zone.settle();
+		set(form, "ptool", 4);
+		form.gesturePress(20, 19, false);
+		zone.settle();
+		check("the painter's canvas".equals(zone.undoName()), "fixture: the stroke is the newest edit (" + zone.undoName() + ")");
+		Method seed = PaintForm.class.getDeclaredMethod("seed");
+		seed.setAccessible(true);
+		seed.invoke(form);
+		check("the number".equals(zone.undoName()), "after the re-seed the newest edit is the zone's again: " + zone.undoName());
+		zone.settle();
+		check("the number".equals(zone.undoName()), "and the re-seeded canvas, settled, is no edit: it was seen afresh ("
+				+ zone.undoName() + ")");
+		check(zone.undo() && npc[0] == 0 && !zone.canUndo(), "so Undo takes back the zone's edit, and that is all there was");
+	}
+
 	static void undoRestoresRamps() throws Exception {
 		PaintForm form = notch();
 		int[][] ramp = (int[][]) get(form, "ramp");
+		UndoHistory history = (UndoHistory) get(form, "history");
 		set(form, "ptool", 4);
+		history.settle();   //what the gesture hook does on the press: the canvas as it was
 		form.gesturePress(20, 19, false);
+		history.settle();   //and on the release: what the click changed is the edit
 		check(ramp[19][20] == 2, "fixture: a ramp was placed");
 		try {
 			((JButton) get(form, "undoBtn")).doClick();
-			check(ramp[19][20] == PaintedRegionBuilder.NO_RAMP, "undo takes the ramp away again (" + ramp[19][20] + ")");
+			check(ramp[19][20] == PaintedGeometry.NO_RAMP, "undo takes the ramp away again (" + ramp[19][20] + ")");
 			((JButton) get(form, "redoBtn")).doClick();
 			check(ramp[19][20] == 2, "redo brings it back (" + ramp[19][20] + ")");
 		} catch (RuntimeException ex) {
@@ -241,11 +341,11 @@ public class PaintFormGuardsTest {
 		form.gesturePress(20, 19, false);
 		BufferedImage img = new BufferedImage(DIM * 12, DIM * 12, BufferedImage.TYPE_INT_ARGB);
 		form.drawOverlay(img.getGraphics(), 0, 0, 12);
-		check(new Color(img.getRGB(20 * 12 + 6, 19 * 12 + 6)).equals(ARROW), "the overlay draws the arrow on the ramp tile");
+		check(new Color(img.getRGB(20 * 12 + 6, 19 * 12 + 6)).getRGB() == ARROW, "the overlay draws the arrow on the ramp tile");
 		int stray = 0;
 		for (int ly = 0; ly < DIM; ly++) {
 			for (int lx = 0; lx < DIM; lx++) {
-				if ((lx != 20 || ly != 19) && new Color(img.getRGB(lx * 12 + 6, ly * 12 + 6)).equals(ARROW)) {
+				if ((lx != 20 || ly != 19) && new Color(img.getRGB(lx * 12 + 6, ly * 12 + 6)).getRGB() == ARROW) {
 					stray++;
 				}
 			}
@@ -279,7 +379,7 @@ public class PaintFormGuardsTest {
 		house.ty1 = 12;
 
 		@SuppressWarnings("unchecked")
-		List<TilePainterForm.Placed> placed = (List<TilePainterForm.Placed>) get(form, "placed");
+		List<ctrmap.MapPainter.Placed> placed = (List<ctrmap.MapPainter.Placed>) get(form, "placed");
 
 		form.beginPlacing(house, true);
 		String withRiders = status.getText();
@@ -320,7 +420,7 @@ public class PaintFormGuardsTest {
 	 */
 	static void aRefusedApplySaysSoAndPutsTheMapBack() throws Exception {
 		PaintForm form = document();
-		CtrmapMainframe.mTileMapPanel = new ctrmap.humaninterface.TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+		TestWindow.mTileMapPanel(new ctrmap.humaninterface.TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null));
 		set(form, "previewInScene", true);
 		set(form, "originalModel", new byte[]{1, 2, 3, 4});
 		List<String> said = ctrmap.Ui.record();
@@ -328,7 +428,7 @@ public class PaintFormGuardsTest {
 			form.applyFailed(new IllegalStateException("Area 43 is also used by zones 72, 73"));
 		} finally {
 			ctrmap.Ui.stopRecording();
-			CtrmapMainframe.mTileMapPanel = null;
+			TestWindow.mTileMapPanel(null);
 		}
 		check(said.size() == 1 && said.get(0).contains("Apply failed")
 				&& said.get(0).contains("Area 43 is also used by zones 72, 73")
@@ -362,12 +462,12 @@ public class PaintFormGuardsTest {
 		}
 		PaintApplyGuardsTest.openWorkspace(dump);
 		PaintApplyGuardsTest.open(74);
-		CtrmapMainframe.mTileMapPanel = null;
-		PaintForm form = new PaintForm(PaintApplyGuardsTest.loaded, EDITORS, ZONES, CtrmapMainframe.mTileMapPanel);
+		TestWindow.mTileMapPanel(null);
+		PaintForm form = new PaintForm(PaintApplyGuardsTest.loaded, EDITORS, ZONES, TestWindow.mTileMapPanel(), history());
 		Method seed = PaintForm.class.getDeclaredMethod("seed");
 		seed.setAccessible(true);
 		seed.invoke(form);
-		int[] cell = TilePainterForm.firstRegionCell(PaintApplyGuardsTest.loaded);
+		int[] cell = ctrmap.MapPainter.firstRegionCell(PaintApplyGuardsTest.loaded);
 		check(cell != null, "fixture: zone 74 resolves its own map cell");
 		if (cell == null) {
 			return;
@@ -428,8 +528,8 @@ public class PaintFormGuardsTest {
 		}
 		PaintApplyGuardsTest.openWorkspace(dump);
 		PaintApplyGuardsTest.open(74);
-		CtrmapMainframe.mTileMapPanel = null;
-		PaintForm form = new PaintForm(PaintApplyGuardsTest.loaded, EDITORS, ZONES, CtrmapMainframe.mTileMapPanel);
+		TestWindow.mTileMapPanel(null);
+		PaintForm form = new PaintForm(PaintApplyGuardsTest.loaded, EDITORS, ZONES, TestWindow.mTileMapPanel(), history());
 		//the state a tool exit or a refused Apply finds after a live preview:
 		//a swapped-in model over the zone that is open
 		set(form, "seededZone", PaintApplyGuardsTest.loaded.index());

@@ -1,6 +1,7 @@
 package ctrmap.formats.pokedata;
 
 import ctrmap.formats.GameCache;
+import ctrmap.formats.containers.ContainerBytes;
 import ctrmap.formats.GameFiles;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.text.GFMessageFile;
@@ -9,7 +10,7 @@ import ctrmap.gamedef.GameProfile;
 import java.awt.Color;
 import java.io.File;
 import java.util.List;
-import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.i32;
 
 /**
  * Read-only Pokemon reference data for the editor previews: base stats, types
@@ -219,12 +220,11 @@ public class PokeData {
 		if (moveMini == null || move < 0 || move > moveCount) {
 			return null;
 		}
-		int o = i32(moveMini, 4 + move * 4);
-		if (o + 6 > moveMini.length) {
+		byte[] rec = ContainerBytes.subfile(moveMini, move);
+		if (rec == null || rec.length < 6) {
 			return null;
 		}
-		return new int[]{moveMini[o] & 0xFF, moveMini[o + 2] & 0xFF, moveMini[o + 3] & 0xFF,
-			moveMini[o + 4] & 0xFF, moveMini[o + 5] & 0xFF};
+		return new int[]{rec[0] & 0xFF, rec[2] & 0xFF, rec[3] & 0xFF, rec[4] & 0xFF, rec[5] & 0xFF};
 	}
 
 	public String moveName(int move) {

@@ -1,6 +1,6 @@
 package ctrmap.humaninterface.tools;
 
-import ctrmap.humaninterface.CameraEditForm;
+import ctrmap.formats.zone.WorldGrid;
 import ctrmap.humaninterface.WarpEditForm;
 import ctrmap.formats.zone.ZoneEntities;
 import ctrmap.humaninterface.Selector;
@@ -14,13 +14,9 @@ public class WarpTool extends AbstractTool {
 	/** The warp editor whose warp it moves. */
 	private final WarpEditForm form;
 
-	/** Handed alongside the form: the camera editor this tool keeps in step. */
-	private final CameraEditForm camera;
-
-	public WarpTool(ToolHost host, WarpEditForm form, CameraEditForm camera) {
+	public WarpTool(ToolHost host, WarpEditForm form) {
 		super(host);
 		this.form = form;
-		this.camera = camera;
 	}
 
 	private boolean isDownOnWarp = false;
@@ -60,10 +56,10 @@ public class WarpTool extends AbstractTool {
 			return;
 		}
 		int gidround = (int) Math.round(globimgdim);
-		for (int i = 0; i < form.e.warpCount; i++) {
+		for (int i = 0; i < form.e.warps.size(); i++) {
 			ZoneEntities.Warp warp = form.e.warps.get(i);
-			int xdraw = imgstartx + (int) Math.round(globimgdim * ((warp.x - 9f) / 18f));
-			int ydraw = imgstarty + (int) Math.round(globimgdim * ((warp.y - 9f) / 18f));
+			int xdraw = imgstartx + (int) Math.round(globimgdim * WorldGrid.tileOfCentre(warp.x));
+			int ydraw = imgstarty + (int) Math.round(globimgdim * WorldGrid.tileOfCentre(warp.y));
 			int w = (int) Math.round(globimgdim * warp.w);
 			int h = (int) Math.round(globimgdim * warp.h);
 			g.setColor(Color.WHITE);
@@ -80,14 +76,15 @@ public class WarpTool extends AbstractTool {
 	public void onTileClick(MouseEvent e
 	) {
 		if (form.loaded) {
-			for (int i = 0; i < form.e.warpCount; i++) {
+			for (int i = 0; i < form.e.warps.size(); i++) {
 				ZoneEntities.Warp warp = form.e.warps.get(i);
-				int imgstartx = (host.map().getWidth() - host.map().tilemapScaledImage.getWidth()) / 2;
-				int imgstarty = (host.map().getHeight() - host.map().tilemapScaledImage.getHeight()) / 2;
-				double xBase = (warp.x - 9f) * 400d / 720d * host.map().tilemapScale + imgstartx;
-				double yBase = (warp.y - 9f) * 400d / 720d * host.map().tilemapScale + imgstarty;
-				double width = (warp.w * 18f) * 400d / 720d * host.map().tilemapScale;
-				double height = (warp.h * 18f) * 400d / 720d * host.map().tilemapScale;
+				java.awt.Point origin = host.map().imageOrigin();
+				int imgstartx = origin.x;
+				int imgstarty = origin.y;
+				double xBase = host.map().toScreen(warp.x - 9f) + imgstartx;
+				double yBase = host.map().toScreen(warp.y - 9f) + imgstarty;
+				double width = host.map().toScreen(warp.w * 18f);
+				double height = host.map().toScreen(warp.h * 18f);
 				if (e.getX() > xBase && e.getX() < xBase + width && e.getY() > yBase && e.getY() < yBase + height) {
 					form.showEntry(i);
 					host.redraw();
@@ -101,14 +98,15 @@ public class WarpTool extends AbstractTool {
 	public void onTileMouseDown(MouseEvent e
 	) {
 		if (form.loaded) {
-			for (int i = 0; i < form.e.warpCount; i++) {
+			for (int i = 0; i < form.e.warps.size(); i++) {
 				ZoneEntities.Warp warp = form.e.warps.get(i);
-				int imgstartx = (host.map().getWidth() - host.map().tilemapScaledImage.getWidth()) / 2;
-				int imgstarty = (host.map().getHeight() - host.map().tilemapScaledImage.getHeight()) / 2;
-				double xBase = (warp.x - 9f) * 400d / 720d * host.map().tilemapScale + imgstartx;
-				double yBase = (warp.y - 9f) * 400d / 720d * host.map().tilemapScale + imgstarty;
-				double width = (warp.w * 18f) * 400d / 720d * host.map().tilemapScale;
-				double height = (warp.h * 18f) * 400d / 720d * host.map().tilemapScale;
+				java.awt.Point origin = host.map().imageOrigin();
+				int imgstartx = origin.x;
+				int imgstarty = origin.y;
+				double xBase = host.map().toScreen(warp.x - 9f) + imgstartx;
+				double yBase = host.map().toScreen(warp.y - 9f) + imgstarty;
+				double width = host.map().toScreen(warp.w * 18f);
+				double height = host.map().toScreen(warp.h * 18f);
 				if (e.getX() > xBase && e.getX() < xBase + width && e.getY() > yBase && e.getY() < yBase + height) {
 					form.setWarp(i);
 					isDownOnWarp = true;
@@ -132,8 +130,8 @@ public class WarpTool extends AbstractTool {
 		if (form.warp == null || !form.loaded || !isDownOnWarp || Selector.hilightTileX == -1) {
 			return;
 		}
-		form.warp.x = Selector.hilightTileX * 18 + 9;
-		form.warp.y = Selector.hilightTileY * 18 + 9;
+		form.warp.x = WorldGrid.tileCentre(Selector.hilightTileX);
+		form.warp.y = WorldGrid.tileCentre(Selector.hilightTileY);
 		form.e.modified = true;
 		form.refresh();
 	}
@@ -141,11 +139,6 @@ public class WarpTool extends AbstractTool {
 	@Override
 	public boolean getSelectorEnabled() {
 		return false;
-	}
-
-	@Override
-	public void updateComponents() {
-		camera.showCamera(camera.camIndex, false);
 	}
 
 	@Override

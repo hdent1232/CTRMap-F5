@@ -1,6 +1,5 @@
 package ctrmap.setup;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.ModDeployer;
 import ctrmap.Ui;
 import ctrmap.Workspace;
@@ -111,15 +110,27 @@ public class SetupWizard extends JDialog {
 		return Preferences.userRoot().node(PREF_NODE);
 	}
 
-	/** Opens the wizard. Returns true when the user finished setup successfully. */
-	public static boolean show(Frame parent) {
-		SetupWizard w = new SetupWizard(parent);
+	/**
+	 * Opens the wizard. Returns true when the user finished setup successfully.
+	 *
+	 * @param opened tells the editor the workspace this set up was opened, answering how many zones it
+	 *        has - HANDED, not a call up into the window (F007)
+	 */
+	public static boolean show(Frame parent, java.util.function.ToIntFunction<ctrmap.WorkspaceSession> opened) {
+		if (opened == null) {
+			throw new IllegalArgumentException("the setup wizard must be handed what tells the editor a workspace opened");
+		}
+		SetupWizard w = new SetupWizard(parent, opened);
 		w.setVisible(true);
 		return w.finished;
 	}
 
-	private SetupWizard(Frame parent) {
+	/** See {@link #show}. */
+	private final java.util.function.ToIntFunction<ctrmap.WorkspaceSession> opened;
+
+	private SetupWizard(Frame parent, java.util.function.ToIntFunction<ctrmap.WorkspaceSession> opened) {
 		super(parent, "Set up CTRMap", true);
+		this.opened = opened;
 		buildUi();
 		prefill();
 		showStep(STEP_WELCOME);
@@ -626,7 +637,7 @@ public class SetupWizard extends JDialog {
 		int zones = 0;
 		java.util.List<String> problems = new java.util.ArrayList<>();
 		try {
-			zones = ctrmap.CtrmapMainframe.onWorkspaceOpened(Workspace.validate(this, false, problems));
+			zones = opened.applyAsInt(Workspace.validate(this, false, problems));
 		} catch (RuntimeException ex) {
 			zones = 0;
 			problems.add(Ui.reason(ex));
@@ -812,11 +823,6 @@ public class SetupWizard extends JDialog {
 			}
 		}
 		return n;
-	}
-
-	private static String wrap(String s) {
-		return s == null || s.isEmpty() ? BLANK
-				: "<html><body style='width:566px'>" + Ui.html(s) + "</body></html>";
 	}
 
 	private static JPanel column() {

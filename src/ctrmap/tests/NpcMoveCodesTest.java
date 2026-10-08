@@ -1,6 +1,5 @@
 package ctrmap.tests;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.Workspace;
 import ctrmap.LoadedZone;
 import ctrmap.formats.containers.ZO;
@@ -77,6 +76,7 @@ public class NpcMoveCodesTest {
 		rowsAndCodesLineUp(GameType.XY, "XY");
 		rowsAndCodesLineUp(GameType.ORAS, "ORAS");
 		theFormAsksTheTable();
+		theCodeFieldShowsItsRow();
 
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
@@ -165,7 +165,7 @@ public class NpcMoveCodesTest {
 	static void theFormAsksTheTable() {
 		for (GameType g : new GameType[]{GameType.ORAS, GameType.XY}) {
 			Sessions.bare(new File("no-workspace"), new File("no-game"), g);
-			NPCEditForm form = new NPCEditForm(new LoadedZone(), TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, CtrmapMainframe.mTileMapPanel, pane -> { });
+			NPCEditForm form = new NPCEditForm(new LoadedZone(), TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, TestWindow.mTileMapPanel(), pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
 			int bad = 0;
 			for (int code = 0; code <= PROBE_CEILING; code++) {
 				bad += form.getMot2Index(code) == NpcMoveCodes.movePerm2Index(code, g) ? 0 : 1;
@@ -174,6 +174,46 @@ public class NpcMoveCodesTest {
 				bad += form.getMot2Raw(row) == NpcMoveCodes.movePerm2Raw(row, g) ? 0 : 1;
 			}
 			check(bad == 0, g + ": the form's dropdown translation is the table's, not a copy of it");
+		}
+	}
+
+	/**
+	 * A code TYPED into the field shows its own row, or no row (F104). The field's handler
+	 * compared the raw code with the dropdown's ROW COUNT, so every named code above that count
+	 * - XY 15 16 20 22 23, ORAS 14 15 16 20 22 23, measured - left the previous code's name
+	 * beside the new value. Driven through the form's own handler, from a row that is not the
+	 * answer, so a handler that does nothing is seen.
+	 */
+	static void theCodeFieldShowsItsRow() throws Exception {
+		for (GameType g : new GameType[]{GameType.ORAS, GameType.XY}) {
+			Sessions.bare(new File("no-workspace"), new File("no-game"), g);
+			NPCEditForm form = new NPCEditForm(new LoadedZone(), TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, TestWindow.mTileMapPanel(), pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+			//the rows the form shows once a zone's entities load - filled here with no zone at all
+			java.lang.reflect.Method fill = NPCEditForm.class.getDeclaredMethod("fillMotionDropdowns");
+			fill.setAccessible(true);
+			fill.invoke(form);
+			form.loaded = true;
+			java.lang.reflect.Field field = NPCEditForm.class.getDeclaredField("mp2");
+			java.lang.reflect.Field box = NPCEditForm.class.getDeclaredField("mot2Dropdown");
+			java.lang.reflect.Method typed = NPCEditForm.class.getDeclaredMethod("mp2ActionPerformed", java.awt.event.ActionEvent.class);
+			field.setAccessible(true);
+			box.setAccessible(true);
+			typed.setAccessible(true);
+			javax.swing.JFormattedTextField code = (javax.swing.JFormattedTextField) field.get(form);
+			javax.swing.JComboBox<?> rows = (javax.swing.JComboBox<?>) box.get(form);
+			StringBuilder wrong = new StringBuilder();
+			for (int raw = 0; raw <= PROBE_CEILING; raw++) {
+				int want = NpcMoveCodes.movePerm2Index(raw, g);
+				rows.setSelectedIndex(want == 0 ? 1 : 0);
+				code.setValue(raw);
+				typed.invoke(form, (Object) null);
+				if (rows.getSelectedIndex() != want) {
+					wrong.append(' ').append(raw).append("->row ").append(rows.getSelectedIndex())
+							.append(" (want ").append(want).append(')');
+				}
+			}
+			check(wrong.length() == 0, g + ": a code typed into the field shows its own row, or none"
+					+ (wrong.length() == 0 ? "" : " - not:" + wrong));
 		}
 	}
 

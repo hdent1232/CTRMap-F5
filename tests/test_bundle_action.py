@@ -33,7 +33,9 @@ import tempfile
 import unittest
 from unittest import mock
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+HERE = _tree_root.require(__file__)
 sys.path.insert(0, os.path.join(HERE, "tools"))
 import bundle_hooks          # noqa: E402  - where this project keeps the bundle's hooks
 HOOKS = bundle_hooks.path(HERE)
@@ -220,6 +222,19 @@ class AWriteIsJudgedAsItWouldLeaveTheTree(ScratchProject, unittest.TestCase):
         self.assertIn("compile", self.ask("src/e.py", "x = 1" + LF, "x = (" + LF))
         self.assertNotIn("compile", self.ask("src/e.py", "x = (" + LF, "x = [" + LF),
                          "a file that already did not compile could not be edited")
+
+    def test_a_rule_whose_scope_is_not_a_pattern_is_refused_not_silently_unasked(self):
+        """F168: with AT_SCOPE r'^src/(.*\\.py$' a rule was discovered with no error and every write
+        passed with nothing said - watches() caught re.error and answered "not mine"; and a scope that
+        was not a string was an error row no write kind carried. A RULE THAT CANNOT ANSWER IS NOT A PASS."""
+        for name, scope in (("zzstub_badscope", 'r"^src/(.*\\.py$"'), ("zzstub_numscope", "3")):
+            self.write_file("tools/%s.py" % name, 'AT_WRITE = "found_in"' + LF + "AT_SCOPE = " + scope
+                            + LF + LF + LF + "def found_in(rel, text):" + LF + "    return []" + LF)
+            sys.modules.pop(name, None)
+            self.addCleanup(sys.modules.pop, name, None)
+        said = self.ask("src/b.py", "x = 1" + LF, "x = 2" + LF)
+        for name in ("zzstub_badscope", "zzstub_numscope"):
+            self.assertIn(name, said, "a rule whose scope is not a pattern was never asked: %r" % (said,))
 
     def test_a_rule_that_cannot_answer_refuses_EXCEPT_the_write_that_repairs_it(self):
         payload = {"tool_name": "Write", "tool_input": {

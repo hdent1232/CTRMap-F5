@@ -5,9 +5,8 @@ import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import static ctrmap.formats.LittleEndian.i32;
-import static ctrmap.formats.LittleEndian.u16;
-import static ctrmap.formats.LittleEndian.putU16;
+import static ctrmap.util.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.u16;
 
 /**
  * Gives a zone its own STORY TEXT file - the third of the four things a zone

@@ -42,6 +42,7 @@ import os
 import re
 import subprocess
 import sys
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console window for a captured child (F184)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import shellin                                    # noqa: E402  (path set above)
@@ -109,7 +110,7 @@ def head_of(repo, rev="HEAD"):
     try:
         p = subprocess.Popen(["git", "-C", repo, "rev-parse", "--verify", "--quiet",
                               rev + "^{commit}"],
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=NO_WINDOW)
         out, err = p.communicate(timeout=20)
     except Exception as cannotAsk:
         return None, "%s: %s" % (type(cannotAsk).__name__, cannotAsk)
@@ -123,7 +124,7 @@ def _branch_of(repo):
     """The branch HEAD is on, or None when detached or unreadable."""
     try:
         p = subprocess.Popen(["git", "-C", repo, "symbolic-ref", "--quiet", "--short", "HEAD"],
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=NO_WINDOW)
         out, _ = p.communicate(timeout=20)
     except Exception:
         return None
@@ -247,7 +248,7 @@ def _alias(directory, options, sub):
             return option.split("=", 1)[1]
     try:
         p = subprocess.Popen(["git", "-C", directory, "config", "--get", "alias." + sub],
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=NO_WINDOW)
         out, _ = p.communicate(timeout=20)
     except Exception:
         return None
@@ -399,9 +400,12 @@ def pre_push(remote, lines, repo):
             #whether or not the word `--force` was typed - and one this cannot check is not
             #known to be anything else
             try:
+                #bounded like every child a gate starts: a git that hangs is "cannot be told",
+                #which the except below answers as not a fast-forward
                 behind = subprocess.call(["git", "-C", repo, "merge-base", "--is-ancestor",
                                           remote_sha, local_sha],
-                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                         timeout=20)
             except Exception:
                 behind = 2
             if behind != 0:

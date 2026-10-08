@@ -11,8 +11,8 @@ import java.io.StringReader;
 import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.List;
-import static ctrmap.formats.LittleEndian.f32;
-import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.f32;
+import static ctrmap.util.LittleEndian.i32;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**

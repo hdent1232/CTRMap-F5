@@ -50,6 +50,12 @@ public class Updater {
 	private static final String STAGED = "staged";
 	private static final String BACKUP = "backup";
 	private static final String DOWNLOAD = "download.zip";
+	/**
+	 * The files an apply set aside because they were in use (F120), one absolute path a line. Each
+	 * was renamed next to the file it held, inside the install folder, and nothing removed it: an
+	 * update that met a locked jar or dll left a second copy beside the app for good.
+	 */
+	private static final String ASIDES = "set-aside.txt";
 	/** A release zip larger than this is refused outright. */
 	private static final long MAX_ZIP = 256L << 20;
 
@@ -316,8 +322,9 @@ public class Updater {
 		backup.mkdirs();
 
 		List<String[]> done = new ArrayList<>(); //{relative path} of files replaced
+		List<File> asides = new ArrayList<>();
 		try {
-			copyOver(staged, installDir, backup, "", done);
+			copyOver(staged, installDir, backup, "", done, asides);
 		} catch (IOException ex) {
 			//put back everything already replaced, so a half-applied update
 			//never leaves the user with a program that will not start
@@ -333,7 +340,9 @@ public class Updater {
 				}
 			}
 			throw new IOException("The update could not be applied, so the previous version was put back.\n"
-					+ "Your files are unchanged. Details: " + ex.getMessage(), ex);
+					+ "Your files are unchanged. Details: " + ctrmap.util.Bytes.reason(ex), ex);
+		} finally {
+			remember(installDir, asides);
 		}
 		//applied: drop the marker so the launcher stops trying. The staged tree
 		//is left for the app to sweep, because on Windows the applying JVM is
@@ -352,6 +361,78 @@ public class Updater {
 		File root = stageRoot(installDir);
 		deleteTree(new File(root, STAGED));
 		new File(root, DOWNLOAD).delete();
+		sweepAsides(installDir);
+	}
+
+	/**
+	 * Deletes every file an earlier apply set aside and recorded, and forgets the ones that went.
+	 * Only a recorded path is a candidate, and only one inside the install folder whose name is an
+	 * aside's, so a list that names anything else deletes nothing. One still held open stays on
+	 * the list for the next startup.
+	 */
+	static void sweepAsides(File installDir) {
+		File list = new File(stageRoot(installDir), ASIDES);
+		if (!list.isFile()) {
+			return;
+		}
+		List<String> left = new ArrayList<>();
+		try {
+			String inside = installDir.getCanonicalPath() + File.separator;
+			for (String line : Files.readAllLines(list.toPath(), java.nio.charset.StandardCharsets.UTF_8)) {
+				File f = new File(line.trim());
+				if (line.trim().isEmpty() || !isAside(f.getName()) || !f.getCanonicalPath().startsWith(inside)) {
+					continue;
+				}
+				deleteTree(f);
+				if (f.exists()) {
+					left.add(f.getAbsolutePath());
+				}
+			}
+			if (left.isEmpty()) {
+				list.delete();
+			} else {
+				ctrmap.util.Bytes.replaceFile(list, (String.join("\n", left) + "\n")
+						.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+			}
+		} catch (IOException cannot) {
+			//the list stays as it was and is read again at the next startup
+		}
+	}
+
+	/** Where a file in use is renamed to, beside itself: its name, ".old-", a hex stamp. */
+	static File asideOf(File to) {
+		return new File(to.getParentFile(), to.getName() + ".old-" + Long.toHexString(System.nanoTime()));
+	}
+
+	/** Whether a file name is one {@link #asideOf} gives. */
+	static boolean isAside(String name) {
+		return name.matches(".+\\.old-[0-9a-f]{6,}");
+	}
+
+	/** Adds what an apply set aside to the list the next sweep deletes. */
+	private static void remember(File installDir, List<File> asides) {
+		if (asides.isEmpty()) {
+			return;
+		}
+		List<String> lines = new ArrayList<>();
+		for (File f : asides) {
+			lines.add(f.getAbsolutePath());
+		}
+		try {
+			File list = new File(stageRoot(installDir), ASIDES);
+			list.getParentFile().mkdirs();
+			//through the program's write-beside-then-move, the list read and written back whole: an
+			//append could be torn by a crash, and the next sweep would read half a path
+			List<String> all = new ArrayList<>();
+			if (list.isFile()) {
+				all.addAll(Files.readAllLines(list.toPath(), java.nio.charset.StandardCharsets.UTF_8));
+			}
+			all.addAll(lines);
+			ctrmap.util.Bytes.replaceFile(list, (String.join("\n", all) + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+		} catch (IOException cannot) {
+			System.out.println("CTRMap: could not record the files set aside (" + ctrmap.util.Bytes.reason(cannot)
+					+ "); they are " + lines);
+		}
 	}
 
 	// ---- applying an update to the self-contained Windows bundle -----------
@@ -450,11 +531,16 @@ public class Updater {
 			deleteTree(backup);
 			backup.mkdirs();
 			List<String[]> done = new ArrayList<>();
-			copyOver(payload, target, backup, "", done);
+			List<File> asides = new ArrayList<>();
+			try {
+				copyOver(payload, target, backup, "", done, asides);
+			} finally {
+				remember(target, asides);
+			}
 			new File(stageRoot(target), READY).delete();
 			System.out.println("CTRMap: update applied.");
 		} catch (IOException ex) {
-			System.out.println("CTRMap: could not apply the update: " + ex.getMessage());
+			System.out.println("CTRMap: could not apply the update: " + ctrmap.util.Bytes.reason(ex));
 			return;
 		}
 		try {
@@ -511,7 +597,7 @@ public class Updater {
 			applyStaged(dir);
 			System.out.println("CTRMap: update applied.");
 		} catch (IOException ex) {
-			System.out.println("CTRMap: " + ex.getMessage());
+			System.out.println("CTRMap: " + ctrmap.util.Bytes.reason(ex));
 		}
 	}
 
@@ -533,8 +619,8 @@ public class Updater {
 	}
 
 	/** Recursive copy of {@code src} onto {@code dst}, backing up what it replaces. */
-	private static void copyOver(File src, File dst, File backup, String rel, List<String[]> done)
-			throws IOException {
+	private static void copyOver(File src, File dst, File backup, String rel, List<String[]> done,
+			List<File> asides) throws IOException {
 		File[] kids = src.listFiles();
 		if (kids == null) {
 			return;
@@ -544,7 +630,7 @@ public class Updater {
 			File target = new File(dst, k.getName());
 			if (k.isDirectory()) {
 				target.mkdirs();
-				copyOver(k, target, backup, childRel, done);
+				copyOver(k, target, backup, childRel, done, asides);
 			} else {
 				if (target.isFile()) {
 					File bk = new File(backup, childRel);
@@ -556,7 +642,7 @@ public class Updater {
 				} else if (target.getParentFile() != null) {
 					target.getParentFile().mkdirs();
 				}
-				replace(k, target);
+				replace(k, target, asides);
 			}
 		}
 	}
@@ -565,9 +651,10 @@ public class Updater {
 	 * Overwrites one file, coping with the two things Windows does that a plain
 	 * copy does not survive: jpackage marks its launcher read-only, and a file
 	 * that is still mapped by a process refuses to be overwritten but will
-	 * happily be renamed out of the way.
+	 * happily be renamed out of the way - and what was renamed is added to
+	 * {@code asides}, so the next startup deletes it.
 	 */
-	private static void replace(File from, File to) throws IOException {
+	private static void replace(File from, File to, List<File> asides) throws IOException {
 		IOException last = null;
 		for (int attempt = 0; attempt < 8; attempt++) {
 			try {
@@ -580,11 +667,11 @@ public class Updater {
 				last = ex;
 			}
 			try {
-				File aside = new File(to.getParentFile(),
-						to.getName() + ".old-" + Long.toHexString(System.nanoTime()));
+				File aside = asideOf(to);
 				Files.move(to.toPath(), aside.toPath());
 				try {
 					Files.copy(from.toPath(), to.toPath());
+					asides.add(aside);
 					return;
 				} catch (IOException ex) {
 					Files.move(aside.toPath(), to.toPath()); //put it back, change nothing

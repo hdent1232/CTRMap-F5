@@ -24,7 +24,8 @@ Three things it refuses rather than allows, because each of them is "I could not
     from one that answered no
   * a guard whose `decide()` raises - a guard that crashed did not clear the call
   * a guard that takes longer than `PATIENCE` seconds - PreToolUse is synchronous, and a guard
-    that never returns is one that cannot answer
+    that never returns is one that cannot answer. Enforced by a deadline in THIS process (F169):
+    the harness's own timeout does not refuse a hung hook, it ignores it, and the call goes ahead
 
 TO RUN WITH THE GUARDS BROKEN: the owner sets CTRMAP_GUARD_BROKEN=1 for that session. That
 turns a crashing guard from a refusal into a warning on stderr. It does not turn off a guard
@@ -100,6 +101,30 @@ def guards():
     return out
 
 
+def _within(seconds, call):
+    """(finished, value, error) for CALL run on a daemon thread and waited for SECONDS.
+
+    The bound has to be one this process enforces (F169): `took` was measured after decide()
+    returned, so a guard that never returned was never refused - it held the call until the
+    harness's timeout, and a hook the harness times out is one it IGNORES. The thread is a daemon:
+    a hung guard is abandoned, not joined, and the process exits past it.
+    """
+    import threading
+    box = {}
+
+    def run():
+        try:
+            box["value"] = call()
+        except BaseException as exc:                    # noqa: BLE001 - classified by the caller
+            box["error"] = exc
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        return False, None, None
+    return True, box.get("value"), box.get("error")
+
+
 def ask(name, payload):
     """(deny, reason) from one guard. A guard that cannot answer is a refusal, not a pass."""
     started = time.time()
@@ -109,31 +134,44 @@ def ask(name, payload):
     #: reported as a guard that did not answer. guard_fanout.py was exactly this shape.
     real_stdin = sys.stdin
     sys.stdin = io.StringIO("")
-    try:
+
+    def load():
         spec = importlib.util.spec_from_file_location(
             "ctrmap_guard_" + name[:-3], os.path.join(HERE, name))
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-    except SystemExit:
-        return _broken(name, "it ran itself during import instead of defining decide()", None,
-                       payload)
-    except Exception as cannotLoad:
-        return _broken(name, "it could not be imported", cannotLoad, payload)
+        loaded = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(loaded)
+        return loaded
+    try:
+        #THE IMPORT IS UNDER THE DEADLINE TOO (F169): a guard whose module-level code hangs was the
+        #cheapest way past the bound on decide()
+        finished, module, cannotLoad = _within(PATIENCE, load)
     finally:
         sys.stdin = real_stdin
+    if not finished:
+        return _broken(name, "it did not finish loading within %.0fs" % PATIENCE, None, payload)
+    if isinstance(cannotLoad, SystemExit):
+        return _broken(name, "it ran itself during import instead of defining decide()", None,
+                       payload)
+    if isinstance(cannotLoad, Exception):
+        return _broken(name, "it could not be imported", cannotLoad, payload)
+    if cannotLoad is not None:
+        raise cannotLoad
     decide = getattr(module, "decide", None)
     if decide is None:
         return _broken(name, "it has no decide(payload) for the dispatcher to ask", None,
                        payload)
-    try:
-        answer = decide(payload)
-    except SystemExit:
+    finished, answer, error = _within(PATIENCE, lambda: decide(payload))
+    if not finished:
+        return _broken(name, "it did not answer within %.0fs" % PATIENCE, None, payload)
+    if isinstance(error, SystemExit):
         #: a guard that still exits the process instead of returning a value would take
         #: every guard after it with it, silently. That is a broken guard, not a pass.
         return _broken(name, "it exited the process instead of returning a verdict", None,
                        payload)
-    except Exception as cannotDecide:
-        return _broken(name, "it raised while deciding", cannotDecide, payload)
+    if isinstance(error, Exception):
+        return _broken(name, "it raised while deciding", error, payload)
+    if error is not None:
+        raise error
     took = time.time() - started
     if took > PATIENCE:
         return _broken(name, "it took %.1fs to answer (limit %.0fs)" % (took, PATIENCE),
@@ -186,17 +224,26 @@ def _broken(name, what, error, payload=None):
 CHECKER = os.path.join("CTRMap", "tools", "guard", "hooks_wired.py")
 
 
-def _checker_path():
+def _checker_found():
+    """(the folder the wiring check was found under, its path), or (None, None).
+
+    The folder IS the session root the check is handed - the one whose `.claude` holds these
+    hooks. It was `dirname(dirname(HERE))`, a count that is right only while this file sits two
+    folders below it (F216); the search below already knows where it stopped."""
     here = HERE
     for _ in range(5):
         here = os.path.dirname(here)
         candidate = os.path.join(here, CHECKER)
         if os.path.isfile(candidate):
-            return candidate
+            return here, candidate
         beside = os.path.join(here, "tools", "guard", "hooks_wired.py")
         if os.path.isfile(beside):
-            return beside
-    return None
+            return here, beside
+    return None, None
+
+
+def _checker_path():
+    return _checker_found()[1]
 
 
 #: A file at a repository root whose name says a run is in flight. The remedy for a stale one
@@ -244,7 +291,7 @@ def wiring(payload):
     tool, so all seven were installed, wired, running and off. A suite would have reported
     that afterwards. This refuses the call.
     """
-    checker = _checker_path()
+    session, checker = _checker_found()
     if checker is None:
         return True, (
             "BLOCKED BY PROJECT POLICY (.claude/hooks/guard_all.py).\n"
@@ -257,11 +304,9 @@ def wiring(payload):
         spec = importlib.util.spec_from_file_location("ctrmap_hooks_wired", checker)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        #: the SESSION root - `.claude`'s parent - not `.claude` itself. The check looks for
-        #: the repository's `tools/hooks` at that root or one level down, and handing it
-        #: `.claude` made it report the versioned copies missing when they were one directory
-        #: further out.
-        why = module.findings(os.path.dirname(os.path.dirname(HERE)))
+        #: the SESSION root - `.claude`'s parent - not `.claude` itself: the check finds `.claude`
+        #: at or above it, and handing it `.claude` made it look one directory too deep.
+        why = module.findings(session)
     except Exception as cannotCheck:
         return True, (
             "BLOCKED BY PROJECT POLICY (.claude/hooks/guard_all.py).\n"

@@ -7,8 +7,6 @@ import ctrmap.formats.h3d.model.H3DModel;
 import ctrmap.formats.h3d.texturing.H3DTexture;
 import ctrmap.formats.propdata.ADPropRegistry;
 import ctrmap.gamedef.ArchiveType;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
@@ -37,9 +35,11 @@ public class ADPropRegistryEditor extends ctrmap.humaninterface.FormPanel {
 	 */
 	public ADPropRegistryEditor(PropEditForm parentPropForm) {
 		initComponents();
+		Forms.bound(uid, 0, 0xFFFF); //unsigned 16-bit in the registry: -1 was saved as 0xFFFF (F124)
+		Forms.bound(bm, 0, 0xFFFF);
 		parent = parentPropForm;
 		//ea14 too: left out, it committed a Long that saveEntry's cast threw on (F095)
-		setShortValueClass(new JFormattedTextField[]{oa1, oa2, oa3, ea11, ea12, ea13, ea14});
+		Forms.numberClass(Short.class, new JFormattedTextField[]{oa1, oa2, oa3, ea11, ea12, ea13, ea14});
 	}
 
 	/**
@@ -62,12 +62,6 @@ public class ADPropRegistryEditor extends ctrmap.humaninterface.FormPanel {
 			parent.setProp(parent.propIndex);
 		}
 		return true;
-	}
-
-	public void setShortValueClass(JFormattedTextField[] fields) {
-		for (int i = 0; i < fields.length; i++) {
-			((NumberFormatter) fields[i].getFormatter()).setValueClass(Short.class);
-		}
 	}
 
 	public void loadRegistry(ADPropRegistry reg, List<H3DTexture> propTextures) {
@@ -489,39 +483,6 @@ public class ADPropRegistryEditor extends ctrmap.humaninterface.FormPanel {
 		}
 		reg.modified = true;
     }//GEN-LAST:event_btnRemEntryActionPerformed
-
-	/**
-	 * @param args the command line arguments
-	 */
-	public static void main(String args[]) {
-		/* Set the Nimbus look and feel */
-		//<editor-fold defaultstate="collapsed" desc=" Look and feel setting code (optional) ">
-		/* If Nimbus (introduced in Java SE 6) is not available, stay with the default look and feel.
-         * For details see http://download.oracle.com/javase/tutorial/uiswing/lookandfeel/plaf.html 
-		 */
-		//on the event thread, ahead of the form queued below: the look and feel is Swing's too (F220)
-		java.awt.EventQueue.invokeLater(() -> {
-			try {
-				for (javax.swing.UIManager.LookAndFeelInfo info : javax.swing.UIManager.getInstalledLookAndFeels()) {
-					if ("Nimbus".equals(info.getName())) {
-						javax.swing.UIManager.setLookAndFeel(info.getClassName());
-						break;
-					}
-				}
-			} catch (ClassNotFoundException | InstantiationException | IllegalAccessException | javax.swing.UnsupportedLookAndFeelException ex) {
-				java.util.logging.Logger.getLogger(ADPropRegistryEditor.class
-						.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-			}
-		});
-		//</editor-fold>
-
-		//</editor-fold>
-
-		/* Create and display the form */
-		java.awt.EventQueue.invokeLater(() -> {
-			new ADPropRegistryEditor(null).setVisible(true);
-		});
-	}
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JSpinner bm;

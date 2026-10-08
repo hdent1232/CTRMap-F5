@@ -150,7 +150,7 @@ public class WorkspaceCleanGuardsTest {
 		JTextField gameField = new JTextField(other);
 		final boolean[] saved = {false};
 		List<String> said = Ui.record(JOptionPane.YES_OPTION, JOptionPane.YES_OPTION, JOptionPane.YES_OPTION);
-		WorkspaceSettings.repointGameDir(null, gameField, own, () -> saved[0] = true);
+		WorkspaceSettings.repointGameDir(null, gameField, own, () -> saved[0] = true, () -> { });
 		Ui.stopRecording();
 		boolean asked = false;
 		for (String s : said) {
@@ -212,7 +212,7 @@ public class WorkspaceCleanGuardsTest {
 
 	static Throwable invoke(Method m) throws IllegalAccessException {
 		try {
-			m.invoke(null);
+			m.invoke(TestWindow.W);   //the window is an object (F007)
 			return null;
 		} catch (InvocationTargetException ex) {
 			return ex.getCause();

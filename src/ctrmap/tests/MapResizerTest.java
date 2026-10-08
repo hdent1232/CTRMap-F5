@@ -3,8 +3,8 @@ package ctrmap.tests;
 import ctrmap.MapResizer;
 import ctrmap.formats.garc.GARC;
 import java.io.File;
-import static ctrmap.formats.LittleEndian.i32;
-import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.u16;
 
 /**
  * Matrix-resize core validation over every hasLOD==0 retail matrix: grown to
@@ -129,8 +129,8 @@ public class MapResizerTest {
 		}
 		//extra subfiles byte-identical
 		for (int s = 2; s < count; s++) {
-			int oa = i32(mat, 4 + s * 4), ob = i32(mat, 4 + (s + 1) * 4);
-			int na = i32(out, 4 + s * 4), nb = i32(out, 4 + (s + 1) * 4);
+			int oa = ctrmap.formats.containers.ContainerBytes.offsets(mat)[s], ob = ctrmap.formats.containers.ContainerBytes.offsets(mat)[(s + 1)];
+			int na = ctrmap.formats.containers.ContainerBytes.offsets(out)[s], nb = ctrmap.formats.containers.ContainerBytes.offsets(out)[(s + 1)];
 			if (ob - oa != nb - na) {
 				throw new IllegalStateException("extra subfile " + s + " size changed");
 			}
@@ -141,7 +141,7 @@ public class MapResizerTest {
 			}
 		}
 		//container well-formed: offsets contiguous, last == length
-		if (i32(out, 4 + count * 4) != out.length) {
+		if (ctrmap.formats.containers.ContainerBytes.offsets(out)[count] != out.length) {
 			throw new IllegalStateException("container end offset wrong");
 		}
 	}

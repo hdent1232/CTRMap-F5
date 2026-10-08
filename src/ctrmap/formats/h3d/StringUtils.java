@@ -1,7 +1,7 @@
 
 package ctrmap.formats.h3d;
 
-import ctrmap.LittleEndianDataInputStream;
+import ctrmap.util.LittleEndianDataInputStream;
 import java.io.IOException;
 
 /**
@@ -37,7 +37,7 @@ public class StringUtils {
 		try {
 			return cString(b, address);
 		} catch (IllegalArgumentException ex) {
-			throw new IOException(ex.getMessage(), ex);
+			throw new IOException(ctrmap.util.Bytes.reason(ex), ex);
 		}
 	}
 

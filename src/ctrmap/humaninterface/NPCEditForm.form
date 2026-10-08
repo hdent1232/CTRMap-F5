@@ -46,6 +46,17 @@
                       <Group type="103" groupAlignment="0" attributes="0">
                           <Component id="headerSep" max="32767" attributes="0"/>
                           <Component id="btnRegEdit" alignment="0" max="32767" attributes="0"/>
+                          <Component id="dlgSep" alignment="0" max="32767" attributes="0"/>
+                          <Component id="dlgScrollPane" alignment="0" max="32767" attributes="0"/>
+                          <Component id="btnEditDialogue" alignment="0" max="32767" attributes="0"/>
+                          <Component id="btnAddTalker" alignment="0" max="32767" attributes="0"/>
+                          <Group type="102" alignment="0" attributes="0">
+                              <Group type="103" groupAlignment="0" attributes="0">
+                                  <Component id="dlgLabel" min="-2" max="-2" attributes="0"/>
+                                  <Component id="dlgStatus" min="-2" max="-2" attributes="0"/>
+                              </Group>
+                              <EmptySpace min="0" pref="0" max="32767" attributes="0"/>
+                          </Group>
                           <Component id="btnSave" alignment="0" max="32767" attributes="0"/>
                           <Component id="btnRemoveEntry" alignment="0" max="32767" attributes="0"/>
                           <Component id="btnNewEntry" alignment="0" max="32767" attributes="0"/>
@@ -76,6 +87,8 @@
                               <Component id="scrLabel" min="-2" max="-2" attributes="0"/>
                               <EmptySpace max="-2" attributes="0"/>
                               <Component id="scr" max="32767" attributes="0"/>
+                              <EmptySpace max="-2" attributes="0"/>
+                              <Component id="scrDropdown" min="-2" pref="110" max="-2" attributes="0"/>
                           </Group>
                           <Group type="102" alignment="0" attributes="0">
                               <Component id="facedirLabel" min="-2" max="-2" attributes="0"/>
@@ -175,6 +188,7 @@
                   <Component id="evtFlag" alignment="3" min="-2" max="-2" attributes="0"/>
                   <Component id="scrLabel" alignment="3" min="-2" max="-2" attributes="0"/>
                   <Component id="scr" alignment="3" min="-2" max="-2" attributes="0"/>
+                  <Component id="scrDropdown" alignment="3" min="-2" max="-2" attributes="0"/>
               </Group>
               <EmptySpace max="-2" attributes="0"/>
               <Component id="headerSep" min="-2" pref="2" max="-2" attributes="0"/>
@@ -275,6 +289,18 @@
               <Component id="btnSave" min="-2" max="-2" attributes="0"/>
               <EmptySpace max="-2" attributes="0"/>
               <Component id="btnRegEdit" min="-2" max="-2" attributes="0"/>
+              <EmptySpace max="-2" attributes="0"/>
+              <Component id="dlgSep" min="-2" pref="2" max="-2" attributes="0"/>
+              <EmptySpace max="-2" attributes="0"/>
+              <Component id="dlgLabel" min="-2" max="-2" attributes="0"/>
+              <EmptySpace max="-2" attributes="0"/>
+              <Component id="dlgStatus" min="-2" max="-2" attributes="0"/>
+              <EmptySpace max="-2" attributes="0"/>
+              <Component id="dlgScrollPane" min="-2" pref="60" max="-2" attributes="0"/>
+              <EmptySpace max="-2" attributes="0"/>
+              <Component id="btnEditDialogue" min="-2" max="-2" attributes="0"/>
+              <EmptySpace max="-2" attributes="0"/>
+              <Component id="btnAddTalker" min="-2" max="-2" attributes="0"/>
               <EmptySpace max="32767" attributes="0"/>
           </Group>
       </Group>
@@ -714,6 +740,69 @@
       <AuxValues>
         <AuxValue name="JavaCodeGenerator_TypeParameters" type="java.lang.String" value="&lt;String&gt;"/>
       </AuxValues>
+    </Component>
+    <Component class="javax.swing.JComboBox" name="scrDropdown">
+      <Properties>
+        <Property name="model" type="javax.swing.ComboBoxModel" editor="org.netbeans.modules.form.editors2.ComboBoxModelEditor">
+          <StringArray count="0"/>
+        </Property>
+      </Properties>
+      <Events>
+        <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="scrDropdownActionPerformed"/>
+      </Events>
+      <AuxValues>
+        <AuxValue name="JavaCodeGenerator_TypeParameters" type="java.lang.String" value="&lt;String&gt;"/>
+      </AuxValues>
+    </Component>
+    <Component class="javax.swing.JSeparator" name="dlgSep">
+    </Component>
+    <Component class="javax.swing.JLabel" name="dlgLabel">
+      <Properties>
+        <Property name="text" type="java.lang.String" value="Dialogue:"/>
+      </Properties>
+    </Component>
+    <Component class="javax.swing.JLabel" name="dlgStatus">
+      <Properties>
+        <Property name="foreground" type="java.awt.Color" editor="org.netbeans.beaninfo.editors.ColorEditor">
+          <Color blue="66" green="66" red="66" type="rgb"/>
+        </Property>
+        <Property name="text" type="java.lang.String" value="No zone loaded."/>
+      </Properties>
+    </Component>
+    <Container class="javax.swing.JScrollPane" name="dlgScrollPane">
+      <AuxValues>
+        <AuxValue name="autoScrollPane" type="java.lang.Boolean" value="true"/>
+      </AuxValues>
+
+      <Layout class="org.netbeans.modules.form.compat2.layouts.support.JScrollPaneSupportLayout"/>
+      <SubComponents>
+        <Component class="javax.swing.JTextArea" name="dlgPreview">
+          <Properties>
+            <Property name="editable" type="boolean" value="false"/>
+            <Property name="lineWrap" type="boolean" value="true"/>
+            <Property name="rows" type="int" value="3"/>
+            <Property name="wrapStyleWord" type="boolean" value="true"/>
+          </Properties>
+        </Component>
+      </SubComponents>
+    </Container>
+    <Component class="javax.swing.JButton" name="btnEditDialogue">
+      <Properties>
+        <Property name="text" type="java.lang.String" value="Edit dialogue..."/>
+        <Property name="enabled" type="boolean" value="false"/>
+      </Properties>
+      <Events>
+        <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="btnEditDialogueActionPerformed"/>
+      </Events>
+    </Component>
+    <Component class="javax.swing.JButton" name="btnAddTalker">
+      <Properties>
+        <Property name="text" type="java.lang.String" value="Add NPC / object..."/>
+        <Property name="enabled" type="boolean" value="false"/>
+      </Properties>
+      <Events>
+        <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="btnAddTalkerActionPerformed"/>
+      </Events>
     </Component>
   </SubComponents>
 </Form>

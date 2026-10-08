@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import ctrmap.formats.LittleEndian;
+import ctrmap.util.LittleEndian;
 
 /**
  * Lossless structural reader for ORAS FieldData map-model BCH files (the visual
@@ -262,20 +262,52 @@ public class BchMapModel {
 	private static final int[] TYPE_BYTES = {1, 1, 2, 4};
 
 	/** Located vertex geometry for one mesh: where its position attribute lives
-	 *  in the raw vertex buffer, and how many vertices it has. Position is
-	 *  Float(3) in every real ORAS map model (verified: 163,499 verts, 0 garbage). */
+	 *  in the raw vertex buffer, and how many vertices it has. Positions are read
+	 *  as Float(3); a mesh whose position attribute is any other shape is not
+	 *  decoded ({@link #posOk} false) - see {@link BchMapModel#undecodedMeshes}.
+	 *  How many retail has is counted over the corpus by BchMapModelTest (F239:
+	 *  this comment said none and the next said a minority, and neither was
+	 *  measured by anything in the tree). */
 	public static final class MeshGeom {
-		public int meshIndex;
-		public int vtxAbs;       // absolute file offset of the vertex buffer
-		public int stride;       // bytes per vertex
-		public int posOffset;    // byte offset of the position attribute within a vertex (-1 if none)
-		public int posType;      // PICA format: 3 == float
-		public int posElems;     // components (3 for XYZ)
-		public int vertexCount;  // vertex count, bounded by the buffer's actual extent
+		public final int meshIndex;
+		public final int vtxAbs;       // absolute file offset of the vertex buffer
+		public final int stride;       // bytes per vertex
+		public final int posOffset;    // byte offset of the position attribute within a vertex (-1 if none)
+		public final int posType;      // PICA format: 3 == float
+		public final int posElems;     // components (3 for XYZ)
+		public final int vertexCount;  // vertex count, bounded by the buffer's actual extent
 		/** True when the position attribute decoded confidently (Float(3), fits the
-		 *  stride, finite map-scale coords). A minority of meshes use a vertex-format
-		 *  variant this reader doesn't decode; those are left untouched by edits. */
-		public boolean posOk;
+		 *  stride, finite map-scale coords). A mesh where it is false is left untouched
+		 *  by every edit, and the edits that report say how many were (F239). */
+		public final boolean posOk;
+
+		/** Final, so the one decode {@link #geometry} keeps for the model is the one every caller reads (F068). */
+		MeshGeom(int meshIndex, int vtxAbs, int stride, int posOffset, int posType, int posElems, int vertexCount,
+				boolean posOk) {
+			this.meshIndex = meshIndex;
+			this.vtxAbs = vtxAbs;
+			this.stride = stride;
+			this.posOffset = posOffset;
+			this.posType = posType;
+			this.posElems = posElems;
+			this.vertexCount = vertexCount;
+			this.posOk = posOk;
+		}
+	}
+
+	/**
+	 * The meshes whose positions did not decode - every geometry edit leaves them where they are,
+	 * so an edit that reports says how many it left (F239). Empty for a model all of whose
+	 * meshes decoded.
+	 */
+	public java.util.List<Integer> undecodedMeshes() {
+		java.util.List<Integer> out = new java.util.ArrayList<>();
+		for (MeshGeom g : geometry()) {
+			if (!g.posOk) {
+				out.add(g.meshIndex);
+			}
+		}
+		return out;
 	}
 
 	/**
@@ -353,6 +385,20 @@ public class BchMapModel {
 	 * geometry edits possible without touching any pointer/scaffolding.
 	 */
 	public List<MeshGeom> geometry() {
+		if (geometry == null) {
+			geometry = java.util.Collections.unmodifiableList(decodeGeometry());
+		}
+		return geometry;
+	}
+
+	/**
+	 * The decode, kept: the model's bytes do not change under it - every edit returns a new array -
+	 * and the geometry tools asked for it of every mesh several times per mesh, hundreds of full
+	 * passes a click on a region of 20-40 meshes (F068).
+	 */
+	private List<MeshGeom> geometry;
+
+	private List<MeshGeom> decodeGeometry() {
 		Map<Integer, Integer> idxElem = new HashMap<>();
 		for (int[] ib : idxBuffers) {
 			idxElem.put(ib[1], ib[2]);
@@ -377,11 +423,9 @@ public class BchMapModel {
 			long fmt64 = u32(p + 0x28) | (u32(p + 0x2C) << 32);
 			long perm64 = u32(p + 0x10) | (u32(p + 0x18) << 32);
 			long attrs64 = u32(p + 0x34) | (u32(p + 0x38) << 32);
-			MeshGeom g = new MeshGeom();
-			g.meshIndex = mi;
-			g.vtxAbs = rawDataAddr + i32(p + 0x30);
-			g.stride = (int) ((attrs64 >>> 48) & 0xFF);
-			g.posOffset = -1;
+			int vtxAbs = rawDataAddr + i32(p + 0x30);
+			int stride = (int) ((attrs64 >>> 48) & 0xFF);
+			int posOffset = -1, posType = 0, posElems = 0;
 			// attrs64 bits 60-63 hold the buffer's component COUNT directly (not
 			// count-1). Walk exactly that many; take the FIRST Position (name 0).
 			// Both guards matter: trailing nibbles are 0, which would otherwise
@@ -395,10 +439,10 @@ public class BchMapModel {
 				int fmtNibble = (int) ((fmt64 >>> (permIndex * 4)) & 0xF);
 				int type = fmtNibble & 3;
 				int elems = ((fmtNibble >>> 2) & 3) + 1;
-				if (name == 0 && g.posOffset < 0) { // Position (first match)
-					g.posOffset = running;
-					g.posType = type;
-					g.posElems = elems;
+				if (name == 0 && posOffset < 0) { // Position (first match)
+					posOffset = running;
+					posType = type;
+					posElems = elems;
 				}
 				running += elems * TYPE_BYTES[type];
 			}
@@ -420,23 +464,23 @@ public class BchMapModel {
 				}
 				idxCount = maxIndex + 1;
 			}
-			Integer next = starts.higher(g.vtxAbs);
-			int extent = (next != null ? next : rawEnd) - g.vtxAbs;
-			int byExtent = g.stride > 0 ? extent / g.stride : 0;
-			g.vertexCount = idxCount > 0 ? Math.min(idxCount, byExtent) : byExtent;
+			Integer next = starts.higher(vtxAbs);
+			int extent = (next != null ? next : rawEnd) - vtxAbs;
+			int byExtent = stride > 0 ? extent / stride : 0;
+			int vertexCount = idxCount > 0 ? Math.min(idxCount, byExtent) : byExtent;
 
 			// decode confidence: a Float(3) position that fits the stride and whose
 			// first/last vertex read as finite, map-scale coordinates.
-			g.posOk = g.posOffset >= 0 && g.posType == 3 && g.posElems >= 3
-					&& g.stride >= g.posOffset + 12 && g.vertexCount > 0
-					&& coordSane(g, 0) && coordSane(g, g.vertexCount - 1);
-			out.add(g);
+			boolean posOk = posOffset >= 0 && posType == 3 && posElems >= 3
+					&& stride >= posOffset + 12 && vertexCount > 0
+					&& coordSane(vtxAbs + posOffset, stride, 0) && coordSane(vtxAbs + posOffset, stride, vertexCount - 1);
+			out.add(new MeshGeom(mi, vtxAbs, stride, posOffset, posType, posElems, vertexCount, posOk));
 		}
 		return out;
 	}
 
-	private boolean coordSane(MeshGeom g, int v) {
-		int base = g.vtxAbs + v * g.stride + g.posOffset;
+	private boolean coordSane(int firstPos, int stride, int v) {
+		int base = firstPos + v * stride;
 		if (base < 0 || base + 12 > raw.length) {
 			return false;
 		}
@@ -481,21 +525,32 @@ public class BchMapModel {
 	 * decodable Float(3) position.
 	 */
 	public byte[] setVertexPositions(int meshIndex, float[][] positions) {
+		return setVertexPositions(java.util.Collections.singletonMap(meshIndex, positions));
+	}
+
+	/**
+	 * {@link #setVertexPositions(int, float[][])} for several meshes, written into ONE copy - the
+	 * edit is offset-preserving, so nothing moves and no re-parse is owed between meshes (F068: the
+	 * box move wrote one mesh, re-parsed the whole model, and went on to the next). A mesh index out
+	 * of range, or a mesh without decodable positions, is left as it is.
+	 */
+	public byte[] setVertexPositions(Map<Integer, float[][]> positionsByMesh) {
 		List<MeshGeom> geom = geometry();
-		if (meshIndex < 0 || meshIndex >= geom.size()) {
-			return raw.clone();
-		}
-		MeshGeom g = geom.get(meshIndex);
 		byte[] out = raw.clone();
-		if (!g.posOk || positions == null) {
-			return out;
-		}
-		int n = Math.min(positions.length, g.vertexCount);
-		for (int v = 0; v < n; v++) {
-			int base = g.vtxAbs + v * g.stride + g.posOffset;
-			LittleEndian.putF32(out, base, positions[v][0]);
-			LittleEndian.putF32(out, base + 4, positions[v][1]);
-			LittleEndian.putF32(out, base + 8, positions[v][2]);
+		for (Map.Entry<Integer, float[][]> e : positionsByMesh.entrySet()) {
+			int meshIndex = e.getKey();
+			float[][] positions = e.getValue();
+			if (meshIndex < 0 || meshIndex >= geom.size() || positions == null || !geom.get(meshIndex).posOk) {
+				continue;
+			}
+			MeshGeom g = geom.get(meshIndex);
+			int n = Math.min(positions.length, g.vertexCount);
+			for (int v = 0; v < n; v++) {
+				int base = g.vtxAbs + v * g.stride + g.posOffset;
+				LittleEndian.putF32(out, base, positions[v][0]);
+				LittleEndian.putF32(out, base + 4, positions[v][1]);
+				LittleEndian.putF32(out, base + 8, positions[v][2]);
+			}
 		}
 		return out;
 	}
@@ -577,6 +632,29 @@ public class BchMapModel {
 			return null;
 		}
 		return StringUtils.cString(raw, namePtr);
+	}
+
+	/**
+	 * The texture names a material's header names in its three texture slots (+0x1C/+0x20/+0x24),
+	 * in slot order, each once - what must exist in the AREA's texture packs for the material to
+	 * draw. The one reader (F093): the terrain importer and the prefab cutter each wrote this loop
+	 * out, and a string that ran off the end came back cut short rather than refused.
+	 *
+	 * @throws IllegalArgumentException when a slot's string runs off the end of the model
+	 */
+	public List<String> getMaterialTextureNames(int matIndex) {
+		List<String> out = new ArrayList<>();
+		int header = materialHeaderOffsets.get(matIndex);
+		for (int slot : new int[]{0x1C, 0x20, 0x24}) {
+			int at = ptr(header + slot);
+			if (at > 0) {
+				String name = StringUtils.cString(raw, at);
+				if (!name.isEmpty() && !out.contains(name)) {
+					out.add(name);
+				}
+			}
+		}
+		return out;
 	}
 
 	/**
@@ -725,6 +803,16 @@ public class BchMapModel {
 	 *         upgraded to u16 automatically when needed)
 	 */
 	public byte[] appendGeometry(int meshIndex, byte[] extraVertexBytes, int[] extraIndices) {
+		return setMeshGeometries(java.util.Collections.singletonMap(meshIndex,
+				grown(meshIndex, extraVertexBytes, extraIndices)));
+	}
+
+	/**
+	 * The edit that grows mesh {@code meshIndex} by these vertices and faces: its own buffers, then
+	 * the extra - what {@link #appendGeometry} writes, for {@link #setMeshGeometries} to write with
+	 * other meshes' edits in one rebuild.
+	 */
+	public MeshEdit grown(int meshIndex, byte[] extraVertexBytes, int[] extraIndices) {
 		List<MeshGeom> geom = geometry();
 		if (meshIndex < 0 || meshIndex >= geom.size()) {
 			throw new IllegalArgumentException("mesh index out of range");
@@ -737,79 +825,20 @@ public class BchMapModel {
 			throw new IllegalArgumentException("extra vertex bytes (" + extraVertexBytes.length
 					+ ") must be a multiple of the mesh stride (" + g.stride + ")");
 		}
-		int vtxCmdLoc = meshes.get(meshIndex)[1] + 0x30;     // ATTRIBBUFFER0_OFFSET word
-		int vtxDataLen = g.vertexCount * g.stride;
-		int subCmdPtr = ptr(meshes.get(meshIndex)[3] + 0x2C);
-		int idxCmdLoc = subCmdPtr + 0x10;                    // INDEXBUFFER_CONFIG word
-		int numVerticesLoc = idxCmdLoc + 8;                  // NUMVERTICES param
-		int elemSize = -1;
-		for (int[] ib : idxBuffers) {
-			if (ib[1] == idxCmdLoc) {
-				elemSize = ib[2];
-				break;
-			}
-		}
-		if (elemSize < 0) {
+		int[] old = getTriangles(meshIndex);
+		if (old == null) {
 			throw new IllegalStateException("mesh " + meshIndex + " index buffer not located");
 		}
-		int idxAbs = rawDataAddr + (i32(idxCmdLoc) & 0x7FFFFFFF);
-		int curIndexCount = i32(numVerticesLoc);
-		int newVertexCount = g.vertexCount + extraVertexBytes.length / g.stride;
-
-		// combine indices, then range-check against the current index width
-		int[] newIndices = new int[curIndexCount + extraIndices.length];
-		int maxIdx = 0;
-		for (int i = 0; i < curIndexCount; i++) {
-			newIndices[i] = elemSize == 1 ? (raw[idxAbs + i] & 0xFF) : u16(idxAbs + i * 2);
-			maxIdx = Math.max(maxIdx, newIndices[i]);
-		}
-		for (int i = 0; i < extraIndices.length; i++) {
-			newIndices[curIndexCount + i] = extraIndices[i];
-			maxIdx = Math.max(maxIdx, extraIndices[i]);
-		}
-		if (maxIdx >= newVertexCount) {
-			throw new IllegalArgumentException("an index references a vertex that does not exist (max index "
-					+ maxIdx + " >= vertex count " + newVertexCount + ")");
-		}
-		// upgrade the index width to u16 if the new range needs it
-		int newElemSize = (elemSize == 1 && maxIdx > 0xFF) ? 2 : elemSize;
-		if (maxIdx > 0xFFFF) {
-			throw new IllegalStateException("mesh " + meshIndex + " would exceed 16-bit indices (max index " + maxIdx + ")");
-		}
-
-		byte[] newVtx = new byte[vtxDataLen + extraVertexBytes.length];
-		System.arraycopy(raw, g.vtxAbs, newVtx, 0, vtxDataLen);
-		System.arraycopy(extraVertexBytes, 0, newVtx, vtxDataLen, extraVertexBytes.length);
-
-		byte[] newIdx = new byte[newIndices.length * newElemSize];
-		for (int i = 0; i < newIndices.length; i++) {
-			if (newElemSize == 1) {
-				newIdx[i] = (byte) newIndices[i];
-			} else {
-				newIdx[i * 2] = (byte) newIndices[i];
-				newIdx[i * 2 + 1] = (byte) (newIndices[i] >> 8);
-			}
-		}
-
-		Map<Integer, byte[]> repl = new HashMap<>();
-		repl.put(vtxCmdLoc, newVtx);
-		repl.put(idxCmdLoc, newIdx);
-		byte[] out = rebuildRawData(repl, newElemSize != elemSize ? upgradeOrderFix(idxCmdLoc) : null);
-		LittleEndian.putI32(out, numVerticesLoc, newIndices.length); // NUMVERTICES = new draw count
-
-		// if the index width was upgraded u8 -> u16, flip its relocation flag
-		// (0x28 RawDataIndex8 -> 0x27 RawDataIndex16) so the loader reads 2-byte
-		// indices; the on-disk offset word stays plain (the high bit is injected
-		// at load by the relocator per the flag)
-		if (newElemSize != elemSize) {
-			int ei = relocEntryIndexFor(idxCmdLoc, 0x28);
-			if (ei >= 0) {
-				int outRelocAddr = LittleEndian.i32(out, 28);
-				int off = outRelocAddr + ei * 4;
-				LittleEndian.putI32(out, off, (LittleEndian.i32(out, off) & 0x1FFFFFF) | (0x27 << 25));
-			}
-		}
-		return out;
+		//THE MESH AS IT IS, AND THE EXTRA (F062): this was the whole of setMeshGeometry written out a
+		//second time - the buffer lookup, the width upgrade, the encoding and the relocation flip -
+		//so a fix to one stayed out of the other. Growing a mesh IS replacing it with more.
+		int vtxDataLen = g.vertexCount * g.stride;
+		byte[] vertices = new byte[vtxDataLen + extraVertexBytes.length];
+		System.arraycopy(raw, g.vtxAbs, vertices, 0, vtxDataLen);
+		System.arraycopy(extraVertexBytes, 0, vertices, vtxDataLen, extraVertexBytes.length);
+		int[] indices = java.util.Arrays.copyOf(old, old.length + extraIndices.length);
+		System.arraycopy(extraIndices, 0, indices, old.length, extraIndices.length);
+		return new MeshEdit(vertices, indices);
 	}
 
 	/**
@@ -819,7 +848,8 @@ public class BchMapModel {
 	 * vertex format; {@code vertexBytes} must be whole strides in the mesh's
 	 * exact attribute layout. The index width adapts automatically (u8 buffers
 	 * upgrade to u16 when the new vertex count needs it, including the reloc
-	 * flag flip - same mechanics as {@link #appendGeometry}).
+	 * flag flip). The one place a mesh's buffers are rewritten: {@link #appendGeometry}
+	 * is this with the mesh's own vertices and faces first (F062).
 	 *
 	 * @param meshIndex   the mesh to replace
 	 * @param vertexBytes the new vertex data (n * stride bytes)
@@ -827,6 +857,32 @@ public class BchMapModel {
 	 * @return a new BCH with the replaced mesh
 	 */
 	public byte[] setMeshGeometry(int meshIndex, byte[] vertexBytes, int[] indices) {
+		return setMeshGeometries(java.util.Collections.singletonMap(meshIndex, new MeshEdit(vertexBytes, indices)));
+	}
+
+	/** A mesh's new vertex buffer (whole strides, in its own layout) and triangle list. */
+	public static final class MeshEdit {
+
+		public final byte[] vertices;
+		public final int[] indices;
+
+		public MeshEdit(byte[] vertices, int[] indices) {
+			this.vertices = vertices.clone();
+			this.indices = indices.clone();
+		}
+	}
+
+	/** One edit checked and encoded, with where it goes. */
+	private static final class Prepared {
+
+		int vtxCmdLoc, idxCmdLoc, numVerticesLoc, elemSize, newElemSize;
+		byte[] vertices, encodedIndices;
+		int indexCount;
+	}
+
+	private Prepared prepare(int meshIndex, MeshEdit edit) {
+		byte[] vertexBytes = edit.vertices;
+		int[] indices = edit.indices;
 		List<MeshGeom> geom = geometry();
 		if (meshIndex < 0 || meshIndex >= geom.size()) {
 			throw new IllegalArgumentException("mesh index out of range");
@@ -878,21 +934,74 @@ public class BchMapModel {
 			if (newElemSize == 1) {
 				newIdx[i] = (byte) indices[i];
 			} else {
-				newIdx[i * 2] = (byte) indices[i];
-				newIdx[i * 2 + 1] = (byte) (indices[i] >> 8);
+				LittleEndian.putU16(newIdx, i * 2, indices[i]);
 			}
 		}
+		Prepared p = new Prepared();
+		p.vtxCmdLoc = vtxCmdLoc;
+		p.idxCmdLoc = idxCmdLoc;
+		p.numVerticesLoc = numVerticesLoc;
+		p.elemSize = elemSize;
+		p.newElemSize = newElemSize;
+		p.vertices = vertexBytes.clone();
+		p.encodedIndices = newIdx;
+		p.indexCount = indices.length;
+		return p;
+	}
+
+	/**
+	 * Replaces several meshes' geometry in ONE rebuild of the raw data (F068): the box duplicate and
+	 * delete rebuilt and re-parsed the whole model once per mesh they touched. The one place a mesh's
+	 * buffers are rewritten - setMeshGeometry and appendGeometry are this with one edit.
+	 *
+	 * <p>AT MOST ONE 8-BIT INDEX BUFFER WIDENED PER REBUILD. A buffer widened to 16 bits is placed
+	 * just before the first OTHER 8-bit buffer, so GF's grouping survives; two widened at once would
+	 * each count the other as staying 8-bit. More than one is written one rebuild at a time.
+	 */
+	public byte[] setMeshGeometries(Map<Integer, MeshEdit> edits) {
+		if (edits.isEmpty()) {
+			return raw.clone();
+		}
+		Map<Integer, Prepared> prepared = new java.util.TreeMap<>();
+		Integer widened = null;
+		int widenings = 0;
+		for (Map.Entry<Integer, MeshEdit> e : new java.util.TreeMap<>(edits).entrySet()) {
+			Prepared p = prepare(e.getKey(), e.getValue());
+			prepared.put(e.getKey(), p);
+			if (p.newElemSize != p.elemSize) {
+				widenings++;
+				widened = widened == null ? e.getKey() : widened;
+			}
+		}
+		if (widenings > 1) {
+			Map<Integer, MeshEdit> rest = new java.util.TreeMap<>(edits);
+			MeshEdit first = rest.remove(widened);
+			byte[] once = setMeshGeometries(java.util.Collections.singletonMap(widened, first));
+			return new BchMapModel(once).setMeshGeometries(rest);
+		}
 		Map<Integer, byte[]> repl = new HashMap<>();
-		repl.put(vtxCmdLoc, vertexBytes.clone());
-		repl.put(idxCmdLoc, newIdx);
-		byte[] out = rebuildRawData(repl, newElemSize != elemSize ? upgradeOrderFix(idxCmdLoc) : null);
-		LittleEndian.putI32(out, numVerticesLoc, indices.length);
-		if (newElemSize != elemSize) {
-			int ei = relocEntryIndexFor(idxCmdLoc, 0x28);
-			if (ei >= 0) {
-				int outRelocAddr = LittleEndian.i32(out, 28);
-				int off = outRelocAddr + ei * 4;
-				LittleEndian.putI32(out, off, (LittleEndian.i32(out, off) & 0x1FFFFFF) | (0x27 << 25));
+		Map<Integer, Long> orderFix = null;
+		for (Prepared p : prepared.values()) {
+			repl.put(p.vtxCmdLoc, p.vertices);
+			repl.put(p.idxCmdLoc, p.encodedIndices);
+			if (p.newElemSize != p.elemSize) {
+				orderFix = upgradeOrderFix(p.idxCmdLoc);
+			}
+		}
+		byte[] out = rebuildRawData(repl, orderFix);
+		for (Prepared p : prepared.values()) {
+			LittleEndian.putI32(out, p.numVerticesLoc, p.indexCount);
+			// if the index width was upgraded u8 -> u16, flip its relocation flag
+			// (0x28 RawDataIndex8 -> 0x27 RawDataIndex16) so the loader reads 2-byte
+			// indices; the on-disk offset word stays plain (the high bit is injected
+			// at load by the relocator per the flag)
+			if (p.newElemSize != p.elemSize) {
+				int ei = relocEntryIndexFor(p.idxCmdLoc, 0x28);
+				if (ei >= 0) {
+					int outRelocAddr = LittleEndian.i32(out, 28);
+					int off = outRelocAddr + ei * 4;
+					LittleEndian.putI32(out, off, (LittleEndian.i32(out, off) & 0x1FFFFFF) | (0x27 << 25));
+				}
 			}
 		}
 		return out;

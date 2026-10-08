@@ -29,7 +29,7 @@ package ctrmap.formats.zone;
  * which looked like data and was arithmetic over two different things. The conversion is the
  * one {@code GeoBoxOps} already documents: 1 tile = 18 world units, a cell = 40x40 tiles.
  *
- * <p>Not: {@code TilePainterForm.firstRegionCell} - the nearest thing in the tree, and it does
+ * <p>Not: {@code MapPainter.firstRegionCell} - the nearest thing in the tree, and it does
  * convert a zone's header position into a matrix cell with the same {@code / 720}. Three
  * reasons it could not be called. It answers with ONE cell, the spawn's, where the question
  * here is the whole span a zone occupies - zone 61 spreads over three. It takes a

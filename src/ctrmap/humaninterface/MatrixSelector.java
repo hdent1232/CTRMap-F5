@@ -25,7 +25,6 @@ public class MatrixSelector {
 	public static int selRegionX = -1;
 	public static int selRegionY = -1;
 
-	public static boolean selecting = false;
 	public static boolean selectSubChunks = false;
 
 	/**
@@ -37,8 +36,8 @@ public class MatrixSelector {
 	 */
 	public static void select(int xOnImage, int yOnImage, int imageWidth, int imageHeight,
 			int cellsAcross, int cellsDown) {
-		hilightRegionX = (int) (Math.floor(((float) xOnImage / imageWidth) * (double) (cellsAcross * (selectSubChunks ? 4 : 1))));
-		hilightRegionY = (int) (Math.floor(((float) yOnImage / imageHeight) * (double) (cellsDown * (selectSubChunks ? 4 : 1))));
+		hilightRegionX = (int) (Math.floor(((float) xOnImage / imageWidth) * (double) (cellsAcross * (selectSubChunks ? MatrixCanvas.ZONE_CELLS_PER_REGION : 1))));
+		hilightRegionY = (int) (Math.floor(((float) yOnImage / imageHeight) * (double) (cellsDown * (selectSubChunks ? MatrixCanvas.ZONE_CELLS_PER_REGION : 1))));
 	}
 
 	/**

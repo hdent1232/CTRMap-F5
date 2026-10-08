@@ -63,7 +63,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bundle_shell      # noqa: E402  - the command, found by shape, at any depth
 import time
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+ROOT = _tree_root.require(__file__)
 STATE = os.path.join(ROOT, ".sweep")
 EXERCISED = os.path.join(ROOT, "tests", "exercised_by.json")
 ACKNOWLEDGED = os.path.join(STATE, "idle-on-purpose.json")
@@ -126,7 +127,7 @@ ESCAPES = (
     _READS + r".*(?:\.sweep[/\\]|sweep-forever\.log|PROGRESS\.md)",
 )
 
-#: Adapted per project: see ADAPT.md.
+#: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("STATE", "EXERCISED", "ACKNOWLEDGED", "PRODUCTS", "ESCAPES", "PROGRESS_FILES")
 
 

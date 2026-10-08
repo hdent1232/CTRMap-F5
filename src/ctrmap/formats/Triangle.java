@@ -1,10 +1,7 @@
 package ctrmap.formats;
 
 import com.jogamp.opengl.GL2;
-import ctrmap.LittleEndianDataOutputStream;
 import java.awt.Polygon;
-import java.awt.geom.Line2D;
-import java.io.IOException;
 import java.util.Random;
 
 /**
@@ -40,21 +37,6 @@ public class Triangle {
     }
     public float getZ(int vertex) {
         return z[vertex];
-    }
-    public void write(LittleEndianDataOutputStream dos) {
-        try {
-            for (int i = 0; i < x.length; i++) {
-                dos.writeFloat(x[i]);
-                dos.writeFloat(y[i]);
-                dos.writeFloat(z[i]);
-                dos.writeFloat(1);
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-    public Line2D getLine(int num){
-        return new Line2D.Float(x[num], z[num], x[(num == 2) ? 0 : num + 1], z[(num == 2) ? 0 : num + 1]);
     }
 	public Polygon getAWTPoly(){
 		return new Polygon(new int[]{(int)x[0], (int)x[1], (int)x[2]}, new int[]{(int)z[0], (int)z[1], (int)z[2]}, 3);

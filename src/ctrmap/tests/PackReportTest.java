@@ -47,7 +47,7 @@ public class PackReportTest {
 		//that finished first would dispose the window before setVisible(true)
 		//showed it - a modal window nothing can ever close. Headless, the
 		//dialog is the same object without the window and the ordering holds.
-		System.setProperty("java.awt.headless", "true");
+		Headless.require();
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
 			Skip.suite("no dump at " + dump);

@@ -1,13 +1,14 @@
 package ctrmap.formats.dressup;
 
+import ctrmap.formats.containers.ContainerBytes;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import static ctrmap.formats.LittleEndian.u16;
-import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.i32;
 
 /**
  * The dress-up (kisekae) part index that ships alongside the swappable player
@@ -240,12 +241,6 @@ public class DressUpIndex {
 		return toIntArray(cats);
 	}
 
-	/** The single slot a part occupies, or -1 when it has none or more than one. */
-	public int categoryOfPart(int partModel) {
-		int[] c = categoriesOfPart(partModel);
-		return c.length == 1 ? c[0] : -1;
-	}
-
 	/** Part-model indices that render anything in a slot, in archive order. */
 	public int[] partModelsInCategory(int category) {
 		List<Integer> out = new ArrayList<>();
@@ -260,17 +255,6 @@ public class DressUpIndex {
 		return toIntArray(out);
 	}
 
-	/** Item indices in a slot, in master-table order. */
-	public int[] itemsInCategory(int category) {
-		Set<Integer> out = new LinkedHashSet<>();
-		for (MasterRow r : master) {
-			if (r.category == category) {
-				out.add(r.item);
-			}
-		}
-		return toIntArray(out);
-	}
-
 	/** Every slot ordinal the master table uses, ascending. */
 	public int[] categories() {
 		Set<Integer> out = new LinkedHashSet<>();
@@ -280,42 +264,6 @@ public class DressUpIndex {
 		int[] a = toIntArray(out);
 		Arrays.sort(a);
 		return a;
-	}
-
-	/**
-	 * Design ids legal for an item: the real ones only, markers dropped. An
-	 * item whose designs are all markers (hair, face) takes its textures from
-	 * {@link #hairTextures} / {@link #faceTextures} instead.
-	 */
-	public int[] designsOfItem(int item) {
-		if (item < 0 || item >= items.length) {
-			return new int[0];
-		}
-		List<Integer> out = new ArrayList<>();
-		for (int d : items[item].designs) {
-			if (d < DESIGN_MARKER_MIN) {
-				out.add(d);
-			}
-		}
-		return toIntArray(out);
-	}
-
-	/** Texture ids a part model may legally wear, via every item that uses it. */
-	public int[] texturesOfPart(int partModel) {
-		if (partModel < 0 || partModel >= parts.length) {
-			return new int[0];
-		}
-		Set<Integer> out = new LinkedHashSet<>();
-		for (int item : parts[partModel].items) {
-			for (int d : designsOfItem(item)) {
-				if (d < designs.length) {
-					for (int t : designs[d].textures) {
-						out.add(t);
-					}
-				}
-			}
-		}
-		return toIntArray(out);
 	}
 
 	// ----------------------------------------------------------------- decode
@@ -336,10 +284,12 @@ public class DressUpIndex {
 		if (!isContainer(c)) {
 			throw new IllegalArgumentException("not a dress-up index container: magic '" + mg + "'");
 		}
-		int sections = u16(c, 2);
-		int[] off = new int[sections + 1];
+		int sections = ContainerBytes.count(c);
+		int[] off = ContainerBytes.offsets(c);
+		if (off == null) {
+			throw new IllegalArgumentException("dress-up container section table is cut short");
+		}
 		for (int i = 0; i <= sections; i++) {
-			off[i] = i32(c, 4 + 4 * i);
 			if (off[i] < 0 || off[i] > c.length || (i > 0 && off[i] < off[i - 1])) {
 				throw new IllegalArgumentException("dress-up container section table is not monotonic");
 			}
@@ -381,19 +331,19 @@ public class DressUpIndex {
 		if (!"DB".equals(mg) && !"DA".equals(mg)) {
 			return false;
 		}
-		int sections = u16(c, 2);
-		if (sections != 8 || 4 + 4 * (sections + 1) > c.length) {
+		int sections = ContainerBytes.count(c);
+		int[] off = ContainerBytes.offsets(c);
+		if (sections != 8 || off == null) {
 			return false;
 		}
 		int prev = -1;
-		for (int i = 0; i <= sections; i++) {
-			int o = i32(c, 4 + 4 * i);
+		for (int o : off) {
 			if (o < 0 || o > c.length || o < prev) {
 				return false;
 			}
 			prev = o;
 		}
-		return i32(c, 4 + 4 * sections) == c.length;
+		return off[sections] == c.length;
 	}
 
 	private static MasterRow[] readMaster(byte[] b) {

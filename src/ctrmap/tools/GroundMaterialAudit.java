@@ -15,8 +15,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
-import static ctrmap.formats.LittleEndian.u16;
-import static ctrmap.formats.LittleEndian.i32;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
@@ -39,7 +37,8 @@ import static ctrmap.formats.containers.ContainerBytes.subfile;
  * editor - the brush falls through to {@link ctrmap.formats.tilemap.TerrainCatalog},
  * which imports a curated opaque donor instead.
  *
- * <p>Args: FieldData (a/0/3/9), AreaData (a/0/1/4), ZoneData (a/0/1/3), output TSV.
+ * <p>Args: FieldData (a/0/3/9), AreaData (a/0/1/4), ZoneData (a/0/1/3), MapMatrix, output TSV -
+ * five, as main reads them; this said four after the MapMatrix was added (F133).
  */
 public class GroundMaterialAudit {
 
@@ -55,7 +54,7 @@ public class GroundMaterialAudit {
 
 	public static void main(String[] args) throws Exception {
 		if (args.length < 5) {
-			System.out.println("usage: GroundMaterialAudit <FieldData GARC> <AreaData GARC> <ZoneData GARC>"
+			System.out.println("Usage: java ctrmap.tools.GroundMaterialAudit <FieldData GARC> <AreaData GARC> <ZoneData GARC>"
 					+ " <MapMatrix GARC> <out.tsv>");
 			System.exit(1);
 		}

@@ -1,39 +1,26 @@
 package ctrmap.formats.tilemap;
 
-import ctrmap.formats.GameFiles;
 import ctrmap.formats.gfcollision.GfColl;
-import ctrmap.formats.h3d.BchMapModel;
-import ctrmap.formats.h3d.MapModelObj;
-import ctrmap.formats.h3d.MapModelObjImporter;
-import ctrmap.formats.h3d.RegionFactory;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import static ctrmap.formats.LittleEndian.f32;
-import static ctrmap.formats.tilemap.PaintedRegionBuilder.*;
-import static ctrmap.formats.tilemap.PaintedCliffMesh.*;
-import static ctrmap.formats.tilemap.PaintedCollision.*;
-import static ctrmap.formats.tilemap.PaintedFloorMesh.*;
-import static ctrmap.formats.tilemap.PaintedMaterials.*;
-import static ctrmap.formats.tilemap.PaintedTiles.*;
+import static ctrmap.formats.tilemap.PaintedGeometry.DIM;
+import static ctrmap.formats.tilemap.PaintedGeometry.DIR_NAMES;
+import static ctrmap.formats.tilemap.PaintedGeometry.NO_RAMP;
+import static ctrmap.formats.tilemap.PaintedGeometry.ORIGIN;
+import static ctrmap.formats.tilemap.PaintedGeometry.STEP;
+import static ctrmap.formats.tilemap.PaintedGeometry.TILE;
 
 /**
- * The painter's what height each tile sits at, and which tiles are ground at all.
+ * The painter's stage for what height each tile sits at, and which tiles are ground at all.
  *
  * <p>One stage of {@link PaintedRegionBuilder}, which was 3750 lines and 106
- * methods in one file. Every method here is exactly the one that was there,
- * moved and not rewritten: the split is about which file you open to read a
- * stage, not about what the pipeline does. The constants and the other stages
- * are imported statically for the same reason - a body that called a helper
- * still calls the same helper.
- *
- * <p>What this is NOT is decoupling. PaintedRegionBuilder was never a god
- * object by coupling: it is pure, it holds no state, and it has six callers.
- * It was simply too long to read.
+ * methods in one file. The split first moved every method unchanged and left
+ * each stage importing the builder and every other stage whole, one class
+ * cycle however many files it was in. It is a split now (F090): what the
+ * stages share - the frame, the constants, the quad and edge types, flipping a
+ * quad and rounding an outline - is {@link PaintedGeometry}, which needs no
+ * stage; no stage needs the builder that calls it; and each file imports by
+ * name exactly the members it uses, so its imports are its edges.
+ * PackageCycleTest refuses a class cycle it has not recorded, and
+ * SourceDebrisTest a wildcard import.
  */
 public final class PaintedHeights {
 
@@ -55,7 +42,7 @@ public final class PaintedHeights {
 	 * Seeds the painter's elevation grid from the region's collision: each
 	 * tile's level = its retail GROUND height at the tile center (the lowest
 	 * surface, so bridges/roofs above never hijack the frame), quantized to
-	 * {@link #STEP} RELATIVE to the region's lowest ground. The composite
+	 * {@link PaintedGeometry#STEP} RELATIVE to the region's lowest ground. The composite
 	 * builder uses the same sampling and baseline, so a tile whose level the
 	 * user leaves alone regenerates at EXACTLY its retail height (the
 	 * quantization offsets cancel), and below-zero caves or high plateaus
@@ -406,5 +393,37 @@ public final class PaintedHeights {
 		int nx = tx + (dir == 0 ? 1 : dir == 1 ? -1 : 0);
 		int ny = ty + (dir == 2 ? 1 : dir == 3 ? -1 : 0);
 		return nx >= 0 && ny >= 0 && nx < DIM && ny < DIM && touched[ny][nx];
+	}
+
+	/** AO at a grid point for a tile at {@code myHeight}: darker next to walls or taller ground. */
+	static float cornerAO(TilePalette[][] grid, int[][] height, int gx, int gy, int myHeight) {
+		int occ = 0, total = 0;
+		for (int dy = -1; dy <= 0; dy++) {
+			for (int dx = -1; dx <= 0; dx++) {
+				int x = gx + dx, y = gy + dy;
+				if (x < 0 || y < 0 || x >= DIM || y >= DIM) {
+					continue;
+				}
+				total++;
+				TilePalette t = grid[y][x];
+				if (t == null || !t.walkable || height[y][x] > myHeight) {
+					occ++;
+				}
+			}
+		}
+		return total == 0 ? 1f : 1f - (float) occ / total;
+	}
+
+	static int neighbourHeight(TilePalette[][] grid, int[][] height, int tx, int ty, int dir) {
+		int nx = tx + (dir == 0 ? 1 : dir == 1 ? -1 : 0);
+		int ny = ty + (dir == 2 ? 1 : dir == 3 ? -1 : 0);
+		if (nx < 0 || ny < 0 || nx >= DIM || ny >= DIM) {
+			return 0; // map edge = drop to base
+		}
+		TilePalette t = grid[ny][nx];
+		if (t == null || t == TilePalette.VOID) {
+			return 0; // void = drop to base (so raised ground gets a wall)
+		}
+		return height[ny][nx];
 	}
 }

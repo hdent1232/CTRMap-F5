@@ -75,6 +75,11 @@ public class GauntletScriptTest {
 					cfg.loseLine = 0;
 				}
 				cfg.loseWhiteout = true;
+				//F241: the default is free in retail - measured here, zone by zone, not remembered
+				if (GauntletScriptWizard.workVariablesUsed(s).contains(GauntletScriptWizard.DEFAULT_STREAK_WORK)) {
+					throw new IllegalStateException("a retail script uses the default streak variable 0x"
+							+ Integer.toHexString(GauntletScriptWizard.DEFAULT_STREAK_WORK));
+				}
 				List<Integer> before = ZoneScriptAnalyzer.listScriptIds(s);
 				int newId = GauntletScriptWizard.addChallengeScript(NpcScriptGateTest.ORAS, s, cfg);
 				byte[] out = s.getScriptBytes();
@@ -95,6 +100,11 @@ public class GauntletScriptTest {
 					}
 				}
 				verifyBody(re, caseSub(re, d, newId), mustCall, TRAINERS);
+				//F241: the scan that asks whether a streak variable is taken sees the one just emitted
+				if (!GauntletScriptWizard.workVariablesUsed(re).contains(cfg.streakWorkId)) {
+					throw new IllegalStateException("the work-variable scan does not see streak 0x"
+							+ Integer.toHexString(cfg.streakWorkId) + ", which the challenge it emitted uses");
+				}
 				ok++;
 
 				//one big-emission bound: 30 trainers through the same zone

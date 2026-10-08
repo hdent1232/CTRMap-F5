@@ -103,7 +103,7 @@ public class MainframeReportsTest {
 		kept.oldArea = 24;
 		kept.newArea = 24;
 		kept.forked = false;
-		String none = CtrmapMainframe.forkAreaReport(9, kept);
+		String none = kept.report(9);
 		check(none.contains("already has its own area (area 24)") && none.contains("Nothing was changed"),
 				"an area already the zone's own is said, and that nothing changed: " + firstLine(none));
 		ctrmap.AreaForker.ForkResult made = new ctrmap.AreaForker.ForkResult();
@@ -111,10 +111,10 @@ public class MainframeReportsTest {
 		made.oldArea = 24;
 		made.newArea = 229;
 		made.forked = true;
-		String did = CtrmapMainframe.forkAreaReport(9, made);
+		String did = made.report(9);
 		check(did.contains("now has its own area") && did.contains("Area 24 -> 229") && !did.contains("already"),
 				"a fork says which area the copy is, and never that nothing changed: " + firstLine(did));
-		String both = new CtrmapMainframe.Independence(9, forked(), made).report();
+		String both = new ctrmap.ZoneIndependence(9, forked(), made).report();
 		check(both.contains("now has private map geometry") && both.contains("now has its own area"),
 				"making a zone independent reports both halves it did");
 	}
@@ -134,7 +134,7 @@ public class MainframeReportsTest {
 		if (zone < 0) {
 			return;
 		}
-		CtrmapMainframe.Independence done = CtrmapMainframe.makeZoneIndependent(zone, false, true);
+		ctrmap.ZoneIndependence done = ctrmap.ZoneIndependence.make(zone, false, true);
 		check(done.area != null && done.area.forked, "zone " + zone + "'s area really is forked");
 		check(ctrmap.AreaForker.areaSharers(zone) == 0,
 				"and afterwards zone " + zone + " shares its area with nobody (" + ctrmap.AreaForker.areaSharers(zone) + ")");
@@ -145,7 +145,7 @@ public class MainframeReportsTest {
 	static void aForkThatDidNothingSaysSo() throws Exception {
 		GeometryForker.ForkResult r = GeometryForker.ensurePrivate(PRIVATE_ZONE);
 		check(!r.forked, "zone " + PRIVATE_ZONE + "'s map is already its own, so nothing was forked");
-		String said = CtrmapMainframe.forkGeometryReport(PRIVATE_ZONE, r);
+		String said = r.report(PRIVATE_ZONE);
 		check(said.contains("already has its own map geometry"),
 				"and the user is told it already had one: " + firstLine(said));
 		check(said.contains("Nothing was changed"), "and that nothing was changed");
@@ -157,7 +157,7 @@ public class MainframeReportsTest {
 	static void aForkThatWorkedSaysWhatItDid() throws Exception {
 		GeometryForker.ForkResult r = GeometryForker.ensurePrivate(SHARED_ZONE);
 		check(r.forked, "zone " + SHARED_ZONE + " shares its map, so it really is forked");
-		String said = CtrmapMainframe.forkGeometryReport(SHARED_ZONE, r);
+		String said = r.report(SHARED_ZONE);
 		check(said.contains("Zone " + SHARED_ZONE + " now has private map geometry"),
 				"and the user is told so: " + firstLine(said));
 		check(said.contains("Map matrix " + r.oldMatrix + " -> " + r.newMatrix),
@@ -185,14 +185,14 @@ public class MainframeReportsTest {
 		GeometryForker.ForkResult many = forked();
 		many.srcRegions = new int[]{200, 201, 202};
 		many.newRegions = new int[]{857, 858, 859};
-		String said = CtrmapMainframe.forkGeometryReport(9, many);
+		String said = many.report(9);
 		check(said.contains("edit region 857 (and the other new regions above)"),
 				"a fork of 3 regions points at the first and says the rest are above it: " + tail(said));
 		check(said.contains("FieldData region 202 -> 859"),
 				"and the ones above it are really listed, so \"above\" names something");
 
 		GeometryForker.ForkResult one = forked();   //newRegions = {857}
-		String single = CtrmapMainframe.forkGeometryReport(9, one);
+		String single = one.report(9);
 		check(!single.contains("and the other new regions above"),
 				"and a fork of ONE region does not send them hunting for regions that were never made: "
 				+ tail(single));
@@ -207,13 +207,13 @@ public class MainframeReportsTest {
 	static void groundBelongingToOtherZonesIsNamed() {
 		GeometryForker.ForkResult carries = forked();
 		carries.otherZones = new int[]{111, 112};
-		String said = CtrmapMainframe.forkGeometryReport(9, carries);
+		String said = carries.report(9);
 		check(said.contains("carries ground belonging to zone(s) [111, 112]"),
 				"a copy carrying other zones' ground names them: " + tail(said));
 		check(said.contains("keeps their labels"), "and says the labels were kept");
 
 		GeometryForker.ForkResult alone = forked();
-		String quiet = CtrmapMainframe.forkGeometryReport(9, alone);
+		String quiet = alone.report(9);
 		check(!quiet.contains("carries ground belonging"),
 				"and a copy that carries nobody else's ground does not say it does: " + tail(quiet));
 	}
@@ -221,7 +221,6 @@ public class MainframeReportsTest {
 	/** A fork result for a zone that got its own copy of one region. */
 	static GeometryForker.ForkResult forked() {
 		GeometryForker.ForkResult r = new GeometryForker.ForkResult();
-		r.zoneIndex = 9;
 		r.forked = true;
 		r.oldMatrix = 8;
 		r.newMatrix = 30;
@@ -246,7 +245,7 @@ public class MainframeReportsTest {
 		List<String> said = Ui.record();
 		boolean ok;
 		try {
-			ok = CtrmapMainframe.openMapMatrixFile(notAMatrix);
+			ok = TestWindow.openMapMatrixFile(notAMatrix);
 		} finally {
 			Ui.stopRecording();
 		}
@@ -283,7 +282,7 @@ public class MainframeReportsTest {
 		final boolean[] viewRefitted = {false};
 		List<String> said = Ui.record();
 		try {
-			CtrmapMainframe.openChosenMapMatrix(notAMatrix, new Runnable() {
+			TestWindow.openChosenMapMatrix(notAMatrix, new Runnable() {
 				@Override
 				public void run() {
 					viewRefitted[0] = true;
@@ -319,7 +318,7 @@ public class MainframeReportsTest {
 		shared.oldName = "Fallarbor Town";
 		shared.sharers = 5;
 		shared.renamedSharers = true;
-		String said = CtrmapMainframe.renameZoneReport(10, "Delta Town", shared);
+		String said = shared.report(10, "Delta Town");
 		check(said.contains("ALL of them were renamed"),
 				"a rename with no free name slot says every zone on that name moved: " + said.split("\n\n")[1]);
 		check(said.contains("shared by 5 zones"), "and how many there were (5)");
@@ -331,7 +330,7 @@ public class MainframeReportsTest {
 		forked.oldName = "Fallarbor Town";
 		forked.sharers = 5;
 		forked.gaveOwnName = true;
-		said = CtrmapMainframe.renameZoneReport(10, "Delta Town", forked);
+		said = forked.report(10, "Delta Town");
 		check(said.contains("it now has its own name and the others are unchanged"),
 				"a rename that got its own name slot says the others were left alone: " + said.split("\n\n")[1]);
 		check(!said.contains("ALL of them were renamed"),
@@ -340,7 +339,7 @@ public class MainframeReportsTest {
 		ZoneManager.RenameResult alone = new ZoneManager.RenameResult();
 		alone.oldName = "Mauville City";
 		alone.sharers = 1;
-		String solo = CtrmapMainframe.renameZoneReport(15, "Delta City", alone);
+		String solo = alone.report(15, "Delta City");
 		check(solo.contains("The name belonged to this zone alone"),
 				"a zone that owned its name is told nothing else moved: " + solo.split("\n\n")[1]);
 		check(!solo.contains("ALL of them") && !solo.contains("the others are unchanged"),
@@ -531,7 +530,7 @@ public class MainframeReportsTest {
 				@Override
 				public void run() {
 				}
-			});
+			}, (title, editor) -> { });
 		} else if ("shop".equals(which)) {
 			ctrmap.humaninterface.ShopEditDialog.panel(null, new Runnable() {
 				@Override
@@ -544,7 +543,7 @@ public class MainframeReportsTest {
 					@Override
 					public void run() {
 					}
-				});
+				}, () -> { });
 		} else if ("encounters".equals(which)) {
 			ctrmap.humaninterface.EncounterEditDialog.panel(null, new ctrmap.LoadedZone(),
 				new Runnable() {

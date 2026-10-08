@@ -2,6 +2,7 @@ package ctrmap.tests;
 
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.scripts.GFLPawnScript;
+import ctrmap.formats.scripts.PawnClosure;
 import ctrmap.formats.scripts.MsgWrapperInjector;
 import ctrmap.formats.scripts.PawnInstruction;
 import ctrmap.formats.scripts.PawnPrefixEntry;
@@ -107,7 +108,7 @@ public class MsgWrapperInjectTest {
 			System.exit(1);
 		}
 		try {
-			MsgWrapperInjector.pickDonor(new MsgWrapperInjector.ScriptSource() {
+			MsgWrapperInjector.pickDonor(new PawnClosure.ScriptSource() {
 				@Override
 				public GFLPawnScript get(int zoneIndex) {
 					return getZoneScript(garc, zoneIndex);
@@ -161,7 +162,7 @@ public class MsgWrapperInjectTest {
 				boolean refused = false;
 				try {
 					MsgWrapperInjector.injectMsgWrapper(NpcScriptGateTest.ORAS, s, donor);
-				} catch (MsgWrapperInjector.InjectionException ex) {
+				} catch (PawnClosure.Refused ex) {
 					refused = true;
 				}
 				if (!refused) {
@@ -201,7 +202,7 @@ public class MsgWrapperInjectTest {
 	 */
 	private static String injectAndVerify(GARC garc, int z, GFLPawnScript donor, int[] donorBuf) {
 		GFLPawnScript t = getZoneScript(garc, z);
-		boolean needStub = !MsgWrapperInjector.hasStubAt4(t);
+		boolean needStub = !PawnClosure.hasStubAt4(t);
 
 		//pre-injection snapshots
 		int preCodeCells = (t.dataStart - t.instructionStart) / 4;
@@ -228,7 +229,7 @@ public class MsgWrapperInjectTest {
 		int wrapperPtr;
 		try {
 			wrapperPtr = MsgWrapperInjector.injectMsgWrapper(NpcScriptGateTest.ORAS, t, donor);
-		} catch (MsgWrapperInjector.InjectionException ex) {
+		} catch (PawnClosure.Refused ex) {
 			return "refused: " + ex.getMessage();
 		}
 
@@ -250,7 +251,7 @@ public class MsgWrapperInjectTest {
 			return "cell 0 changed";
 		}
 		if (needStub) {
-			if (!MsgWrapperInjector.hasStubAt4(fresh)) {
+			if (!PawnClosure.hasStubAt4(fresh)) {
 				return "stub not recognized at 4 after injection";
 			}
 			int stubNativeIdx = fresh.instructions.get(3).argumentCells[0];
@@ -388,7 +389,7 @@ public class MsgWrapperInjectTest {
 		boolean refused = false;
 		try {
 			MsgWrapperInjector.injectMsgWrapper(NpcScriptGateTest.ORAS, fresh, donor);
-		} catch (MsgWrapperInjector.InjectionException ex) {
+		} catch (PawnClosure.Refused ex) {
 			refused = true;
 		}
 		if (!refused) {
@@ -500,7 +501,7 @@ public class MsgWrapperInjectTest {
 				return "post-clone public " + i + " target command changed";
 			}
 		}
-		if (!MsgWrapperInjector.hasStubAt4(s3)) {
+		if (!PawnClosure.hasStubAt4(s3)) {
 			return "stub at 0x4 lost after cloneTalker";
 		}
 		return null;
@@ -663,6 +664,6 @@ public class MsgWrapperInjectTest {
 	 * null when the entry is not a ZO container.
 	 */
 	private static GFLPawnScript getZoneScript(GARC garc, int index) {
-		return MsgWrapperInjector.extractZoneScript(garc.getDecompressedEntry(index));
+		return ctrmap.formats.scripts.PawnClosure.extractZoneScript(garc.getDecompressedEntry(index));
 	}
 }

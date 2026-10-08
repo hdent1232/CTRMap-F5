@@ -1,6 +1,5 @@
 package ctrmap.tests;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.ZO;
@@ -48,10 +47,6 @@ import javax.swing.SwingWorker;
  *     from a stale one and every "unchanged" entry is copied from garbage. A
  *     CTRMap window sat open for eleven hours while a headless tool rewrote
  *     ZoneData five times - one click on Pack Workspace would have done it.</li>
- * <li>A sign wrapper must be injected BEFORE any talker or sign is wired into
- *     the same script, because updateRaw moves the address the injector writes
- *     at. Recomputing those boundaries "correctly" was tried and is wrong - it
- *     breaks the 467-zone injection corpus - so the ordering is the guard.</li>
  * <li>A warp with no destination must not serialise. It used to default to
  *     zone 0, warp 0, which is a real place: adding a warp in the editor and
  *     saving built a working door into the first zone in the game.</li>
@@ -95,8 +90,23 @@ public class DataSafetyGuardsTest {
 	/** The 3D scene the map view shares: a recorder, so what it was told can be read. */
 	static final RecordingScene SCENE = new RecordingScene();
 
-	/** The grid the matrix form draws on. A real panel: it needs no display to exist. */
-	static final ctrmap.humaninterface.MapMatrixPanel CANVAS = new ctrmap.humaninterface.MapMatrixPanel();
+	/**
+	 * The grid the matrix form draws on. A real panel: it needs no display to exist.
+	 *
+	 * <p>BUILT ON FIRST USE, NOT WHEN THE CLASS LOADS. As a static field it was built before main's
+	 * first statement, and a panel built first settles AWT's answer as "there is a screen" - so the
+	 * headless switch main makes, for the reason its comment gives, was never in force (Headless says
+	 * how that was found). Three other suites borrow this class's recorders, so the switch cannot move
+	 * into a static block here: it would refuse their runs instead.
+	 */
+	private static ctrmap.humaninterface.MapMatrixPanel canvas;
+
+	static ctrmap.humaninterface.MapMatrixPanel canvas() {
+		if (canvas == null) {
+			canvas = new ctrmap.humaninterface.MapMatrixPanel();
+		}
+		return canvas;
+	}
 
 	/** Where the user is looking, so a placement can be asserted at all. */
 	static final RecordingCentre CENTRE = new RecordingCentre();
@@ -124,7 +134,8 @@ public class DataSafetyGuardsTest {
 	private static final Pattern WORKER_VAR = Pattern.compile("SwingWorker<[^=;]*>\\s+(\\w+)\\s*=\\s*new\\s+SwingWorker\\b");
 
 	public static void main(String[] args) throws Exception {
-		//FIRST statement, before any AWT class is loaded. Three checks below
+		//FIRST statement, before any AWT class is loaded - and nothing this class builds when it loads
+		//may be a component (see canvas()), or this refuses. Three checks below
 		//drive a real LoadingDialog - the Builder's add file, the zone that did
 		//not load, and the tilemap refresh - and the application always opens
 		//one from
@@ -134,12 +145,11 @@ public class DataSafetyGuardsTest {
 		//that finished first would dispose the window before setVisible(true)
 		//showed it - a modal window nothing can ever close. Headless, the
 		//dialog is the same object without the window and the ordering holds.
-		System.setProperty("java.awt.headless", "true");
+		Headless.require();
 		String garcPath = args.length > 0 ? args[0] : "../RomFS_original_garcs/a/0/4/0";
 		File dump = new File(args.length > 1 ? args[1] : "../RomFS_original_garcs");
 		staleArchive(new File(garcPath));
 		lockedArchive(new File(garcPath));
-		scriptBoundaries();
 		unsetWarp();
 		warpEditor(dump);
 		matrixEditor(dump);
@@ -234,27 +244,6 @@ public class DataSafetyGuardsTest {
 		Scratch.deleteTree(root);
 	}
 
-	/**
-	 * The sign-injection ordering rule, stated so it is not silently lost.
-	 *
-	 * <p>updateRaw moves dataStart, and SignWrapperInjector writes at
-	 * dataStart - instructionStart, so appending code first moves the target.
-	 * The arithmetic below shows how far: recomputing the boundary from the
-	 * grown code, which is the intuitive "fix", relocates the write by the size
-	 * of whatever was appended. SignWrapperInjectTest is what actually holds
-	 * this - it verifies 272 injections at byte level across 467 zones.
-	 */
-	static void scriptBoundaries() {
-		int instructionStart = 0x40, code = 100, data = 7, appended = 20;
-		int parsedHeapStart = instructionStart + (code + data) * 4;
-		int parsedDataStart = parsedHeapStart - data * 4;
-		int grownHeapStart = instructionStart + (code + appended + data) * 4;
-		int grownDataStart = grownHeapStart - data * 4;
-		check(grownDataStart - parsedDataStart == appended * 4,
-				"recomputing the boundary after an append moves the injection site by the"
-				+ " appended size - which is why signs are injected first, not last");
-	}
-
 	/** An unconfigured warp must refuse to serialise. */
 	static void unsetWarp() {
 		ZoneEntities.Warp w = new ZoneEntities.Warp();
@@ -300,17 +289,16 @@ public class DataSafetyGuardsTest {
 		LocationNames.load(Workspace.session(), temp(texts.getDecompressedEntry(LocationNames.gametextIndex(Workspace.session()))));
 		//three zones make a zone table; the editor is told zone 2 is open
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel zonePnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
+		ZoneLoadingPanel zonePnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
 		Zone[] table = new Zone[3];
 		for (int i = 0; i < table.length; i++) {
 			table[i] = new Zone(new ZO(temp(zo.getDecompressedEntry(i)), Workspace.session()), Workspace.game());
 		}
 		lz.table(table);
 		lz.open(2, table[2]);
-		CtrmapMainframe.mZonePnl = zonePnl;
+		TestWindow.mZonePnl(zonePnl);
 		ZoneEntities e = lz.at(2).entities;
 		e.warps.clear();
-		e.warpCount = 0;
 		WarpEditForm form = new WarpEditForm(lz, REDRAW, CENTRE);
 		form.loadFromEntities(e);
 
@@ -343,7 +331,7 @@ public class DataSafetyGuardsTest {
 		check(e.warps.get(1).targetZone == 1 && e.warps.get(1).targetWarpId == 3, "Save wrote the selected warp");
 		check(e.warps.get(0) == a && a.isUnset(), "and left its twin alone");
 		check(!entry(form, 1).endsWith("<no destination>"), "the dropdown follows the save: " + entry(form, 1));
-		check(e.warps.size() == 2 && e.warpCount == 2, "the list and its count agree");
+		check(e.warps.size() == 2, "the zone holds both warps - its list is its count (F249)");
 
 		//Save on an empty destination field. Every check above saves a warp
 		//whose destination IS filled in, and on that path the hardened code and
@@ -378,18 +366,18 @@ public class DataSafetyGuardsTest {
 		form.loadFromEntities(e);
 		form.saveEntry();
 		check(e.warps.size() == 2 && e.warps.get(0) == a, "Save before anything is selected writes nothing");
-		check(((JComboBox<?>) field(form, "entryBox")).getItemCount() == e.warpCount,
-				"the dropdown lists each warp exactly once after a load (" + ((JComboBox<?>) field(form, "entryBox")).getItemCount() + " for " + e.warpCount + ")");
+		check(((JComboBox<?>) field(form, "entryBox")).getItemCount() == e.warps.size(),
+				"the dropdown lists each warp exactly once after a load (" + ((JComboBox<?>) field(form, "entryBox")).getItemCount() + " for " + e.warps.size() + ")");
 		//The map overlay: nothing while no zone is loaded (the tool can be
 		//active before one is open, and drawing then threw on the event
 		//thread), every warp once one is.
 		BufferedImage img = new BufferedImage(40 * 12, 40 * 12, BufferedImage.TYPE_INT_RGB);
 		WarpEditForm blank = new WarpEditForm(lz, REDRAW, CENTRE);
 		blank.loadFromEntities(null);
-		CtrmapMainframe.mWarpEditForm = blank;
+		TestWindow.mWarpEditForm(blank);
 		//the overlay is the TOOL's, drawn over the form it was handed
 		RecordingHost host = new RecordingHost();
-		ctrmap.humaninterface.tools.WarpTool blankTool = new ctrmap.humaninterface.tools.WarpTool(host, blank, new ctrmap.humaninterface.CameraEditForm(REDRAW));
+		ctrmap.humaninterface.tools.WarpTool blankTool = new ctrmap.humaninterface.tools.WarpTool(host, blank);
 		try {
 			blankTool.paintWarps(img.getGraphics(), 0, 0, 12);
 			check(true, "the warp overlay draws nothing while no zone is loaded");
@@ -403,10 +391,10 @@ public class DataSafetyGuardsTest {
 		//is all that stands between the user and a stack trace on the event
 		//thread, and nothing else in this suite presses the button: every other
 		//check calls addEntry directly and never reaches it.
-		CtrmapMainframe.mTilemapScrollPane = new JScrollPane();
-		TileMapPanel map = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+		TestWindow.mTilemapScrollPane(new JScrollPane());
+		TileMapPanel map = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null);
 		map.height = 40;
-		CtrmapMainframe.mTileMapPanel = map;
+		TestWindow.mTileMapPanel(map);
 		int quietAt = REDRAW.mark();
 		Throwable threw = pressAdd(blank);
 		check(threw == null, "New entry with no zone open does nothing at all, rather than throwing: " + threw);
@@ -421,16 +409,16 @@ public class DataSafetyGuardsTest {
 		threw = pressAdd(form);
 		check(threw == null, "New entry with a zone open does not throw: " + threw);
 		check(REDRAW.askedSince(drawnAt), "and asks the editor to draw the warp it just added");
-		check(e.warps.size() == warpsBefore + 1 && e.warpCount == warpsBefore + 1,
-				"and adds a warp (" + warpsBefore + " -> " + e.warps.size() + ", count " + e.warpCount + ")");
+		check(e.warps.size() == warpsBefore + 1,
+				"and adds a warp (" + warpsBefore + " -> " + e.warps.size() + ", count " + e.warps.size() + ")");
 		form.setWarp(e.warps.size() - 1);
 		form.removeEntry();
-		check(e.warps.size() == warpsBefore && e.warpCount == warpsBefore, "removed again, leaving the zone as it was");
+		check(e.warps.size() == warpsBefore, "removed again, leaving the zone as it was");
 
 		a.w = 1;
 		a.h = 1;
-		CtrmapMainframe.mWarpEditForm = form;
-		ctrmap.humaninterface.tools.WarpTool loadedTool = new ctrmap.humaninterface.tools.WarpTool(host, form, new ctrmap.humaninterface.CameraEditForm(REDRAW));
+		TestWindow.mWarpEditForm(form);
+		ctrmap.humaninterface.tools.WarpTool loadedTool = new ctrmap.humaninterface.tools.WarpTool(host, form);
 		loadedTool.paintWarps(img.getGraphics(), 0, 0, 12);
 		int bx = (int) Math.round(12 * ((a.x - 9f) / 18f)), by = (int) Math.round(12 * ((a.y - 9f) / 18f));
 		check(new Color(img.getRGB(bx + 10, by + 2)).equals(Color.WHITE), "and draws the loaded zone's warp as a box on its tile");
@@ -443,7 +431,6 @@ public class DataSafetyGuardsTest {
 		//says nothing, so a dialog reappearing below the seam is the regression here.
 		ZoneEntities.Warp mute = new ZoneEntities.Warp();
 		e.warps.add(mute);
-		e.warpCount++;
 		lz.at(2).entities.modified = true;
 		List<String> said = ctrmap.Ui.record();
 		try {
@@ -464,8 +451,8 @@ public class DataSafetyGuardsTest {
 		//first - its dropdowns filled the way the zone loader fills them, one
 		//town-map group per zone slot; the entity forms it saves through are
 		//empty and save nothing.
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, CtrmapMainframe.mTileMapPanel, pane -> { });
-		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz, REDRAW, CENTRE);
+		TestWindow.mNPCEditForm(new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, TestWindow.mTileMapPanel(), pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0})));
+		TestWindow.mTriggerEditForm(new TriggerEditForm(lz, REDRAW, CENTRE));
 		fill(zonePnl, "tmg", 600);
 		fill(zonePnl, "type", 8);
 		fill(zonePnl, "weather", 32);
@@ -481,7 +468,6 @@ public class DataSafetyGuardsTest {
 			ctrmap.Ui.stopRecording();
 		}
 		e.warps.remove(mute);
-		e.warpCount--;
 		//and true once every warp has a destination - the master table lives
 		//in a scratch workspace holding the pristine archive
 		a.targetZone = 1;
@@ -515,7 +501,6 @@ public class DataSafetyGuardsTest {
 		dangling.targetZone = lz.count();
 		dangling.targetWarpId = 0;
 		e.warps.add(dangling);
-		e.warpCount++;
 		try {
 			form.loadFromEntities(e);
 			form.setWarp(2);
@@ -588,7 +573,7 @@ public class DataSafetyGuardsTest {
 	 * are still untested.
 	 */
 	static void mapLoadFailuresSurface() throws Exception {
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null);
 		panel.loaded = true;
 		panel.width = 40;
 		panel.height = 40;
@@ -685,7 +670,7 @@ public class DataSafetyGuardsTest {
 			return;
 		}
 		scratchGameOnce(dump);
-		ctrmap.humaninterface.builder.Builder builder = new ctrmap.humaninterface.builder.Builder();
+		ctrmap.humaninterface.builder.Builder builder = new ctrmap.humaninterface.builder.Builder((title, tool) -> { });
 		setField(builder, "currentGARC", ArchiveType.MAP_MATRIX);
 		java.lang.reflect.Method addFile = builder.getClass()
 				.getDeclaredMethod("btnAddFileToGARCActionPerformed", java.awt.event.ActionEvent.class);
@@ -753,22 +738,22 @@ public class DataSafetyGuardsTest {
 		}
 		scratchGameOnce(dump);
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
-		CtrmapMainframe.mZonePnl = pnl;
-		CtrmapMainframe.mCamEditForm = new ctrmap.humaninterface.CameraEditForm(REDRAW);
-		CtrmapMainframe.mTileMapPanel = new TileMapPanel(lz, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
-		CtrmapMainframe.mMtxEditForm = new ctrmap.humaninterface.MatrixEditForm(lz, CANVAS);
-		CtrmapMainframe.mPropEditForm = new ctrmap.humaninterface.PropEditForm(lz, TOOLS, REDRAW, NAVI, CtrmapMainframe.mTileMapPanel, pane -> { });
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, CtrmapMainframe.mTileMapPanel, pane -> { });
-		CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz, REDRAW, CENTRE);
-		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz, REDRAW, CENTRE);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		TestWindow.mZonePnl(pnl);
+		TestWindow.mCamEditForm(new ctrmap.humaninterface.CameraEditForm(REDRAW, UndoHistoryTest.overOneNumber(new int[]{0})));
+		TestWindow.mTileMapPanel(new TileMapPanel(lz, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null));
+		TestWindow.mMtxEditForm(new ctrmap.humaninterface.MatrixEditForm(lz, canvas(), UndoHistoryTest.overOneNumber(new int[]{0})));
+		TestWindow.mPropEditForm(new ctrmap.humaninterface.PropEditForm(lz, TOOLS, REDRAW, NAVI, TestWindow.mTileMapPanel(), pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0})));
+		TestWindow.mNPCEditForm(new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, TestWindow.mTileMapPanel(), pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0})));
+		TestWindow.mWarpEditForm(new WarpEditForm(lz, REDRAW, CENTRE));
+		TestWindow.mTriggerEditForm(new TriggerEditForm(lz, REDRAW, CENTRE));
 		//PropEditForm's generated initComponents builds a CustomH3DPreview,
 		//whose constructor starts an FPSAnimator on a NON-daemon thread. Left
 		//running it holds the JVM open after main returns: the suite prints
 		//ALL PASS and then never exits, which reads as a battery that hangs
 		//rather than one that fails - the one outcome a runner cannot report.
 		ctrmap.humaninterface.CustomH3DPreview propPreview
-				= (ctrmap.humaninterface.CustomH3DPreview) field(CtrmapMainframe.mPropEditForm, "PropPreview");
+				= (ctrmap.humaninterface.CustomH3DPreview) field(TestWindow.mPropEditForm(), "PropPreview");
 		try {
 
 			//a real zone, then the damage: an area id AreaData does not have
@@ -791,8 +776,8 @@ public class DataSafetyGuardsTest {
 			fill(pnl, "zoneList", 2);
 			//the editors are showing the zone the user had open
 			Zone open = new Zone(new ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(15)), Workspace.session()), Workspace.game());
-			CtrmapMainframe.mNPCEditForm.loadFromEntities(open.entities, null);
-			check(CtrmapMainframe.mNPCEditForm.loaded, "the NPC editor is showing a zone before the failed load");
+			TestWindow.mNPCEditForm().loadFromEntities(open.entities, null);
+			check(TestWindow.mNPCEditForm().loaded, "the NPC editor is showing a zone before the failed load");
 			setField(pnl, "loaded", true);
 
 			List<String> said = ctrmap.Ui.record();
@@ -813,18 +798,18 @@ public class DataSafetyGuardsTest {
 			check(lz.open() == null && lz.index() == -1,
 					"and the panel is not left believing a zone is open (zone " + lz.open()
 					+ ", index " + lz.index() + ")");
-			check(!CtrmapMainframe.mNPCEditForm.loaded,
+			check(!TestWindow.mNPCEditForm().loaded,
 					"nor are the editors left on the zone that was there before");
 		} finally {
 			propPreview.stop();
 		}
 	}
 
-	/** Comments are stripped first, so a get() mentioned in one does not count. */
 	/**
 	 * Whether the worker whose {@code done()} starts at {@code doneAt} has its result TAKEN where it
 	 * was started: {@code name.get()} after its body, or {@code name} handed to a method of the same
-	 * file whose body calls {@code get()}.
+	 * file whose body calls {@code get()}. Comments are stripped first, so a get() mentioned in one
+	 * does not count.
 	 *
 	 * <p>WHAT GET() IN DONE() IS FOR, said the other way round. A map load's result is taken by the
 	 * code that started it, after the modal dialog it waits behind closes (TileMapPanel.awaitLoad,
@@ -943,7 +928,7 @@ public class DataSafetyGuardsTest {
 				new ctrmap.formats.containers.MM(temp(mmGarc.getDecompressedEntry(14)), Workspace.session()), null);
 		short before = mm.ids.get(0, 0);
 
-		ctrmap.humaninterface.MatrixEditForm form = new ctrmap.humaninterface.MatrixEditForm(new LoadedZone(), CANVAS);
+		ctrmap.humaninterface.MatrixEditForm form = new ctrmap.humaninterface.MatrixEditForm(new LoadedZone(), canvas(), UndoHistoryTest.overOneNumber(new int[]{0}));
 		setField(form, "mm", mm);
 		setField(form, "loaded", true);
 		setField(form, "curRegX", 0);
@@ -1040,7 +1025,7 @@ public class DataSafetyGuardsTest {
 		for (int i = 0; i < 400 && line < 0; i++) {
 			String n = LocationNames.getLocName(Workspace.session(), i);
 			//a plain name, so the line printed below reads as one
-			if (n != null && n.matches("[A-Za-z][A-Za-z0-9 .'-]+") && !n.equals("NullPointerException")) {
+			if (n != null && n.matches("[A-Za-z][A-Za-z0-9 .'-]+") && !n.equals(LocationNames.unknown(i))) {
 				line = i;
 				name = n;
 			}
@@ -1153,8 +1138,8 @@ public class DataSafetyGuardsTest {
 	static void theRescaleLandsOnThePanelThatRebuiltTheImages() {
 		CountingMap subject = new CountingMap();
 		CountingMap windows = new CountingMap();
-		TileMapPanel was = CtrmapMainframe.mTileMapPanel;
-		CtrmapMainframe.mTileMapPanel = windows;
+		TileMapPanel was = TestWindow.mTileMapPanel();
+		TestWindow.mTileMapPanel(windows);
 		try {
 			for (TileMapPanel p : new TileMapPanel[]{subject, windows}) {
 				p.loaded = true;
@@ -1179,7 +1164,7 @@ public class DataSafetyGuardsTest {
 			check(subject.tilemapScale == 0.5d,
 					"and rescales it at the zoom it was already showing: " + subject.tilemapScale);
 		} finally {
-			CtrmapMainframe.mTileMapPanel = was;
+			TestWindow.mTileMapPanel(was);
 		}
 	}
 
@@ -1192,7 +1177,7 @@ public class DataSafetyGuardsTest {
 
 		CountingMap() {
 			super(new LoadedZone(), TOOLS, SCENE, new JScrollPane(),
-					new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+					new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null);
 		}
 
 		@Override

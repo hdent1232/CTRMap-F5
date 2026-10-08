@@ -67,7 +67,12 @@ public class SilentCatchTest {
 	//updates' commented one, and the donor-texture and ground-material loaders' stderr lines, each
 	//now said, rethrown or gone. HELD EQUAL from today, like the substitute ceiling: the 2026-09-20
 	//note above is what slack costs, and "may fall" let eleven slots of it build up again.
-	private static final int CEILING = 55;
+	//TIGHTENED 55 -> 50 on 2026-10-08, measured by this suite: the native-name table, the gizmo's
+	//arrows and the bundled-resource loaders refuse in words instead of logging (F130), and the
+	//rest of the 2026-10-06 audit's low fixes.
+	//TIGHTENED 50 -> 48 on 2026-10-08, measured by this suite on the trees between: TerrainHarvester
+	//went (F119) and the two injectors' donor searches became one (F087).
+	private static final int CEILING = 48;
 
 	/**
 	 * Unchecked {@code read(byte[])} / {@code skip(long)} answers in production: 50,
@@ -97,7 +102,17 @@ public class SilentCatchTest {
 	//The count leads the message no longer, so a plant can quote the message and not the count.
 	//TIGHTENED 35 -> 32 on 2026-10-07, measured by this suite: two were slack, and Bytes.checkMagicLE16
 	//reads its two bytes one at a time now that it throws on a file it cannot read (F211). Held equal.
-	private static final int UNCHECKED_READ_CEILING = 32;
+	//TIGHTENED 32 -> 28 on 2026-10-08, measured by this suite: the material decoder seeks to what it
+	//reads instead of reading and skipping what nothing draws (F079), and the commented-out C# went.
+	//TIGHTENED 28 -> 27 on 2026-10-08, measured by this suite: WavefrontOBJ went into the one OBJ
+	//reader (F070), and with it the line that called its own read method, which the text rule counted.
+	//RE-SEEDED 27 -> 12 on 2026-10-08, measured by this suite after the rule changed subject (F212): it
+	//counted LINES, so 14 reads whose count is returned, assigned or tested in a loop counted the same as
+	//a dropped one, and a codec's void read(...) did too (renamed decode). 12 are statement-level calls
+	//on a stream whose answer goes nowhere, each read off the probe's list.
+	//TIGHTENED 12 -> 10 on 2026-10-08, measured by this suite: a camera's first sixteen bytes are read
+	//whole (F221), and the BCH reader is a cursor over its array that skips no stream (F228).
+	private static final int UNCHECKED_READ_CEILING = 10;
 
 	/**
 	 * Catch blocks that ANSWER A DEFAULT and say nothing else (F211): return null, false, -1, 0,
@@ -114,7 +129,15 @@ public class SilentCatchTest {
 	//SEEDED at 84 on 2026-10-07, measured by this suite: 90 the first time it ran, 84 once the
 	//update check, the zone mini-pack probe, the painter's preview and the batch beside them said
 	//what they had answered a default for (F211).
-	private static final int SUBSTITUTE_CEILING = 84;
+	//TIGHTENED 84 -> 79 on 2026-10-08, measured by this suite on the trees between: TerrainHarvester
+	//went, and with it five catches that answered a default (F119).
+	//HELD at 79 through F248 on 2026-10-08, the two trees' lists diffed with this suite's classifier:
+	//the three donor loaders (two in NPCEditForm, one in the painter) became PawnClosure.zoneScripts,
+	//one catch for three (-2); and MapMatrix.firstRegionId and WorkspaceIntegrity's matrix pass read
+	//through the Grid now, whose refusal of a grid that does not fit turns into what each already
+	//answered - the -1 MapDefaultsTest pins, a matrix the pass leaves alone - which they did before by
+	//an `if`, out of this count's sight (+2). The same answers, now counted.
+	private static final int SUBSTITUTE_CEILING = 79;
 
 	/** A statement that answers a default. */
 	private static final Pattern DEFAULT = Pattern.compile("(return\\s*(null|false|true|-1|0|0L|0f|\"\"|new\\s+[\\w.<>\\[\\]]+\\s*\\[\\s*0\\s*\\]"
@@ -163,7 +186,8 @@ public class SilentCatchTest {
 		check(found.size() <= SUBSTITUTE_CEILING, "catch(es) answering a default in " + files + " production files: "
 				+ found.size() + ", against a ceiling of " + SUBSTITUTE_CEILING + (found.size() <= SUBSTITUTE_CEILING ? ""
 				: ". The newest kind of 'could not read' turned into 'absent': " + found));
-		check(found.size() == SUBSTITUTE_CEILING, "and the ceiling is what is measured (measured " + found.size()
+		check(found.size() == SUBSTITUTE_CEILING, "and the default-substitute ceiling is what is measured (measured "
+				+ found.size()
 				+ ", recorded " + SUBSTITUTE_CEILING + ")" + (found.size() < SUBSTITUTE_CEILING
 				? " - lower it: a slot of slack is a defect the ratchet will not notice" : ""));
 	}
@@ -267,6 +291,36 @@ public class SilentCatchTest {
 
 	static int fails = 0;
 
+	/**
+	 * One source's silent catches: {empty, log-only}, each empty one with no word of reason added to
+	 * {@code worst} by file and line.
+	 *
+	 * <p>MATCHED ON CODE, READ FROM SOURCE. The pattern ran on the raw text, so a comment quoting old
+	 * code - "catch (Exception ignore) {}" in ZoneLoadingPanel - was counted as an empty catch with no
+	 * reason. Blanking keeps every offset, so each body is still read from the raw text and its own
+	 * comments still count as a reason.
+	 */
+	static int[] silentCatches(String body, String name, List<String> worst) {
+		int empty = 0, logOnly = 0;
+		String code = blankLiterals(body);
+		Matcher m = CATCH.matcher(code);
+		while (m.find()) {
+			String inner = body.substring(m.start(1), m.end(1));
+			String bare = code.substring(m.start(1), m.end(1)).trim();
+			if (bare.isEmpty()) {
+				empty++;
+				//an empty catch with no comment at all is the worst of them: nobody
+				//even claimed there was a reason
+				if (inner.trim().isEmpty()) {
+					worst.add(name + ":" + lineOf(body, m.start()));
+				}
+			} else if (LOG_ONLY.matcher(bare).matches()) {
+				logOnly++;
+			}
+		}
+		return new int[]{empty, logOnly};
+	}
+
 	public static void main(String[] args) throws Exception {
 		File root = new File(args.length > 0 ? args[0] : "src");
 		if (!new File(root, "ctrmap").isDirectory()) {
@@ -274,40 +328,34 @@ public class SilentCatchTest {
 			System.exit(1);
 		}
 		System.out.println("--- how many failures this program can still swallow");
+		//the rule's own known answers, before its count is believed. The comment it was written for -
+		//ZoneLoadingPanel quoting "catch (Exception ignore) {}" - left the tree, and with it the only
+		//thing that could tell a quoted catch from a counted one (F248's re-drive)
+		List<String> knownWorst = new ArrayList<>();
+		int[] quoted = silentCatches("class A {\n\t//old: try { f(); } catch (Exception ignore) {}\n\tvoid f() {\n\t}\n}\n",
+				"Quoted.java", knownWorst);
+		int[] real = silentCatches("class A {\n\tvoid f() {\n\t\ttry { g(); } catch (Exception ignore) {}\n\t}\n}\n",
+				"Real.java", knownWorst);
+		check(quoted[0] + quoted[1] == 0 && real[0] == 1 && knownWorst.equals(java.util.Collections.singletonList("Real.java:3")),
+				"the rule's known answers: a catch quoted in a comment is not counted, the same catch in code is, and is"
+				+ " named by its line: " + knownWorst);
 		int empty = 0, logOnly = 0;
 		List<String> worst = new ArrayList<>();
 		for (File f : DialogSeamTest.javaSources(new File(root, "ctrmap"))) {
 			if (f.getParentFile() != null && f.getParentFile().getName().equals("tests")) {
 				continue;
 			}
-			String body = new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
-			//MATCHED ON CODE, READ FROM SOURCE. The pattern ran on the raw text, so a comment quoting
-			//old code - "catch (Exception ignore) {}" in ZoneLoadingPanel - was counted as an empty
-			//catch with no reason. Blanking keeps every offset, so each body is still read from the
-			//raw text and its own comments still count as a reason.
-			String code = blankLiterals(body);
-			Matcher m = CATCH.matcher(code);
-			while (m.find()) {
-				String inner = body.substring(m.start(1), m.end(1));
-				String bare = code.substring(m.start(1), m.end(1)).trim();
-				if (bare.isEmpty()) {
-					empty++;
-					//an empty catch with no comment at all is the worst of them: nobody
-					//even claimed there was a reason
-					if (inner.trim().isEmpty()) {
-						worst.add(f.getName() + ":" + lineOf(body, m.start()));
-					}
-				} else if (LOG_ONLY.matcher(bare).matches()) {
-					logOnly++;
-				}
-			}
+			int[] found = silentCatches(new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8), f.getName(), worst);
+			empty += found[0];
+			logOnly += found[1];
 		}
 		int total = empty + logOnly;
 		check(total <= CEILING, total + " silent catch(es) in production code - " + empty
 				+ " empty and " + logOnly + " log-only - against a ceiling of " + CEILING
 				+ ". This may fall and may not rise: a failure this program swallows is one"
 				+ " the user finds out about later, from the game");
-		check(total == CEILING, "and the ceiling is what is measured (measured " + total + ", recorded " + CEILING + ")"
+		check(total == CEILING, "and the silent-catch ceiling is what is measured (measured " + total + ", recorded "
+				+ CEILING + ")"
 				+ (total < CEILING ? " - lower it: a slot of slack is a defect the ratchet will not notice" : ""));
 		//NOT INVERTED (F211, census M.82): this read "!worst.isEmpty() || empty == 0", which PASSED
 		//exactly when empty catches with no word of reason existed and failed once none did
@@ -335,18 +383,39 @@ public class SilentCatchTest {
 	static void uncheckedReadsAndSkips(File root) throws Exception {
 		System.out.println("--- read/skip answers this program still drops");
 		//the rule's own known answers, before its count is believed
+		String[] notACount = {"\t\tMasterTable.read(ws);", "\t\tin.read();"};
+		boolean noneCounted = true;
+		for (String statement : notACount) {
+			noneCounted &= !dropsAnAnswer(statement);
+		}
 		check(dropsAnAnswer("\t\tin.read(buf);") && dropsAnAnswer("\t\tsuper.skip(n);")
 			&& dropsAnAnswer("\t\topen().read(b, 0, n);") && dropsAnAnswer("\t\tdis.skipBytes(4);")
-			&& !dropsAnAnswer("\t\tMasterTable t = MasterTable.read(ws);")
-			&& !dropsAnAnswer("\t\tin.readFully(buf);") && !dropsAnAnswer("\t\tint b = in.read();"),
+			&& noneCounted && !dropsAnAnswer("\t\tin.readFully(buf);"),
 			"the rule's known answers: a stream's read or skip counts, wherever it is called on; a"
 			+ " class's static read, readFully and a one-byte read() do not");
+		//A KNOWN ANSWER MUST REACH THE TEST IT NAMES (F248's re-drive): the static read and the
+		//one-byte read() were written as assignments, which DROPPED refuses before the receiver and
+		//SAFE_CALL tests are asked - since F212 they passed whatever those tests said
+		List<String> unreached = new ArrayList<>();
+		for (String statement : notACount) {
+			if (!DROPPED.matcher(statement).matches()) {
+				unreached.add(statement.trim());
+			}
+		}
+		check(unreached.isEmpty(), "and every known answer it does not count is a statement that drops its"
+			+ " answer, so the receiver and one-byte tests decide it, not the statement test: " + unreached);
+		//AND ONLY A DROPPED ANSWER (F212): the rule counted LINES, so a read whose count is kept or
+		//returned, or tested where it is called, counted the same as one thrown away - 35 of 76
+		check(!dropsAnAnswer("\t\tint n = in.read(b);") && !dropsAnAnswer("\t\treturn dis.read(b);")
+			&& !dropsAnAnswer("\t\tif (in.read(b) < len) {") && !dropsAnAnswer("\t\tlong got = s.skip(n);"),
+			"and an answer kept, returned or tested where the call is made is not dropped");
 		List<String> where = new ArrayList<>();
 		for (File j : DialogSeamTest.javaSources(new File(root, "ctrmap"))) {
 			if (j.getParentFile() != null && j.getParentFile().getName().equals("tests")) {
 				continue;
 			}
-			String body = new String(Files.readAllBytes(j.toPath()), StandardCharsets.UTF_8);
+			//comments blanked, lines kept: a call written in a comment drops nothing
+			String body = SourceSeamTest.stripComments(new String(Files.readAllBytes(j.toPath()), StandardCharsets.UTF_8));
 			int line = 0;
 			for (String text : body.split("\\n")) {
 				line++;
@@ -360,7 +429,8 @@ public class SilentCatchTest {
 			+ ". Both primitives report how much they MANAGED; a dropped answer is a short read"
 			+ " nobody noticed, which on a file-backed stream is a zero tail or a wrong offset."
 			+ " This may fall and may not rise: " + first(where, 5));
-		check(where.size() == UNCHECKED_READ_CEILING, "and the ceiling is what is measured (measured " + where.size()
+		check(where.size() == UNCHECKED_READ_CEILING, "and the unchecked-read ceiling is what is measured (measured "
+			+ where.size()
 			+ ", recorded " + UNCHECKED_READ_CEILING + ")" + (where.size() < UNCHECKED_READ_CEILING
 			? " - lower it: a slot of slack is a defect the ratchet will not notice" : ""));
 		check(!where.isEmpty(), "and the scan still matches something (" + where.size()
@@ -371,6 +441,12 @@ public class SilentCatchTest {
 	private static final Pattern STREAM_CALL = Pattern.compile(
 		"([A-Za-z_][A-Za-z0-9_]*)?\\s*\\.(?:read|skip|skipBytes)\\s*\\(");
 	private static final Pattern SAFE_CALL = Pattern.compile("readFully|skipFully|\\.read\\(\\)");
+	/**
+	 * A call that IS the statement, so its answer goes nowhere (F212): the line opens with the
+	 * receiver - no assignment, return or test in front of it - and ends with the call's semicolon.
+	 */
+	private static final Pattern DROPPED = Pattern.compile(
+		"\\s*[A-Za-z_][\\w.()\\[\\]]*\\.(?:read|skip|skipBytes)\\s*\\(.*\\)\\s*;\\s*");
 
 	/**
 	 * Whether one line drops a read or skip answer. A call whose receiver is a CLASS name is a
@@ -379,7 +455,7 @@ public class SilentCatchTest {
 	 * 24 of the 76 this ceiling first held were such calls.
 	 */
 	static boolean dropsAnAnswer(String text) {
-		if (SAFE_CALL.matcher(text).find()) {
+		if (SAFE_CALL.matcher(text).find() || !DROPPED.matcher(text).matches()) {
 			return false;
 		}
 		java.util.regex.Matcher m = STREAM_CALL.matcher(text);

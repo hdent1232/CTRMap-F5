@@ -1,10 +1,7 @@
 package ctrmap.humaninterface;
 
-import static ctrmap.CtrmapMainframe.*;
 import ctrmap.Ui;
 import ctrmap.Workspace;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
 import java.io.File;
 import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
@@ -35,11 +32,26 @@ public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
 	private final Runnable reloadTileset;
 
 	/**
+	 * Tells the editor a workspace was opened or re-pointed, and lets the editors go before the game
+	 * folder changes under them. HANDED, not calls up into the window (F007): the window builds this
+	 * pane and says what to ask.
+	 */
+	private final java.util.function.ToIntFunction<ctrmap.WorkspaceSession> opened;
+	private final Runnable unloadEditors;
+
+	/**
 	 * Creates new form WorkspaceSettings
 	 */
-	public WorkspaceSettings(TileMapPanel map, Runnable reloadTileset) {
+	public WorkspaceSettings(TileMapPanel map, Runnable reloadTileset,
+			java.util.function.ToIntFunction<ctrmap.WorkspaceSession> opened, Runnable unloadEditors) {
+		if (opened == null || unloadEditors == null) {
+			throw new IllegalArgumentException("the workspace settings must be handed what a workspace opening"
+					+ " tells, and what lets the editors go");
+		}
 		this.map = map;
 		this.reloadTileset = reloadTileset;
+		this.opened = opened;
+		this.unloadEditors = unloadEditors;
 		initComponents();
 		wsPathField.setText(Workspace.WORKSPACE_PATH);
 		gameField.setText(Workspace.GAMEDIR_PATH);
@@ -93,7 +105,7 @@ public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
 				applySettings();
 				ran[0] = true;
 			}
-		});
+		}, unloadEditors);
 		return ran[0];
 	}
 
@@ -103,7 +115,7 @@ public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
 		Workspace.ESPICA_PATH = spicaField.getText();
 		Workspace.TILESET_DEFAULT = btnTilesetDefault.isSelected();
 		Workspace.TILESET_PATH = tilesetPath.getText();
-		ctrmap.CtrmapMainframe.onWorkspaceOpened(Workspace.validate(this));
+		opened.applyAsInt(Workspace.validate(this));
 		originWSPath = wsPathField.getText();
 		originGamePath = gameField.getText();
 		originSpicaPath = spicaField.getText();
@@ -136,7 +148,7 @@ public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
 	 * is what {@link Ui} answers when nobody is there.
 	 */
 	public static void repointGameDir(java.awt.Component parent, javax.swing.text.JTextComponent gameField,
-			String originGamePath, Runnable restOfTheSave) {
+			String originGamePath, Runnable restOfTheSave, Runnable unloadEditors) {
 		if (!gameField.getText().equals(originGamePath)) { //may have switched from XY to AlphaOmega etc., so it's better to clean up to prevent injecting wrong game files
 			if (!keepOrRetakeBackup(parent, gameField.getText())) {
 				gameField.setText(originGamePath);
@@ -153,7 +165,7 @@ public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
 			if (!Workspace.cleanAfterAsking(parent, "The game folder has changed. To keep the old game's"
 					+ " files out of the new one, the workspace will be cleaned.", () -> {
 						Workspace.GAMEDIR_PATH = newGame;
-						ctrmap.CtrmapMainframe.unloadEditors();
+						unloadEditors.run();
 					})) {
 				return; //interrupt the saving process
 			}
@@ -450,38 +462,6 @@ public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
 			return null;
 		}
 		return jfc.getSelectedFile();
-	}
-
-	/**
-	 * @param args the command line arguments
-	 */
-	public static void main(String args[]) {
-		/* Set the Nimbus look and feel */
-		//<editor-fold defaultstate="collapsed" desc=" Look and feel setting code (optional) ">
-		/* If Nimbus (introduced in Java SE 6) is not available, stay with the default look and feel.
-         * For details see http://download.oracle.com/javase/tutorial/uiswing/lookandfeel/plaf.html 
-		 */
-		//on the event thread, ahead of the form queued below: the look and feel is Swing's too (F220)
-		java.awt.EventQueue.invokeLater(() -> {
-			try {
-				for (javax.swing.UIManager.LookAndFeelInfo info : javax.swing.UIManager.getInstalledLookAndFeels()) {
-					if ("Nimbus".equals(info.getName())) {
-						javax.swing.UIManager.setLookAndFeel(info.getClassName());
-						break;
-					}
-				}
-			} catch (ClassNotFoundException | InstantiationException | IllegalAccessException | javax.swing.UnsupportedLookAndFeelException ex) {
-				java.util.logging.Logger.getLogger(WorkspaceSettings.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-			}
-		});
-		//</editor-fold>
-
-		//</editor-fold>
-
-		/* Create and display the form */
-		java.awt.EventQueue.invokeLater(() -> {
-			new WorkspaceSettings(null, () -> { }).setVisible(true);   //the generated main(), which nothing calls
-		});
 	}
 
     // Variables declaration - do not modify//GEN-BEGIN:variables

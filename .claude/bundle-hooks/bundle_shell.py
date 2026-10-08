@@ -591,7 +591,7 @@ def pairs(command):
 
     The punctuation of a shell - `( ) { } | &` - comes back as words of its own when it is not
     quoted, so `(git commit --no-verify)` is `--no-verify` and not `--no-verify)`. The word AS
-    TYPED keeps its backslashes: a POSIX reading turns an unquoted `C:\\Users\\x` into `C:Usersx`,
+    TYPED keeps its backslashes: a POSIX reading turns an unquoted `C:\\Tools\\x` into `C:Toolsx`,
     and a directory is looked for under both spellings.
     """
     text = program(command)

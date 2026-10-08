@@ -5,10 +5,10 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import static ctrmap.formats.LittleEndian.i32;
-import static ctrmap.formats.LittleEndian.f32;
-import static ctrmap.formats.LittleEndian.putI32;
-import static ctrmap.formats.LittleEndian.putF32;
+import static ctrmap.util.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.f32;
+import static ctrmap.util.LittleEndian.putI32;
+import static ctrmap.util.LittleEndian.putF32;
 
 /**
  * Spec-exact reader/writer for the ORAS "coll" collision subfile (GR subfile 2,

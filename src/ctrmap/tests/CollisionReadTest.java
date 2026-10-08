@@ -35,6 +35,58 @@ public class CollisionReadTest {
 
 	static int fails = 0;
 
+	/**
+	 * The ground is asked, and answers unknown where there is none (F246): a quad from the fill tool
+	 * was built at height 0 whatever the terrain, because the lookup it would have asked answered 0
+	 * for no ground too. Ground raised to 50 reads 50 under it and unknown off it; a quad over it
+	 * stands at 50; a collision with no ground under the selection is refused, saying where; and
+	 * typing a coordinate into the panel writes that vertex (the nine pasted listeners are one).
+	 */
+	static void aQuadStandsOnTheGround() throws Exception {
+		System.out.println("--- a quad from the fill tool stands on the ground under it (F246)");
+		GRCollisionFile ground = GRCollisionFile.blank(null);
+		for (ctrmap.formats.Triangle t : ground.meshes[0].tris) {
+			for (int v = 0; v < 3; v++) {
+				t.setY(v, 50f);
+			}
+		}
+		check(ground.getHeightAtPoint(0f, 0f) == 50f && Float.isNaN(ground.getHeightAtPoint(5000f, 5000f)),
+				"ground at 50 reads 50 where it is and unknown where none is, not 0 (" + ground.getHeightAtPoint(0f, 0f)
+				+ ", " + ground.getHeightAtPoint(5000f, 5000f) + ")");
+		java.lang.reflect.Method quadOver = CollEditPanel.class.getDeclaredMethod("quadOver", GRCollisionFile.class,
+				int.class, int.class, int.class, int.class);
+		quadOver.setAccessible(true);
+		ctrmap.formats.Triangle[] quad = (ctrmap.formats.Triangle[]) quadOver.invoke(null, ground, 0, 0, 3, 2);
+		boolean standing = true;
+		for (ctrmap.formats.Triangle t : quad) {
+			for (int v = 0; v < 3; v++) {
+				standing &= t.getY(v) == 50f;
+			}
+		}
+		check(standing, "a quad over it stands at 50, every corner (not at 0)");
+		GRCollisionFile none = GRCollisionFile.blank(null);
+		none.meshes[0].tris.clear();
+		String refused;
+		try {
+			quadOver.invoke(null, none, 0, 0, 3, 2);
+			refused = null;
+		} catch (java.lang.reflect.InvocationTargetException ex) {
+			refused = String.valueOf(ex.getCause().getMessage());
+		}
+		check(refused != null && refused.contains("no ground under the corner"), "a collision with no ground under the"
+				+ " selection is refused, saying where (" + refused + ")");
+
+		CollEditPanel panel = new CollEditPanel(new ToolSelection(), UndoHistoryTest.overOneNumber(new int[]{0}));
+		panel.loadCollision(ground, "Region 0x0");
+		panel.selectTriangle(0, 0);
+		java.lang.reflect.Field f = CollEditPanel.class.getDeclaredField("v2y");
+		f.setAccessible(true);
+		javax.swing.JFormattedTextField v2y = (javax.swing.JFormattedTextField) f.get(panel);
+		v2y.setText("75");
+		check(ground.meshes[0].tris.get(0).getY(1) == 75f, "typing 75 into the second vertex's height writes that"
+				+ " vertex (" + ground.meshes[0].tris.get(0).getY(1) + ")");
+	}
+
 	public static void main(String[] args) throws Exception {
 		File dir = Scratch.dir("ctrmap_collision_read");
 		FakeGameFiles game = new FakeGameFiles();
@@ -130,7 +182,7 @@ public class CollisionReadTest {
 		check(Arrays.equals(new GR(damaged.getOriginFile(), game).getFile(2), before),
 				"and the region's collision on disk is the damaged bytes still, not an empty mesh");
 		try {
-			new CollEditPanel(new ToolSelection()).loadCollision(standIn, "Region 0x0");
+			new CollEditPanel(new ToolSelection(), UndoHistoryTest.overOneNumber(new int[]{0})).loadCollision(standIn, "Region 0x0");
 			check(false, "the collision editor is not handed it");
 		} catch (IllegalArgumentException said) {
 			check(true, "the collision editor is not handed it: " + said.getMessage());
@@ -178,6 +230,8 @@ public class CollisionReadTest {
 				+ scanned + " production files");
 		check(direct == 0, "no other production file reads a region's collision any other way (" + direct + " do)");
 
+		aQuadStandsOnTheGround();
+		theCollisionIsADocumentOfTheZonesHistory();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		System.exit(fails == 0 ? 0 : 1);
 	}
@@ -256,6 +310,51 @@ public class CollisionReadTest {
 		b[at + 1] = (byte) (v >> 8);
 		b[at + 2] = (byte) (v >> 16);
 		b[at + 3] = (byte) (v >> 24);
+	}
+
+	/**
+	 * Each collision file the collision editor holds is a document of the zone's history (F209): a
+	 * triangle added, moved or removed is taken back by the same Undo as everything else. The editor had
+	 * no undo at all.
+	 */
+	static void theCollisionIsADocumentOfTheZonesHistory() {
+		System.out.println("--- each collision the editor holds is a document of the zone's history (F209)");
+		String said = "(nothing was thrown)";
+		try {
+			new ctrmap.humaninterface.CollEditPanel(new ctrmap.humaninterface.tools.ToolSelection(), null);
+		} catch (RuntimeException refused) {
+			said = refused.getClass().getSimpleName() + ": " + refused.getMessage();
+		}
+		check(said.startsWith("IllegalArgumentException") && said.contains("must be handed the zone's history"),
+				"a collision editor built without the zone's history is refused: " + said);
+		int[] npc = {0};
+		ctrmap.humaninterface.UndoHistory zone = UndoHistoryTest.overOneNumber(npc);
+		ctrmap.humaninterface.CollEditPanel panel = new ctrmap.humaninterface.CollEditPanel(
+				new ctrmap.humaninterface.tools.ToolSelection(), zone);
+		ctrmap.formats.gfcollision.GRCollisionFile coll = ctrmap.formats.gfcollision.GRCollisionFile.blank(null);
+		panel.loadCollision(coll, "region 3");
+		zone.settle();
+		check(!zone.canUndo() && coll.meshes[0].tris.size() == 2, "control: a collision loaded is noted, not an edit");
+		coll.meshes[0].tris.get(1).y[2] = 9f;   //a vertex moved, as the coordinate fields write it
+		check(zone.settle() && "the collision of region 3".equals(zone.undoName()),
+				"a vertex moved is an edit of the zone's history: " + zone.undoName());
+		coll.modified = false;   //saved: the undo must mark it changed again
+		check(zone.undo() && coll.meshes[0].tris.get(1).y[2] == 0f && coll.modified,
+				"Undo puts the vertex back, and the collision is marked changed from what was saved");
+		coll.meshes[0].tris.add(new ctrmap.formats.Triangle(new float[3], new float[3], new float[3]));
+		coll.meshes[5].tris.add(new ctrmap.formats.Triangle(new float[3], new float[3], new float[3]));
+		check(zone.settle(), "a triangle added to each of two meshes is one edit");
+		panel.selectTriangle(0, 2);   //the triangle the Undo takes away
+		check(panel.selectedTri == 2, "control: the new triangle is selected");
+		try {
+			zone.undo();
+			check(coll.meshes[0].tris.size() == 2 && coll.meshes[5].tris.isEmpty() && panel.selectedTri == -1,
+					"Undo puts both meshes back and lets the selection go (" + coll.meshes[0].tris.size() + " and "
+					+ coll.meshes[5].tris.size() + ")");
+		} catch (RuntimeException threw) {
+			check(false, "Undo over a selection past the end of its mesh threw " + threw);
+		}
+		check(zone.redo() && coll.meshes[0].tris.size() == 3 && coll.meshes[5].tris.size() == 1, "and Redo puts the edit again");
 	}
 
 	static void check(boolean ok, String what) {

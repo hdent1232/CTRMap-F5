@@ -31,19 +31,10 @@ public final class ChallengeForm {
 	private final JTextArea lose = Forms.textArea("", 2);
 	private final javax.swing.JTextField workVar = new javax.swing.JTextField(
 			Integer.toHexString(ctrmap.formats.scripts.GauntletScriptWizard.DEFAULT_STREAK_WORK), 6);
-	/** The registry the model picker lists, and the previews it registers - the editor's, handed in. */
-	private final NPCRegistry reg;
-	private final List<CustomH3DPreview> livePreviews;
 
 	private final ModelPicker model;
 
-	/** The open game the model picker browses; handed in, never fetched. */
-	private final ctrmap.formats.GameFiles game;
-
 	public ChallengeForm(ctrmap.formats.GameFiles game, NPCRegistry reg, List<CustomH3DPreview> livePreviews, List<String> trainerNames) {
-		this.game = game;
-		this.reg = reg;
-		this.livePreviews = livePreviews;
 		this.model = new ModelPicker(reg, livePreviews, game, -1);
 		final IdChooser idChooser = new IdChooser(trainerNames, NpcTemplates.TRAINER_ID_MAX, 1);
 		final javax.swing.DefaultListModel<String> listModel = new javax.swing.DefaultListModel<>();
@@ -82,7 +73,7 @@ public final class ChallengeForm {
 		Forms.addLabeled(panel, "Intro text (empty = none):", new JScrollPane(intro));
 		Forms.addLabeled(panel, "Win text (empty = none):", new JScrollPane(win));
 		Forms.addLabeled(panel, "Lose text (empty = none):", new JScrollPane(lose));
-		Forms.addLabeled(panel, "Streak save variable (hex; script-corpus-free default):", workVar);
+		Forms.addLabeled(panel, "Streak save variable (hex; checked against every zone's script when added):", workVar);
 		whiteout.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
 		panel.add(whiteout);
 		Forms.addLabeled(panel, "NPC model (type to search; preview below):", model);

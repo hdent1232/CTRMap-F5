@@ -482,7 +482,7 @@ public class GarcSniffTest {
 				"and the archive on disk is unchanged (" + before.length + " bytes)");
 	}
 
-	static void aReclassifiedEntrySurvivesAnEdit(File dressUp) {
+	static void aReclassifiedEntrySurvivesAnEdit(File dressUp) throws Exception {
 		System.out.println("--- an entry this fix reclassified still round-trips through a pack");
 		//THE WRITE SIDE, and it is why this change is safer rather than riskier.
 		//packDirectory rewrites only the entries a user actually staged, and for
@@ -491,26 +491,40 @@ public class GarcSniffTest {
 		//mask textures would have written it RAW into a slot the game reads as
 		//LZ11 - a corrupt texture, silently. The property that has to hold now is
 		//that what we write is what the game reads back.
-		GARC g = new GARC(dressUp);
+		//
+		//THROUGH THE PACK ITSELF (F250): this said "edit it, pack it, read it back" over an
+		//LZ11 compress-then-decompress, and called neither packDirectory nor looked at the
+		//flag the comment above says must hold. It packs a scratch copy now - the dump is
+		//read, never written - with each entry edited, and reads the copy back.
+		File copy = new File(Scratch.dir("ctrmap_maskpack"), "a088");
+		Files.copy(dressUp.toPath(), copy.toPath());
+		GARC g = new GARC(copy);
+		File staging = Scratch.dir("ctrmap_maskpack_staged");
+		java.util.Map<Integer, byte[]> edits = new java.util.LinkedHashMap<>();
 		for (int idx : MASK_ENTRIES) {
 			byte[] original = g.getDecompressedEntry(idx);
 			if (original == null) {
-				check(false, "a/0/8/8 #" + idx + " could not be read at all");
+				check(false, "the dress-up archive's #" + idx + " could not be read at all");
 				continue;
 			}
-			byte[] repacked = LZ11.compress(original);
-			byte[] readBack = null;
-			try {
-				readBack = LZ11.decompress(repacked);
-			} catch (Throwable t) {
-			}
-			check(readBack != null && java.util.Arrays.equals(original, readBack),
-					"a/0/8/8 #" + idx + ": edit it, pack it, read it back - byte for byte the same ("
-					+ original.length + " bytes)");
-			//and the thing we would write is genuinely compressed, so the slot still
-			//holds what the game expects to find there
-			check(repacked.length >= 4 && repacked[0] == 0x11,
-					"and what gets written is LZ11, not a raw blob in a compressed slot");
+			check(g.isEntryCompressed(idx), "control: the dress-up archive's #" + idx + " is an LZ11 entry before the edit");
+			byte[] edited = original.clone();
+			edited[edited.length - 1] ^= 0x5A;
+			Files.write(new File(staging, String.valueOf(idx)).toPath(), edited);
+			edits.put(idx, edited);
+		}
+		g.packDirectory(staging, f -> true, Scratch.dir("ctrmap_maskpack_out"));
+		GARC back = new GARC(copy);
+		for (java.util.Map.Entry<Integer, byte[]> e : edits.entrySet()) {
+			int idx = e.getKey();
+			byte[] stored = back.getStoredEntry(idx);
+			check(java.util.Arrays.equals(e.getValue(), back.getDecompressedEntry(idx)),
+					"the dress-up archive's #" + idx + ": edit it, pack it, read it back - byte for byte the edit ("
+					+ e.getValue().length + " bytes)");
+			//and what the pack wrote is genuinely compressed, so the slot still holds what the
+			//game expects to find there
+			check(back.isEntryCompressed(idx) && stored != null && stored.length >= 4 && stored[0] == 0x11,
+					"and what the pack wrote there is LZ11, not a raw blob in a compressed slot");
 		}
 	}
 	static boolean isBch(byte[] b) {

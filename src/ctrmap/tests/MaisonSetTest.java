@@ -4,7 +4,7 @@ import ctrmap.formats.garc.GARC;
 import ctrmap.formats.maison.MaisonSet;
 import java.io.File;
 import java.util.Arrays;
-import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.u16;
 
 /**
  * Maison opponent-set codec gate against the retail pools:

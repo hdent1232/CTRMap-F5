@@ -1,6 +1,5 @@
 package ctrmap.humaninterface;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.formats.scripts.GFLPawnScript;
 import ctrmap.formats.scripts.PawnAssembly;
 import ctrmap.formats.scripts.PawnDisassembler;
@@ -15,7 +14,6 @@ import java.util.Scanner;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.DefaultListModel;
-import javax.swing.JOptionPane;
 import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 import javax.swing.border.MatteBorder;
@@ -155,8 +153,25 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 		loadScript(script);
 	}
 
+	/**
+	 * Drops the script of a zone that is no longer open (F222): the text is emptied and read-only
+	 * until the next zone's script is loaded. A failed load, a failed workspace open and Clean
+	 * workspace all left the closed zone's script here, in a tab that looked live; its edits change
+	 * the script object only the zone save writes, and that zone was gone, so every keystroke was
+	 * lost without a word.
+	 */
+	public void unload() {
+		loaded = false;
+		script = null;
+		sdl.setScript(null);
+		sdf.setScript(null);
+		disassemblyArea.setText("");
+		disassemblyArea.setEditable(false);
+	}
+
 	public void loadScript(GFLPawnScript scr) {
 		loaded = false;
+		disassemblyArea.setEditable(true);
 		script = scr;
 		currentIdx = -1;
 		sdl.setScript(scr);
@@ -552,19 +567,6 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 	/** The renumbering now lives with the script it renumbers: {@link GFLPawnScript#setPtrsByIndex}. */
 	public static void setPtrsByIndex(List<PawnInstruction> instructions) {
 		GFLPawnScript.setPtrsByIndex(instructions);
-	}
-
-	public static int getPtrByLine(List<PawnSubroutine> subs, int line) {
-		int ret = 0;
-		for (int sub = 0; sub < subs.size(); sub++) {
-			for (int i = 0; i < subs.get(sub).instructions.size(); i++) {
-				PawnInstruction ins = subs.get(sub).instructions.get(i);
-				if (ins.line <= line) {
-					ret = ins.pointer;
-				}
-			}
-		}
-		return ret;
 	}
 
 	public static void setLines(List<PawnSubroutine> subs) {
@@ -1066,7 +1068,6 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 			}
 		}
     }//GEN-LAST:event_prefixCatActionPerformed
-
 
     private void btnIsDataEditActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnIsDataEditActionPerformed
 		if (editData != btnIsDataEdit.isSelected()) {

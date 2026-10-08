@@ -1,17 +1,15 @@
 package ctrmap.tests;
 
-import ctrmap.CtrmapMainframe;
-import ctrmap.humaninterface.TileUndo;
 import ctrmap.humaninterface.WorldEditorToolbar;
 import java.awt.Component;
 import java.io.File;
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.swing.AbstractButton;
 import javax.swing.JButton;
 import javax.swing.JLabel;
@@ -65,9 +63,6 @@ import javax.swing.JToolBar;
  */
 public class MainframeShapeTest {
 
-	/** The tile inspector, so what the cursor told it can be read back. */
-	static final RecordingInspector INSPECTOR = new RecordingInspector();
-
 	/**
 	 * The menus as the user sees them: one line per menu, items in order,
 	 * "|" between items, "---" where a separator sits. Edit this WITH the
@@ -76,7 +71,7 @@ public class MainframeShapeTest {
 	private static final String[] EXPECTED_MENUS = {
 		"File: Open GR Mapfile | Open MapMatrix | Open Zone | Save | Pack Workspace | Deploy to emulator (mod)...",
 		"Map: Map Builder (this zone) | Blank map canvas (this zone)... | Resize map (this zone)... | Edit area fog & lighting... | Make zone independent (own map, own area)... | --- | Import map model (.bch)... | Export map region to OBJ (Blender)... | Import OBJ into map region (Blender)... | OBJ to collisions | Tileset Editor",
-		"Zone: Connect zones through a warp... | Rename zone (in-game name)... | Empty zone (clear contents)... | Find reusable base zones... | Remove added zones (restore stock 536)... | Custom battle facility here (clone a retail facility)",
+		"Zone: Connect zones through a warp... | Rename zone (in-game name)... | Empty zone (clear contents)... | Find reusable base zones... | Remove added zones (restore stock 536)... | Custom battle facility here...",
 		"Game Data: Edit trainer (party/battle)... | Edit battle facility opponents... | Edit shop inventories (Marts)... | Edit items (price, effects, name)... | Edit wild encounters (this zone)...",
 		"Options: Setup wizard... | --- | Workspace settings | Restore from pristine backup... | Clean workspace",
 		"Help: Quick start guide | Check for updates... | --- | Support/Issue tracker | About",
@@ -113,14 +108,6 @@ public class MainframeShapeTest {
 	private static final String EXPECTED_EXTRAS_ROW = "button:Raw archive browser (Builder) button:Tileset editor button:Workspace & paths";
 
 	/**
-	 * Public static fields CtrmapMainframe may declare. 91 mutable ones (plus
-	 * the final CM3DComponents list) when the decomposition began, every one
-	 * assigned once inside createAndShowGUI. LOWER this as widgets find
-	 * owners; raising it is the decision this exists to make visible.
-	 */
-	//23 -> 21: the held tool is an owner now (ToolSelection) and the frame is
-	//private, nothing below the window having a reason to reach it.
-	/**
 	 * FEATURES LIVE IN THEIR OWN UI AREA: how many items the main menu bar may hold.
 	 *
 	 * <p>The owner's standing rule since this project began - never menu-dumped, never a
@@ -135,9 +122,63 @@ public class MainframeShapeTest {
 	 */
 	private static final int MENU_ITEM_CEILING = 35;
 
-	private static final int STATIC_CEILING = 21;
-
 	static int fails = 0;
+
+	/**
+	 * The zone views whose clear() is empty ON PURPOSE, by the first statement of their show(), and
+	 * why. Every other view's clear() must drop what it shows (F222): the Script view's was empty with
+	 * a comment saying so, and a closed zone's script stayed editable.
+	 */
+	static final String[][] CLEAR_KEEPS = {
+		{"mTileMapPanel.loadMatrix(", "the map view keeps the map it drew: blanking the viewport on a failed load"
+				+ " would hide the map the user still has open; unloadEditors drops it by name"},
+		{"mMtxPanel.loadMatrix(", "paired with the map view and dropped with it"},
+		{"scene.rebuild();", "rebuilds the 3D scene from the views above it; with nothing open, nothing it drew is stale"},
+	};
+
+	/** The text between the brace that opens at or after {@code from} and the one that closes it. */
+	static String braced(String src, int from) {
+		int open = src.indexOf('{', from);
+		int depth = 0;
+		for (int i = open; i < src.length(); i++) {
+			depth += src.charAt(i) == '{' ? 1 : src.charAt(i) == '}' ? -1 : 0;
+			if (depth == 0) {
+				return src.substring(open + 1, i);
+			}
+		}
+		return "";
+	}
+
+	static void everyZoneViewClearsOrSaysWhy(File window) throws Exception {
+		System.out.println("--- every zone view drops what it shows, or is recorded as keeping it (F222)");
+		String src = new String(Files.readAllBytes(window.toPath()), StandardCharsets.UTF_8);
+		List<String> views = new ArrayList<>();
+		List<String> keepsUnsaid = new ArrayList<>();
+		boolean scriptSeen = false;
+		for (int at = src.indexOf("new ZoneEditors.ZoneView() {"); at >= 0;
+				at = src.indexOf("new ZoneEditors.ZoneView() {", at + 1)) {
+			String view = braced(src, at);
+			String show = SourceSeamTest.stripComments(braced(view, view.indexOf("public void show("))).trim();
+			String clear = SourceSeamTest.stripComments(braced(view, view.indexOf("public void clear()"))).trim();
+			String key = show.isEmpty() ? "(a show that does nothing)" : show.split("\n")[0].trim();
+			views.add(key);
+			scriptSeen |= key.startsWith("mScriptPnl.loadScript(");
+			if (clear.isEmpty()) {
+				boolean said = false;
+				for (String[] k : CLEAR_KEEPS) {
+					said |= key.startsWith(k[0]);
+				}
+				if (!said) {
+					keepsUnsaid.add(key);
+				}
+			}
+		}
+		check(views.size() >= 9 && scriptSeen, "control: the window's " + views.size() + " zone views were read, the"
+				+ " script editor's among them");
+		check(keepsUnsaid.isEmpty(), "every zone view drops what it shows when the zone closes, or is recorded as"
+				+ " keeping it" + (keepsUnsaid.isEmpty() ? "" : " - these clear nothing and say nothing: " + keepsUnsaid
+				+ ". Drop what the view shows, or record why it keeps it in CLEAR_KEEPS"));
+	}
 
 	static void check(boolean cond, String what) {
 		if (!cond) {
@@ -152,29 +193,33 @@ public class MainframeShapeTest {
 		//no display is needed to build a menu or a toolbar, and none may be
 		//assumed: the battery runner passes no flags, and a window on the
 		//owner's desktop would block the run until somebody closed it
-		System.setProperty("java.awt.headless", "true");
+		Headless.require();
 		File src = new File(args.length > 0 ? args[0] : "src");
 		everyMenuPathAMessageNamesExists(new File(src, "ctrmap"));
 		everyMenuPathADocNamesExists(src.getAbsoluteFile().getParentFile());
+		everyLabelADocNamesExists(src.getAbsoluteFile().getParentFile());
+		theAtmosphereUiPromisesOnlyWhatItEdits(new File(src, "ctrmap"));
+		theUnknownsAreSaidWhereTheyAreShown(new File(src, "ctrmap"), src.getAbsoluteFile().getParentFile());
 
-		JMenuBar bar = CtrmapMainframe.buildMenuBar();
+		JMenuBar bar = TestWindow.buildMenuBar();
 		menuTree(bar);
 		theMenuBarMayNotGrow(bar);
 		menuWired(bar);
 		menuTooltips(bar);
+		theAreaActionsAreDeclaredOnce(bar);
 		toolRow();
-		actionRow("map-actions", CtrmapMainframe.buildMapActionsBar(), EXPECTED_MAP_ROW);
-		actionRow("Zone Loader", CtrmapMainframe.buildZoneActionsBar(), EXPECTED_ZONE_ROW);
-		actionRow("Extras", CtrmapMainframe.buildExtrasBar(), EXPECTED_EXTRAS_ROW);
+		actionRow("map-actions", TestWindow.buildMapActionsBar(), EXPECTED_MAP_ROW);
+		actionRow("Zone Loader", TestWindow.buildZoneActionsBar(), EXPECTED_ZONE_ROW);
+		actionRow("Extras", TestWindow.buildExtrasBar(), EXPECTED_EXTRAS_ROW);
 		shape(new File(src, "ctrmap/CtrmapMainframe.java"));
 		cameraFraming(new File(src, "ctrmap/CtrmapMainframe.java"));
 		theZoneActionsShareOneRow(src);
 		theZoneButtonsSurviveALayoutPass();
 		theLooseMapClearNamesEveryEntityForm(new File(src, "ctrmap/CtrmapMainframe.java"));
+		everyZoneViewClearsOrSaysWhy(new File(src, "ctrmap/CtrmapMainframe.java"));
 		windowFree(new File(src, "ctrmap/util/Bytes.java"));
 		windowFree(new File(src, "ctrmap/humaninterface/Forms.java"));
 		windowFree(new File(src, "ctrmap/humaninterface/Picking.java"));
-		ceiling();
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -199,6 +244,7 @@ public class MainframeShapeTest {
 		check(items <= MENU_ITEM_CEILING, "the main menu bar holds " + items + " item(s), at or under the ceiling "
 			+ MENU_ITEM_CEILING + " - FEATURES LIVE IN THEIR OWN UI AREA, so a new one goes to its"
 			+ " own tab (seldom-used: Extras) rather than onto this bar");
+		check(Ratchet.tight(items, MENU_ITEM_CEILING), Ratchet.said("menu-item", items, MENU_ITEM_CEILING));
 	}
 
 	// ------------------------------------------------------------- menu tree
@@ -242,20 +288,88 @@ public class MainframeShapeTest {
 				unwired.add(it.getText() + " (" + n + " listeners)");
 			}
 		}
-		//RETARGETED from 35 to 34, with the reason: "Browse zones (3D preview)..." was
-		//removed along with the dialog behind it. The preview it opened now lives in
-		//the Zone Loader tab beside the dropdown, which is where the owner looked for
-		//it twice and did not find it. The count is pinned so an item cannot be added,
-		//moved or lost without somebody writing down that they meant to.
-		//35 since Help gained the quick start guide - the file package.ps1 has always
-		//shipped beside the program with nothing in the program naming it.
-		check(items == 35, "35 menu items in all (" + items + ")");
+		//the count is EXPECTED_MENUS' (each item, exactly) and MENU_ITEM_CEILING's (the refusal);
+		//an exact 'items == 35' beside them was a third copy that had to be edited by hand (F158)
 
 		theZoneLoaderTabHoldsItsPreview();
 		browsingAZoneDoesNotLoadIt();
 		theExtrasTabHoldsTheArchiveBrowser();
 		theGameDataTabHoldsItsEditors();
 		check(unwired.isEmpty(), "every item is wired to exactly one action" + (unwired.isEmpty() ? "" : " - not these: " + unwired));
+		packSaysWhyWithNoWorkspace(bar);
+		aboutSaysThisBuild(bar);
+	}
+
+	/**
+	 * Help > About says this build - its version and this project - over the window, clicked through
+	 * its own menu item (F243): it was a separate JFrame saying "CTRMAP R0" and linking only upstream.
+	 */
+	static void aboutSaysThisBuild(JMenuBar bar) {
+		JMenuItem about = null;
+		for (JMenuItem it : items(bar)) {
+			if ("About".equals(it.getText())) {
+				about = it;
+			}
+		}
+		if (about == null) {
+			check(false, "the menu bar holds About");
+			return;
+		}
+		List<String> said = ctrmap.Ui.record();
+		try {
+			for (java.awt.event.ActionListener l : about.getActionListeners()) {
+				l.actionPerformed(new java.awt.event.ActionEvent(about, java.awt.event.ActionEvent.ACTION_PERFORMED,
+						about.getText()));
+			}
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		String text = said.isEmpty() ? "" : said.get(0);
+		check(said.size() == 1 && text.contains("CTRMap-F5 " + ctrmap.update.AppVersion.described())
+				&& text.contains(ctrmap.update.UpdateChecker.REPO) && text.contains("HelloOO7"),
+				"Help > About says this build's version and this project, and credits upstream, over the window ("
+				+ text.replace("\n", " | ") + ")");
+	}
+
+	/**
+	 * File > Pack Workspace with nothing open says why, clicked the way the user clicks it - through
+	 * the item's own listener, not the action by name (F230): the item was wired straight to a pack
+	 * that returned without a word when there was no workspace. The pack is then asked directly, as
+	 * every other caller asks it: it says why, and the onDone it was handed does not run.
+	 */
+	static void packSaysWhyWithNoWorkspace(JMenuBar bar) {
+		JMenuItem pack = null;
+		for (JMenuItem it : items(bar)) {
+			if ("Pack Workspace".equals(it.getText())) {
+				pack = it;
+			}
+		}
+		if (pack == null) {
+			check(false, "the menu bar holds Pack Workspace");
+			return;
+		}
+		ctrmap.Workspace.reset();
+		List<String> said = ctrmap.Ui.record();
+		try {
+			for (java.awt.event.ActionListener l : pack.getActionListeners()) {
+				l.actionPerformed(new java.awt.event.ActionEvent(pack, java.awt.event.ActionEvent.ACTION_PERFORMED,
+						pack.getText()));
+			}
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 1 && said.get(0).startsWith("Pack workspace: Load a workspace first"),
+				"Pack Workspace with no workspace open says why, through its own menu item (" + said + ")");
+		final boolean[] ran = {false};
+		List<String> direct = ctrmap.Ui.record();
+		try {
+			ctrmap.Workspace.packWorkspace(() -> ran[0] = true);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(direct.size() == 1 && direct.get(0).startsWith("Pack workspace: Load a workspace first") && !ran[0],
+				"and a caller's pack with no workspace open says why and runs nothing after it (" + direct
+				+ (ran[0] ? ", onDone ran" : "") + ")");
 	}
 
 	static List<JMenuItem> items(JMenuBar bar) {
@@ -279,13 +393,67 @@ public class MainframeShapeTest {
 					want = t[1];
 				}
 			}
+			Object area = it.getClientProperty(TestWindow.AREA_ACTION);
+			if (area != null) {
+				want = TestWindow.tooltipOf(area);
+			}
 			String have = it.getToolTipText();
 			if (want == null ? have != null : !want.equals(have)) {
 				wrong.add(it.getText() + " -> " + have);
 			}
 		}
-		check(wrong.isEmpty(), "exactly the " + TOOLTIPS.length + " items that need a tooltip have theirs"
+		check(wrong.isEmpty(), "exactly the " + TOOLTIPS.length + " items that need a tooltip, and every area action,"
+				+ " have theirs"
 				+ (wrong.isEmpty() ? "" : " - wrong: " + wrong));
+	}
+
+	/**
+	 * Every Map and Zone action is declared once and drawn from that declaration (F223). The menus
+	 * and the two area rows were hand-written twice: the comments counting them were wrong both
+	 * ways, the battle facility was two modes on the bar and one in the menu, and nothing compared
+	 * them. Now every button on the Map and Zone rows must be a {@code CtrmapMainframe.AreaAction},
+	 * and every one of those must be on exactly one menu item and one button.
+	 */
+	static void theAreaActionsAreDeclaredOnce(JMenuBar menus) {
+		System.out.println("--- every Map and Zone action is declared once, in a menu and on its row (F223)");
+		Map<Object, Integer> inMenus = new java.util.LinkedHashMap<>();
+		Map<Object, Integer> onRows = new java.util.LinkedHashMap<>();
+		for (JMenuItem it : items(menus)) {
+			Object a = it.getClientProperty(TestWindow.AREA_ACTION);
+			if (a != null) {
+				inMenus.merge(a, 1, Integer::sum);
+			}
+		}
+		List<String> handWritten = new ArrayList<>();
+		int buttons = 0;
+		for (JToolBar row : new JToolBar[]{TestWindow.buildMapActionsBar(), TestWindow.buildZoneActionsBar()}) {
+			for (Component c : row.getComponents()) {
+				if (!(c instanceof AbstractButton)) {
+					continue;
+				}
+				buttons++;
+				Object a = ((AbstractButton) c).getClientProperty(TestWindow.AREA_ACTION);
+				if (a == null) {
+					handWritten.add(((AbstractButton) c).getText());
+				} else {
+					onRows.merge(a, 1, Integer::sum);
+				}
+			}
+		}
+		check(buttons > 0 && !inMenus.isEmpty(), "control: the two rows hold " + buttons + " buttons and the menus "
+				+ inMenus.size() + " area actions");
+		check(handWritten.isEmpty(), "every button on the Map and Zone rows is a declared area action"
+				+ (handWritten.isEmpty() ? "" : " - these were written by hand: " + handWritten));
+		List<String> notOnce = new ArrayList<>();
+		for (Object a : TestWindow.AREA_ACTION.getEnumConstants()) {
+			int m = inMenus.getOrDefault(a, 0);
+			int r = onRows.getOrDefault(a, 0);
+			if (m != 1 || r != 1) {
+				notOnce.add(a + " (menus " + m + ", rows " + r + ")");
+			}
+		}
+		check(notOnce.isEmpty(), "and each of the " + TestWindow.AREA_ACTION.getEnumConstants().length
+				+ " is on exactly one menu item and one button" + (notOnce.isEmpty() ? "" : " - these are not: " + notOnce));
 	}
 
 	/**
@@ -304,7 +472,7 @@ public class MainframeShapeTest {
 	static void theZoneLoaderTabHoldsItsPreview() {
 		System.out.println("--- the Zone Loader tab holds the zone preview, in the tab");
 		javax.swing.JPanel stand = new javax.swing.JPanel();
-		java.awt.Container tab = ctrmap.CtrmapMainframe.buildZoneTab(stand, new ctrmap.LoadedZone(), new ctrmap.humaninterface.tools.ToolSelection());
+		java.awt.Container tab = TestWindow.buildZoneTab(stand, new ctrmap.LoadedZone(), new ctrmap.humaninterface.tools.ToolSelection());
 		java.awt.LayoutManager lay = tab.getLayout();
 		Component east = lay instanceof java.awt.BorderLayout
 			? ((java.awt.BorderLayout) lay).getLayoutComponent(java.awt.BorderLayout.EAST) : null;
@@ -344,12 +512,12 @@ public class MainframeShapeTest {
 		System.out.println("--- the Extras tab holds its tools, in the tab");
 		javax.swing.JPanel tools = new javax.swing.JPanel();
 		javax.swing.JPanel browser = new javax.swing.JPanel();
-		java.awt.Container tab = ctrmap.CtrmapMainframe.buildExtrasTab(tools, browser);
+		java.awt.Container tab = TestWindow.buildExtrasTab(tools, browser);
 		java.awt.LayoutManager lay = tab.getLayout();
 		Component centre = lay instanceof java.awt.BorderLayout
 			? ((java.awt.BorderLayout) lay).getLayoutComponent(java.awt.BorderLayout.CENTER) : null;
 		check(holds(centre, tools), "the Extras tools are in the tab");
-		ctrmap.CtrmapMainframe.showInExtras("Raw archive browser (Builder)", browser);
+		TestWindow.showInExtras("Raw archive browser (Builder)", browser);
 		check(holds(centre, browser), "...and a tool opened there lands in the same place -"
 			+ " the raw archive browser, the tileset editor and the workspace settings were all"
 			+ " windows, which is what this tab exists to stop");
@@ -369,7 +537,7 @@ public class MainframeShapeTest {
 	static void theGameDataTabHoldsItsEditors() {
 		System.out.println("--- the Game Data tab holds its editors, beside the subjects");
 		javax.swing.JPanel subjects = new javax.swing.JPanel();
-		java.awt.Container tab = ctrmap.CtrmapMainframe.buildGameDataTab(subjects);
+		java.awt.Container tab = TestWindow.buildGameDataTab(subjects);
 		java.awt.LayoutManager lay = tab.getLayout();
 		Component centre = lay instanceof java.awt.BorderLayout
 			? ((java.awt.BorderLayout) lay).getLayoutComponent(java.awt.BorderLayout.CENTER) : null;
@@ -385,10 +553,10 @@ public class MainframeShapeTest {
 			"...and a host on the right for the editor being used - five editors that used to"
 			+ " be modal windows open into it");
 		javax.swing.JLabel stand = new javax.swing.JLabel("an editor");
-		ctrmap.CtrmapMainframe.showGameData("Trainer editor", stand);
+		TestWindow.showGameData("Trainer editor", stand);
 		check(holds(split.getRightComponent(), stand),
 			"...and an editor handed to it actually lands there, under its name");
-		ctrmap.CtrmapMainframe.clearGameData();
+		TestWindow.clearGameData();
 	}
 	/**
 	 * Moving through the zone list DRAWS the zone. It does not open it.
@@ -528,7 +696,7 @@ public class MainframeShapeTest {
 
 	/** The real menu bar: each menu's name and its items' labels. */
 	static Map<String, List<String>> menus() {
-		JMenuBar bar = CtrmapMainframe.buildMenuBar();
+		JMenuBar bar = TestWindow.buildMenuBar();
 		Map<String, List<String>> menus = new java.util.LinkedHashMap<>();
 		for (int i = 0; i < bar.getMenuCount(); i++) {
 			JMenu m = bar.getMenu(i);
@@ -565,6 +733,311 @@ public class MainframeShapeTest {
 		{"TESTING.md", "OFF", "a checkbox cleared, then what to expect"},
 		{"TESTING.md", "Apply", "the painter's Apply button, then the step after it"},
 	};
+
+	/**
+	 * Every button or item a doc names by its label - bold, ending in "..." - is one the program has
+	 * (F137). The quick start guide Help opens sent the user to "Add new zone (EXPERIMENTAL)..." after
+	 * the button became "Add zones (lift limit)...": a renamed control is not a menu path, so the
+	 * menu-path check above could not see it. A label is found when a string literal in the program,
+	 * outside the suites, is that label or ends with it. Scope: the same documents as the menu paths.
+	 */
+	static void everyLabelADocNamesExists(File repo) throws Exception {
+		System.out.println("--- every control a doc names by its label is one the program has (F137)");
+		java.util.Set<String> literals = new java.util.HashSet<>();
+		Pattern lit = Pattern.compile("\"((?:\\\\.|[^\"\\\\\\n])*)\"");
+		for (File f : DialogSeamTest.javaSources(new File(repo, "src/ctrmap"))) {
+			if (f.getParentFile() != null && f.getParentFile().getName().equals("tests")) {
+				continue;
+			}
+			Matcher m = lit.matcher(new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8));
+			while (m.find()) {
+				literals.add(m.group(1).replace("\\u2026", "...").replace("…", "...").trim());
+			}
+		}
+		java.util.Set<String> records = new java.util.HashSet<>();
+		for (String[] r : DOC_RECORDS) {
+			records.add(r[0]);
+		}
+		File[] docs = repo.listFiles((d, n) -> n.endsWith(".md") && !records.contains(n));
+		Pattern bold = Pattern.compile("\\*\\*([^*\\n]+?(?:\\.\\.\\.|…))\\*\\*");
+		List<String> missing = new ArrayList<>();
+		int labels = 0;
+		for (File doc : docs == null ? new File[0] : docs) {
+			List<String> lines = Files.readAllLines(doc.toPath(), StandardCharsets.UTF_8);
+			for (int i = 0; i < lines.size(); i++) {
+				Matcher m = bold.matcher(lines.get(i));
+				while (m.find()) {
+					String label = m.group(1).replace("…", "...").trim();
+					labels++;
+					boolean found = false;
+					for (String l : literals) {
+						found |= l.equals(label) || l.endsWith(label);
+					}
+					if (!found) {
+						missing.add(doc.getName() + ":" + (i + 1) + ": " + label);
+					}
+				}
+			}
+		}
+		check(literals.contains("Clone zone...") && labels > 0, "control: the program's labels are read (Clone zone... among"
+				+ " them) and the docs name " + labels + " by label");
+		check(missing.isEmpty(), "every control a doc names by its label is one the program has" + (missing.isEmpty() ? ""
+				: " - these are not: " + missing + ". Name the control as the program labels it now"));
+	}
+
+	/** A caption that names bytes as unknown or by their bare place: 'Unknown 2:', 'U10', 'ZL2', 'UnknownFlag'. */
+	static final Pattern RAW_CAPTION = Pattern.compile("(?i)^\\s*(?:unknown\\b.*|unknownflags?|u[0-9a-f]{1,2}\\s*:?|zl\\d+\\s*:?)\\s*$");
+
+	/** Each UI string that sends the user to pk3DS, and why the program does not do that itself. */
+	static final String[][] PK3DS_REDIRECTS = {
+		{"NPCEditForm.java", "use pk3DS to place items differently",
+			"the program places an item only through a giver NPC in a zone whose script has the give routine; an"
+			+ " item ball is not something it places"},
+	};
+
+	/**
+	 * The labels a form source captions as raw bytes and does not fold or caption again (F221). A
+	 * caption inside a NetBeans generated block is what the form starts with; one outside it, or a
+	 * label handed to Forms.unknownField, is what the user sees.
+	 */
+	static List<String> rawCaptionsLeftShowing(String raw, java.util.Set<String> rawSeen) {
+		Pattern setText = Pattern.compile("(\\w+)\\.setText\\(\\s*\"((?:[^\"\\\\]|\\\\.)*)\"\\s*\\)");
+		int a = raw.indexOf("//GEN-BEGIN:initComponents"), b = raw.indexOf("//GEN-END:initComponents");
+		boolean gen = a >= 0 && b > a;
+		String generated = SourceSeamTest.stripComments(gen ? raw.substring(a, b) : "");
+		String own = SourceSeamTest.stripComments(gen ? raw.substring(0, a) + raw.substring(b) : raw);
+		java.util.Set<String> captionedAgain = new java.util.HashSet<>();
+		java.util.Set<String> folded = new java.util.HashSet<>();
+		for (int part = 0; part < 2; part++) {
+			Matcher m = setText.matcher(part == 0 ? generated : own);
+			while (m.find()) {
+				if (RAW_CAPTION.matcher(m.group(2)).matches()) {
+					rawSeen.add(m.group(1));
+				} else if (part == 1) {
+					captionedAgain.add(m.group(1));
+				}
+			}
+		}
+		//the call's text has its literals blanked first: a ';' inside one ended the call there
+		Matcher h = Pattern.compile("Forms\\.unknownField\\s*\\(([^;]*)\\)\\s*;")
+				.matcher(own.replaceAll("\"(?:[^\"\\\\\\n]|\\\\.)*\"", "\"\""));
+		while (h.find()) {
+			folded.addAll(java.util.Arrays.asList(h.group(1).split("\\W+")));
+		}
+		List<String> left = new ArrayList<>();
+		for (String v : new java.util.TreeSet<>(rawSeen)) {
+			if (!folded.contains(v) && !captionedAgain.contains(v)) {
+				left.add(v);
+			}
+		}
+		return left;
+	}
+
+	/**
+	 * Raw bytes are said to be raw where they are shown, and listed where the open work is (F221). The
+	 * Zone tab offered pk3DS's 'UnknownFlag' and 'UnknownFlags', the NPC form 'U10', 'U12' and 'ZL2'/'ZL3'
+	 * (the last two the leash the record already names), and the trigger form five 'Unknown n:' boxes,
+	 * all among the named fields with nothing to say what they were; the format classes' unnamed fields
+	 * were listed nowhere; and the trainer wizard still sent the user to pk3DS for the party and class the
+	 * program's own trainer editor sets. Three rules: every label captioned as raw bytes is handed to
+	 * Forms.unknownField or captioned again; docs/FORMAT-UNKNOWNS.md lists exactly the unnamed fields the
+	 * format classes declare; and a UI string sending the user to pk3DS is one PK3DS_REDIRECTS gives a
+	 * reason for.
+	 */
+	static void theUnknownsAreSaidWhereTheyAreShown(File pkg, File repo) throws Exception {
+		System.out.println("--- raw bytes are said to be raw where they are shown, and listed (F221)");
+		java.util.Set<String> probeSeen = new java.util.HashSet<>();
+		List<String> probeLeft = rawCaptionsLeftShowing("x.setText(\"Unknown 9:\");\ny.setText(\"U12\");\n"
+				+ "Forms.unknownField(y, \"Unknown 0x12\", \"z; and more\",\n f);\nw.setText(\"Width\");\n", probeSeen);
+		check(probeLeft.equals(java.util.Arrays.asList("x")) && probeSeen.equals(new java.util.HashSet<>(java.util.Arrays.asList("x", "y"))),
+				"control: a raw caption left showing is named, a folded one and a plain one are not: " + probeLeft + " " + probeSeen);
+		List<File> ui = new ArrayList<>(DialogSeamTest.javaSources(new File(pkg, "humaninterface")));
+		ui.add(new File(pkg, "CtrmapMainframe.java"));
+		List<String> showing = new ArrayList<>();
+		boolean npcU10 = false;
+		for (File f : ui) {
+			java.util.Set<String> seen = new java.util.HashSet<>();
+			for (String v : rawCaptionsLeftShowing(DialogSeamTest.read(f), seen)) {
+				showing.add(f.getName() + " " + v);
+			}
+			npcU10 |= f.getName().equals("NPCEditForm.java") && seen.contains("u10Label");
+		}
+		check(npcU10, "control: the NPC form's generated 'U10' caption is read as raw bytes");
+		check(showing.isEmpty(), "every label captioned as raw bytes is folded by Forms.unknownField or captioned again: " + showing);
+
+		Pattern decl = Pattern.compile("(?m)^\\s*(?:(?:public|private|protected|static|final|transient)\\s+)*"
+				+ "(?:int|long|short|byte|boolean|float|double|byte\\[\\]|int\\[\\]|short\\[\\])\\s+"
+				+ "((?:\\w+\\s*(?:=\\s*[^,;]+)?\\s*,\\s*)*\\w+\\s*(?:=\\s*[^,;]+)?)\\s*;");
+		Pattern unnamed = Pattern.compile("^(?:unknown\\w*|u[0-9A-Fa-f]{1,2}(?:val)?)$");
+		java.util.Set<String> declared = new java.util.TreeSet<>();
+		for (File f : DialogSeamTest.javaSources(new File(pkg, "formats"))) {
+			Matcher m = decl.matcher(SourceSeamTest.stripComments(DialogSeamTest.read(f)));
+			while (m.find()) {
+				for (String part : m.group(1).split(",")) {
+					String name = part.split("=")[0].trim();
+					if (unnamed.matcher(name).matches()) {
+						declared.add(f.getName().replace(".java", "") + "." + name);
+					}
+				}
+			}
+		}
+		check(declared.contains("CameraData.unknownBytes") && declared.contains("ZoneEntities.u10")
+				&& !declared.contains("ZoneEntities.uid"),
+				"control: the unnamed fields are found by their names, and a named one is not (" + declared.size() + ")");
+		File doc = new File(repo, "docs/FORMAT-UNKNOWNS.md");
+		java.util.Set<String> listed = new java.util.TreeSet<>();
+		if (doc.isFile()) {
+			Matcher row = Pattern.compile("(?m)^\\|\\s*`(\\w+\\.\\w+)`").matcher(DialogSeamTest.read(doc));
+			while (row.find()) {
+				listed.add(row.group(1));
+			}
+		}
+		java.util.Set<String> unlisted = new java.util.TreeSet<>(declared);
+		unlisted.removeAll(listed);
+		java.util.Set<String> stale = new java.util.TreeSet<>(listed);
+		stale.removeAll(declared);
+		check(doc.isFile() && !listed.isEmpty(), "control: " + doc + " lists fields (" + listed.size() + ")");
+		check(unlisted.isEmpty(), "every unnamed format field has a row in docs/FORMAT-UNKNOWNS.md: " + unlisted);
+		check(stale.isEmpty(), "and every row there names a field the formats still declare unnamed: " + stale);
+
+		Pattern literal = Pattern.compile("\"(?:[^\"\\\\\\n]|\\\\.)*\"");
+		Pattern redirect = Pattern.compile("(?i)\\b(?:in|with|use|using|via|through)\\s+pk3ds\\b");
+		check(redirect.matcher("edit party/class in pk3DS").find() && !redirect.matcher("(from pk3DS)").find(),
+				"control: a redirect to pk3DS is told from a credit to it");
+		List<String> unexplained = new ArrayList<>();
+		java.util.Set<String> used = new java.util.HashSet<>();
+		for (File f : ui) {
+			Matcher m = literal.matcher(SourceSeamTest.stripComments(DialogSeamTest.read(f)));
+			while (m.find()) {
+				if (!redirect.matcher(m.group()).find()) {
+					continue;
+				}
+				boolean explained = false;
+				for (String[] r : PK3DS_REDIRECTS) {
+					if (r[0].equals(f.getName()) && m.group().contains(r[1])) {
+						explained = true;
+						used.add(r[1]);
+					}
+				}
+				if (!explained) {
+					unexplained.add(f.getName() + " " + m.group());
+				}
+			}
+		}
+		check(unexplained.isEmpty(), "every UI string sending the user to pk3DS is one PK3DS_REDIRECTS says why for: " + unexplained);
+		for (String[] r : PK3DS_REDIRECTS) {
+			check(used.contains(r[1]), "and each of those reasons still has its string (" + r[0] + ": " + r[1] + ")");
+		}
+	}
+
+	/**
+	 * What the atmosphere UI shows promises only what it edits (F236). The dialog's ambient control was
+	 * removed on purpose - the bytes it wrote were the constant 1.0 group of a fog channel, never a
+	 * colour - and the World Editor's tooltip and the picker's "Custom settings" went on offering to
+	 * hand-tune ambient light. Read: every string literal (comments stripped - the removal is
+	 * explained in comments) in the dialog, the picker, and the window's lines that wire the fog
+	 * action.
+	 */
+	static void theAtmosphereUiPromisesOnlyWhatItEdits(File pkg) throws Exception {
+		System.out.println("--- the atmosphere UI promises only what it edits (F236)");
+		Pattern literal = Pattern.compile("\"(?:[^\"\\\\\\n]|\\\\.)*\"");
+		Matcher probe = literal.matcher(SourceSeamTest.stripComments("a(\"fog\"); // ambient\nb(\"hand-tune \\\"ambient\\\"\");\n"));
+		List<String> probed = new ArrayList<>();
+		while (probe.find()) {
+			probed.add(probe.group());
+		}
+		check(probed.size() == 2 && !probed.get(0).contains("ambient") && probed.get(1).contains("ambient"),
+				"control: literals are read whole, escaped quotes included, and a comment's words are not: " + probed);
+		List<String> promised = new ArrayList<>();
+		int lines = 0;
+		for (String rel : new String[]{"humaninterface/AreaLightingDialog.java", "humaninterface/GfEnvPicker.java"}) {
+			File f = new File(pkg, rel);
+			if (!f.isFile()) {
+				check(false, "the atmosphere UI's source is at " + f);
+				continue;
+			}
+			String[] code = SourceSeamTest.stripComments(DialogSeamTest.read(f)).split("\n", -1);
+			for (int i = 0; i < code.length; i++) {
+				lines++;
+				Matcher m = literal.matcher(code[i]);
+				while (m.find()) {
+					if (m.group().toLowerCase(java.util.Locale.ROOT).contains("ambient")) {
+						promised.add(rel + ":" + (i + 1) + " " + m.group());
+					}
+				}
+			}
+		}
+		//THE WINDOW: the action's body, and every call that names it, read WHOLE. This read only the
+		//lines holding the action's name, and the fog button's tooltip is an argument on the line above
+		//it - so the old tooltip, put back, passed. Parentheses are matched over a copy with literals and
+		//comments blanked (same length), and a literal counts only where that copy still has its quote
+		File mainFile = new File(pkg, "CtrmapMainframe.java");
+		String raw = DialogSeamTest.read(mainFile);
+		String bare = SilentCatchTest.blankLiterals(raw);
+		List<int[]> spans = new ArrayList<>();
+		String decl = "private void fogAndLightingAction(";
+		int declAt = bare.indexOf(decl);
+		int bodyOpen = declAt < 0 ? -1 : bare.indexOf('{', declAt);
+		int bodyClose = bodyOpen < 0 ? -1 : matching(bare, bodyOpen, '{', '}');
+		if (bodyClose > bodyOpen) {
+			spans.add(new int[]{bodyOpen, bodyClose + 1});
+		}
+		int calls = 0;
+		for (int at = bare.indexOf("fogAndLightingAction"); at >= 0; at = bare.indexOf("fogAndLightingAction", at + 1)) {
+			if (declAt >= 0 && at == declAt + decl.indexOf("fogAndLightingAction")) {
+				continue;
+			}
+			int open = -1;
+			for (int i = at, depth = 0; i >= 0 && open < 0; i--) {
+				char c = bare.charAt(i);
+				if (c == ')') {
+					depth++;
+				} else if (c == '(' && depth-- == 0) {
+					open = i;
+				}
+			}
+			int close = open < 0 ? -1 : matching(bare, open, '(', ')');
+			if (close > open) {
+				spans.add(new int[]{open, close + 1});
+				calls++;
+			}
+		}
+		int windowLiterals = 0;
+		for (int[] span : spans) {
+			lines += raw.substring(span[0], span[1]).split("\n", -1).length;
+			Matcher m = literal.matcher(raw);
+			m.region(span[0], span[1]);
+			while (m.find()) {
+				if (bare.charAt(m.start()) != '"') {
+					continue; //inside a comment
+				}
+				windowLiterals++;
+				if (m.group().toLowerCase(java.util.Locale.ROOT).contains("ambient")) {
+					promised.add("CtrmapMainframe.java:" + (raw.substring(0, m.start()).split("\n", -1).length) + " " + m.group());
+				}
+			}
+		}
+		check(bodyClose > bodyOpen && calls >= 1 && windowLiterals >= 3, "control: the window's fog action is read whole -"
+				+ " its body, and the call that names it with that call's labels and tooltip (" + calls + " call(s), "
+				+ windowLiterals + " literal(s))");
+		check(lines > 100, "control: the dialog, the picker and the window's fog code were read (" + lines + " lines)");
+		check(promised.isEmpty(), "no text the atmosphere UI shows offers an ambient control it does not have"
+				+ (promised.isEmpty() ? "" : " - these do: " + promised));
+	}
+
+	/** The index of the bracket closing the one at {@code open}, in a copy with literals blanked; -1 when none does. */
+	static int matching(String bare, int open, char opening, char closing) {
+		int depth = 0;
+		for (int i = open; i < bare.length(); i++) {
+			char c = bare.charAt(i);
+			if (c == opening) {
+				depth++;
+			} else if (c == closing && --depth == 0) {
+				return i;
+			}
+		}
+		return -1;
+	}
 
 	/**
 	 * Every menu path the docs the owner reads name is one the menu bar has (F224).
@@ -866,8 +1339,10 @@ public class MainframeShapeTest {
 	static void toolRow() {
 		final List<String> commands = new ArrayList<>();
 		final int[] toggles = {0, 0};
+		final int[] number = {0};
+		ctrmap.humaninterface.UndoHistory history = UndoHistoryTest.overOneNumber(number);
 		WorldEditorToolbar row = new WorldEditorToolbar(e -> commands.add(e.getActionCommand()),
-				() -> toggles[0]++, () -> toggles[1]++, INSPECTOR, null);
+				() -> toggles[0]++, () -> toggles[1]++, history);
 
 		String got = renderRow(row);
 		check(got.equals(EXPECTED_TOOL_ROW), "the tool row reads: " + EXPECTED_TOOL_ROW
@@ -908,9 +1383,9 @@ public class MainframeShapeTest {
 				"the row starts on the Edit tool and says so");
 		check(undo != null && !undo.isEnabled() && redo != null && !redo.isEnabled(),
 				"Undo and Redo start disabled - there is nothing to undo");
-		check(undo != null && "Undo the last tile edit (Ctrl+Z)".equals(undo.getToolTipText())
-				&& redo != null && "Redo the undone tile edit (Ctrl+Y)".equals(redo.getToolTipText()),
-				"Undo and Redo name their shortcuts");
+		check(undo != null && "Nothing to undo (Ctrl+Z)".equals(undo.getToolTipText())
+				&& redo != null && "Nothing to redo (Ctrl+Y)".equals(redo.getToolTipText()),
+				"Undo and Redo name their shortcuts, and say there is nothing to do: " + (undo == null ? null : undo.getToolTipText()));
 		check(undo != null && !undo.isFocusable() && !redo.isFocusable() && !view3D.isFocusable(),
 				"none of the row's push buttons takes the focus off the map");
 
@@ -948,13 +1423,17 @@ public class MainframeShapeTest {
 			"and it says so where the user can see it, beside a menu that DOES write fog: "
 			+ fogOff.getToolTipText());
 
-		//the undo buttons follow TileUndo through its listener, not a static
-		final int[] fired = {0};
-		TileUndo.addListener(() -> fired[0]++);
-		TileUndo.clear();
-		check(fired[0] == 1, "TileUndo tells its listeners when the history changes (" + fired[0] + ")");
-		check(undo.isEnabled() == TileUndo.canUndo() && redo.isEnabled() == TileUndo.canRedo(),
-				"and the buttons agree with it afterwards");
+		//the undo buttons follow the zone's history they were handed, through its listener (F209)
+		check(!undo.isEnabled() && !redo.isEnabled(), "with nothing done, neither undo button is lit");
+		number[0] = 7;
+		history.settle();
+		check(undo.isEnabled() && !redo.isEnabled() && undo.getToolTipText().contains("the number"),
+				"an edit lights Undo, which says what it would take back: " + undo.getToolTipText());
+		undo.doClick();
+		check(number[0] == 0 && !undo.isEnabled() && redo.isEnabled(),
+				"pressing it takes the edit back (" + number[0] + ") and lights Redo instead");
+		redo.doClick();
+		check(number[0] == 7 && undo.isEnabled() && !redo.isEnabled(), "and Redo puts it again (" + number[0] + ")");
 	}
 
 	/** Left to right: "tool:<command>", "label:<text>", "button:<text>", "toggle:<text>", "|" for a separator. */
@@ -1065,9 +1544,23 @@ public class MainframeShapeTest {
 				"framing a matrix zeroes the yaw");
 		check(singleBody.contains("rotateX = 45f;") && matrixBody.contains("rotateX = 45f;"),
 				"and both still pitch the camera down 45 degrees");
-		check(singleBody.contains("translateX = 0f;") && matrixBody.contains("translateX = -cellsAcross * 360f;"),
-				"the difference LEFT between them is pinned, not fixed: a single region frames at translateX 0,"
-				+ " where the matrix formula gives -360 for one cell across, so a loose GR sits half a region off centre");
+		//EACH FRAMING CENTRES WHAT IT FRAMES (F159). The audit read translateX 0 against the
+		//formula's -360 for one cell as a loose GR sitting half a region off centre, and asked
+		//for frameSingleRegion to call frameMatrix(1, 1). It does not sit off centre: a loose
+		//region's model is drawn where it stands, its world position never set (0, its middle),
+		//while a matrix's cells are placed at cell * 720 + 360. The framings differ because the
+		//placements do, and the check holds them TOGETHER: change either placement and this fails.
+		File panel = new File(mainframe.getParentFile(), "TileMapPanel.java");
+		String placing = panel.isFile() ? SourceSeamTest.stripComments(
+				new String(Files.readAllBytes(panel.toPath()), StandardCharsets.UTF_8)) : "";
+		int loose = placing.indexOf("models[0][0] = new BCHFile(file.getFile(1));");
+		int looseEnd = loose < 0 ? -1 : placing.indexOf("scene.frameSingleRegion();", loose);
+		check(singleBody.contains("translateX = 0f;") && looseEnd > loose
+				&& !placing.substring(loose, looseEnd).contains("worldLocX"),
+				"a single region frames at translateX 0, its own middle: the loose load never moves its model");
+		check(matrixBody.contains("translateX = -cellsAcross * 360f;")
+				&& placing.contains("model.worldLocX = cellX * 720f + 360f;"),
+				"a matrix frames at -cellsAcross * 360, the middle of cells placed at cell * 720 + 360");
 
 		//THE PREVIEW DOES NOT MOVE THE CAMERA, and that is a decision with a bill attached.
 		//Framing a zone's own cells was tried twice and broke the preview both times: first
@@ -1194,18 +1687,18 @@ public class MainframeShapeTest {
 							})),
 					new ctrmap.humaninterface.Navigator() {
 						@Override
-						public void follow(ctrmap.humaninterface.MapObject o) {
+						public void follow(ctrmap.formats.MapObject o) {
 						}
 
 						@Override
 						public void resync() {
 						}
-					});
+					}, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
 		} catch (Throwable cannotBuild) {
 			check(false, "a real ZoneLoadingPanel can be built headlessly: " + cannotBuild);
 			return;
 		}
-		java.awt.Container tab = CtrmapMainframe.buildZoneTab(panel, owner, tools);
+		java.awt.Container tab = TestWindow.buildZoneTab(panel, owner, tools);
 		javax.swing.JButton[] made = panel.zoneCreationButtons();
 		check(made.length == 2 && made[0] != null && made[1] != null,
 				"the panel hands over two zone-making buttons");
@@ -1359,17 +1852,4 @@ public class MainframeShapeTest {
 		check(!text.contains("CtrmapMainframe"), helper.getName() + " does not depend on the main window");
 	}
 
-	// --------------------------------------------------------------- ceiling
-	static void ceiling() {
-		List<String> names = new ArrayList<>();
-		for (Field f : CtrmapMainframe.class.getDeclaredFields()) {
-			int m = f.getModifiers();
-			if (Modifier.isPublic(m) && Modifier.isStatic(m) && !f.isSynthetic()) {
-				names.add(f.getName());
-			}
-		}
-		System.out.println("  CtrmapMainframe public static fields: " + names.size() + " " + names);
-		check(names.size() <= STATIC_CEILING, "the window's public static fields have not risen above "
-				+ STATIC_CEILING + " (" + names.size() + ")");
-	}
 }

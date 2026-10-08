@@ -8,15 +8,25 @@ import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLJPanel;
 import com.jogamp.opengl.glu.GLU;
 import ctrmap.formats.h3d.model.H3DModel;
+import java.awt.BorderLayout;
+import java.awt.Component;
+import javax.swing.JPanel;
 
 /**
  * Used for showing single H3D models in a window
+ *
+ * <p>A HOST, NOT THE GL SURFACE (F077). It was a GLJPanel, so building one asked OpenGL to start, and
+ * on a machine where it cannot that was an UnsatisfiedLinkError out of the constructor. Three of the
+ * places that build one are NetBeans-generated blocks - the prop form, both registry editors - so the
+ * prop form, and the main window that builds it, could not open at all. The host builds the surface
+ * only where {@link GlSupport#available} says it can, and holds a placeholder saying why where not.
  */
-public class CustomH3DPreview extends GLJPanel implements GLEventListener {
+public class CustomH3DPreview extends JPanel implements GLEventListener {
 
 	private static final long serialVersionUID = -6824913720967100278L;
 
 	private H3DModel model;
+	/** Null when OpenGL cannot start: there is nothing to loop over. */
 	private final ShownLoop animator;
 
 	/** The model whose buffers are in the GL context below, or null: uploaded once, not every frame (F098). */
@@ -26,9 +36,28 @@ public class CustomH3DPreview extends GLJPanel implements GLEventListener {
 	private boolean reupload;
 
 	public CustomH3DPreview() {
-		super(new GLCapabilities(GLProfile.get(GLProfile.GL2)));
-		super.addGLEventListener(this);
-		animator = ShownLoop.of(this, 60);   //while it is seen (F098)
+		super(new BorderLayout());
+		if (GlSupport.available()) {
+			GLJPanel surface = new GLJPanel(new GLCapabilities(GLProfile.get(GLProfile.GL2)));
+			surface.addGLEventListener(this);
+			add(surface, BorderLayout.CENTER);
+			animator = ShownLoop.of(surface, 60);   //while it is seen (F098)
+		} else {
+			add(GlSupport.placeholder("The model preview"), BorderLayout.CENTER);
+			animator = null;
+		}
+	}
+
+	/**
+	 * What this holds fills it, whatever layout it was given: the generated forms set a GroupLayout on
+	 * it holding nothing but a size, and under that the surface would be laid out at 0 by 0.
+	 */
+	@Override
+	public void doLayout() {
+		super.doLayout();
+		for (Component held : getComponents()) {
+			held.setBounds(0, 0, getWidth(), getHeight());
+		}
 	}
 
 	/**

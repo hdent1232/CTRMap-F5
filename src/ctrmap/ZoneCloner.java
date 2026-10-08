@@ -3,8 +3,8 @@ package ctrmap;
 import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.io.IOException;
-import static ctrmap.formats.LittleEndian.i32;
-import static ctrmap.formats.LittleEndian.putI32;
+import static ctrmap.util.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.putI32;
 import java.nio.file.Files;
 
 /**

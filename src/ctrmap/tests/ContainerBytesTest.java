@@ -2,8 +2,8 @@ package ctrmap.tests;
 
 import ctrmap.formats.containers.ContainerBytes;
 import java.util.Arrays;
-import static ctrmap.formats.LittleEndian.putI32;
-import static ctrmap.formats.LittleEndian.putU16;
+import static ctrmap.util.LittleEndian.putI32;
+import static ctrmap.util.LittleEndian.putU16;
 
 /**
  * The in-memory mini-pack reader every GARC walker now shares.
@@ -135,6 +135,18 @@ public class ContainerBytesTest {
 		byte[] headerOnly = {'G', 'R', 1, 0};
 		check(ContainerBytes.count(headerOnly) == 1 && ContainerBytes.subfile(headerOnly, 0) == null,
 				"a header with no offset table declares its count but answers null for the subfile");
+		check(ContainerBytes.offsets(null) == null && ContainerBytes.offsets(headerOnly) == null,
+				"and no whole offset table either (F215)");
+		byte[] c = pack(new byte[][]{{1, 2, 3}, {}, {9, 8, 7, 6, 5}});
+		int[] off = ContainerBytes.offsets(c);
+		boolean asSubfiles = off != null && off.length == 4 && off[3] == c.length;
+		for (int i = 0; asSubfiles && i < 3; i++) {
+			asSubfiles = ContainerBytes.subfile(c, i).length == off[i + 1] - off[i];
+		}
+		check(asSubfiles, "the whole table is count + 1 entries, the last the end, and each gap is that subfile's length: "
+				+ java.util.Arrays.toString(off));
+		check(ContainerBytes.offsets(java.util.Arrays.copyOf(c, 4 + 3 * 4)) == null,
+				"and a table cut one entry short is null, not three entries and a zero");
 	}
 
 	static void check(boolean ok, String what) {

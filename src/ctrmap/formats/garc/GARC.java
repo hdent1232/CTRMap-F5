@@ -1,10 +1,9 @@
 package ctrmap.formats.garc;
 
-import ctrmap.LittleEndianDataInputStream;
+import ctrmap.util.LittleEndianDataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.RandomAccessFile;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
@@ -15,6 +14,7 @@ import java.util.Comparator;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import ctrmap.util.LittleEndian;
 
 /**
  * GARC implementation, ported mostly from the original Ohana3DS and pk3DS, but
@@ -249,7 +249,7 @@ public class GARC {
 		if (stored < 4 || prefix[0] != 0x11) {
 			return false;
 		}
-		int declared = (prefix[1] & 0xFF) | ((prefix[2] & 0xFF) << 8) | ((prefix[3] & 0xFF) << 16);
+		int declared = LittleEndian.u24(prefix, 1);
 		return declared > 0
 				&& stored >= LZ11.minimumStoredLength(declared)
 				&& LZ11.prefixDecodes(prefix, SNIFF_PREFIX_BYTES, stored);
@@ -353,6 +353,16 @@ public class GARC {
 	 */
 	public void prepareRepack(File dir, java.util.function.Predicate<File> edited,
 			Map<Integer, Boolean> compressionOverrides, File newGARC) throws IOException {
+		requirePackable(dir);
+		PackPlan plan = plan(filesToPack(dir, edited), compressionOverrides);
+		writeRepacked(newGARC, plan);
+	}
+
+	/**
+	 * What both halves of a pack refuse before anything is written, and the re-read that makes this
+	 * instance describe the archive on disk.
+	 */
+	private void requirePackable(File dir) throws IOException {
 		//A TRUNCATED ARCHIVE MAY NOT BE PACKED BACK, and this is where the damage would be
 		//done rather than where it would be noticed. `parse` records a short read instead of
 		//refusing, because the entries before the cut are perfectly readable and taking them
@@ -385,8 +395,64 @@ public class GARC {
 					+ " them; packing writes one file per entry and would flatten them, so it is not written back.");
 		}
 		rereadIfStale();
-		PackPlan plan = plan(filesToPack(dir, edited), compressionOverrides);
-		writeRepacked(newGARC, plan);
+	}
+
+	/**
+	 * The in-place pack (F082): copies this archive to {@code newGARC} and writes each staged entry
+	 * over its own stored bytes there. No table is rebuilt and no entry moves, so the header, the
+	 * offset table and every other entry are untouched by construction - for an archive of
+	 * fixed-size, uncompressed records (the item table), where rebuilding the table on every save
+	 * buys nothing. An entry stored compressed, one whose staged bytes are not its stored length, or
+	 * a file that names no entry of this archive is refused before the copy is made: each would
+	 * still "work", and land over the next record. {@link #commitRepack} puts the result in place, as
+	 * it does a repack's.
+	 */
+	public void prepareInPlace(File dir, java.util.function.Predicate<File> edited, File newGARC) throws IOException {
+		requirePackable(dir);
+		long size = file.length();
+		Map<Integer, byte[]> writes = new java.util.TreeMap<>();
+		for (File f : filesToPack(dir, edited)) {
+			int id;
+			try {
+				id = Integer.parseInt(f.getName());
+			} catch (NumberFormatException notAnEntry) {
+				throw new IOException(f + " is staged as an edit of " + file.getPath() + " but names no entry of it.");
+			}
+			if (id < 0 || id >= getEntryCount()) {
+				throw new IOException("entry " + id + " is staged for " + file.getPath() + ", which holds "
+						+ getEntryCount() + "; an archive written in place does not grow.");
+			}
+			if (isEntryCompressed(id)) {
+				throw new IOException("entry " + id + " of " + file.getPath() + " is stored compressed, so writing"
+						+ " its bytes in place would corrupt it. Nothing was written.");
+			}
+			byte[] b = Files.readAllBytes(f.toPath());
+			if (b.length != getEntryStoredLength(id)) {
+				throw new IOException("entry " + id + " of " + file.getPath() + " is stored as "
+						+ getEntryStoredLength(id) + " bytes and staged as " + b.length + "; written in place it"
+						+ " would run into the next entry. Nothing was written.");
+			}
+			int off = getEntryFileOffset(id);
+			if (off < 0 || off + b.length > size) {
+				throw new IOException("entry " + id + " of " + file.getPath() + " claims to start at 0x"
+						+ Integer.toHexString(off) + ", which is not inside its " + size + " bytes.");
+			}
+			writes.put(id, b);
+		}
+		//the copy is written the way a repack writes its result, through one RandomAccessFile
+		byte[] whole = Files.readAllBytes(file.toPath());
+		try (RandomAccessFile raf = new RandomAccessFile(newGARC, "rw")) {
+			raf.setLength(0);
+			raf.write(whole);
+			for (Map.Entry<Integer, byte[]> w : writes.entrySet()) {
+				raf.seek(getEntryFileOffset(w.getKey()));
+				raf.write(w.getValue());
+			}
+		}
+		if (newGARC.length() != size) {
+			throw new IOException("writing " + writes.size() + " entries in place changed the length of " + file.getPath()
+					+ " from " + size + " to " + newGARC.length() + " - an in-place write must not.");
+		}
 	}
 
 	/** The second half: moves a {@link #prepareRepack prepared} archive over this one and re-reads it. */
@@ -532,33 +598,17 @@ public class GARC {
 	}
 
 	/**
-	 * Writes the repacked archive to {@code newGARC}: the old header with its
-	 * sizes patched, a FATO/FATB rebuilt from the plan's table with every
-	 * offset shifted past the replaced entries, then the FIMB data - staged
-	 * bytes for replaced entries, the old file's bytes for the rest.
+	 * Writes the repacked archive to {@code newGARC} through {@link GarcWriter}, the one GARC writer
+	 * (F056): staged bytes for replaced and appended entries, the old file's bytes for the rest, each
+	 * entry keeping its old FATB flags and an appended one taking the first entry's.
 	 */
 	private void writeRepacked(File newGARC, PackPlan plan) throws IOException {
-		ArrayList<GARCEntry> working = plan.working;
-		int[] changedIndices = plan.changedIndices;
-		//A SET, NOT A SCAN PER ENTRY (F055)
-		java.util.Set<Integer> changed = new java.util.HashSet<>();
-		for (int c : changedIndices) {
-			changed.add(c);
-		}
-		byte[][] compressedData = plan.compressedData;
-		//get largest unpadded size
-		int maxlength = 0;
-		int[] filelengths = new int[compressedData.length];
-		int[] padlengths = new int[compressedData.length];
-		for (int i = 0; i < compressedData.length; i++) {
-			int len = compressedData[i].length;
-			filelengths[i] = len;
-			int remainder = len % padding;
-			int padLength = (remainder == 0) ? 0 : padding - remainder;
-			padlengths[i] = padLength;
-			if (len + padLength > maxlength) {
-				maxlength = len + padLength;
-			}
+		final ArrayList<GARCEntry> working = plan.working;
+		//A MAP, NOT A SCAN PER ENTRY (F055), and keyed by index, so the order the staged files
+		//were planned in cannot pair one entry's bytes with another's slot
+		final Map<Integer, byte[]> fresh = new java.util.HashMap<>();
+		for (int k = 0; k < plan.changedIndices.length; k++) {
+			fresh.put(plan.changedIndices[k], plan.compressedData[k]);
 		}
 		newGARC.delete();
 		//The replacement is written beside the workspace and swapped in whole.
@@ -568,105 +618,36 @@ public class GARC {
 		//This used to log the exception and return: the progress bar filled,
 		//the game kept the old map, and the leaked streams made every retry
 		//fail the same way.
-		try (FileInputStream oldIn = new FileInputStream(file);
-				RandomAccessFile src = new RandomAccessFile(file, "r");
+		try (final RandomAccessFile src = new RandomAccessFile(file, "r");
 				RandomAccessFile dos = new RandomAccessFile(newGARC, "rw")) {
-			LittleEndianDataInputStream old = new LittleEndianDataInputStream(oldIn);
-			//first 14 bytes of header should be unchanged - let's copy paste them
-			byte[] buf = new byte[16];
-			old.readFully(buf);
-			dos.write(buf);
-			dos.writeInt(0); //TEMPORARY - will be replaced with data offset
-			dos.writeInt(0); //TEMPORARY - will be replaced with file size
-			old.skipFully(8);
-			int lastMaxSize = old.readInt();
-			dos.writeInt(Integer.reverseBytes(Math.max(lastMaxSize, maxlength))); //write either the max unpadded length of new or original files
-			//FATO points to FATB - is unchanged
-			//we need to read original FATO length
-			int fatoMagic = old.readInt();
-			int fatoLength = 0xC + working.size() * 4;
-			int fatoEntries = working.size();
-			old.readInt(); //FATO length
-			int oldEntries = old.readShort(); //old FATO entries and padding
-			old.readShort();
-			old.skipFully(oldEntries * 4);
-			dos.writeInt(Integer.reverseBytes(fatoMagic));
-			dos.writeInt(Integer.reverseBytes(fatoLength));
-			dos.writeShort(Short.reverseBytes((short)fatoEntries));
-			dos.writeShort(0xFFFF);
-			for (int i = 0; i < fatoEntries; i++){
-				dos.writeInt(Integer.reverseBytes(i * 16)); //16 bytes is offset in FATB. We are only implementing simple GARCs without directories and stuff, so we don't care about accuracy.
-			}
-			//we are at the beginning of FATB in both the original stream and the new file
-			//we now need to shift the offsets of all files
-			//first we just rewrite the magic, length and entry count
-			dos.writeInt(Integer.reverseBytes(old.readInt())); //magic
-			old.readInt();
-			dos.writeInt(Integer.reverseBytes(working.size() * 16)); //FATB length
-			int oldEntryCount = old.readInt();
-			int entryCount = working.size();
-			dos.writeInt(Integer.reverseBytes(entryCount)); //FATB entry count
-			FATBEntry[] fatbe = new FATBEntry[entryCount];
-			int lastOld = 0;
-			for (int i = 0; i < oldEntryCount; i++) {
-				fatbe[i] = new FATBEntry();
-				fatbe[i].flags = old.readInt();
-				fatbe[i].offset = old.readInt();
-				fatbe[i].endOffset = old.readInt();
-				fatbe[i].len = old.readInt();
-				lastOld = i;
-			}
-			//end of FATB for original
-			int baseOffset = fatbe[lastOld].endOffset;
-			for (int i = lastOld + 1; i < entryCount; i++){
-				fatbe[i] = new FATBEntry();
-				fatbe[i].flags = fatbe[0].flags;
-				fatbe[i].offset = baseOffset;
-				fatbe[i].endOffset = baseOffset + working.get(i).length;
-				if (fatbe[i].endOffset % 4 != 0) {
-					fatbe[i].endOffset += 4 - (fatbe[i].endOffset % 4); //padding
+			final GarcWriter.Template t = GarcWriter.Template.read(src);
+			GarcWriter.write(dos, t, new GarcWriter.Entries() {
+				@Override
+				public int count() {
+					return working.size();
 				}
-				fatbe[i].len = working.get(i).length;
-				baseOffset = fatbe[i].endOffset;
-			}
-			int offsetShift = 0;
-			int processedCustomFiles = 0;
-			for (int i = 0; i < fatbe.length; i++) {
-				FATBEntry e = fatbe[i];
-				if (changed.contains(i)) {
-					//write changed file info
-					dos.writeInt(Integer.reverseBytes(e.flags));
-					dos.writeInt(Integer.reverseBytes(e.offset + offsetShift));
-					int endOffset = e.offset + offsetShift + filelengths[processedCustomFiles] + padlengths[processedCustomFiles];
-					dos.writeInt(Integer.reverseBytes(endOffset));
-					dos.writeInt(Integer.reverseBytes(filelengths[processedCustomFiles]));
-					offsetShift += endOffset - (e.endOffset + offsetShift);
-					processedCustomFiles++;
-				} else {
-					dos.writeInt(Integer.reverseBytes(e.flags));
-					dos.writeInt(Integer.reverseBytes(e.offset + offsetShift));
-					dos.writeInt(Integer.reverseBytes(e.endOffset + offsetShift));
-					dos.writeInt(Integer.reverseBytes(e.len));
+
+				@Override
+				public int flags(int i) {
+					return i < t.flags.length ? t.flags[i] : t.firstFlags();
 				}
-			}
-			buf = new byte[8];
-			old.readFully(buf);
-			dos.write(buf);
-			//written static part of FIMB
-			//the last one is data length - we need it as the last thing ever written, so we dummy it out and mark the position
-			int dataLengthPos = (int) dos.getFilePointer();
-			dos.writeInt(0);
-			//we are at data now, let's write it in
-			processedCustomFiles = 0;
-			for (int i = 0; i < fatbe.length; i++) {
-				FATBEntry e = fatbe[i];
-				if (changed.contains(i)) {
-					dos.write(compressedData[processedCustomFiles]);
-					for (int j = 0; j < padlengths[processedCustomFiles]; j++) {
-						dos.write(0xFF);
+
+				@Override
+				public int length(int i) {
+					return fresh.containsKey(i) ? fresh.get(i).length : working.get(i).length;
+				}
+
+				@Override
+				public boolean fresh(int i) {
+					return fresh.containsKey(i);
+				}
+
+				@Override
+				public void write(int i, RandomAccessFile to) throws IOException {
+					if (fresh.containsKey(i)) {
+						to.write(fresh.get(i));
+						return;
 					}
-					processedCustomFiles++;
-				} else {
 					//THE ENTRIES THE USER NEVER TOUCHED, and the reason this matters more than the
 					//edited ones: a short skip copies an untouched entry FROM THE WRONG OFFSET and a
 					//short read copies it with a zero tail, so editing one map corrupts a different
@@ -675,21 +656,9 @@ public class GARC {
 					byte[] b = new byte[working.get(i).length];
 					src.seek(working.get(i).offset);
 					src.readFully(b);
-					dos.write(b);
-					int remainder = b.length % padding;
-					int padLength = (remainder == 0) ? 0 : padding - remainder;
-					for (int j = 0; j < padLength; j++) {
-						dos.write(0xFF);
-					}
+					to.write(b);
 				}
-			}
-			int totalLength = (int) dos.length();
-			int dataLength = totalLength - (dataLengthPos + 4); //dLP is the offset in FIMB after which the data follows
-			dos.seek(0x10);
-			dos.writeInt(Integer.reverseBytes(dataLengthPos + 4));
-			dos.writeInt(Integer.reverseBytes(totalLength));
-			dos.seek(dataLengthPos);
-			dos.writeInt(Integer.reverseBytes(dataLength));
+			}, padding);
 		} catch (IOException ex) {
 			newGARC.delete();
 			throw ex;
@@ -708,7 +677,7 @@ public class GARC {
 		} catch (IOException ex) {
 			newGARC.delete();
 			throw new IOException("Could not replace " + file.getName() + " - is the emulator or another"
-					+ " program holding it open? (" + ex.getMessage() + ")", ex);
+					+ " program holding it open? (" + ctrmap.util.Bytes.reason(ex) + ")", ex);
 		}
 		parse(file);
 	}
@@ -827,12 +796,4 @@ class GARCEntry {
 	int offset;
 	int length;
 	boolean compressed;
-}
-
-class FATBEntry {
-
-	int flags;
-	int offset;
-	int endOffset;
-	int len;
 }

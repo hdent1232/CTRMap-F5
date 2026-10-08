@@ -9,7 +9,7 @@
   ]
  },
  "evasion_ceiling": 25,
- "generalisation_ceiling": 9,
+ "generalisation_ceiling": 11,
  "must_say_ceiling": 19,
  "owed_ceiling": 0,
  "plants": {
@@ -2370,6 +2370,22 @@
    "site": "elsewhere",
    "why": "THE OTHER DIRECTION: a file gone since the walk, or a dangling link, is not a rule; read as one that cannot answer, it refuses every write in the project over a file that is not there."
   },
+  "test_bundle_action.py::AWriteIsJudgedAsItWouldLeaveTheTree::test_a_rule_whose_scope_is_not_a_pattern_is_refused_not_silently_unasked": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a rule whose scope is not a pattern was never asked",
+   "new": "    elif False:\n        try:\n            re.compile(scope)\n        except re.error as exc:\n",
+   "old": "    elif scope is not None:\n        try:\n            re.compile(scope)\n        except re.error as exc:\n",
+   "site": "instance",
+   "why": "F168: with AT_SCOPE r'^src/(.*\\.py$' a rule was discovered with no error and every write passed with nothing said, in the 1 place the tree caught re.error - the rule that says a rule that cannot answer is not a pass."
+  },
+  "test_bundle_action.py::AWriteIsJudgedAsItWouldLeaveTheTree::test_a_rule_whose_scope_is_not_a_pattern_is_refused_not_silently_unasked::elsewhere": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a rule whose scope is not a pattern was never asked",
+   "new": "        return [(\"AT_SCOPE\", None, None, \"AT_SCOPE is %s, not a pattern\" % type(scope).__name__)]\n",
+   "old": "        return _on_every_marker(values, \"AT_SCOPE is %s, not a pattern\" % type(scope).__name__)\n",
+   "site": "elsewhere",
+   "why": "F168: the same silence at the scope check beside it - an AT_SCOPE that was not a string became an error row of kind AT_SCOPE, which is 1 kind no write ever asks, so the broken rule was reported to nobody."
+  },
   "test_bundle_action.py::AWriteIsJudgedAsItWouldLeaveTheTree::test_a_write_INTO_the_git_folder_is_refused_and_a_look_alike_is_not": {
    "file": ".claude/bundle-hooks/guard_write_rules.py",
    "must_say": "a tool wrote inside the git folder",
@@ -2696,7 +2712,7 @@
    "new": "",
    "old": "    if isinstance(plants, list) and key:\n        return {p[key] for p in plants if isinstance(p, dict) and isinstance(p.get(key), str)}\n",
    "site": "elsewhere",
-   "why": "A LIST-SHAPED LEDGER READ AS EMPTY. CTRMap's is a list of 213 entries, not a dict; read as a dict it holds no plant, and every new one is invisible."
+   "why": "A LIST-SHAPED LEDGER READ AS EMPTY. CTRMap's was a list of 213 entries when this was found (before 2026-09-26, the bundle's first commit), not a dict; read as a dict it holds no plant, and every new one is invisible."
   },
   "test_bundle_gates.py::ACommitIsAskedWhatSections2And14Ask::test_the_trailer_Claude_Code_WRITES_is_the_shape": {
    "file": "tools/commit_gate.py",
@@ -2798,7 +2814,7 @@
    "file": "tools/gate_stamps.py",
    "must_say": "took tools/ for its repository",
    "new": "ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\n",
-   "old": "ROOT = _root()\n",
+   "old": "ROOT = _tree_root.require(__file__)\n",
    "site": "elsewhere",
    "why": "A ROOT COUNTED IN DIRNAMES. The project this came from installs its tools under tools/audit/, where two dirnames name tools/ - and init would write the baseline where nothing reads it."
   },
@@ -2882,6 +2898,14 @@
    "site": "evasion",
    "why": "THE CHEAPEST WAY TO LET THE LINTER THROUGH: everything after `-m` is data. Then `python -m runpy forger.py` runs a forging script nothing read."
   },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_the_PROGRAM_is_one_word_and_a_linter_reading_a_file_is_not_running_it::jsontool": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a linter reading a file was read as running it",
+   "new": "                      \"tabnanny\")",
+   "old": "                      \"tabnanny\", \"json.tool\")",
+   "site": "instance",
+   "why": "F181: `python -m json.tool tests/plants.json` - a stdlib reader pretty-printing the ledger - was refused as forging a gate stamp, 1 of the 5 honest commands the audit measured refused because the file they were handed names the store."
+  },
   "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_the_PROGRAM_is_one_word_and_a_linter_reading_a_file_is_not_running_it::local": {
    "file": "tools/gate_stamps.py",
    "must_say": "a module in the project run with -m was never read",
@@ -2897,6 +2921,14 @@
    "old": "            local = _local_module(name, root)\n            if local:\n                return local + rest\n            return [] if name in _READ_ONLY_MODULES else rest\n",
    "site": "evasion",
    "why": "THE READER'S NAME IS NOT THE READER: `-m` puts the working directory first on the path, so a ruff.py in the project IS what `python -m ruff` runs - asked by name before the project, it is waved through as the linter."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_the_PROGRAM_is_one_word_and_a_linter_reading_a_file_is_not_running_it::testroute": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "does not name the route that runs it",
+   "new": "                if False:\n",
+   "old": "                if base.startswith(\"test_\") and base.endswith(\".py\"):\n",
+   "site": "elsewhere",
+   "why": "F181: the files that must name the store are the ones that test it, and running 1 of them as a script was refused with no way forward - a refusal of honest work that names no route is one somebody removes."
   },
   "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_the_PROGRAM_is_one_word_and_a_linter_reading_a_file_is_not_running_it::versioned": {
    "file": "tools/gate_stamps.py",
@@ -2952,7 +2984,7 @@
    "new": "    pairs = [(k, drive) for k in keys]\n",
    "old": "    pairs = [(k, drive) for k in keys] + [(k, prove) for k in own_keys]\n",
    "site": "instance",
-   "why": "THE PROJECT'S OWN LEDGER LEFT OUT. CTRMap proves its Java tests with 221 plants of its own, and a re-drive that reads only the bundle's ledger lets every one of them go vacuous under an edit to its file while the gate reports the commit clean. Re-anchored 2026-09-27 onto the pairs list the re-drive loop now reads."
+   "why": "THE PROJECT'S OWN LEDGER LEFT OUT. CTRMap proved its Java tests with 221 plants of its own on 2026-09-25, and a re-drive that reads only the bundle's ledger lets every one of them go vacuous under an edit to its file while the gate reports the commit clean. Re-anchored 2026-09-27 onto the pairs list the re-drive loop now reads."
   },
   "test_bundle_gates.py::AHeldPlantIsDrivenAgainWhenItsFileChanges::test_a_projects_OWN_plant_is_selected_by_its_file_or_its_suite": {
    "file": "tools/commit_gate.py",
@@ -2962,11 +2994,35 @@
    "site": "elsewhere",
    "why": "THE TEST'S HALF, IN THE PROJECT'S LEDGER. An own plant names the suite that must notice it, not a path; a selection that asks only about the planted file never drives a plant again when its suite is rewritten so it no longer notices."
   },
+  "test_bundle_gates.py::EveryGateSubprocessIsBOUNDED::test_every_way_to_start_a_child_and_wait_is_seen": {
+   "file": "tools/timeouts.py",
+   "must_say": "the unbounded children were not all seen",
+   "new": "                if alias.name == \"subprocess\":\n                    pass\n",
+   "old": "                if alias.name == \"subprocess\":\n                    modules.add(alias.asname or alias.name)\n",
+   "site": "instance",
+   "why": "F199: `import subprocess as sp` then sp.run([...]) blocked forever and passed a checker that looked for the word subprocess - 1 of 6 shapes it could not see, in the tool held at a ceiling of 0 after a 13.5-hour hang."
+  },
+  "test_bundle_gates.py::EveryGateSubprocessIsBOUNDED::test_every_way_to_start_a_child_and_wait_is_seen::elsewhere": {
+   "file": "tools/timeouts.py",
+   "must_say": "the unbounded children were not all seen",
+   "new": "                if node.module == \"subprocess\" and alias.name in WAITS:\n                    pass\n",
+   "old": "                if node.module == \"subprocess\" and alias.name in WAITS:\n                    waits.add(alias.asname or alias.name)\n",
+   "site": "elsewhere",
+   "why": "F199: the same blindness at the from-import - `from subprocess import run, check_output` then run(...) - 2 of the 6 shapes the checker passed."
+  },
+  "test_bundle_gates.py::EveryGateSubprocessIsBOUNDED::test_every_way_to_start_a_child_and_wait_is_seen::evasion": {
+   "file": "tools/timeouts.py",
+   "must_say": "the unbounded children were not all seen",
+   "new": "",
+   "old": "        elif (attr in (\"system\", \"popen\") and owner in oses) or bare in shells:\n            out.append(node.lineno)\n",
+   "site": "evasion",
+   "why": "F199: the cheapest way past a timeout rule is a call that cannot take one - os.system and os.popen start a child and wait with no bound at all, and 3 of the 6 missed shapes were these and a bare Popen.wait()."
+  },
   "test_bundle_gates.py::EveryGateSubprocessIsBOUNDED::test_the_checker_finds_an_unbounded_call_and_passes_a_bounded_one": {
    "file": "tools/timeouts.py",
    "must_say": "!= [3, 4]",
-   "new": "        if False:",
-   "old": "        if not any(keyword.arg == \"timeout\" for keyword in node.keywords):",
+   "new": "        timed = True\n",
+   "old": "        timed = any(keyword.arg == \"timeout\" for keyword in node.keywords)\n",
    "site": "instance",
    "why": "A timeout checker that finds nothing, reporting every gate bounded while one waits thirteen and a half hours on 0.14 seconds of CPU."
   },
@@ -2986,6 +3042,14 @@
    "site": "instance",
    "why": "The shipped defect: with no argument the driver fell through to its default and drove every plant in the ledger - on the project this came from, 75 minutes of planted defects started by a run meant as a quick look."
   },
+  "test_bundle_gates.py::EveryPlantTheGateDrivesIsCountedAloud::test_a_flag_given_no_value_is_refused_in_words": {
+   "file": "tools/prove_plants.py",
+   "must_say": "was not refused in words",
+   "new": "",
+   "old": "    if at + 1 >= len(argv) or argv[at + 1].startswith(\"--\"):\n        return None\n",
+   "site": "instance",
+   "why": "F197: --merge-from and --only given last crashed with IndexError while three sibling flags refused in words, and `--merge-from --only x` took a flag for a folder - 2 of 5 value-taking flags unguarded."
+  },
   "test_bundle_gates.py::EveryPlantTheGateDrivesIsCountedAloud::test_all_is_said_only_when_every_one_reddened": {
    "file": "tools/commit_gate.py",
    "must_say": "a drive where one plant stayed green was counted as all red",
@@ -2993,6 +3057,22 @@
    "old": "    said = \"all %d red\" % driven if reds == driven else \"%d of %d red\" % (reds, driven)\n",
    "site": "evasion",
    "why": "THE CHEAPEST WAY TO SAY SOMETHING: count the plants asked and call them all red, which prints reassurance over a drive where a plant stayed green - a count that is not a measurement."
+  },
+  "test_bundle_gates.py::EveryPlantTheGateDrivesIsCountedAloud::test_an_unclassified_record_can_be_classified_by_the_command_its_refusal_names": {
+   "file": "tools/whole_tree.py",
+   "must_say": "the unclassified refusal does not name the command",
+   "new": "                \"Record it as one of them (%s %s).\"\n",
+   "old": "                \"`python -B tools/whole_tree.py classify %s %s`, then `record`.\"\n",
+   "site": "instance",
+   "why": "F200: whole_tree refused an unclassified record with 'Record it as covers or exempts' and no command recorded a kind - the 1 kind in CTRMap's baseline was typed into its install commit, a remedy that could only be a hand edit."
+  },
+  "test_bundle_gates.py::EveryPlantTheGateDrivesIsCountedAloud::test_an_unclassified_record_can_be_classified_by_the_command_its_refusal_names::evasion": {
+   "file": "tools/whole_tree.py",
+   "must_say": "a record's kind was switched",
+   "new": "    if False:\n        return 2, (\"REFUSING: %s is already %s",
+   "old": "    if label in kinds:\n        return 2, (\"REFUSING: %s is already %s",
+   "site": "evasion",
+   "why": "F200: once a kind can be recorded by command, the cheapest way past a record's ratchet is to switch it - covers and exempts bound in opposite directions, so 1 switch moves the ceiling the whole way by hand."
   },
   "test_bundle_gates.py::EveryPlantTheGateDrivesIsCountedAloud::test_held_plants_driven_again_are_counted": {
    "file": "tools/commit_gate.py",
@@ -3010,6 +3090,22 @@
    "site": "instance",
    "why": "THE SILENT SUCCESS THE CTRMAP SESSION REPORTED: a commit adding plants drove every one red and printed nothing, so the only count on screen was the ratchet step's 0 plant(s) driven, and a proven commit read as an unproven one."
   },
+  "test_bundle_gates.py::EveryPlantTheGateDrivesIsCountedAloud::test_one_verdict_and_a_child_that_never_ran_is_not_a_kill": {
+   "file": "tools/prove_plants.py",
+   "must_say": "with no ran marker and no must_say, was a kill",
+   "new": "    else:\n        reached = True\n",
+   "old": "    else:\n        reached = bool(must_say) and must_say in said\n",
+   "site": "instance",
+   "why": "F196: the verdict on a plant was written twice and only 1 of the 2 copies refused a child that never ran to a verdict - a declared runner's JVM dying in static init or out of memory was scored a kill for any plant without must_say."
+  },
+  "test_bundle_gates.py::EveryPlantTheGateDrivesIsCountedAloud::test_the_programs_proofs_are_not_modules_a_record_must_cover": {
+   "file": "tools/whole_tree.py",
+   "must_say": "a test under the proofs directory was counted as a module of the program",
+   "new": "        dirs[:] = [d for d in dirs if not d.startswith(\".\") and d != \"__pycache__\"]\n",
+   "old": "        dirs[:] = [d for d in dirs if not d.startswith(\".\") and d != \"__pycache__\" and d != PROOFS]\n",
+   "site": "instance",
+   "why": "F191: the module walk counted the 153 test files, so the mutation record read 'missing 385 of 418' when it scored 33 of the 265 production modules - seven eighths of the program unscored, read as a little of everything. This plant counts the tests again."
+  },
   "test_bundle_gates.py::EveryPlantTheGateDrivesIsCountedAloud::test_the_ratchet_step_says_it_drives_none_rather_than_counting_zero": {
    "file": "tools/prove_plants.py",
    "must_say": "--owed counted zero plants driven beside a gate that drove them",
@@ -3017,6 +3113,86 @@
    "old": "          if owed_only else \"%d plant(s) driven\" % driven)",
    "site": "elsewhere",
    "why": "THE MISLEADING ZERO ITSELF: the ratchet step, which drives no plant by design, printed 0 plant(s) driven on every commit, and beside a gate that said nothing it was the only count anyone saw."
+  },
+  "test_bundle_gates.py::EveryRootIsAnchoredNeverCounted::test_a_copy_that_drifts_is_refused_and_the_definition_is_held_to_nothing": {
+   "file": "tools/counted_roots.py",
+   "must_say": "a copy that drifted was not refused",
+   "new": "        if True:\n",
+   "old": "        if rel == _canonical_rel():\n",
+   "site": "instance",
+   "why": "F216: every copy exempted the way the definition is - the drift check then holds nothing to anything."
+  },
+  "test_bundle_gates.py::EveryRootIsAnchoredNeverCounted::test_a_copy_that_drifts_is_refused_and_the_definition_is_held_to_nothing::frozen": {
+   "file": "tools/counted_roots.py",
+   "must_say": "the definition was held to its own copies",
+   "new": "        if False:\n",
+   "old": "        if rel == _canonical_rel():\n",
+   "site": "elsewhere",
+   "why": "F216: the definition held to its copies could never change - every edit to it refused at the write until all the copies changed first, which none may."
+  },
+  "test_bundle_gates.py::EveryRootIsAnchoredNeverCounted::test_no_file_here_counts_its_root_walks_its_own_or_holds_a_drifted_copy": {
+   "file": ".claude/bundle-hooks/guard_agent_campaign.py",
+   "must_say": "a root counted in folders from __file__",
+   "new": "ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))\n",
+   "old": "ROOT = _tree_root.require(__file__)\n",
+   "site": "instance",
+   "why": "F216: the finding's own site - this hook counted three dirnames to its project, right only while `_hooks_at` names a folder exactly two below the root."
+  },
+  "test_bundle_gates.py::EveryRootIsAnchoredNeverCounted::test_no_file_here_counts_its_root_walks_its_own_or_holds_a_drifted_copy::copy": {
+   "file": "tests/_tree_root.py",
+   "must_say": "is not tools/_tree_root.py byte for byte",
+   "new": "ONE DEFINITION, THE SAME BYTES IN EVERY FOLDER!",
+   "old": "ONE DEFINITION, THE SAME BYTES IN EVERY FOLDER.",
+   "site": "elsewhere",
+   "why": "F216: the definition is copied into every folder that needs it; a copy that drifts by one byte is a second definition, and nothing else would notice."
+  },
+  "test_bundle_gates.py::EveryRootIsAnchoredNeverCounted::test_no_file_here_counts_its_root_walks_its_own_or_holds_a_drifted_copy::evasion": {
+   "file": ".claude/bundle-hooks/guard_agent_campaign.py",
+   "must_say": "a root counted in folders from __file__",
+   "new": "ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir)\n",
+   "old": "ROOT = _tree_root.require(__file__)\n",
+   "site": "evasion",
+   "why": "F216: the cheapest way past a check that knew nested dirname() is to spell the same count another way - os.pardir, '..', .parents[N], a name holding half of it."
+  },
+  "test_bundle_gates.py::EveryRootIsAnchoredNeverCounted::test_no_file_here_counts_its_root_walks_its_own_or_holds_a_drifted_copy::walk": {
+   "file": "tools/format_strings.py",
+   "must_say": "an anchored walk of its own",
+   "new": "    here = os.path.dirname(os.path.abspath(__file__))\n    while not os.path.exists(os.path.join(here, \".git\")):\n        here = os.path.dirname(here)\n    return here\n",
+   "old": "    return _tree_root.repo_root(__file__)\n",
+   "site": "elsewhere",
+   "why": "F216: eight anchored walks with four anchor sets answered one question; a ninth anchored on .git alone is the same defect without a single counted dirname."
+  },
+  "test_bundle_gates.py::EveryRootIsAnchoredNeverCounted::test_the_checker_still_sees_every_spelling_it_refuses": {
+   "file": "tools/counted_roots.py",
+   "must_say": "a known answer did not hold",
+   "new": "        if False:\n",
+   "old": "        if called == \"dirname\" and node.args:\n",
+   "site": "instance",
+   "why": "F216: a checker that stops seeing a nested dirname reports the tree clean in exactly the words a clean tree earns - its controls are asked first."
+  },
+  "test_bundle_gates.py::EveryRootIsAnchoredNeverCounted::test_the_checker_still_sees_every_spelling_it_refuses::evasion": {
+   "file": "tools/counted_roots.py",
+   "must_say": "a known answer did not hold",
+   "new": "        steps.update(id(node) for node in stepping)\n",
+   "old": "        steps.update(id(node) for node in stepping if node.args[0].id in tested)\n",
+   "site": "evasion",
+   "why": "F216: the step of an ANCHORED walk is excused; widened to any loop, a count written as `for _ in range(2): here = dirname(here)` would pass as a walk."
+  },
+  "test_bundle_gates.py::EveryRootIsAnchoredNeverCounted::test_the_root_is_the_nearest_anchor_and_no_anchor_is_refused_in_words": {
+   "file": "tests/_tree_root.py",
+   "must_say": "a file in no project was given a root",
+   "new": "            return here\n",
+   "old": "            return None\n",
+   "site": "instance",
+   "why": "F216: three of the eight walks answered a guess when they found no anchor - a file in no project named some folder its root."
+  },
+  "test_bundle_gates.py::EveryRootIsAnchoredNeverCounted::test_the_root_is_the_nearest_anchor_and_no_anchor_is_refused_in_words::nearest": {
+   "file": "tests/_tree_root.py",
+   "must_say": "the nearest anchor is not the root",
+   "new": "        if os.path.exists(os.path.join(here, \".git\")):\n",
+   "old": "        if os.path.exists(os.path.join(here, \".git\")) or os.path.isfile(\n                os.path.join(here, \"CLAUDE.md\")):\n",
+   "site": "elsewhere",
+   "why": "F216: the anchor sets differed - .git alone, CLAUDE.md alone, either, .git or .githooks; one dropped is a second definition of the root."
   },
   "test_bundle_gates.py::EveryToolHereIsAskedAtTheActItGuards::test_a_module_a_dispatched_guard_imports_is_asked_where_the_guard_is": {
    "file": "tools/tiers.py",
@@ -3118,7 +3294,7 @@
    "file": "tools/bundle_hooks.py",
    "must_say": "a scratch tree was answered with a layout its installation does not use",
    "new": "    return _held(root) or DEFAULT\n",
-   "old": "    return _held(root) or _held(HOME) or DEFAULT\n",
+   "old": "    return _held(root) or (_held(HOME) if HOME else None) or DEFAULT\n",
    "site": "instance",
    "why": "A SCRATCH TREE IN THE WRONG LAYOUT. Answered DEFAULT, bundle_rules (which reads its own folder) and the tools disagreed in exactly the projects this exists for."
   },
@@ -3169,6 +3345,14 @@
    "old": "        for rel in checker.bundle_files(where):\n",
    "site": "instance",
    "why": "TWO WALKS OF ONE FOLDER. The write rule's scope walked the bundle with its own skip list while the checker's walk had learned that a tool's signed cache is not a shipped file."
+  },
+  "test_citations.py::ACitationACheckoutCannotOpenIsRefused::test_a_citation_in_any_text_file_is_seen_whatever_its_name": {
+   "file": "tools/guard/citations.py",
+   "must_say": "was never looked for",
+   "new": "        if os.path.splitext(rel)[1].lower() in (\".md\", \".py\", \".java\", \".ps1\", \".txt\", \".json\", \".bat\", \".sh\", \".properties\"):\n",
+   "old": "        if _is_text(os.path.join(root, rel)):\n",
+   "site": "instance",
+   "why": "F185: the citation scan kept nine suffixes - a different nine from the census beside it - so a citation in a git hook (no suffix), a .form, a .tsv or an .xml was never looked for: 85 of 729 listed files. This plant puts the suffix list back."
   },
   "test_citations.py::ACitationACheckoutCannotOpenIsRefused::test_an_undeclared_citation_in_a_built_tree_is_refused": {
    "file": "tools/guard/citations.py",
@@ -3274,8 +3458,24 @@
    "site": "elsewhere",
    "why": "F194: the same unasked write by another shape - an edits[] batch carrying a line inside the block passed the hook."
   },
+  "test_guard_all_deadline.py::AGuardThatNeverAnswersIsRefusedInTime::test_a_hung_guard_is_refused_within_the_patience": {
+   "file": ".claude/hooks/guard_all.py",
+   "must_say": "the dispatcher waited",
+   "new": "    worker.join()\n",
+   "old": "    worker.join(seconds)\n",
+   "site": "instance",
+   "why": "F169: guard_all listed 'a guard that takes longer than PATIENCE seconds' among its refusals and timed decide() only after it returned, so a guard that never answered held every call for the harness's 20 s - and the harness then ignored the hook and let the call through."
+  },
+  "test_guard_all_deadline.py::AGuardThatNeverAnswersIsRefusedInTime::test_a_hung_guard_is_refused_within_the_patience::evasion": {
+   "file": ".claude/hooks/guard_all.py",
+   "must_say": "never finished loading",
+   "new": "        finished, module, cannotLoad = True, load(), None\n",
+   "old": "        finished, module, cannotLoad = _within(PATIENCE, load)\n",
+   "site": "evasion",
+   "why": "F169: the cheapest way past a deadline on decide() is to hang while being imported - module-level code ran on the main thread with no bound, so 1 sleep at import held every call for the harness's 20 s and the call then went ahead."
+  },
   "test_guard_push.py::AnApprovalIsForTheCommitThePushSends::test_a_commit_the_approval_does_not_name_is_refused_though_head_is_approved": {
-   "file": "tools/hooks/guard_push.py",
+   "file": ".claude/hooks/guard_push.py",
    "must_say": "PUBLISHED A COMMIT NOBODY APPROVED",
    "new": "        if False:",
    "old": "        if sha is not None and sha.lower() != approved:",
@@ -3283,7 +3483,7 @@
    "why": "With an approval for HEAD, `git push origin <any commit>:master` published a commit the owner never saw."
   },
   "test_guard_push.py::AnApprovalIsForTheCommitThePushSends::test_a_push_spelled_any_way_git_accepts_is_still_judged::evasion": {
-   "file": "tools/hooks/guard_push.py",
+   "file": ".claude/hooks/guard_push.py",
    "must_say": "NOT RECOGNISED AS A PUSH",
    "new": "_LEAD = \"\"",
    "old": "_LEAD = r\"(?:(?:[A-Za-z_]\\w*=\" + _WORD + r\"?|env|command|nohup|time|exec|sudo|builtin)\\s+)*\"",
@@ -3291,7 +3491,7 @@
    "why": "A push the guard does not recognise is a push it never judges: `VAR=value git push` and `env ... git push` went out with no token."
   },
   "test_guard_push.py::AnApprovalIsForTheCommitThePushSends::test_a_refspec_that_deletes_needs_its_own_word::evasion": {
-   "file": "tools/hooks/guard_push.py",
+   "file": ".claude/hooks/guard_push.py",
    "must_say": "DELETED THE REMOTE BRANCH",
    "new": "        if False:",
    "old": "        if sha is None and not forced:",
@@ -3307,7 +3507,7 @@
    "why": "A token written into a repository that does not ignore it - the notes repository has no ignore file - is one `git add -A` from being committed and pushed with the commit it approves."
   },
   "test_guard_push.py::AnApprovalIsForTheCommitThePushSends::test_the_approved_commit_goes_out_though_head_has_moved_on": {
-   "file": "tools/hooks/guard_push.py",
+   "file": ".claude/hooks/guard_push.py",
    "must_say": "APPROVED push was refused",
    "new": "        sha, trouble = head_of(repo)",
    "old": "        sha, trouble = head_of(repo, source)",
@@ -3315,7 +3515,7 @@
    "why": "The approval judged by HEAD, not by what the push sends: the push the owner approved - an ancestor of a newer local commit - was refused, and the only way through was to move HEAD back to it."
   },
   "test_guard_push.py::AnApprovalIsForTheCommitThePushSends::test_the_ref_the_approval_names_is_the_ref_the_push_lands_on::elsewhere": {
-   "file": "tools/hooks/guard_push.py",
+   "file": ".claude/hooks/guard_push.py",
    "must_say": "LANDED ON A REF THE APPROVAL DOES NOT NAME",
    "new": "        if False:",
    "old": "        if fields.get(\"ref\") and ref != fields[\"ref\"]:",
@@ -3394,6 +3594,14 @@
    "site": "instance",
    "why": "F217: a quote in the Done section, or anywhere below, would otherwise count as queued; the queue is the one section the owner reads for what is owed."
   },
+  "test_mutation_selftest.py::TheHarnessSelftestNeedsNoWorktree::test_a_ceiling_above_the_exclusion_list_refuses_to_run": {
+   "file": "tools/mutate2.py",
+   "must_say": "a ceiling above the exclusion list is refused in words",
+   "new": "if False:\n",
+   "old": "if len(EXCLUSIONS) < EXCLUSION_CEILING:\n",
+   "site": "instance",
+   "why": "F189: the exclusion ceiling sat at 4 over a list of 2, and its copy in MutationBaselineTest was compared with nothing - room for two lines to stop being measured with nothing said."
+  },
   "test_mutation_selftest.py::TheHarnessSelftestNeedsNoWorktree::test_the_selftest_passes_with_no_worktree_beside_it": {
    "file": "tools/mutate2.py",
    "must_say": "the selftest failed with no worktree beside it",
@@ -3429,8 +3637,8 @@
   "test_one_subject.py::TheRecordAndTheGateMeasureOneSubject::test_a_count_measured_by_record_run_is_accepted_by_the_gate": {
    "file": "tools/guard/commit_guard.py",
    "must_say": "measured DIFFERENT",
-   "new": "        return _REQUIRE_BUILD.tree_digest(root)\n",
-   "old": "        return _REQUIRE_BUILD.subject_digest(root, exclude)\n",
+   "new": "        return require_build().tree_digest(root)\n",
+   "old": "        return require_build().subject_digest(root, exclude)\n",
    "site": "instance",
    "why": "F183: record_run wrote one body's subject digest and commit_gate compared it with another's, so an honest count was refused as measured on different code."
   },
@@ -3457,6 +3665,54 @@
    "old": "The one launch with a standing yes is the\nrequest ledger's reviewer (`\"_review\"` in `.claude/bundle-install.json`)",
    "site": "elsewhere",
    "why": "F178: the hooks required an agent launch at every turn end and the rule file forbidding agents did not mention it at all; this plant takes the mention back out."
+  },
+  "test_work_order.py::AQueueOrATreeItCannotReadIsNotClear::test_a_git_that_cannot_answer_is_not_a_clean_tree": {
+   "file": "tools/guard/work_order.py",
+   "must_say": "a git that could not answer was read as a clean tree",
+   "new": "    out = []\n",
+   "old": "    if done.returncode != 0:\n        return None\n    out = []\n",
+   "site": "instance",
+   "why": "F192: dirty_files never read git's exit code, so a git that could not answer (not a repository, exit 128) was a clean tree - 1 of the 2 things the frozen-tree rule asks, answered without looking."
+  },
+  "test_work_order.py::AQueueOrATreeItCannotReadIsNotClear::test_a_git_that_cannot_answer_is_not_a_clean_tree::elsewhere": {
+   "file": "tools/guard/work_order.py",
+   "must_say": "a git that could not be started was read as a clean tree",
+   "new": "    except (OSError, subprocess.TimeoutExpired):\n        return []\n    if done.returncode != 0:\n",
+   "old": "    except (OSError, subprocess.TimeoutExpired):\n        return None\n    if done.returncode != 0:\n",
+   "site": "elsewhere",
+   "why": "F192: the same collapse at dirty_files' other site - a git that could not be started at all (not on PATH, or 60 s without an answer) read as a tree with 0 uncommitted files."
+  },
+  "test_work_order.py::AQueueOrATreeItCannotReadIsNotClear::test_an_unreadable_queue_is_unknown_not_empty": {
+   "file": "tools/guard/work_order.py",
+   "must_say": "an unreadable queue was read as an empty one",
+   "new": "        except OSError:\n            return []\n    start = text.find(\"## Open\")\n",
+   "old": "        except OSError:\n            return None\n    start = text.find(\"## Open\")\n",
+   "site": "instance",
+   "why": "F192: the gate named for 2 of this project's rules read a queue it could not open as an empty one, so a long measurement could start with OUTSTANDING.md unread."
+  },
+  "test_work_order.py::AQueueOrATreeItCannotReadIsNotClear::test_an_unreadable_queue_is_unknown_not_empty::evasion": {
+   "file": "tools/guard/work_order.py",
+   "must_say": "a queue with no Open section was read as an empty one",
+   "new": "    start = text.find(\"## Open\")\n    if start < 0:\n        return []\n",
+   "old": "    start = text.find(\"## Open\")\n    if start < 0:\n        return None\n",
+   "site": "evasion",
+   "why": "F192: the cheapest way past the queue check is to rename its heading - a queue with no '## Open' section read as 0 open items, so the gate let a long measurement start over every item it could no longer find."
+  },
+  "test_work_order.py::AQueueOrATreeItCannotReadIsNotClear::test_the_gate_refuses_what_it_could_not_look_at": {
+   "file": "tools/guard/work_order.py",
+   "must_say": "the gate let a measurement start with the queue unread",
+   "new": "    items = open_items()\n    why = []\n    if items:\n",
+   "old": "    items = open_items()\n    why = []\n    if items is None:\n        why.append(UNREAD)\n    elif items:\n",
+   "site": "instance",
+   "why": "F192: gate() returned 0 - the battery may start - for a queue it had not read, which is the answer the whole tree is built to refuse; 1 refusal missing from the one gate test.ps1 asks."
+  },
+  "test_work_order.py::ThePlantProofIsAboutThisTree::test_each_way_the_proof_is_not_about_this_tree_is_named": {
+   "file": "tools/guard/work_order.py",
+   "must_say": "wanted 'a file the plants target has changed'",
+   "new": "        if False:\n",
+   "old": "        if replant.target_digest(book) != body[\"targets\"]:\n",
+   "site": "instance",
+   "why": "F145: src/ alone left 27 plants invisible - every plant against a hook or a guard lives under tools/ - so a proof recorded before a hook changed passed for the changed hook. This plant stops comparing the files the plants target."
   }
  },
  "retired": {

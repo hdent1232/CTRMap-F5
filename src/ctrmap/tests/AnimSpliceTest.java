@@ -5,7 +5,7 @@ import ctrmap.formats.garc.GARC;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
-import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.i32;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**

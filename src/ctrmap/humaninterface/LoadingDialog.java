@@ -1,6 +1,5 @@
 package ctrmap.humaninterface;
 
-import ctrmap.CtrmapMainframe;
 import java.awt.Dialog;
 import java.awt.GraphicsEnvironment;
 import java.util.concurrent.CountDownLatch;

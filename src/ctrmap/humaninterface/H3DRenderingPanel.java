@@ -17,6 +17,7 @@ import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
+import ctrmap.formats.MapObject;
 
 /**
  * CM3D OpenGL surface and glue.
@@ -24,7 +25,6 @@ import java.util.List;
 public class H3DRenderingPanel extends GLJPanel implements GLEventListener {
 
 	private static final long serialVersionUID = -6824913620967100278L;
-	public BCHFile bch;
 	public float translateZ = 0f;
 	public float translateX = 0f;
 	public float translateY = 0f;
@@ -103,7 +103,6 @@ public class H3DRenderingPanel extends GLJPanel implements GLEventListener {
 	}
 
 	public void loadH3D(BCHFile file) {
-		bch = file;
 	}
 
 	@Override
@@ -222,30 +221,13 @@ public class H3DRenderingPanel extends GLJPanel implements GLEventListener {
 	}
 
 	public void doNavi(MouseEvent e, int originMouseX, int originMouseY) {
-		double xAddition;
-		double yAddition;
 		if (navi.target == null) {
 			return;
 		}
-		switch (navi.targetAxis) {
-			case X:
-				xAddition = Math.cos(Math.toRadians(rotateY)) * (e.getX() - originMouseX);
-				yAddition = Math.cos(Math.toRadians(rotateY + 90f)) * (e.getY() - originMouseY);
-				navi.target.setX(navi.target.getX() + (float) (navi.distFromTarget / 1200f * (xAddition + yAddition)));
-				break;
-			case Z:
-				xAddition = Math.cos(Math.toRadians(rotateY - 90f)) * (e.getX() - originMouseX);
-				yAddition = Math.cos(Math.toRadians(rotateY)) * (e.getY() - originMouseY);
-				navi.target.setZ(navi.target.getZ() + (float) (navi.distFromTarget / 1200f * (xAddition + yAddition)));
-				break;
-			case Y:
-				yAddition = Math.cos(Math.toRadians(rotateX)) * (e.getY() - originMouseY);
-				navi.target.setY(navi.target.getY() + (float) (navi.distFromTarget / 1200f * (-yAddition)));
-				break;
-		}
-		navi.synchronizeNavi();
-		//THE SAME STATE AGAIN: nobody is holding a tool in a view that only shows a map.
-		if (tools.current() != null) {
+		//A DRAG IS AN EDIT ONLY WHEN IT MOVED SOMETHING (F148): every drag event reached the tool,
+		//and the Prop tool marks its file modified when told - moved or not. And nobody is holding a
+		//tool in a view that only shows a map.
+		if (navi.drag(rotateX, rotateY, e.getX() - originMouseX, e.getY() - originMouseY) && tools.current() != null) {
 			tools.current().updateComponents();
 		}
 	}

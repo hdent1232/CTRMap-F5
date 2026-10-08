@@ -7,25 +7,18 @@ import ctrmap.formats.text.GFMessageFile;
 import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
-import java.awt.Frame;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.nio.file.Files;
 import java.util.List;
-import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
-import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
-import javax.swing.JSpinner;
 import javax.swing.JTable;
-import javax.swing.SpinnerNumberModel;
 import javax.swing.table.AbstractTableModel;
 
-import static ctrmap.CtrmapMainframe.*;
 
 /**
  * The battle facility opponent editor: browses and edits the opponent Pokemon
@@ -60,9 +53,15 @@ public class MaisonEditDialog {
 	 * refusals - only the frame around it.
 	 *
 	 * @param onClose what to do when the user is finished with it; the host clears
+	 * @param showInGameData what puts another editor in the Game Data tab, by its title - HANDED, not a call
+	 *        up into the window (F007): the class assignments open there, beside this
 	 * @return the editor, or null when there is nothing to edit (it says why first)
 	 */
-	public static javax.swing.JComponent panel(java.awt.Component parent, Runnable onClose) {
+	public static javax.swing.JComponent panel(java.awt.Component parent, Runnable onClose,
+			java.util.function.BiConsumer<String, javax.swing.JComponent> showInGameData) {
+		if (showInGameData == null) {
+			throw new IllegalArgumentException("the facility editor must be handed what shows an editor in the Game Data tab");
+		}
 		//MAISON, not "is it ORAS". The three pools, their 999x16-byte record
 		//layout and the class-to-set-list tables were all measured on ORAS; a
 		//game where none of that is known is entitled to be told so by name.
@@ -168,7 +167,7 @@ public class MaisonEditDialog {
 		buttons.add(close);
 		dlg.add(buttons, BorderLayout.SOUTH);
 
-		classes.addActionListener(e -> ctrmap.CtrmapMainframe.showGameData(
+		classes.addActionListener(e -> showInGameData.accept(
 				"Facility class assignments", MaisonClassListDialog.panel(dlg, onClose)));
 
 		save.addActionListener(e -> {
@@ -181,7 +180,7 @@ public class MaisonEditDialog {
 				ctrmap.Ui.message(dlg, "Saved " + POOL_NAMES[model.poolIndex]
 						+ ".\nDeploy to emulator to apply.", "Battle facility opponents", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
-				ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Battle facility opponents");
+				ctrmap.Ui.error(dlg, "Save failed:\n" + ctrmap.util.Bytes.reason(ex), "Battle facility opponents");
 			}
 		});
 		close.addActionListener(e -> {

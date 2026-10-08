@@ -53,12 +53,6 @@ public class TerrainCatalog {
 	private static final GameCache.Key<Map<String, List<String>>> DONOR_TEXTURES
 			= new GameCache.Key<>("terrain donor textures");
 
-	/** What a report says about an exception: its message, or the exception itself when it gave none. */
-	private static String reason(Throwable ex) {
-		String m = ex.getMessage();
-		return m == null || m.trim().isEmpty() ? ex.toString() : m;
-	}
-
 	/**
 	 * The donor table to read, which is normally the one built into the jar.
 	 *
@@ -74,8 +68,11 @@ public class TerrainCatalog {
 		if (override != null && new java.io.File(override).isFile()) {
 			return new java.io.FileInputStream(override);
 		}
-		return TerrainCatalog.class.getClassLoader()
-				.getResourceAsStream("ctrmap/resources/oras_terrain.tsv");
+		try {
+			return ctrmap.resources.ResourceAccess.getStream("oras_terrain.tsv");
+		} catch (IllegalStateException missing) {
+			throw new java.io.IOException(ctrmap.util.Bytes.reason(missing), missing);
+		}
 	}
 
 	public static class Donor {
@@ -159,7 +156,7 @@ public class TerrainCatalog {
 				}
 			} catch (Exception ex) {
 				throw new IllegalStateException("Could not measure the donor texture scale for \"" + injectName
-						+ "\" in the pristine copy of region " + d.donorRegion + ": " + reason(ex), ex);
+						+ "\" in the pristine copy of region " + d.donorRegion + ": " + ctrmap.util.Bytes.reason(ex), ex);
 			}
 			break;
 		}
@@ -176,31 +173,58 @@ public class TerrainCatalog {
 		public final List<String> texturesNeeded = new ArrayList<>();
 	}
 
-	private static Map<TilePalette, Donor> donors;
-
 	/**
-	 * The brush donors, read once from the table.
-	 *
-	 * @throws IllegalStateException when the table cannot be read, naming the
-	 * reason; nothing is cached then, so a repaired table is read next time
+	 * The table, read whole once for the run (F093). The brushes, the CLIFF row and the LAVA_CHURN
+	 * row were three caches, each filled by its own read of the file when first asked: a table
+	 * swapped between the first ask and the last gave a map its brushes from one design and its
+	 * cliff or churn from another. They are three views of this one read now.
 	 */
-	public static synchronized Map<TilePalette, Donor> donors() {
-		if (donors != null) {
-			return donors;
-		}
-		Map<TilePalette, Donor> read = new LinkedHashMap<>();
-		try {
-			for (Donor d : rows().values()) {
+	private static Table table;
+
+	/** One read of the table: every row by name, and the brush rows by brush. */
+	private static final class Table {
+
+		final Map<String, Donor> rows;
+		final Map<TilePalette, Donor> brushes;
+
+		Table(Map<String, Donor> rows) {
+			this.rows = java.util.Collections.unmodifiableMap(rows);
+			Map<TilePalette, Donor> b = new LinkedHashMap<>();
+			for (Donor d : rows.values()) {
 				if (d.brush != null) {
-					read.put(d.brush, d);
+					b.put(d.brush, d);
 				}
 			}
-		} catch (Exception ex) {
-			throw new IllegalStateException("The terrain donor table could not be read, so no brush can be"
-					+ " given to a map that lacks its material: " + reason(ex), ex);
+			this.brushes = java.util.Collections.unmodifiableMap(b);
 		}
-		donors = read;
-		return donors;
+	}
+
+	/**
+	 * The table, read on first ask.
+	 *
+	 * @param lost what cannot be done without it, for the refusal's words
+	 * @throws IllegalStateException when the table cannot be read, naming the reason; nothing is
+	 * kept then, so a repaired table is read next time
+	 */
+	private static synchronized Table table(String lost) {
+		if (table == null) {
+			try {
+				table = new Table(rows());
+			} catch (Exception ex) {
+				throw new IllegalStateException("The terrain donor table could not be read, so " + lost + ": "
+						+ ctrmap.util.Bytes.reason(ex), ex);
+			}
+		}
+		return table;
+	}
+
+	/**
+	 * The brush donors, by brush.
+	 *
+	 * @throws IllegalStateException when the table cannot be read, naming the reason
+	 */
+	public static Map<TilePalette, Donor> donors() {
+		return table("no brush can be given to a map that lacks its material").brushes;
 	}
 
 	/** The table's rows that are not brushes: read by name, passed over by {@link #donors()}. */
@@ -218,9 +242,6 @@ public class TerrainCatalog {
 	private static Map<String, Donor> rows() throws java.io.IOException {
 		Map<String, Donor> out = new LinkedHashMap<>();
 		try (InputStream in = openCatalog()) {
-			if (in == null) {
-				throw new java.io.IOException("ctrmap/resources/oras_terrain.tsv is missing from this build");
-			}
 			java.io.BufferedReader lines = new java.io.BufferedReader(
 					new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8));
 			int lineNo = 0;
@@ -254,20 +275,12 @@ public class TerrainCatalog {
 					}
 					out.put(f[0], d);
 				} catch (IllegalArgumentException ex) {
-					throw new java.io.IOException("line " + lineNo + " (" + f[0] + "): " + reason(ex), ex);
+					throw new java.io.IOException("line " + lineNo + " (" + f[0] + "): " + ctrmap.util.Bytes.reason(ex), ex);
 				}
 			}
 		}
 		return out;
 	}
-
-	/** True when this brush can be given to a map that lacks its material. */
-	public static boolean canImport(TilePalette brush) {
-		return donors().containsKey(brush);
-	}
-
-	private static Donor cliffDonor;
-	private static boolean cliffLoaded;
 
 	/**
 	 * The donor for generated CLIFF FACES, or null when the table has no CLIFF
@@ -280,19 +293,8 @@ public class TerrainCatalog {
 	 * chip_jump_gake, against 65/55/21 for the earth-brown d112r0103_gake2 that
 	 * actually reads as a cut hillside.
 	 */
-	public static synchronized Donor cliffDonor() {
-		if (cliffLoaded) {
-			return cliffDonor;
-		}
-		try {
-			cliffDonor = rows().get("CLIFF");
-		} catch (Exception ex) {
-			//not marked loaded: a repaired table is read next time
-			throw new IllegalStateException("The CLIFF row of the terrain donor table could not be read;"
-					+ " generated cliffs would keep whatever rock the map already has: " + reason(ex), ex);
-		}
-		cliffLoaded = true;
-		return cliffDonor;
+	public static Donor cliffDonor() {
+		return table("generated cliffs would keep whatever rock the map already has").rows.get("CLIFF");
 	}
 
 	/**
@@ -307,30 +309,8 @@ public class TerrainCatalog {
 	 * <p>Rather than author blend state by hand, the row names one of retail's
 	 * own churn materials and imports it whole, blend mode and all.
 	 */
-	private static Donor churnDonor;
-	private static boolean churnLoaded;
-
-	public static synchronized Donor churnDonor() {
-		if (!churnLoaded) {
-			//marked loaded only once the row was read: a table that throws is read again next time
-			churnDonor = rowNamed("LAVA_CHURN");
-			churnLoaded = true;
-		}
-		return churnDonor;
-	}
-
-	/**
-	 * One non-brush row of the table, read by its leading keyword.
-	 *
-	 * @throws IllegalStateException when the table cannot be read
-	 */
-	private static Donor rowNamed(String key) {
-		try {
-			return rows().get(key);
-		} catch (Exception ex) {
-			throw new IllegalStateException("The " + key + " row of the terrain donor table could not be read: "
-					+ reason(ex), ex);
-		}
+	public static Donor churnDonor() {
+		return table("lava would keep no molten overlay").rows.get("LAVA_CHURN");
 	}
 
 	/**
@@ -383,7 +363,7 @@ public class TerrainCatalog {
 			//already had, which may be the wrong rock, and the caller that owns
 			//a window is the one to say so
 			throw new IllegalStateException("Could not import the terrain material \"" + d.injectName
-					+ "\" from the pristine copy of region " + d.donorRegion + ": " + reason(ex), ex);
+					+ "\" from the pristine copy of region " + d.donorRegion + ": " + ctrmap.util.Bytes.reason(ex), ex);
 		}
 		return r;
 	}
@@ -432,7 +412,7 @@ public class TerrainCatalog {
 			cutFromPristine(files, model, d, r);
 		} catch (Exception ex) {
 			throw new IllegalStateException("Could not import a " + brush + " material into this map: "
-					+ reason(ex), ex);
+					+ ctrmap.util.Bytes.reason(ex), ex);
 		}
 		return r;
 	}
@@ -517,33 +497,19 @@ public class TerrainCatalog {
 			}
 		} catch (Exception ex) {
 			throw new IllegalStateException("Could not read the textures the \"" + d.injectName + "\" material needs"
-					+ " from the pristine copy of region " + d.donorRegion + ": " + reason(ex), ex);
+					+ " from the pristine copy of region " + d.donorRegion + ": " + ctrmap.util.Bytes.reason(ex), ex);
 		}
 		donorTextureCache.put(key, names);
 		return names;
 	}
 
 	/**
-	 * The texture names a donor mesh's material references (header slots). THROWS when the
-	 * header cannot be read (F211): a failure part way answered the names read so far, the
-	 * import carried fewer textures than the material draws with, and the tiles came out
-	 * white. Both callers already turn a throw into words.
+	 * The texture names a donor mesh's material references. THROWS when the header cannot be
+	 * read (F211): a failure part way answered the names read so far, the import carried fewer
+	 * textures than the material draws with, and the tiles came out white. Both callers already
+	 * turn a throw into words.
 	 */
 	static List<String> textureNamesOf(BchMapModel m, int meshIndex) {
-		List<String> out = new ArrayList<>();
-		int matHdr = m.matValuesPtr + m.getMeshMaterialIndex(meshIndex) * 0x2C;
-		for (int slot : new int[]{0x1C, 0x20, 0x24}) {
-			int sp = m.ptr(matHdr + slot);
-			if (sp > 0) {
-				StringBuilder sb = new StringBuilder();
-				for (int q = sp; q < m.raw.length && m.raw[q] != 0; q++) {
-					sb.append((char) (m.raw[q] & 0xFF));
-				}
-				if (sb.length() > 0 && !out.contains(sb.toString())) {
-					out.add(sb.toString());
-				}
-			}
-		}
-		return out;
+		return m.getMaterialTextureNames(m.getMeshMaterialIndex(meshIndex));
 	}
 }

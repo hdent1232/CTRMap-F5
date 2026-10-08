@@ -1,6 +1,5 @@
 package ctrmap.humaninterface.tools;
 
-import ctrmap.humaninterface.CameraEditForm;
 import ctrmap.humaninterface.TriggerEditForm;
 import ctrmap.formats.zone.ZoneEntities;
 import ctrmap.humaninterface.Selector;
@@ -15,13 +14,9 @@ public class TriggerTool extends AbstractTool {
 	/** The trigger editor whose trigger it moves. */
 	private final TriggerEditForm form;
 
-	/** Handed alongside the form: the camera editor this tool keeps in step. */
-	private final CameraEditForm camera;
-
-	public TriggerTool(ToolHost host, TriggerEditForm form, CameraEditForm camera) {
+	public TriggerTool(ToolHost host, TriggerEditForm form) {
 		super(host);
 		this.form = form;
-		this.camera = camera;
 	}
 
 	private boolean isDownOnTrigger = false;
@@ -67,14 +62,15 @@ public class TriggerTool extends AbstractTool {
 	}
 
 	private boolean hitTestList(MouseEvent e, ArrayList<ZoneEntities.Trigger> list, int listType, boolean isMouseDown) {
-		int imgstartx = (host.map().getWidth() - host.map().tilemapScaledImage.getWidth()) / 2;
-		int imgstarty = (host.map().getHeight() - host.map().tilemapScaledImage.getHeight()) / 2;
+		java.awt.Point origin = host.map().imageOrigin();
+		int imgstartx = origin.x;
+		int imgstarty = origin.y;
 		for (int i = 0; i < list.size(); i++) {
 			ZoneEntities.Trigger t = list.get(i);
-			double xBase = t.x * 18f * 400d / 720d * host.map().tilemapScale + imgstartx;
-			double yBase = t.y * 18f * 400d / 720d * host.map().tilemapScale + imgstarty;
-			double width = (t.w * 18f) * 400d / 720d * host.map().tilemapScale;
-			double height = (t.h * 18f) * 400d / 720d * host.map().tilemapScale;
+			double xBase = host.map().toScreen(t.x * 18f) + imgstartx;
+			double yBase = host.map().toScreen(t.y * 18f) + imgstarty;
+			double width = host.map().toScreen(t.w * 18f);
+			double height = host.map().toScreen(t.h * 18f);
 			if (e.getX() > xBase && e.getX() < xBase + width && e.getY() > yBase && e.getY() < yBase + height) {
 				form.selectTrigger(listType, i);
 				if (isMouseDown) {
@@ -125,11 +121,6 @@ public class TriggerTool extends AbstractTool {
 	@Override
 	public boolean getSelectorEnabled() {
 		return false;
-	}
-
-	@Override
-	public void updateComponents() {
-		camera.showCamera(camera.camIndex, false);
 	}
 
 	@Override

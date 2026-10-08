@@ -30,8 +30,96 @@ import java.util.List;
  */
 public class GauntletScriptWizard {
 
-	/** Save-range work ids referenced by NO retail zone script (streak default). */
+	/**
+	 * Save-range work ids referenced by NO retail zone script (streak default) - where the search for
+	 * a free one starts. A default is not an allocation: every challenge built with it shared one
+	 * streak, so {@link #workUsage} is asked before one is used (F241).
+	 */
 	public static final int DEFAULT_STREAK_WORK = 0x4020;
+
+	/** The save range a streak variable must sit in. */
+	public static final int SAVE_WORK_FIRST = 0x4000;
+	public static final int SAVE_WORK_LAST = 0x4FFF;
+
+	/**
+	 * The work variables a script reads or writes by a literal id: the constant pushed last before a
+	 * call to WorkGet or WorkSet - the id is the last push for both, in the retail write shape (zone
+	 * 448 &#64;0x3b4: push value, push id) and in this wizard's own frames (F241). An id computed at
+	 * run time is not seen: nothing short of running the script could see it.
+	 */
+	public static java.util.Set<Integer> workVariablesUsed(GFLPawnScript script) {
+		script.decompressThis();
+		int get = GfHash.hashForName("WorkGet");
+		int set = GfHash.hashForName("WorkSet");
+		java.util.Set<Integer> natives = new java.util.HashSet<>();
+		for (int i = 0; i < script.natives.size(); i++) {
+			int hash = script.natives.get(i).data[1];
+			if (hash == get || hash == set) {
+				natives.add(i);
+			}
+		}
+		java.util.Set<Integer> used = new java.util.TreeSet<>();
+		for (int i = 1; i < script.instructions.size(); i++) {
+			PawnInstruction call = script.instructions.get(i);
+			PawnInstruction id = script.instructions.get(i - 1);
+			int push = id.getCommand();
+			if (call.getCommand() == PawnInstruction.Commands.SYSREQ_N.ordinal() && natives.contains(call.argumentCells[0])
+					&& (push == PawnInstruction.Commands.PUSH_C.ordinal() || push == PawnInstruction.Commands.PUSH_P_C.ordinal())) {
+				used.add(id.argumentCells[0]);
+			}
+		}
+		return used;
+	}
+
+	/** One zone's script by index: null when the zone has none; an exception when it could not be read. */
+	public interface ZoneScripts {
+
+		GFLPawnScript get(int zone) throws java.io.IOException;
+	}
+
+	/** Which zones use each work variable, and which zones' scripts could not be read to say (F241). */
+	public static final class WorkUsage {
+
+		public final java.util.SortedMap<Integer, List<Integer>> zones = new java.util.TreeMap<>();
+		/** Zones whose scripts could not be read: what they use is UNKNOWN, never "nothing". */
+		public final List<Integer> unread = new ArrayList<>();
+
+		/** The zones using {@code work}; empty when no zone that could be read does. */
+		public List<Integer> users(int work) {
+			List<Integer> z = zones.get(work);
+			return z == null ? new ArrayList<Integer>() : z;
+		}
+
+		/** The first save-range variable at or after {@code from} no zone that could be read uses; -1 when none is left. */
+		public int nextFree(int from) {
+			for (int w = Math.max(from, SAVE_WORK_FIRST); w <= SAVE_WORK_LAST; w++) {
+				if (!zones.containsKey(w)) {
+					return w;
+				}
+			}
+			return -1;
+		}
+	}
+
+	/** Every work variable the given zones' scripts use, by zone, and the zones that could not be read. */
+	public static WorkUsage workUsage(ZoneScripts scripts, int zoneCount) {
+		WorkUsage u = new WorkUsage();
+		for (int z = 0; z < zoneCount; z++) {
+			GFLPawnScript s;
+			try {
+				s = scripts.get(z);
+			} catch (java.io.IOException | RuntimeException unreadable) {
+				u.unread.add(z);
+				continue;
+			}
+			if (s != null) {
+				for (int w : workVariablesUsed(s)) {
+					u.zones.computeIfAbsent(w, k -> new ArrayList<>()).add(z);
+				}
+			}
+		}
+		return u;
+	}
 
 	/** The wizard's inputs; storytext lines of -1 mean "no message". */
 	public static class Config {
@@ -69,7 +157,7 @@ public class GauntletScriptWizard {
 				throw new IllegalArgumentException("Trainer id " + tid + " out of range (1.." + trainerMax + ").");
 			}
 		}
-		if (cfg.streakWorkId < 0x4000 || cfg.streakWorkId > 0x4FFF) {
+		if (cfg.streakWorkId < SAVE_WORK_FIRST || cfg.streakWorkId > SAVE_WORK_LAST) {
 			throw new IllegalArgumentException("The streak work variable must be in the save range 0x4000..0x4FFF.");
 		}
 		checkPacked(cfg.streakWorkId, "streak work variable");

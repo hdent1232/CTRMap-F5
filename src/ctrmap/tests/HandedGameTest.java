@@ -1,6 +1,6 @@
 package ctrmap.tests;
 
-import ctrmap.LittleEndianDataOutputStream;
+import ctrmap.util.LittleEndianDataOutputStream;
 import ctrmap.Workspace;
 import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.AD;
@@ -43,8 +43,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
-import static ctrmap.formats.LittleEndian.putI32;
-import static ctrmap.formats.LittleEndian.putU16;
+import static ctrmap.util.LittleEndian.putI32;
+import static ctrmap.util.LittleEndian.putU16;
 
 /**
  * Format classes work when HANDED their game, with no workspace open, and
@@ -456,11 +456,36 @@ public class HandedGameTest {
 				"the table answers both the retail record and the edited one");
 		check(copy.equals(ItemTable.baselineArchive(fake)) && copy.equals(t.baselineArchive()),
 				"the static and the instance name the same copy");
-		check(ItemTable.changedSinceBaseline(fake), "and deploy would ship it");
-		check(fake.edited().isEmpty() && Workspace.persistPaths().isEmpty(),
-				"an in-place write stages nothing for a pack, in the handed game or in the global");
+		//STAGED, THEN PACKED (F082): the record was poked into the game folder at save, outside the
+		//workspace, so a clean put its name back and kept it
+		File live = fake.archiveFile(ArchiveType.ITEM_DATA);
+		File staged = fake.editedEntry(ArchiveType.ITEM_DATA, 1);
+		check(staged != null && fake.edited().equals(Collections.singletonList(staged.getAbsoluteFile()))
+				&& Arrays.equals(Files.readAllBytes(staged.toPath()), record(99)),
+				"the record is staged in the handed game and reported edited, once (" + fake.edited() + ")");
+		check(Arrays.equals(Files.readAllBytes(live.toPath()), retail) && !ItemTable.changedSinceBaseline(fake),
+				"and the game's archive is untouched until a pack writes it, so a deploy has nothing to ship yet");
+		ItemTable again = ItemTable.open(fake);
+		check(again != null && Arrays.equals(again.raw(1), record(99)) && Arrays.equals(again.raw(2), record(7)),
+				"a table opened again reads the staged record over the archive, and the rest from it");
+		packItems(fake);
+		byte[] packed = Files.readAllBytes(live.toPath());
+		int at = new GARC(live, false).getEntryFileOffset(1);
+		List<Integer> moved = new ArrayList<>();
+		for (int i = 0; i < Math.min(packed.length, retail.length); i++) {
+			if (packed[i] != retail[i]) {
+				moved.add(i);
+			}
+		}
+		check(packed.length == retail.length && !moved.isEmpty() && moved.get(0) >= at
+				&& moved.get(moved.size() - 1) < at + ItemData.SIZE,
+				"the pack writes the record in place: the archive keeps its " + retail.length + " bytes and only record"
+				+ " 1's, from 0x" + Integer.toHexString(at) + ", differ (" + moved.size() + " byte(s))");
+		check(ItemTable.changedSinceBaseline(fake), "and once packed, deploy would ship it");
+		check(Workspace.persistPaths().isEmpty(), "nothing of it reached the global");
 		t.writeRecord(1, record(12));
-		check(!ItemTable.changedSinceBaseline(fake),
+		packItems(fake);
+		check(!ItemTable.changedSinceBaseline(fake) && Arrays.equals(Files.readAllBytes(live.toPath()), retail),
 				"putting the bytes back means nothing to ship - the content decides, not the edit history");
 
 		//a DIFFERENT game: the same shape, record 1 saying 34, no copy ever taken
@@ -557,9 +582,19 @@ public class HandedGameTest {
 		check("Mega Ball".equals(ItemText.line(fake, ItemText.Which.NAMES, 2)), "and readable from it");
 		check(Workspace.persistPaths().isEmpty(), "and not in the global");
 		changed = s.save(2, record(70), "Mega Ball", "Very good.");
-		check(changed.equals(EnumSet.of(ItemEditSession.Changed.RECORD)) && fake.edited().size() == 1
-				&& Arrays.equals(s.baselineRecord(2), record(7)),
-				"a changed record writes in place, stages nothing new, and the baseline holds the retail one (" + changed + ")");
+		File rec2 = fake.editedEntry(ArchiveType.ITEM_DATA, 2);
+		check(changed.equals(EnumSet.of(ItemEditSession.Changed.RECORD)) && rec2 != null && fake.edited().size() == 2
+				&& fake.edited().get(1).equals(rec2.getAbsoluteFile()) && Arrays.equals(s.baselineRecord(2), record(7)),
+				"a changed record is staged in the handed game beside its name (F082), and the baseline holds the"
+				+ " retail one (" + changed + ", " + fake.edited() + ")");
+		check(Arrays.equals(s.record(2), record(70)) && Arrays.equals(Files.readAllBytes(fake.archiveFile(ArchiveType.ITEM_DATA).toPath()),
+				garcBytes(record(0), record(0), record(7))),
+				"the session shows it, and the game's archive is not written until a pack");
+		//what a unit's rollback leaves (F082): the record's staged file gone, the name still staged
+		Files.delete(rec2.toPath());
+		s.reread();
+		check(Arrays.equals(s.record(2), record(7)) && "Mega Ball".equals(s.name(2)) && s.free.equals(Arrays.asList(1)),
+				"told to read again, the session shows what the game holds now: the record put back, the name kept");
 
 		//a DIFFERENT game, untouched
 		FakeGameFiles other = itemGame(names, descs);
@@ -1238,7 +1273,7 @@ public class HandedGameTest {
 	// ------------------------------------------------ 21. the NPC's ground
 	static void theNpcStandsOnTheGroundItIsHanded() {
 		System.out.println("--- an NPC takes its altitude from the ground it is handed, with no map panel anywhere");
-		check(ctrmap.CtrmapMainframe.mTileMapPanel == null, "there is no map panel to read");
+		check(TestWindow.mTileMapPanel() == null, "there is no map panel to read");
 		ZoneEntities.NPC npc = new ZoneEntities.NPC();
 		npc.z3DCoordinate = 12.5f;
 		npc.setYFromColl(180f, 1800f, (x, z) -> 7f);
@@ -1262,13 +1297,13 @@ public class HandedGameTest {
 		npc.setX(360f);
 		check(npc.xTile == 20 && npc.z3DCoordinate == 4f, "handed no ground again, it keeps its altitude");
 		refuses("NPC.setYFromColl", () -> npc.setYFromColl(0f, 0f, null));
-		check(ctrmap.CtrmapMainframe.mTileMapPanel == null, "and none of it needed a map panel");
+		check(TestWindow.mTileMapPanel() == null, "and none of it needed a map panel");
 	}
 
 	// ------------------------------------------------ 22. the region's picture
 	static void theTilemapIsPicturedInTheColoursItIsHanded() {
 		System.out.println("--- a region's picture is painted in the colours it is handed, with no tile form anywhere");
-		check(ctrmap.CtrmapMainframe.mTileEditForm == null, "there is no tile form to read");
+		check(TestWindow.mTileEditForm() == null, "there is no tile form to read");
 		Tilemap blue = new Tilemap(null, 40, 40, tile -> Color.BLUE);
 		check(blue.getImage().getRGB(5, 5) == Color.BLUE.getRGB() && blue.getImage().getRGB(395, 395) == Color.BLUE.getRGB(),
 				"handed blue, every tile is blue");
@@ -1283,7 +1318,7 @@ public class HandedGameTest {
 		none.updateImage();
 		check(none.getImage().getRGB(5, 5) == Color.BLACK.getRGB(),
 				"handed no colours, the data is held without a picture, and nothing is read from anywhere");
-		check(ctrmap.CtrmapMainframe.mTileEditForm == null, "and none of it needed a tile form");
+		check(TestWindow.mTileEditForm() == null, "and none of it needed a tile form");
 	}
 
 	// ------------------------------------------------ 23. the bytecode
@@ -1530,6 +1565,14 @@ public class HandedGameTest {
 		return r;
 	}
 
+	/** The item archive's pack as the workspace runs it (F082): its staged records written over their own bytes. */
+	static void packItems(FakeGameFiles game) throws IOException {
+		GARC g = new GARC(game.archiveFile(ArchiveType.ITEM_DATA), false);
+		File next = new File(game.scratch(), "pack_ITEM_DATA.garc");
+		g.prepareInPlace(game.stagedDir(ArchiveType.ITEM_DATA), game::isEdit, next);
+		g.commitRepack(next);
+	}
+
 	/** The bytes of an archive holding these entries, in the layout {@link #writeGarc} produces. */
 	static byte[] garcBytes(byte[]... entries) throws Exception {
 		File f = Scratch.file("ctrmap_handed_garc");
@@ -1569,15 +1612,22 @@ public class HandedGameTest {
 		one[0x1A] = 34;
 		byte[] personal = garcBytes(new byte[80], one);
 		//MOVE_DATA entry 0: a mini-container of two 6-byte move records, offsets from the container start
-		byte[] mini = new byte[4 + 2 * 4 + 2 * 6];
-		putI32(mini, 4, 12);
-		putI32(mini, 8, 18);
+		//- WHOLE, as the game's are: "WD", a count, count + 1 offsets (F215). It declared no count
+		//and no end, which a reader that took each offset alone and assumed six bytes let through,
+		//and the one reader of mini-packs refuses
+		byte[] mini = new byte[4 + 3 * 4 + 2 * 6];
+		mini[0] = 'W';
+		mini[1] = 'D';
+		putU16(mini, 2, 2);
+		putI32(mini, 4, 16);
+		putI32(mini, 8, 22);
+		putI32(mini, 12, 28);
 		//move 1: type, unused, category, power, accuracy, pp
-		mini[18] = 0;
-		mini[20] = 1;
-		mini[21] = (byte) power;
-		mini[22] = 100;
-		mini[23] = 35;
+		mini[22] = 0;
+		mini[24] = 1;
+		mini[25] = (byte) power;
+		mini[26] = 100;
+		mini[27] = 35;
 		byte[] moves = garcBytes(mini);
 		//GAMETEXT: the four name lists at ORAS's indices, every other entry empty
 		GameProfile.TextIndex[] lists = {GameProfile.TextIndex.SPECIES_NAMES, GameProfile.TextIndex.ABILITY_NAMES,

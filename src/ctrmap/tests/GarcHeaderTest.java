@@ -53,8 +53,60 @@ public class GarcHeaderTest {
 		check(flattens != null && flattens.contains("more than one file"),
 				"but it is not written back flattened: " + flattens);
 
+		oneWriterForBoth(dir, staged);
+
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		System.exit(fails == 0 ? 0 : 1);
+	}
+
+	/**
+	 * The repack and the exact rebuild write one layout (F056). They were two writers agreeing on
+	 * every convention by hand, and both wrote the FATB length twelve short of the section - so the
+	 * rebuild could not trust its own output's field. An archive laid out here by hand, to the
+	 * format, comes back from a repack that changes nothing byte for byte; the rebuild of the same
+	 * entries writes the same bytes; and the FATB length in what was written reaches its FIMB.
+	 */
+	static void oneWriterForBoth(File dir, File staged) throws Exception {
+		System.out.println("--- the repack and the rebuild write one layout, to the format (F056)");
+		//4-ALIGNED ENTRIES: the program's writers have always closed a FATB record at the PADDED end,
+		//game-validated, where the hand layout closes it at the entry's own end; the reader reads the
+		//length, not the end. Entries that need no padding leave that one convention out of the comparison.
+		File hand = new File(dir, "hand");
+		HandedGameTest.writeGarc(hand, "eight by".getBytes("US-ASCII"), "twelve bytes".getBytes("US-ASCII"));
+		byte[] laid = Files.readAllBytes(hand.toPath());
+		File repacked = new File(hand.getPath() + "_new");
+		check(prepares(hand, staged) == null && repacked.isFile(), "a repack that changes nothing is written");
+		byte[] repack = Files.readAllBytes(repacked.toPath());
+		check(java.util.Arrays.equals(repack, laid), "and it is the hand-laid archive byte for byte ("
+				+ firstDifference(repack, laid) + ")");
+		GARC g = new GARC(hand);
+		java.util.List<byte[]> entries = new java.util.ArrayList<>();
+		for (int i = 0; i < g.length; i++) {
+			entries.add(g.getStoredEntry(i));
+		}
+		File rebuilt = new File(dir, "rebuilt");
+		ctrmap.formats.garc.GarcRebuilder.write(hand, rebuilt, entries);
+		byte[] rebuild = Files.readAllBytes(rebuilt.toPath());
+		check(java.util.Arrays.equals(rebuild, repack), "the rebuild of the same entries writes the same bytes ("
+				+ firstDifference(rebuild, repack) + ")");
+		int fatb = 0x1C + i32(rebuild, 0x1C + 4);
+		int fimb = fatb + 0xC + 16 * i32(rebuild, fatb + 8);
+		check(fatb + i32(rebuild, fatb + 4) == fimb && rebuild[fimb] == 'B' && rebuild[fimb + 1] == 'M',
+				"the FATB's length is its section's, so it reaches the FIMB (FATB at 0x" + Integer.toHexString(fatb)
+				+ ", length 0x" + Integer.toHexString(i32(rebuild, fatb + 4)) + ", FIMB at 0x" + Integer.toHexString(fimb) + ")");
+	}
+
+	static String firstDifference(byte[] a, byte[] b) {
+		for (int i = 0; i < Math.min(a.length, b.length); i++) {
+			if (a[i] != b[i]) {
+				return "first difference at 0x" + Integer.toHexString(i);
+			}
+		}
+		return a.length == b.length ? "identical" : "lengths " + a.length + " and " + b.length;
+	}
+
+	static int i32(byte[] b, int at) {
+		return (b[at] & 0xFF) | (b[at + 1] & 0xFF) << 8 | (b[at + 2] & 0xFF) << 16 | (b[at + 3] & 0xFF) << 24;
 	}
 
 	static File garc(File dir, String name) throws Exception {

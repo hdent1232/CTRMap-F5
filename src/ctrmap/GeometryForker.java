@@ -4,12 +4,11 @@ import ctrmap.formats.garc.GARC;
 import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import static ctrmap.formats.LittleEndian.u16;
-import static ctrmap.formats.LittleEndian.i32;
-import static ctrmap.formats.LittleEndian.putU16;
+import static ctrmap.util.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.putU16;
 import java.nio.file.Files;
 
 /**
@@ -42,7 +41,7 @@ import java.nio.file.Files;
  *       container header AND the master zone-header table (the game reads the
  *       header from the RAM master table loaded at boot from ZoneData entry
  *       {@code length-2}; the editor mirrors edits to both - see
- *       ZoneLoadingPanel.saveEntry).</li>
+ *       ZoneLoadingPanel.store).</li>
  * </ol>
  * The reverse-engineering pass on code.bin proved neither the FieldData region
  * count nor the MapMatrix count is bounded by a hardcoded constant (both read
@@ -60,7 +59,6 @@ public class GeometryForker {
 
 	/** What a manual fork produced, for user-facing reporting. */
 	public static class ForkResult {
-		public int zoneIndex;
 		public int oldMatrix;
 		public int newMatrix;
 		public int[] srcRegions;   // the shared regions the zone used
@@ -69,6 +67,56 @@ public class GeometryForker {
 		public int[] otherZones = new int[0];
 		/** False when the zone already owned its map and nothing was appended. */
 		public boolean forked;
+
+		/**
+		 * What the user is told a geometry fork did, which is the only way they can
+		 * know. Two of the three sentences it can produce report something they
+		 * cannot see any other way: that nothing was forked because the zone
+		 * already owned its map, and that the private copy still carries another
+		 * zone's ground.
+		 *
+		 * <p>Separate from the action, and returning the text rather than showing
+		 * it, because the action is only reachable through a modal confirm and both
+		 * branches therefore went unmeasured. Getting either one backwards is
+		 * silent and expensive: "nothing was changed" over a fork that DID append
+		 * copies sends the user to fork again, which orphans the regions the zone
+		 * is using, and a missing ground warning means they relabel ground that
+		 * belongs to other zones and take those zones' banner, music and entities
+		 * away without being told.
+		 */
+		public String report(int zoneIndex) {
+			if (!forked) {
+				//forking again would append another copy of every region and
+				//orphan the ones the zone is using
+				return "Zone " + zoneIndex
+						+ " already has its own map geometry (map matrix " + oldMatrix
+						+ ", region(s) " + java.util.Arrays.toString(srcRegions) + ").\n\n"
+						+ "Nothing was changed - editing its map already affects no other zone.";
+			}
+			StringBuilder sb = new StringBuilder();
+			sb.append("Zone ").append(zoneIndex).append(" now has private map geometry.\n\n");
+			sb.append("Map matrix ").append(oldMatrix).append(" -> ").append(newMatrix).append(" (private copy)\n");
+			for (int i = 0; i < srcRegions.length; i++) {
+				sb.append("FieldData region ").append(srcRegions[i]).append(" -> ").append(newRegions[i]).append(" (private copy)\n");
+			}
+			sb.append("\nTo change ONLY this zone's map, edit region ").append(newRegions[0]);
+			if (newRegions.length > 1) {
+				sb.append(" (and the other new regions above)");
+			}
+			sb.append(".\nThe original region(s) still belong to the source zone(s).\n\n");
+			if (otherZones.length > 0) {
+				//their ground was copied along with the map and still carries
+				//their names - relabelling it to this zone would silently take
+				//their banner, music and entities away
+				sb.append("This map also carries ground belonging to zone(s) ")
+						.append(java.util.Arrays.toString(otherZones))
+						.append(".\nYour copy keeps their labels, so walking there still reports them,\n")
+						.append("but edits you make to that ground now show only in this zone.\n\n");
+			}
+			sb.append("Now run File > Pack Workspace, then File > Deploy to emulator.\n");
+			sb.append("No new code.ips is needed - the fork is pure data.");
+			return sb.toString();
+		}
 	}
 
 	/**
@@ -669,17 +717,15 @@ public class GeometryForker {
 		return currentGeometry(zoneIndex);
 	}
 
-	/** What Blank map canvas did: the map it worked on, the regions it emptied and the ones it could not. */
+	/** What Blank map canvas did: the zone it worked on, the regions it emptied and the ones it could not. */
 	public static final class Canvas {
 
 		public final int zoneIndex;
-		public final ForkResult map;
 		public final int[] blanked;
 		public final int[] kept;
 
-		public Canvas(int zoneIndex, ForkResult map, int[] blanked, int[] kept) {
+		public Canvas(int zoneIndex, int[] blanked, int[] kept) {
 			this.zoneIndex = zoneIndex;
-			this.map = map;
 			this.blanked = blanked;
 			this.kept = kept;
 		}
@@ -733,7 +779,7 @@ public class GeometryForker {
 						+ (r.forked ? " - not even the private copy of its map, which would have been made for nothing." : "."));
 			}
 			unit.commit();
-			return new Canvas(zoneIndex, r, ints(blanked), ints(kept));
+			return new Canvas(zoneIndex, ints(blanked), ints(kept));
 		}
 	}
 
@@ -795,7 +841,6 @@ public class GeometryForker {
 		}
 
 		ForkResult r = new ForkResult();
-		r.zoneIndex = zoneIndex;
 		r.oldMatrix = plan.oldMatrix;
 		r.newMatrix = newMatrix;
 		r.srcRegions = plan.srcRegions;
@@ -846,7 +891,6 @@ public class GeometryForker {
 			}
 		}
 		ForkResult r = new ForkResult();
-		r.zoneIndex = zoneIndex;
 		r.oldMatrix = matrix;
 		r.newMatrix = matrix;
 		r.srcRegions = new int[seen.size()];

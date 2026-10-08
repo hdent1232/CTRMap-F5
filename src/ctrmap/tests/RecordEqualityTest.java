@@ -1,6 +1,5 @@
 package ctrmap.tests;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.Workspace;
 import ctrmap.formats.cameradata.CameraData;
 import ctrmap.formats.zone.ZoneEntities;
@@ -133,8 +132,19 @@ public class RecordEqualityTest {
 		String control = "public ArrayList<CameraData> camData;\n f.camData.set(f.camData.indexOf(cam), cam2);\n";
 		check(!lookups(control, listOf, names(control, listOf)).isEmpty(),
 				"control: a camera table searched with indexOf is seen");
+		//A FIELD'S NAME IS EVERY FILE'S, A LOCAL'S ONLY ITS OWN: f.camData is searched from other files, but a
+		//local list of records named 'out' made every 'out.contains(' in the tree a finding (F209's camera
+		//document; InteriorWirer and BchMapModel search lists of ids and names)
+		Pattern fieldOf = Pattern.compile("(?:public|private|protected)\\s+(?:static\\s+)?(?:final\\s+)?[\\w.]*<\\s*(?:[\\w.]+\\.)?(?:"
+				+ types + ")\\s*>\\s+(\\w+)\\s*[=;]");
+		String elsewhere = "List<String> out = new ArrayList<>();\n out.contains(name);\n";
+		String local = "List<CameraData> out = new ArrayList<>();\n";
+		check(lookups(elsewhere, listOf, union(names(local, fieldOf), names(elsewhere, listOf))).isEmpty()
+				&& !lookups(elsewhere, listOf, names("private List<CameraData> out;\n", fieldOf)).isEmpty(),
+				"control: a local list of records named out in one file leaves another file's out alone, a field does not");
 		List<File> files = CollisionReadTest.javaFiles(new File("src/ctrmap"), new ArrayList<>());
 		TreeSet<String> lists = new TreeSet<>();
+		TreeSet<String> fields = new TreeSet<>();
 		List<String> texts = new ArrayList<>();
 		for (File f : files) {
 			if (f.getPath().contains(File.separator + "tests" + File.separator)) {
@@ -143,16 +153,23 @@ public class RecordEqualityTest {
 			String t = SourceSeamTest.stripComments(new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8));
 			texts.add(f.getName() + "\n" + t);
 			lists.addAll(names(t, listOf));
+			fields.addAll(names(t, fieldOf));
 		}
-		check(lists.contains("camData") && lists.contains("npcs"), "control: the camera and NPC lists are among the "
-				+ lists.size() + " lists of records found " + lists);
+		check(lists.contains("camData") && lists.contains("npcs") && fields.contains("camData"), "control: the camera and NPC lists are among the "
+				+ lists.size() + " lists of records found " + lists + ", the camera table among the " + fields.size() + " fields");
 		List<String> found = new ArrayList<>();
 		for (String t : texts) {
-			for (String hit : lookups(t, listOf, lists)) {
+			for (String hit : lookups(t, listOf, union(fields, names(t, listOf)))) {
 				found.add(t.substring(0, t.indexOf('\n')) + ": " + hit);
 			}
 		}
 		check(found.isEmpty() && files.size() > 300, "none is searched by equality in " + files.size() + " files: " + found);
+	}
+
+	static TreeSet<String> union(TreeSet<String> a, TreeSet<String> b) {
+		TreeSet<String> out = new TreeSet<>(a);
+		out.addAll(b);
+		return out;
 	}
 
 	static TreeSet<String> names(String text, Pattern listOf) {
@@ -227,12 +244,11 @@ public class RecordEqualityTest {
 			n.yTile = 6;
 			e.npcs.add(n);
 		}
-		e.NPCCount = 2;
 		check(e.npcs.get(0).equals(e.npcs.get(1)), "control: the two NPCs are equal");
 		List<String> said = ctrmap.Ui.record();
 		NPCEditForm form = new NPCEditForm(NpcEditFormGuardsTest.LOADED, NpcEditFormGuardsTest.TOOLS,
 				NpcEditFormGuardsTest.REDRAW, NpcEditFormGuardsTest.NAVI, NpcEditFormGuardsTest.CENTRE,
-				NpcEditFormGuardsTest.SAVER, NpcEditFormGuardsTest.SAVER, CtrmapMainframe.mTileMapPanel, pane -> { });
+				NpcEditFormGuardsTest.SAVER, NpcEditFormGuardsTest.SAVER, TestWindow.mTileMapPanel(), pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
 		form.loadFromEntities(e, null);
 		//as the NPC and warp tools do: two NPCs labelled by the same uid are one row to a combo
 		//box, which selects the first equal label - and a zone in that state will not save

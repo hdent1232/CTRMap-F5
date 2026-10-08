@@ -1,14 +1,19 @@
 package ctrmap.humaninterface;
 
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 
-public class ESPICAControl extends javax.swing.JFrame {
+/**
+ * The model converter's output: what ESPICA prints while it runs, its state, and the Close that stores
+ * the result. A pane in the Extras tab beside the Builder that starts it (F243) - it was a stand-alone
+ * JFrame per run, a second window under the owner's rule that a feature never gets one. Its .form still
+ * declares a JFrame, as the four forms converted before it do, until a NetBeans save converts it; the
+ * generated code compiles against FormPanel's shims meanwhile.
+ */
+public class ESPICAControl extends FormPanel {
 
 	private Runnable onSuccess;
 	private boolean isSuccess = false;
@@ -24,12 +29,6 @@ public class ESPICAControl extends javax.swing.JFrame {
 	public ESPICAControl(Runnable doOnSuccess) {
 		this();
 		this.onSuccess = doOnSuccess;
-		addWindowListener(new WindowAdapter() {
-			@Override
-			public void windowClosing(WindowEvent e) {
-
-			}
-		});
 	}
 
 	/**
@@ -96,47 +95,14 @@ public class ESPICAControl extends javax.swing.JFrame {
     }// </editor-fold>//GEN-END:initComponents
 
     private void btnCloseActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnCloseActionPerformed
-		dispose();
+		//A PANE IN THE EXTRAS TAB NOW (F243): Close stores the result once and says so - it disposed a
+		//window that no longer exists; Back to Extras leaves
+		btnClose.setEnabled(false);
 		if (onSuccess != null && isSuccess) {
 			onSuccess.run();
+			status.setText("ESPICA has finished and the result was stored. Back to Extras leaves.");
 		}
     }//GEN-LAST:event_btnCloseActionPerformed
-
-	/**
-	 * @param args the command line arguments
-	 */
-	public static void main(String args[]) {
-		//a developer's harness, run where Swing is built: on the event thread (F220)
-		java.awt.EventQueue.invokeLater(ESPICAControl::harness);
-	}
-
-	private static void harness() {
-		/* Set the Nimbus look and feel */
-		//<editor-fold defaultstate="collapsed" desc=" Look and feel setting code (optional) ">
-		/* If Nimbus (introduced in Java SE 6) is not available, stay with the default look and feel.
-         * For details see http://download.oracle.com/javase/tutorial/uiswing/lookandfeel/plaf.html 
-		 */
-		try {
-			for (javax.swing.UIManager.LookAndFeelInfo info : javax.swing.UIManager.getInstalledLookAndFeels()) {
-				if ("Nimbus".equals(info.getName())) {
-					javax.swing.UIManager.setLookAndFeel(info.getClassName());
-					break;
-				}
-			}
-		} catch (ClassNotFoundException | InstantiationException | IllegalAccessException | javax.swing.UnsupportedLookAndFeelException ex) {
-			java.util.logging.Logger.getLogger(ESPICAControl.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-		}
-		//</editor-fold>
-
-		//</editor-fold>
-		ESPICAControl test = new ESPICAControl();
-		test.setVisible(true);
-		test.runProcess("D:\\Work\\SPICA-master\\ESPICA\\bin\\Debug\\ESPICA.exe", new ESPICAProcess(ESPICAFunctionMode.MODEL_CONVERT,
-				new File("D:\\Work\\SPICA-master\\ESPICA\\bin\\Debug\\pokecen_final.obj"),
-				new File("D:\\Work\\SPICA-master\\ESPICA\\bin\\Debug\\Dummy.bch"),
-				new File("D:\\Work\\SPICA-master\\ESPICA\\bin\\Debug\\out.bch"),
-				new String[]{"-notexture"}));
-	}
 
 	public void runProcess(String ESPICAPath, ESPICAProcess proc) {
 		output.setText(null);
@@ -150,7 +116,10 @@ public class ESPICAControl extends javax.swing.JFrame {
 						//itself, while the event thread painted them.
 						javax.swing.SwingUtilities.invokeLater(() -> status.setText("ESPICA running"));
 						try {
-							Process process = Runtime.getRuntime().exec(ESPICAPath + proc.getArguments());
+							//ONE ARGUMENT PER PATH (F245): this was exec(path + " -i " + input ...), one string
+							//split on whitespace, so a converter, OBJ, donor or output under a folder with a
+							//space in its name - a Windows user folder, most of them - was handed in pieces
+							Process process = new ProcessBuilder(proc.command(ESPICAPath)).start();
 							InputStream is = process.getInputStream();
 							InputStreamReader isr = new InputStreamReader(is);
 							BufferedReader br = new BufferedReader(isr);
@@ -216,23 +185,24 @@ public class ESPICAControl extends javax.swing.JFrame {
 			}
 		}
 
-		public String getArguments() {
-			StringBuilder argBuilder = new StringBuilder();
-			argBuilder.append(" ");
-			argBuilder.append(getMode());
-			argBuilder.append(" -i ");
-			argBuilder.append(input);
-			argBuilder.append(" -d ");
-			argBuilder.append(donor);
+		/**
+		 * The converter's command line, program first, one element per argument - never joined - and
+		 * each file as its absolute path, so ESPICA's working directory does not decide what it reads.
+		 */
+		public java.util.List<String> command(String program) {
+			java.util.List<String> argv = new java.util.ArrayList<>();
+			argv.add(program);
+			argv.add(getMode());
+			argv.add("-i");
+			argv.add(input.getAbsolutePath());
+			argv.add("-d");
+			argv.add(donor.getAbsolutePath());
 			if (output != null) {
-				argBuilder.append(" -o ");
-				argBuilder.append(output);
+				argv.add("-o");
+				argv.add(output.getAbsolutePath());
 			}
-			for (String e : extra) {
-				argBuilder.append(" ");
-				argBuilder.append(e);
-			}
-			return argBuilder.toString();
+			argv.addAll(java.util.Arrays.asList(extra));
+			return argv;
 		}
 	}
 

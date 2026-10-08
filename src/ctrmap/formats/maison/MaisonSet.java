@@ -1,7 +1,7 @@
 package ctrmap.formats.maison;
 
-import static ctrmap.formats.LittleEndian.u16;
-import static ctrmap.formats.LittleEndian.putU16;
+import static ctrmap.util.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.putU16;
 
 /**
  * One Battle Maison opponent Pokemon "set" - the fixed 16-byte record stored,

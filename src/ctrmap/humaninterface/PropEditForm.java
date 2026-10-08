@@ -1,10 +1,7 @@
 package ctrmap.humaninterface;
 
 import com.jogamp.opengl.GL2;
-import com.jogamp.opengl.glu.gl2.GLUgl2;
-import ctrmap.CtrmapMainframe;
 import ctrmap.LoadedZone;
-import ctrmap.LittleEndianDataInputStream;
 import ctrmap.formats.propdata.GRProp;
 import ctrmap.formats.propdata.GRPropData;
 import ctrmap.Workspace;
@@ -13,7 +10,6 @@ import ctrmap.formats.containers.GR;
 import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.h3d.BchTexturePack;
 import ctrmap.formats.h3d.model.H3DModel;
-import ctrmap.formats.h3d.model.H3DVertex;
 import ctrmap.formats.h3d.texturing.H3DTexture;
 import ctrmap.formats.propdata.ADPropRegistry;
 import ctrmap.formats.propdata.PropDatabase;
@@ -25,10 +21,8 @@ import ctrmap.formats.zone.ZoneHeader;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.humaninterface.tools.PropTool;
 import java.awt.Component;
-import java.awt.Cursor;
 import java.awt.Point;
 import java.awt.event.MouseEvent;
-import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -120,7 +114,22 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 */
 	public PropEditForm(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, Redraw redraw,
 			Navigator navi, TileMapPanel map,
-			java.util.function.Consumer<javax.swing.JComponent> toolPane) {
+			java.util.function.Consumer<javax.swing.JComponent> toolPane, UndoHistory history) {
+		if (history == null) {
+			throw new IllegalArgumentException("PropEditForm must be handed the zone's history its props and"
+					+ " the area's registry are documents of");
+		}
+		//the region's props and the area's registry, while loaded, are documents of the zone's history (F209)
+		history.watch(() -> {
+			java.util.List<UndoHistory.Document<?>> out = new java.util.ArrayList<>();
+			if (props != null) {
+				out.add(ZoneDocuments.propPlacements(props, () -> reshow(props)));
+			}
+			if (reg != null) {
+				out.add(ZoneDocuments.propRegistry(reg, () -> reshow(props)));
+			}
+			return out;
+		});
 		if (toolPane == null) {
 			throw new IllegalArgumentException("PropEditForm must be handed the tool column its registry editor opens in");
 		}
@@ -145,7 +154,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				+ "Large buildings and Pok&eacute;mon Centers are part of the map itself, not props.<br>"
 				+ "Names are Game Freak's internal codenames - type plain words (tree, computer,<br>"
 				+ "statue, lighthouse, coral, boat, tv) and matching props are found.</html>");
-		setFloatValueClass(new JFormattedTextField[]{x, y, z, sx, sy, sz, rx, ry, rz});
+		Forms.numberClass(Float.class, new JFormattedTextField[]{x, y, z, sx, sy, sz, rx, ry, rz});
 		//Only need the DocListeners on the fields that we want to reflect on the GUI immediately
 		x.getDocument().addDocumentListener(new DocumentListener() {
 			@Override
@@ -411,7 +420,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			return;
 		}
 		try {
-			byte[] bch = PropDatabase.getSubfile(Workspace.getArchive(ArchiveType.BUILDING_MODELS).getDecompressedEntry(paletteEntries[sel].modelIndex), 0);
+			byte[] bch = ctrmap.formats.containers.ContainerBytes.subfile(Workspace.getArchive(ArchiveType.BUILDING_MODELS).getDecompressedEntry(paletteEntries[sel].modelIndex), 0);
 			if (!PropDatabase.isBCH(bch)) {
 				return;
 			}
@@ -429,6 +438,22 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		} catch (Exception ex) {
 			ex.printStackTrace();
 		}
+	}
+
+	/**
+	 * Refuses, in words, an act that names a prop model when this map has no area prop registry
+	 * to name it from: File &gt; Open GR, and the map view whenever it shows no matrix, hand the form
+	 * none. True when it refused. New entry dereferenced the missing registry half way through -
+	 * the record already added, the models list one short, an exception on the event thread
+	 * (F108) - while the palette asked first; both ask here now.
+	 */
+	private boolean refusedWithoutRegistry(String act) {
+		if (reg != null) {
+			return false;
+		}
+		ctrmap.Ui.message(this, act + " needs an area prop registry.\nLoad a map through the Zone Loader first.",
+				"No registry loaded", JOptionPane.WARNING_MESSAGE);
+		return true;
 	}
 
 	/**
@@ -450,8 +475,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			ctrmap.Ui.message(this, "Load a map through the Zone Loader first.", "No map loaded", JOptionPane.WARNING_MESSAGE);
 			return;
 		}
-		if (reg == null) {
-			ctrmap.Ui.message(this, "The prop palette needs an area prop registry.\nLoad a map through the Zone Loader first.", "No registry loaded", JOptionPane.WARNING_MESSAGE);
+		if (refusedWithoutRegistry("The prop palette")) {
 			return;
 		}
 		PropDatabase.PropModel pm = paletteEntries[sel];
@@ -535,12 +559,6 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		return "area " + area;
 	}
 
-	public void setFloatValueClass(JFormattedTextField[] fields) {
-		for (int i = 0; i < fields.length; i++) {
-			((NumberFormatter) fields[i].getFormatter()).setValueClass(Float.class);
-		}
-	}
-
 	public void loadDataFile(GR f, List<H3DTexture> propTextures) {
 		gr = f;
 		props = new GRPropData(gr);
@@ -573,6 +591,10 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 	}
 
+	/**
+	 * After an undo or redo put the props or the registry back (F209): the props shown again from the
+	 * start - their names, models and places come from both - on the prop that was showing.
+	 */
 	public void unload() {
 		loaded = false;
 		propIndex = -1;
@@ -791,8 +813,14 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 	}
 
-	/** Shows these props again, on the prop that was shown when there still is one. */
+	/**
+	 * Shows these props again, on the prop that was shown when there still is one: after Discard, and
+	 * after the history puts the props or the registry back.
+	 */
 	private void reshow(GRPropData data) {
+		if (data == null) {
+			return;
+		}
 		int at = propIndex;
 		loadDataFile(data, reg, propTextures);
 		if (at > 0 && at < entryBox.getItemCount()) {
@@ -1479,8 +1507,15 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		//coordinate had been typed and not saved. Muting the box for the removal
 		//and then showing the final selection once, by hand, is what btnNewEntry
 		//already does for the other direction.
+		if (props == null || removed < 0 || removed >= props.props.size()) {
+			return;     //nothing selected: nothing to remove
+		}
 		loaded = false;
-		models.remove(removed);
+		//A MAP WITH NO REGISTRY HOLDS NO MODELS (F108): the models list is either one per record or
+		//empty, and removing a record of a loose GR threw IndexOutOfBounds on the empty one
+		if (!models.isEmpty()) {
+			models.remove(removed);
+		}
 		props.props.remove(removed);
 		entryBox.removeItemAt(removed);
 		loaded = true;
@@ -1489,6 +1524,11 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
     }//GEN-LAST:event_btnRemEntryActionPerformed
 
     private void btnNewEntryActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnNewEntryActionPerformed
+		//ASKED BEFORE ANYTHING CHANGES (F108): the record used to be added and then the missing
+		//registry dereferenced, leaving one more prop than models and the form disarmed
+		if (props == null || refusedWithoutRegistry("A new prop")) {
+			return;
+		}
 		loaded = false;
 		GRProp newProp = new GRProp();
 		newProp.uid = (prop != null) ? prop.uid : 0;
@@ -1559,7 +1599,6 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (!tools.holding(PropTool.class)) {
 			return;
 		}
-		GLUgl2 glu = new GLUgl2();
 		double closestDist = Float.MAX_VALUE;
 		int closestIdx = -1;
 		for (int i = 0; i < models.size(); i++) {
@@ -1567,30 +1606,9 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				continue;
 			}
 			GRProp p = props.props.get(i);
-			float[][] box = models.get(i).boxVectors;
-			boolean sysout = (p.name.equals("t101_bm_trees"));
-			if (ctrmap.humaninterface.Picking.isBoxSelected(box, e, parent, new Vec3f(p.x, p.y, p.z), new Vec3f(p.scaleX, p.scaleY, p.scaleZ), new Vec3f(p.rotateX, p.rotateY, p.rotateZ), mvMatrix, projMatrix, view)) {
-				H3DModel m = models.get(i);
-				//GLU is buggy and sometimes completely fucks up the maths in certain camera angles. We can work around this by checking if the actual object is seen by the camera.
-				boolean allow = false;
-				for (int mesh = 0; mesh < m.meshes.size(); mesh++) {
-					for (int vertex = 0; vertex < m.meshes.get(mesh).vertices.size(); vertex++) {
-						H3DVertex v = m.meshes.get(mesh).vertices.get(vertex);
-						float[] test = new float[3];
-						glu.gluProject(v.position.x + p.x, v.position.y + p.y, v.position.z + p.z, mvMatrix, 0, projMatrix, 0, view, 0, test, 0);
-						if (test[0] > 0 && test[0] < parent.getWidth() && test[1] > 0 && test[1] < parent.getHeight()) {
-							allow = true;
-							break;
-						}
-					}
-					if (allow) {
-						break;
-					}
-				}
-				if (!allow) {
-					continue;
-				}
-				double dist = ctrmap.humaninterface.Picking.getDistanceFromVector(new Vec3f(p.x, p.y, p.z), cameraVec);
+			H3DModel m = models.get(i);
+			if (Picking.isPicked(m.boxVectors, m.meshes, e, parent, new Vec3f(p.x, p.y, p.z), new Vec3f(p.scaleX, p.scaleY, p.scaleZ), new Vec3f(p.rotateX, p.rotateY, p.rotateZ), mvMatrix, projMatrix, view)) {
+				double dist = Picking.cameraDistance(new Vec3f(p.x, p.y, p.z), cameraVec);
 				if (Math.abs(dist) < closestDist && i != propIndex) {
 					closestDist = Math.abs(dist);
 					closestIdx = i;

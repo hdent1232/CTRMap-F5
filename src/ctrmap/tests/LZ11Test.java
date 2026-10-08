@@ -40,6 +40,18 @@ public class LZ11Test {
 			}
 		}
 
+		// (1b) THE RATIO, BOUNDED (F250): it was printed and never asserted, so a return to the
+		// length-capped port this suite was written after would have passed. A 100000-byte run
+		// needs a handful of the long match forms - tens of bytes; the port that capped a match
+		// at 16 needs one two-byte token per 16 bytes plus flags, over 13000. 1000 parts them.
+		int runOut = LZ11.compress(repeat((byte) 0xAB, 100000)).length;
+		if (runOut > 1000) {
+			failures++;
+			System.out.println("FAIL a 100000-byte run compresses to " + runOut + " bytes - the long match forms are not used");
+		} else {
+			System.out.println("ok a 100000-byte run compresses to " + runOut + " bytes: the long match forms are used");
+		}
+
 		// (1c) STRICT (F057): what is not a well-formed stream is refused, never padded into data
 		byte[] whole = LZ11.compress(ramp(5000));
 		failures += refused("a truncated stream", Arrays.copyOf(whole, whole.length - 3), "ends after");
@@ -103,6 +115,14 @@ public class LZ11Test {
 				double vsRetail = 100.0 * oursComp / retailComp;
 				System.out.printf("ratio: ours=%.1f%% of raw; ours is %.1f%% of retail-compressed size (%d entries compared)%n",
 						ratioVsRaw, vsRetail, compared);
+				//a corpus the game ships compressed must come out smaller than it went in (F250)
+				if (oursComp >= raw) {
+					failures++;
+					System.out.println("FAIL the corpus did not shrink: " + oursComp + " bytes out of " + raw);
+				}
+			} else {
+				failures++;
+				System.out.println("FAIL the corpus held no retail-compressed entry to compare against");
 			}
 		} else {
 			Skip.section("corpus GARC not found at " + path + " - synthetic cases only");

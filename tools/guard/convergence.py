@@ -23,7 +23,9 @@ import os
 import sys
 import datetime
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+ROOT = _tree_root.require(__file__)
 LOG = os.path.join(ROOT, "docs", "audit-convergence.json")
 
 

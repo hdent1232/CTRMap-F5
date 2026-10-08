@@ -14,7 +14,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Every dispatch case a wizard installs must be entered the way the engine's
@@ -359,18 +358,8 @@ public class DispatchTrampolineTest {
 		if (magic != 0x5A4F) {
 			return null;
 		}
-		int count = (zo[2] & 0xFF) | ((zo[3] & 0xFF) << 8);
-		if (count < 3 || zo.length < 4 + (count + 1) * 4) {
-			return null;
-		}
-		int start = i32(zo, 4 + 2 * 4);
-		int end = i32(zo, 4 + 3 * 4);
-		if (start < 0 || end > zo.length || end <= start) {
-			return null;
-		}
-		byte[] scr = new byte[end - start];
-		System.arraycopy(zo, start, scr, 0, scr.length);
-		return scr;
+		byte[] scr = ctrmap.formats.containers.ContainerBytes.subfile(zo, 2);
+		return scr == null || scr.length == 0 ? null : scr;
 	}
 
 	static void check(boolean ok, String what) {

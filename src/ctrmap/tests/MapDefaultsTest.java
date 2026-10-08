@@ -10,7 +10,7 @@ import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.io.FileOutputStream;
-import static ctrmap.formats.LittleEndian.putI32;
+import static ctrmap.util.LittleEndian.putI32;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
 import ctrmap.formats.tilemap.PaintedMaterials;
 

@@ -2,8 +2,6 @@ ctrmap/AreaForker.java
 ctrmap/CtrmapMainframe.java
 ctrmap/GeometryForker.java
 ctrmap/InteriorWirer.java
-ctrmap/LittleEndianDataInputStream.java
-ctrmap/LittleEndianDataOutputStream.java
 ctrmap/LoadedZone.java
 ctrmap/MapResizer.java
 ctrmap/ModDeployer.java
@@ -24,7 +22,7 @@ ctrmap/ZoneResource.java
 ctrmap/ZoneTables.java
 ctrmap/formats/CMVD.java
 ctrmap/formats/GameFiles.java
-ctrmap/formats/LittleEndian.java
+ctrmap/formats/MapObject.java
 ctrmap/formats/Triangle.java
 ctrmap/formats/WavefrontOBJ.java
 ctrmap/formats/area/AreaEnv.java
@@ -151,7 +149,6 @@ ctrmap/gamedef/SmProfile.java
 ctrmap/gamedef/UsumProfile.java
 ctrmap/gamedef/XyProfile.java
 ctrmap/humaninterface/ADPropRegistryEditor.java
-ctrmap/humaninterface/AboutDialog.java
 ctrmap/humaninterface/AreaForkPrompt.java
 ctrmap/humaninterface/AreaLightingDialog.java
 ctrmap/humaninterface/BuildingPaletteDialog.java
@@ -183,7 +180,6 @@ ctrmap/humaninterface/MaisonClassListDialog.java
 ctrmap/humaninterface/MaisonEditDialog.java
 ctrmap/humaninterface/MapEditors.java
 ctrmap/humaninterface/MapMatrixPanel.java
-ctrmap/humaninterface/MapObject.java
 ctrmap/humaninterface/MapPreview3D.java
 ctrmap/humaninterface/MatrixCanvas.java
 ctrmap/humaninterface/MatrixEditForm.java
@@ -258,6 +254,9 @@ ctrmap/update/UpdateChecker.java
 ctrmap/update/UpdateUI.java
 ctrmap/update/Updater.java
 ctrmap/util/Bytes.java
+ctrmap/util/LittleEndian.java
+ctrmap/util/LittleEndianDataInputStream.java
+ctrmap/util/LittleEndianDataOutputStream.java
 ctrmap/vault/Vault.java
 ctrmap/vault/VaultManifest.java
 ctrmap/vault/VaultUi.java

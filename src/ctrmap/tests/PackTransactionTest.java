@@ -2,10 +2,14 @@ package ctrmap.tests;
 
 import ctrmap.Workspace;
 import ctrmap.WorkspaceSession;
+import ctrmap.WorkspaceUnit;
 import ctrmap.formats.garc.GARC;
+import ctrmap.formats.pokedata.ItemData;
+import ctrmap.formats.pokedata.ItemTable;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameType;
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Arrays;
 
@@ -39,6 +43,7 @@ public class PackTransactionTest {
 			anUneditedGameIsNotRewritten();
 			anEditIsPackedAndNothingElse();
 			aPackThatFailsPartWayLeavesTheGameAsItWas();
+			anItemIsStagedLikeEveryOtherEditAndPackedInPlace();
 		} finally {
 			Workspace.reset();
 		}
@@ -147,6 +152,96 @@ public class PackTransactionTest {
 		blocked.delete();
 	}
 
+	// ------------------------------------------------------------ F082
+	/**
+	 * An item record was poked into the game folder at save, outside the workspace: Clean put its name
+	 * and description back and kept it, and a save whose text failed after it could not be undone. It
+	 * is staged now, like every other edit, and the pack writes it over its own bytes.
+	 */
+	static void anItemIsStagedLikeEveryOtherEditAndPackedInPlace() throws Exception {
+		System.out.println("--- an item record is staged like every other edit, and the pack writes it in place (F082)");
+		Game g = game("items");
+		File items = g.ws.archiveFile(ArchiveType.ITEM_DATA);
+		byte[] retail = HandedGameTest.garcBytes(HandedGameTest.record(0), HandedGameTest.record(12), HandedGameTest.record(7));
+		items.getParentFile().mkdirs();
+		Files.write(items.toPath(), retail);
+		items.setLastModified(OLD);
+		//a session holding the item archive as the workspace opens it with its game: a new session
+		g.ws = g.ws.withArchive(ArchiveType.ITEM_DATA, new GARC(items, false));
+		Workspace.install(g.ws);
+		ItemTable t = ItemTable.open(g.ws);
+		check(t != null && t.count() == 3, "control: the hand-built item table opens through the workspace");
+		if (t == null) {
+			return;
+		}
+		File staged = g.ws.getWorkspaceFile(ArchiveType.ITEM_DATA, 1);
+
+		t.writeRecord(1, HandedGameTest.record(99));
+		check(g.ws.isPersisted(staged) && Arrays.equals(Files.readAllBytes(staged.toPath()), HandedGameTest.record(99)),
+				"a saved record is staged in the workspace's item folder and listed as an edit");
+		check(items.lastModified() == OLD && Arrays.equals(Files.readAllBytes(items.toPath()), retail),
+				"and the game's archive is not written at save");
+
+		g.ws.cleanAll();
+		ItemTable cleaned = ItemTable.open(g.ws);
+		check(!g.ws.isPersisted(staged) && Arrays.equals(cleaned.raw(1), HandedGameTest.record(12)),
+				"Clean takes the record back, as it takes back the item's name and description");
+
+		IOException planted = new IOException("planted: the item's text failed after its record");
+		IOException caught = null;
+		try (WorkspaceUnit unit = WorkspaceUnit.begin("Save item 1", g.ws)) {
+			cleaned.writeRecord(1, HandedGameTest.record(55));
+			throw planted;
+		} catch (IOException ex) {
+			caught = ex;
+		}
+		check(caught == planted && !g.ws.isPersisted(staged) && Arrays.equals(ItemTable.open(g.ws).raw(1), HandedGameTest.record(12)),
+				"a save that fails part way puts its record back with the rest of its unit");
+
+		ItemTable.open(g.ws).writeRecord(1, HandedGameTest.record(99));
+		pack(g.ws);
+		byte[] packed = Files.readAllBytes(items.toPath());
+		int at = new GARC(items, false).getEntryFileOffset(1);
+		java.util.List<Integer> moved = new java.util.ArrayList<>();
+		for (int i = 0; i < Math.min(packed.length, retail.length); i++) {
+			if (packed[i] != retail[i]) {
+				moved.add(i);
+			}
+		}
+		check(packed.length == retail.length && !moved.isEmpty() && moved.get(0) >= at
+				&& moved.get(moved.size() - 1) < at + ItemData.SIZE,
+				"the pack writes it in place: the archive keeps its " + retail.length + " bytes, header and offset table"
+				+ " included, and only record 1's, from 0x" + Integer.toHexString(at) + ", differ (" + moved.size() + " byte(s))");
+		check(ItemTable.changedSinceBaseline(g.ws), "and once packed, deploy ships it");
+		check(g.fd.lastModified() == OLD && g.zo.lastModified() == OLD && g.mm.lastModified() == OLD,
+				"and no other archive was rewritten");
+
+		//what a pack in place cannot write is refused before the game is touched
+		long stamp = items.lastModified();
+		File two = g.ws.getWorkspaceFile(ArchiveType.ITEM_DATA, 2);
+		Files.write(two.toPath(), new byte[ItemData.SIZE - 1]);
+		g.ws.addPersist(two);
+		String refused = packRefusal(g.ws);
+		check(refused != null && refused.contains("stored as " + ItemData.SIZE) && items.lastModified() == stamp
+				&& Arrays.equals(Files.readAllBytes(items.toPath()), packed),
+				"a staged record that is not its stored length is refused, and the game's archive is as it was: " + refused);
+		Files.write(two.toPath(), HandedGameTest.record(7));
+		g.ws.registerPendingCompression(ArchiveType.ITEM_DATA, 2, true);
+		refused = packRefusal(g.ws);
+		check(refused != null && refused.contains("compression override") && g.ws.hasPendingCompression(ArchiveType.ITEM_DATA)
+				&& Arrays.equals(Files.readAllBytes(items.toPath()), packed),
+				"and so is a compression override, which is given back, the archive untouched: " + refused);
+	}
+
+	static String packRefusal(WorkspaceSession ws) {
+		try {
+			pack(ws);
+			return null;
+		} catch (Exception ex) {
+			return ctrmap.util.Bytes.reason(ex);
+		}
+	}
+
 	// ------------------------------------------------------------ F038
 	/**
 	 * The archive facts are one table, and every list is derived from it: the pack order above is
@@ -179,12 +274,12 @@ public class PackTransactionTest {
 		//new row must not join silently - but everything it ships is an archive the table holds
 		java.util.List<ArchiveType> unheld = new java.util.ArrayList<>();
 		for (ArchiveType t : ctrmap.ModDeployer.allWritableArchives()) {
-			if (t != ArchiveType.ITEM_DATA && g.ws.getExtractionDirectory(t) == null) {
+			if (g.ws.getExtractionDirectory(t) == null) {
 				unheld.add(t);
 			}
 		}
-		check(unheld.isEmpty(), "every archive deploy ships, but the item archive written in place, has a row"
-				+ " in the table (not held: " + unheld + ")");
+		//the item archive included: it was written into the game folder at save, with no row (F082)
+		check(unheld.isEmpty(), "every archive deploy ships has a row in the table (not held: " + unheld + ")");
 		java.lang.reflect.Field dc = ctrmap.setup.DumpCheck.class.getDeclaredField("REQUIRED");
 		dc.setAccessible(true);
 		check(dc.get(null) == WorkspaceSession.requiredArchives() || WorkspaceSession.requiredArchives().equals(dc.get(null)),

@@ -19,19 +19,10 @@ public final class GiveBpForm {
 
 	public final JPanel panel = Forms.stackedForm();
 	private final JSpinner amount = new JSpinner(new javax.swing.SpinnerNumberModel(20, 1, 9999, 1));
-	/** The registry the model picker lists, and the previews it registers - the editor's, handed in. */
-	private final NPCRegistry reg;
-	private final List<CustomH3DPreview> livePreviews;
 
 	private final ModelPicker model;
 
-	/** The open game the model picker browses; handed in, never fetched. */
-	private final ctrmap.formats.GameFiles game;
-
 	public GiveBpForm(ctrmap.formats.GameFiles game, NPCRegistry reg, List<CustomH3DPreview> livePreviews) {
-		this.game = game;
-		this.reg = reg;
-		this.livePreviews = livePreviews;
 		this.model = new ModelPicker(reg, livePreviews, game, -1);
 		Forms.addLabeled(panel, "Battle Points to give:", amount);
 		Forms.addLabeled(panel, "NPC model (type to search; preview below):", model);

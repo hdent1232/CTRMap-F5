@@ -5,10 +5,9 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 
-import ctrmap.LittleEndianDataInputStream;
-import ctrmap.LittleEndianDataOutputStream;
+import ctrmap.util.LittleEndianDataInputStream;
+import ctrmap.util.LittleEndianDataOutputStream;
 import ctrmap.formats.GameFiles;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.UUID;
@@ -239,11 +238,6 @@ public abstract class AbstractGamefreakContainer {
 		if (!verify()) {
 			throw new IllegalStateException(whyNot);
 		}
-	}
-
-	/** Why {@link #verify} said no, or null when it said yes. */
-	public String whyNot() {
-		return whyNot;
 	}
 
 	private String whyNot;

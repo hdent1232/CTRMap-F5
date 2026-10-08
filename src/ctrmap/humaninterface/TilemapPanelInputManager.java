@@ -1,6 +1,5 @@
 package ctrmap.humaninterface;
 
-import ctrmap.CtrmapMainframe;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseEvent;
@@ -10,18 +9,8 @@ import java.awt.event.MouseWheelListener;
 
 import javax.swing.event.MouseInputListener;
 
-import static ctrmap.CtrmapMainframe.*;
-import ctrmap.humaninterface.tools.CameraTool;
 import ctrmap.humaninterface.tools.ToolBox;
 import ctrmap.humaninterface.tools.ToolSelection;
-import ctrmap.humaninterface.tools.EditTool;
-import ctrmap.humaninterface.tools.FillTool;
-import ctrmap.humaninterface.tools.GeoTool;
-import ctrmap.humaninterface.tools.NPCTool;
-import ctrmap.humaninterface.tools.PropTool;
-import ctrmap.humaninterface.tools.SetTool;
-import ctrmap.humaninterface.tools.TriggerTool;
-import ctrmap.humaninterface.tools.WarpTool;
 
 /**
  * CM2D input listener.
@@ -73,8 +62,8 @@ public class TilemapPanelInputManager implements MouseWheelListener, MouseMotion
 	}
 	
 	private void moveSelector(MouseEvent e) {
-		int xbound = (int) (map.getLocationOnScreen().getX() + (map.getWidth() - map.tilemapScaledImage.getWidth()) / 2);
-		int ybound = (int) (map.getLocationOnScreen().getY() + (map.getHeight() - map.tilemapScaledImage.getHeight()) / 2);
+		int xbound = (int) (map.getLocationOnScreen().getX() + map.imageOrigin().x);
+		int ybound = (int) (map.getLocationOnScreen().getY() + map.imageOrigin().y);
 		if (e.getXOnScreen() >= xbound && e.getXOnScreen() < xbound + map.tilemapScaledImage.getWidth()
 				&& e.getYOnScreen() >= ybound && e.getYOnScreen() < ybound + map.tilemapScaledImage.getHeight()) {
 			Selector.select(e.getXOnScreen() - xbound, e.getYOnScreen() - ybound, inspector, map);

@@ -2,17 +2,16 @@ package ctrmap.humaninterface;
 
 import ctrmap.Workspace;
 import ctrmap.formats.codepatch.ShopData;
+import ctrmap.formats.codepatch.Ips;
 import ctrmap.formats.pokedata.PokeData;
 import ctrmap.humaninterface.pokepick.PokePickers;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
-import java.awt.Frame;
 import java.io.File;
 import java.nio.file.Files;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
-import javax.swing.JDialog;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
@@ -132,7 +131,7 @@ public class ShopEditDialog {
 			byte[] patched = ShopData.write(code, shops);
 			//NO "nothing to save" (F152): every list put back to the game's own is still a change to
 			//a code.ips that carries an old edit, and saving it takes the shop table out of that file
-			byte[] ips = ShopData.diffIPS(code, patched);
+			byte[] ips = Ips.diff(code, patched);
 			JFileChooser fc = new JFileChooser(codeFile.getParentFile());
 			fc.setDialogTitle("Save code.ips (Luma/Azahar executable patch)");
 			fc.setSelectedFile(new File(codeFile.getParentFile(), "code.ips"));
@@ -151,7 +150,7 @@ public class ShopEditDialog {
 					+ "Then fully restart the emulator and talk to a shop clerk (TESTING.md item).",
 					"Shop editor", JOptionPane.INFORMATION_MESSAGE);
 		} catch (Exception ex) {
-			ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Shop editor");
+			ctrmap.Ui.error(dlg, "Save failed:\n" + ctrmap.util.Bytes.reason(ex), "Shop editor");
 		}
 	}
 
@@ -206,7 +205,7 @@ public class ShopEditDialog {
 			if (c != 1) {
 				return;
 			}
-			int id = v instanceof Number ? ((Number) v).intValue() : PokePickers.parseLeadingInt(String.valueOf(v));
+			int id = v instanceof Number ? ((Number) v).intValue() : ctrmap.util.Text.parseLeadingInt(String.valueOf(v));
 			if (id >= 0) {
 				shops[shop][r] = id;
 				fireTableRowsUpdated(r, r);

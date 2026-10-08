@@ -84,10 +84,10 @@ public class BlankCanvasTest {
 
 	static void theReportNamesEveryRegion() {
 		System.out.println("--- what the user is told names every region (F072)");
-		String some = new GeometryForker.Canvas(7, null, new int[]{40, 41}, new int[]{42}).report();
+		String some = new GeometryForker.Canvas(7, new int[]{40, 41}, new int[]{42}).report();
 		check(some.contains("[40, 41]") && some.contains("[42]") && some.contains("could NOT be emptied"),
 				"the report names the region it could not empty, apart from the ones it did: " + some.replace("\n", " | "));
-		String all = new GeometryForker.Canvas(7, null, new int[]{40, 41, 42}, new int[0]).report();
+		String all = new GeometryForker.Canvas(7, new int[]{40, 41, 42}, new int[0]).report();
 		check(all.contains("[40, 41, 42]") && !all.contains("could NOT"),
 				"and when it emptied them all, it says only that");
 	}
@@ -96,7 +96,7 @@ public class BlankCanvasTest {
 		System.out.println("--- the menu action runs that unit and reports what it did");
 		String src = new String(Files.readAllBytes(new File("src/ctrmap/CtrmapMainframe.java").toPath()),
 				StandardCharsets.UTF_8);
-		String action = CollisionReadTest.body(src, "private static void blankCanvasAction()");
+		String action = CollisionReadTest.body(src, "private void blankCanvasAction()");
 		check(action != null && action.contains("JOptionPane.showConfirmDialog") && action.indexOf("private static void", 1) < 0,
 				"control: the action's body is found, whole and alone");
 		check(action != null && action.contains("GeometryForker.blankCanvas(") && !action.contains("blankRegionFiles(")

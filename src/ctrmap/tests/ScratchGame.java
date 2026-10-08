@@ -102,7 +102,7 @@ final class ScratchGame {
 		//is handed the game it just opened. Said here rather than inside
 		//install, so the facade knows nothing about the window and a suite
 		//that wants the window told says so.
-		ctrmap.CtrmapMainframe.onWorkspaceOpened(session);
+		TestWindow.onWorkspaceOpened(session);
 		//the app takes the pristine backup on every load; the pack guards read it
 		Workspace.snapshotOriginals();
 		//and reads the two tables derived from the game into the session's store,

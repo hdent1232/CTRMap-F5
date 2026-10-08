@@ -73,6 +73,7 @@ if __name__ == "__main__":
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bundle_env        # noqa: E402  - one PREFIX renames every environment name
+import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
 
 LF = chr(10)
 
@@ -122,7 +123,7 @@ CACHE = os.path.join(".claude", "rules-cache")
 #: (`_hooks_at` in `.claude/bundle-install.json`).
 HOOKS = os.path.join(".claude", os.path.basename(os.path.dirname(os.path.abspath(__file__))))
 
-#: Adapted per project: see ADAPT.md.
+#: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("RULE_DIRS", "SOURCE_SCOPE", "RECORD_SCOPE", "LOCK", "CACHE", "HOOKS")
 
 MARKERS = ("AT_WRITE", "AT_WRITE_TREE", "AT_WRITE_CHANGE", "AT_RECORD", "AT_COMMAND",
@@ -148,16 +149,9 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
 
 def repo_root(start=None):
-    """The project root, ANCHORED on `.git` or `CLAUDE.md` - never counted in `dirname`s."""
-    here = os.path.dirname(os.path.abspath(start or __file__))
-    while True:
-        if os.path.exists(os.path.join(here, ".git")) or os.path.isfile(
-                os.path.join(here, "CLAUDE.md")):
-            return here
-        parent = os.path.dirname(here)
-        if parent == here:
-            return None
-        here = parent
+    """The project root of START, or of this file when none is given: `_tree_root.repo_root`,
+    the ONE definition (F216). This was its first copy; seven more with four anchor sets grew."""
+    return _tree_root.repo_root(start or __file__)
 
 
 def rel_of(root, path):
@@ -347,7 +341,9 @@ class Rule(object):
         try:
             return re.search(self.scope, rel) is not None
         except re.error:
-            return False
+            #ASKED, NOT "NOT MINE" (F168): a scope that does not compile cannot say which files are
+            #its subject, and answering False made the rule one that is never asked
+            return True
 
     def module(self):
         if self._module is None:
@@ -473,6 +469,14 @@ def spelled_folders(source, allowed=()):
     return found
 
 
+def _on_every_marker(values, why):
+    """A declaration error as a row under every marker the file declares, so the kind that judges a
+    write carries it. A row of kind "AT_SCOPE" is no write kind, and ask_changes passed it over: a
+    scope that was not a string was reported to nobody (F168)."""
+    rows = [(kind, None, None, why) for kind in MARKERS if kind in values]
+    return rows or [("AT_WRITE", None, None, why)]
+
+
 def declarations_in(text):
     """[(kind, entry, scope, error)] for every marker one checker's TEXT declares.
 
@@ -490,7 +494,14 @@ def declarations_in(text):
     if isinstance(scope, ast.AST):
         scope = COMPUTED
     elif scope is not None and not isinstance(scope, str):
-        return [("AT_SCOPE", None, None, "AT_SCOPE is %s, not a pattern" % type(scope).__name__)]
+        return _on_every_marker(values, "AT_SCOPE is %s, not a pattern" % type(scope).__name__)
+    elif scope is not None:
+        try:
+            re.compile(scope)
+        except re.error as exc:
+            #A RULE THAT CANNOT SAY WHICH FILES IT WATCHES is not a rule that watches none (F168):
+            #r'^src/(.*\.py$' was discovered with no error and every write passed unasked
+            return _on_every_marker(values, "AT_SCOPE %r is not a valid pattern (%s)" % (scope, exc))
     out = []
     for kind in MARKERS:
         if kind not in values:

@@ -1,6 +1,5 @@
 package ctrmap.tests;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.AD;
@@ -61,8 +60,9 @@ import javax.swing.JSpinner;
  *     area cannot texture is refused registration with a reason - and the
  *     spinner goes back to the model the record names, which the area has
  *     (F161: the record was written pointing at the refused one).</li>
- * <li>New entry and Remove entry, and what the propdata holds afterwards - and
- *     that both throw on the single-region path, which passes no registry.</li>
+ * <li>New entry and Remove entry, and what the propdata holds afterwards - and on the
+ *     single-region path, which passes no registry, that New entry is refused in words and
+ *     Remove entry removes (both threw until F108 decided it).</li>
  * <li>{@code unload()} leaves nothing of the old region behind.</li>
  * </ol>
  *
@@ -127,6 +127,7 @@ public class PropEditFormGuardsTest {
 	static void run(String[] args) throws Exception {
 		aPropIsRefusedWhenItsAreaCannotBeToldShared();
 		theRecordIsEditedNotRebuilt();
+		thePropsAndTheRegistryAreDocumentsOfTheZonesHistory();
 		File dump = new File(args.length > 0 ? args[0] : "no-dump-given");
 		if (!dump.isDirectory()) {
 			Skip.section("no dump at " + dump + " - the prop form checks need FieldData region " + REGION);
@@ -137,12 +138,12 @@ public class PropEditFormGuardsTest {
 		ctrmap.formats.text.LocationNames.loadFromGarc(Workspace.session());
 		//a map view with no matrix: that is what sends the save to the region's
 		//own GR rather than through the matrix distributor
-		CtrmapMainframe.mTilemapScrollPane = new javax.swing.JScrollPane();
-		CtrmapMainframe.mTileMapPanel = new TileMapPanel(LOADED, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+		TestWindow.mTilemapScrollPane(new javax.swing.JScrollPane());
+		TestWindow.mTileMapPanel(new TileMapPanel(LOADED, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null));
 		//the 3D view the form pushes every edit into. Constructible with no
 		//display; the window it lives in is not. The form no longer needs
 		//loaded armed by hand - see openingARegionLeavesTheFormLive.
-		CtrmapMainframe.m3DDebugPanel = new H3DRenderingPanel(new ArrayList<CM3DRenderable>(), TOOLS);
+		TestWindow.m3DDebugPanel(new H3DRenderingPanel(new ArrayList<CM3DRenderable>(), TOOLS));
 
 		theRegionIsTheOneTheseChecksDescribe();
 		openingARegionShowsTheFirstProp();
@@ -159,7 +160,7 @@ public class PropEditFormGuardsTest {
 		removingTheFirstOfTwoLeavesTheSurvivorShowing();
 		savingWithNowhereToWriteRefusesAndSaysSo();
 		savingPropsThatCouldNotBeReadRefuses();
-		withoutARegistryNewAndRemoveThrow();
+		withoutARegistryNewIsRefusedAndRemoveRemoves();
 		unloadLeavesNothingBehind();
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -190,6 +191,59 @@ public class PropEditFormGuardsTest {
 		check(refused, "the prop is refused");
 		check(said.size() == 1 && said.get(0).contains("Could not tell") && said.get(0).contains("ZoneData"),
 				"and the user is told why, naming what could not be read: " + said);
+	}
+
+	/**
+	 * The prop form adds the region's props and the area's registry to the zone's history while they are
+	 * loaded (F209): a prop moved, a registry entry changed, taken back by the same Undo as everything else,
+	 * and the form shows them again. Needs no dump: the props and the registry are built here.
+	 */
+	static void thePropsAndTheRegistryAreDocumentsOfTheZonesHistory() throws Exception {
+		System.out.println("--- the region's props and the area's registry are documents of the zone's history (F209)");
+		MapResizeTest.game("propundo");
+		String said = "(nothing was thrown)";
+		try {
+			new PropEditForm(LOADED, TOOLS, REDRAW, NAVI, TestWindow.mTileMapPanel(), pane -> { }, null);
+		} catch (RuntimeException refused) {
+			said = refused.getClass().getSimpleName() + ": " + refused.getMessage();
+		}
+		check(said.startsWith("IllegalArgumentException") && said.contains("must be handed the zone's history"),
+				"a prop form built without the zone's history is refused: " + said);
+		int[] npc = {0};
+		ctrmap.humaninterface.UndoHistory zone = UndoHistoryTest.overOneNumber(npc);
+		PropEditForm form = new PropEditForm(LOADED, TOOLS, REDRAW, NAVI, TestWindow.mTileMapPanel(), pane -> { }, zone);
+		ctrmap.formats.propdata.GRPropData data = new ctrmap.formats.propdata.GRPropData();
+		GRProp lamp = new GRProp();
+		lamp.uid = 5;
+		lamp.x = 18f;
+		data.props.add(lamp);
+		ctrmap.formats.propdata.ADPropRegistry reg = (ctrmap.formats.propdata.ADPropRegistry)
+				RenderLoopTest.bare(ctrmap.formats.propdata.ADPropRegistry.class);
+		reg.entries = new java.util.LinkedHashMap<>();
+		reg.models = new java.util.HashMap<>();
+		ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry entry = new ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry();
+		entry.reference = 5;
+		reg.entries.put(5, entry);
+		java.util.List<String> reported = ctrmap.Ui.record();   //the scratch game has no models to preview
+		form.loadDataFile(data, reg, new java.util.ArrayList<>());
+		zone.settle();
+		check(!zone.canUndo(), "control: props and a registry loaded are noted, not an edit");
+		lamp.x = 36f;
+		check(zone.settle() && "the region's props".equals(zone.undoName()) && zone.undo() && lamp.x == 18f,
+				"a prop moved is an edit of the zone's history, and Undo puts it back (" + lamp.x + ")");
+		entry.model = 77;
+		boolean recorded = zone.settle();
+		String named = zone.undoName();
+		check(recorded && "the area's prop registry".equals(named) && zone.undo() && entry.model == 0,
+				"a registry entry changed is one too, and Undo puts it back (" + named + ")");
+		javax.swing.JComboBox<?> listed = (javax.swing.JComboBox<?>) MatrixEditFormGuardsTest.field(form, "entryBox");
+		data.props.add(new GRProp());
+		form.loadDataFile(data, reg, new java.util.ArrayList<>());   //listed, as the form's Add leaves it
+		check(listed.getItemCount() == 2, "control: the form lists the prop added (" + listed.getItemCount() + ")");
+		check(zone.settle() && zone.undo() && data.props.size() == 1 && listed.getItemCount() == 1,
+				"a prop added and taken back leaves the form listing the one prop there is (" + listed.getItemCount() + ")");
+		ctrmap.Ui.stopRecording();
+		check(!reported.isEmpty(), "control: the scratch game's missing models were reported, not thrown: " + reported.size());
 	}
 
 	/**
@@ -528,20 +582,29 @@ public class PropEditFormGuardsTest {
 
 	/**
 	 * The single-region path - File &gt; Open GR, and the map view whenever it is
-	 * not showing a matrix - hands the form a null registry, and both entry
-	 * buttons dereference it. Pinned as it stands; see the report.
+	 * not showing a matrix - hands the form a null registry. This was PINNED as it stood: New
+	 * entry added the record and then dereferenced the registry (NullPointerException on the
+	 * event thread, one more prop than models), and Remove entry threw IndexOutOfBounds on the
+	 * empty models list. DECIDED (F108): New entry is refused in words before anything changes,
+	 * as the palette already was, and Remove entry removes the record.
 	 */
-	static void withoutARegistryNewAndRemoveThrow() throws Exception {
+	static void withoutARegistryNewIsRefusedAndRemoveRemoves() throws Exception {
 		Fixture f = openSingleRegion();
 		check(f.form.reg == null, "loadDataFile(GR, textures) gives the form no prop registry at all");
+		List<String> said = ctrmap.Ui.record();
 		Throwable add = null;
 		try {
 			invoke(f.form, "btnNewEntryActionPerformed");
 		} catch (Throwable t) {
 			add = t;
+		} finally {
+			ctrmap.Ui.stopRecording();
 		}
-		check(add instanceof NullPointerException, "New entry throws " + add);
-		check(f.form.props.props.size() == 3, "having already added the record before it threw: " + f.form.props.props.size() + " props");
+		check(add == null, "New entry with no registry does not throw: " + add);
+		check(said.size() == 1 && said.get(0).contains("needs an area prop registry"),
+				"it is refused in words: " + said);
+		check(f.form.props.props.size() == 2 && f.form.models.isEmpty() && !f.form.props.modified,
+				"and nothing changed: " + f.form.props.props.size() + " props, modified " + f.form.props.modified);
 
 		Fixture g = openSingleRegion();
 		Throwable rem = null;
@@ -550,8 +613,9 @@ public class PropEditFormGuardsTest {
 		} catch (Throwable t) {
 			rem = t;
 		}
-		check(rem instanceof IndexOutOfBoundsException, "Remove entry throws " + rem);
-		check(g.form.props.props.size() == 2, "and removes nothing: " + g.form.props.props.size() + " props");
+		check(rem == null, "Remove entry with no registry does not throw: " + rem);
+		check(g.form.props.props.size() == 1 && g.form.props.modified,
+				"and removes the selected record: " + g.form.props.props.size() + " props left");
 	}
 
 	/** Closing a region must leave the form holding nothing of it. */
@@ -625,7 +689,7 @@ public class PropEditFormGuardsTest {
 		f.form.saveProp();
 		check(f.form.props.modified, "there is an edit to lose");
 		f.form.gr = null;
-		ctrmap.humaninterface.TileMapPanel map = CtrmapMainframe.mTileMapPanel;
+		ctrmap.humaninterface.TileMapPanel map = TestWindow.mTileMapPanel();
 		ctrmap.formats.mapmatrix.MapMatrix was = map.mm;
 		map.mm = null;
 		List<String> said = ctrmap.Ui.record(JOptionPane.YES_OPTION);
@@ -716,8 +780,8 @@ public class PropEditFormGuardsTest {
 	static Fixture open(boolean arm) throws Exception {
 		Fixture f = new Fixture();
 		f.gr = scratchRegion();
-		f.form = new PropEditForm(LOADED, TOOLS, REDRAW, NAVI, CtrmapMainframe.mTileMapPanel, pane -> { });
-		CtrmapMainframe.mPropEditForm = f.form;
+		f.form = new PropEditForm(LOADED, TOOLS, REDRAW, NAVI, TestWindow.mTileMapPanel(), pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		TestWindow.mPropEditForm(f.form);
 		f.form.loadDataFile(new ctrmap.formats.propdata.GRPropData(f.gr), registry(), null);
 		f.form.gr = f.gr;
 		f.before = f.propdata();
@@ -782,8 +846,8 @@ public class PropEditFormGuardsTest {
 	static Fixture openSingleRegion() throws Exception {
 		Fixture f = new Fixture();
 		f.gr = scratchRegion();
-		f.form = new PropEditForm(LOADED, TOOLS, REDRAW, NAVI, CtrmapMainframe.mTileMapPanel, pane -> { });
-		CtrmapMainframe.mPropEditForm = f.form;
+		f.form = new PropEditForm(LOADED, TOOLS, REDRAW, NAVI, TestWindow.mTileMapPanel(), pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		TestWindow.mPropEditForm(f.form);
 		f.form.loadDataFile(f.gr, null);
 		f.before = f.propdata();
 		//NOT armed by hand any more: showProp finishes now, so the form arms

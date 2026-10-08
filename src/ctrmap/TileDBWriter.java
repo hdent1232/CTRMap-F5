@@ -5,23 +5,18 @@ import java.awt.Dimension;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.List;
 import javax.swing.Action;
 import javax.swing.JFileChooser;
-import javax.swing.JFormattedTextField;
-import javax.swing.JFrame;
-import javax.swing.JOptionPane;
 import javax.swing.event.ChangeEvent;
-import javax.swing.text.DefaultFormatterFactory;
+import ctrmap.humaninterface.Forms.HexFormatterFactory;
 
 /**
  * GUI tool to write METS tilesets for use with the CTRMap 2D tile editor.
  */
 public class TileDBWriter extends ctrmap.humaninterface.FormPanel {
 
-	private static TileDBWriter mSingleton;
 	private File f;
 	private List<EditorTileset.Record> tiles = new ArrayList<>();
 	private int curTile = 0;
@@ -31,9 +26,10 @@ public class TileDBWriter extends ctrmap.humaninterface.FormPanel {
 	 */
 	public TileDBWriter() {
 		initComponents();
-		mSingleton = this;
-		mSingleton.setLocationByPlatform(true);
-		mSingleton.setResizable(false);
+		//a static "singleton" held this, set here and read nowhere but the next two lines and the
+		//standalone main() this panel no longer has (F027)
+		setLocationByPlatform(true);
+		setResizable(false);
 		color.getSelectionModel().addChangeListener((ChangeEvent e) -> {
 			tiles.get(curTile).color = color.getColor().getRGB();
 		});
@@ -361,36 +357,6 @@ public class TileDBWriter extends ctrmap.humaninterface.FormPanel {
 		}
 	}
 
-	private static class HexFormatterFactory extends DefaultFormatterFactory {
-
-		private static final long serialVersionUID = 6795960205384589732L;
-
-		@Override
-		public JFormattedTextField.AbstractFormatter getDefaultFormatter() {
-			return new JFormattedTextField.AbstractFormatter() {
-				private static final long serialVersionUID = 6795960205384589733L;
-
-				@Override
-				public Object stringToValue(String text) throws ParseException {
-					try {
-						return Integer.valueOf(text, 16);
-					} catch (NumberFormatException nfe) {
-						throw new ParseException(text, 0);
-					}
-				}
-
-				@Override
-				public String valueToString(Object value) throws ParseException {
-					if (value != null) {
-						return Integer.toHexString((Integer) value).toUpperCase();
-					} else {
-						return "";
-					}
-				}
-			};
-		}
-	}
-
     private void normalActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_normalActionPerformed
 		setCat2Texts();
 		tiles.get(curTile).cat1 = 0;
@@ -596,40 +562,6 @@ public class TileDBWriter extends ctrmap.humaninterface.FormPanel {
 		}
 		showTile();
     }//GEN-LAST:event_btnRemoveTileActionPerformed
-
-	/**
-	 * @param args the command line arguments
-	 */
-	public static void main(String args[]) {
-		/* Set the Nimbus look and feel */
-		//<editor-fold defaultstate="collapsed" desc=" Look and feel setting code (optional) ">
-		/* If Nimbus (introduced in Java SE 6) is not available, stay with the default look and feel.
-         * For details see http://download.oracle.com/javase/tutorial/uiswing/lookandfeel/plaf.html 
-		 */
-		//on the event thread, ahead of the form queued below: the look and feel is Swing's too (F220)
-		java.awt.EventQueue.invokeLater(() -> {
-			try {
-				for (javax.swing.UIManager.LookAndFeelInfo info : javax.swing.UIManager.getInstalledLookAndFeels()) {
-					if ("Nimbus".equals(info.getName())) {
-						javax.swing.UIManager.setLookAndFeel(info.getClassName());
-						break;
-					}
-				}
-			} catch (ClassNotFoundException | InstantiationException | IllegalAccessException | javax.swing.UnsupportedLookAndFeelException ex) {
-				java.util.logging.Logger.getLogger(TileDBWriter.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-			}
-		});
-		//</editor-fold>
-		
-		//</editor-fold>
-
-		/* Create and display the form */
-		java.awt.EventQueue.invokeLater(() -> {
-			mSingleton = new TileDBWriter();
-			mSingleton.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-			mSingleton.setVisible(true);
-		});
-	}
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JRadioButton action;

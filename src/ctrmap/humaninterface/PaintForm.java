@@ -1,26 +1,29 @@
 package ctrmap.humaninterface;
 
-import static ctrmap.CtrmapMainframe.*;
+import ctrmap.AreaForker;
 import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.BuildingCatalog;
+import ctrmap.formats.tilemap.PaintedGeometry;
 import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
+import ctrmap.formats.tilemap.Tilemap;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameProfile;
-import ctrmap.humaninterface.TilePainterForm.Placed;
+import ctrmap.MapPainter;
+import ctrmap.MapPainter.Placed;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.GridLayout;
-import java.io.File;
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -38,7 +41,7 @@ import ctrmap.formats.tilemap.PaintedMaterials;
  */
 public class PaintForm extends JPanel {
 
-	static final int DIM = PaintedRegionBuilder.DIM;
+	static final int DIM = PaintedGeometry.DIM;
 
 	// ---- the painter document (seeded per zone) ---------------------------
 	int seededZone = -1;
@@ -61,8 +64,12 @@ public class PaintForm extends JPanel {
 	boolean pendingPassengers = true;
 	int ptool = 0; // 0 paint, 1 fill, 2 raise, 3 lower, 4 ramp
 
-	private final java.util.ArrayDeque<Object[]> undoStack = new java.util.ArrayDeque<>();
-	private final java.util.ArrayDeque<Object[]> redoStack = new java.util.ArrayDeque<>();
+	/**
+	 * The zone's history this canvas is a document of (F209), handed in: a painted stroke is taken back
+	 * by the same Undo as an NPC moved before it, in the order they were made. The painter kept two
+	 * stacks of its own, so Ctrl+Z on the map took back a tile edit while the stroke stayed.
+	 */
+	private final UndoHistory history;
 
 	// ---- live 3D preview state (the painted cell is swapped into the main
 	// map scene, so the F3 3D view and the 2D view's GL composite show edits
@@ -122,8 +129,14 @@ public class PaintForm extends JPanel {
 	private final TileMapPanel map;
 
 	public PaintForm(LoadedZone loadedZone, OpenEditors openEditors, ZoneList zoneList,
-			TileMapPanel map) {
+			TileMapPanel map, UndoHistory history) {
 		this.map = map;
+		if (history == null) {
+			throw new IllegalArgumentException("PaintForm must be handed the zone's history its canvas is a document of");
+		}
+		this.history = history;
+		//the canvas is one of the zone's documents from now on: it is watched, not recorded by hand
+		history.watch(() -> java.util.Collections.<UndoHistory.Document<?>>singletonList(canvas()));
 		if (openEditors == null) {
 			throw new IllegalArgumentException("PaintForm must be handed the editors it flushes before it applies");
 		}
@@ -150,10 +163,10 @@ public class PaintForm extends JPanel {
 		undoRow.add(redoBtn);
 		fixRow(undoRow, 26);
 		add(undoRow);
-		undoBtn.setEnabled(false);
-		redoBtn.setEnabled(false);
-		undoBtn.addActionListener(e -> doUndo());
-		redoBtn.addActionListener(e -> doRedo());
+		undoBtn.addActionListener(e -> history.act(this, true));
+		redoBtn.addActionListener(e -> history.act(this, false));
+		history.addListener(this::followHistory);
+		followHistory();
 		add(gap(8));
 
 		waterBanner.setOpaque(true);
@@ -240,7 +253,6 @@ public class PaintForm extends JPanel {
 		fillAll.setToolTipText("Paints EVERY tile of the cell - this also rebuilds the whole cell on Apply (existing walls/details are replaced).");
 		fillAll.setAlignmentX(0f);
 		fillAll.addActionListener(e -> {
-			snapshot();
 			for (int i = 0; i < DIM; i++) {
 				java.util.Arrays.fill(grid[i], brush());
 				java.util.Arrays.fill(touched[i], true);
@@ -312,8 +324,6 @@ public class PaintForm extends JPanel {
 		setPreferredSize(new Dimension(250, 780));
 		regenTimer.setRepeats(false);
 	}
-
-	private JComponentHolder holderUnused; // (no-op field to keep the form simple)
 
 	private static class JComponentHolder {
 	}
@@ -419,7 +429,7 @@ public class PaintForm extends JPanel {
 			return Underneath.UNKNOWN;
 		}
 		try {
-			int[] cell = TilePainterForm.firstRegionCell(loadedZone);
+			int[] cell = MapPainter.firstRegionCell(loadedZone);
 			if (cell == null) {
 				why.append("the zone's map has no region to read");
 				return Underneath.UNKNOWN;
@@ -443,9 +453,16 @@ public class PaintForm extends JPanel {
 		return painted ? OnActivate.ASK : OnActivate.RESEED;
 	}
 
-	/** Unapplied painting: something on the undo stack, or something placed. */
+	/** Unapplied painting: a tile touched, or something placed. It asked the painter's own undo stack, which is gone (F209). */
 	boolean painted() {
-		return !undoStack.isEmpty() || !placed.isEmpty();
+		for (boolean[] row : touched) {
+			for (boolean t : row) {
+				if (t) {
+					return true;
+				}
+			}
+		}
+		return !placed.isEmpty();
 	}
 
 	/** The painter re-activated on the zone it holds: check the region under it, and say what was done. */
@@ -505,19 +522,16 @@ public class PaintForm extends JPanel {
 		}
 		for (int i = 0; i < DIM; i++) {
 			java.util.Arrays.fill(height[i], 0);
-			java.util.Arrays.fill(ramp[i], PaintedRegionBuilder.NO_RAMP);
+			java.util.Arrays.fill(ramp[i], PaintedGeometry.NO_RAMP);
 			java.util.Arrays.fill(touched[i], false);
 		}
 		placed.clear();
-		undoStack.clear();
-		redoStack.clear();
-		undoBtn.setEnabled(false);
-		redoBtn.setEnabled(false);
+		history.forget(this);   //the canvas starts over: its old strokes mean nothing now, the zone's edits still do
 		pendingPlace = null;
 		placeStatus.setText(" ");
 		int[] cell;
 		try {
-			cell = TilePainterForm.firstRegionCell(loadedZone);
+			cell = MapPainter.firstRegionCell(loadedZone);
 		} catch (RuntimeException unread) {
 			//SAID (F247): it read as "no region" and the painter started blank without a word
 			cell = null;
@@ -531,7 +545,7 @@ public class PaintForm extends JPanel {
 		donorColl = null;
 		donorTilemap = null;
 		if (region >= 0) {
-			TilePainterForm.loadFromRegion(region, grid);
+			MapPainter.loadFromRegion(region, grid);
 			try {
 				GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, region), Workspace.session());
 				byte[] m = gr.getFile(1);
@@ -566,7 +580,7 @@ public class PaintForm extends JPanel {
 		if (seededZone < 0) {
 			return;
 		}
-		boolean ripples = TilePainterForm.zoneWaterScrolls(loadedZone, loadedZone.open().header.areadataID);
+		boolean ripples = MapPainter.zoneWaterScrolls(loadedZone, loadedZone.open().header.areadataID);
 		waterBanner.setText(ripples
 				? "<html>💧 Water ripples in this zone -<br>paint water freely.</html>"
 				: "<html>💧 Water here would be STILL -<br>use the button to fix that.</html>");
@@ -597,7 +611,7 @@ public class PaintForm extends JPanel {
 			return;
 		}
 		try {
-			int changed = TilePainterForm.enableWaterScroll(loadedZone, areaId);
+			int changed = MapPainter.enableWaterScroll(loadedZone, areaId);
 			syncWater();
 			AreaForkPrompt.packIfForked(fork, null);
 			ctrmap.Ui.message(this, changed > 0
@@ -605,7 +619,7 @@ public class PaintForm extends JPanel {
 					: "No map cells needed changes (the scroll was already bound).",
 					"Make water ripple", JOptionPane.INFORMATION_MESSAGE);
 		} catch (Exception ex) {
-			ctrmap.Ui.error(this, "Could not add the animation:\n" + ex.getMessage(),
+			ctrmap.Ui.error(this, "Could not add the animation:\n" + ctrmap.util.Bytes.reason(ex),
 					"Make water ripple");
 		}
 	}
@@ -613,26 +627,59 @@ public class PaintForm extends JPanel {
 	// ---- gestures from the PaintTool (map coords -> local cell coords) -----
 
 	private int localX(int gx) {
-		return gx - cellX * 40;
+		return gx - cellX * DIM;
 	}
 
 	private int localY(int gy) {
-		return gy - cellY * 40;
+		return gy - cellY * DIM;
 	}
 
 	private boolean inCell(int lx, int ly) {
 		return lx >= 0 && ly >= 0 && lx < DIM && ly < DIM;
 	}
 
-	void snapshot() {
-		Object[] s = copyState();
-		undoStack.push(s);
-		while (undoStack.size() > 100) {
-			undoStack.removeLast();
-		}
-		redoStack.clear();
-		undoBtn.setEnabled(true);
-		redoBtn.setEnabled(false);
+	/** The buttons follow the zone's history: lit exactly when there is something to take back or put again. */
+	private void followHistory() {
+		undoBtn.setEnabled(history.canUndo());
+		redoBtn.setEnabled(history.canRedo());
+	}
+
+	/**
+	 * The unapplied canvas as a document of the zone's history (F209): the brushes on each tile, the heights,
+	 * the ramps, which tiles were touched, and the buildings placed - read whole, put back whole.
+	 */
+	public UndoHistory.Document<Object[]> canvas() {
+		return new UndoHistory.Document<Object[]>() {
+			@Override
+			public Object subject() {
+				return PaintForm.this;
+			}
+
+			@Override
+			public Object[] take() {
+				return copyState();
+			}
+
+			@Override
+			public void put(Object[] state) {
+				restoreState(state);
+			}
+
+			@Override
+			public boolean same(Object[] a, Object[] b) {
+				for (int i = 0; i < a.length; i++) {
+					if (!java.util.Objects.deepEquals(a[i], b[i])) {
+						return false;
+					}
+				}
+				return true;
+			}
+
+			@Override
+			public String what() {
+				return "the painter's canvas";
+			}
+		};
 	}
 
 	private Object[] copyState() {
@@ -664,24 +711,6 @@ public class PaintForm extends JPanel {
 		placed.clear();
 		placed.addAll((java.util.List<Placed>) s[3]);
 		repaintMap();
-	}
-
-	private void doUndo() {
-		if (!undoStack.isEmpty()) {
-			redoStack.push(copyState());
-			restoreState(undoStack.pop());
-			undoBtn.setEnabled(!undoStack.isEmpty());
-			redoBtn.setEnabled(true);
-		}
-	}
-
-	private void doRedo() {
-		if (!redoStack.isEmpty()) {
-			undoStack.push(copyState());
-			restoreState(redoStack.pop());
-			redoBtn.setEnabled(!redoStack.isEmpty());
-			undoBtn.setEnabled(true);
-		}
 	}
 
 	/**
@@ -720,7 +749,6 @@ public class PaintForm extends JPanel {
 		// building placement mode
 		if (pendingPlace != null) {
 			if (!right) {
-				snapshot();
 				int px = Math.max(0, Math.min(DIM - pendingPlace.tilesW(), lx));
 				int py = Math.max(0, Math.min(DIM - pendingPlace.tilesH(), ly));
 				placed.add(new Placed(pendingPlace, px, py, pendingPassengers));
@@ -738,7 +766,6 @@ public class PaintForm extends JPanel {
 				if (placed.get(i).contains(lx, ly)) {
 					if (ctrmap.Ui.confirm(this, "Remove \"" + placed.get(i).e.name + "\"?",
 							"Buildings", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE) == JOptionPane.YES_OPTION) {
-						snapshot();
 						Placed rem = placed.remove(i);
 						//mark its footprint edited so an earlier Apply's stamped
 						//geometry there is cleared on the next Apply
@@ -750,7 +777,6 @@ public class PaintForm extends JPanel {
 			}
 			return;
 		}
-		snapshot();
 		applyToolAt(lx, ly, right);
 		repaintMap();
 	}
@@ -781,7 +807,7 @@ public class PaintForm extends JPanel {
 				height[ly][lx] = Math.max(0, height[ly][lx] - 1);
 				break;
 			case 4:
-				ramp[ly][lx] = right ? PaintedRegionBuilder.NO_RAMP : turnRamp(lx, ly);
+				ramp[ly][lx] = right ? PaintedGeometry.NO_RAMP : turnRamp(lx, ly);
 				break;
 			default:
 				grid[ly][lx] = brush();
@@ -799,7 +825,7 @@ public class PaintForm extends JPanel {
 	 */
 	private int turnRamp(int lx, int ly) {
 		int cur = ramp[ly][lx];
-		if (cur == PaintedRegionBuilder.NO_RAMP) {
+		if (cur == PaintedGeometry.NO_RAMP) {
 			int d = PaintedHeights.steepestDescent(grid, height, lx, ly);
 			placeStatus.setText(d < 0 ? "<html>No lower ground beside that tile -<br>raise it or lower a neighbour first.</html>" : " ");
 			return d;
@@ -825,7 +851,7 @@ public class PaintForm extends JPanel {
 	private void settleRamps() {
 		for (int y = 0; y < DIM; y++) {
 			for (int x = 0; x < DIM; x++) {
-				if (ramp[y][x] != PaintedRegionBuilder.NO_RAMP
+				if (ramp[y][x] != PaintedGeometry.NO_RAMP
 						&& !PaintedHeights.descends(grid, height, x, y, ramp[y][x])) {
 					ramp[y][x] = PaintedHeights.steepestDescent(grid, height, x, y);
 				}
@@ -938,7 +964,7 @@ public class PaintForm extends JPanel {
 				try {
 					//the live preview paints with the same imported materials the
 					//Apply will use, so what you see is what you get
-					byte[] src = TilePainterForm.importBrushMaterials(donor, g2, t2, null);
+					byte[] src = MapPainter.importBrushMaterials(donor, g2, t2, null);
 					byte[] model = PaintedRegionBuilder.buildModelOnly(Workspace.session(), src, coll, tmap, g2, h2, r2, t2, l2, edgesNow);
 					java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> extra = null;
 					if (!p2.isEmpty()) {
@@ -946,13 +972,13 @@ public class PaintForm extends JPanel {
 						bc.model = model;
 						//throwaway carriers - only the stamped model is used
 						java.util.List<float[]> one = new java.util.ArrayList<>();
-						one.add(new float[]{0, 0, 0, 0, 0, PaintedRegionBuilder.TILE, PaintedRegionBuilder.TILE, 0, 0});
+						one.add(new float[]{0, 0, 0, 0, 0, PaintedGeometry.TILE, PaintedGeometry.TILE, 0, 0});
 						bc.collision = ctrmap.formats.gfcollision.GfColl.build(one, null);
-						bc.tilemap = new byte[6528];
+						bc.tilemap = new byte[Tilemap.REGION_BYTES];
 						bc.tilemap[0] = (byte) DIM;
 						bc.tilemap[2] = (byte) DIM;
 						bc.props = new byte[]{0, 0, 0, 0};
-						TilePainterForm.stampPlaced(bc, p2, h2, PaintedHeights.floorYGrid(coll, tmap, h2), null);
+						MapPainter.stampPlaced(bc, p2, h2, PaintedHeights.floorYGrid(coll, tmap, h2), null);
 						model = bc.model;
 						//donor-area textures load here, off the EDT (the loaders
 						//are synchronized; a GARC decompress can take a moment)
@@ -1035,7 +1061,7 @@ public class PaintForm extends JPanel {
 		if (seededZone < 0 || seededZone != loadedZone.index()) {
 			return;
 		}
-		int ax = cellX * 40, ay = cellY * 40;
+		int ax = cellX * DIM, ay = cellY * DIM;
 		for (int ly = 0; ly < DIM; ly++) {
 			for (int lx = 0; lx < DIM; lx++) {
 				TilePalette t = grid[ly][lx];
@@ -1127,11 +1153,11 @@ public class PaintForm extends JPanel {
 		}
 		final int zoneIndex = seededZone;
 		String waterNote = "";
-		if (TilePainterForm.usesWater(grid) && !TilePainterForm.zoneWaterScrolls(loadedZone, loadedZone.open().header.areadataID)) {
+		if (MapPainter.usesWater(grid) && !MapPainter.zoneWaterScrolls(loadedZone, loadedZone.open().header.areadataID)) {
 			waterNote = "\n\nNote: painted water will be STILL here - use \"Make water ripple here\" first.";
 		}
 		//what each building really is, at the moment of the decision
-		String buildingsNote = placed.isEmpty() ? "" : "\n\nBuildings to place:\n" + TilePainterForm.placedSummary(placed);
+		String buildingsNote = placed.isEmpty() ? "" : "\n\nBuildings to place:\n" + MapPainter.placedSummary(placed);
 		int rsl = ctrmap.Ui.confirm(this,
 				"Apply your edits to zone " + zoneIndex + "'s map?\n"
 				+ "The " + touchedCount + " tile(s) you touched are rebuilt; the rest of the map keeps\n"
@@ -1148,7 +1174,7 @@ public class PaintForm extends JPanel {
 		try {
 			regenTimer.stop();
 			regenEpoch++; // an in-flight regen must not re-arm across the apply
-			TilePainterForm.applyToZone(loadedZone, zoneIndex, grid, height, ramp, lighting, edgeBlend, placed, touched, zoneList);
+			MapPainter.applyToZone(loadedZone, zoneIndex, grid, height, ramp, lighting, edgeBlend, placed, touched, new Prompts(zoneList));
 			// only a SUCCESSFUL apply reaches here: the pack + reload rebuilds
 			// the scene from the applied bytes, so the preview swap is gone
 			previewInScene = false;
@@ -1177,7 +1203,96 @@ public class PaintForm extends JPanel {
 	 */
 	public void applyFailed(Exception why) {
 		restoreRealModel();
-		ctrmap.Ui.error(this, "Apply failed:\n" + why.getMessage()
+		ctrmap.Ui.error(this, "Apply failed:\n" + ctrmap.util.Bytes.reason(why)
 				+ "\n\nNothing was written - the map is exactly as it was.", "Map Builder");
+	}
+
+	/**
+	 * The map-building engine's questions, asked in the editor (F248): the area fork through the area
+	 * prompt, the door wiring and the sign routine through {@link ctrmap.Ui}, each sign's text in its own
+	 * form, and after the pack the zone list rebuilt with the painted zone open and the report shown.
+	 *
+	 * <p>They lived inside the engine, so it could only be reached through the UI package; they are the
+	 * only part of it that is UI, and they live with the panel that already names everything they use.
+	 */
+	public static final class Prompts implements MapPainter.Host {
+
+		private final ZoneList zones;
+
+		/** Asks in the editor's window, and after the pack lands on the painted zone in {@code zones}. */
+		public Prompts(ZoneList zones) {
+			this.zones = zones;
+		}
+
+		@Override
+		public AreaForker.ForkResult ownArea(LoadedZone loaded, int zoneIndex, int area, String why) {
+			return AreaForkPrompt.ensurePrivate(loaded, ctrmap.Ui.parent(), zoneIndex, area, why);
+		}
+
+		@Override
+		public MapPainter.DoorWiring doorWiring(int enterable) {
+			String[] opts = {"Clone private interiors (recommended)", "Link retail interiors (enter-only)", "Skip"};
+			Object pick = ctrmap.Ui.input(
+					enterable + " placed building(s) have doors. Wire them now?\n\n"
+					+ "CLONE (recommended): each door gets its OWN interior - a copy of the retail\n"
+					+ "room placed in a free base zone - and the room's exit leads BACK TO THIS MAP.\n"
+					+ "Walk in, walk out: full round trip. (Rename the interior later via Tools.)\n\n"
+					+ "RETAIL: doors warp into the shared retail rooms; entering works, but the\n"
+					+ "room's exit leads to its retail town until you retarget it.",
+					"Door warps", JOptionPane.QUESTION_MESSAGE, opts, opts[0]);
+			int mode = java.util.Arrays.asList(opts).indexOf(pick);
+			return mode == 0 ? MapPainter.DoorWiring.CLONE : mode == 1 ? MapPainter.DoorWiring.LINK_RETAIL : MapPainter.DoorWiring.SKIP;
+		}
+
+		@Override
+		public boolean transplantSignRoutine(int instructions) {
+			return ctrmap.Ui.confirm(
+					"To make the placed sign(s) readable, this zone's script needs the vanilla\n"
+					+ "sign-display routine (" + instructions + " instructions) transplanted into it.\n"
+					+ "Inject it now? (Cancel keeps the signs as scenery.)",
+					"Signs", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE) == JOptionPane.OK_OPTION;
+		}
+
+		@Override
+		public MapPainter.SignText signText(MapPainter.Placed pl) {
+			javax.swing.JTextArea ta = new javax.swing.JTextArea("", 5, 40);
+			ta.setLineWrap(true);
+			ta.setWrapStyleWord(true);
+			JComboBox<String> typeBox = new JComboBox<>(ctrmap.formats.scripts.NpcTemplates.SIGN_TYPE_LABELS);
+			JPanel panel = new JPanel();
+			panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
+			panel.add(new JLabel("Text for the " + pl.e.name + " at tile (" + pl.tx + ", " + pl.ty + ") - Cancel = scenery only:"));
+			panel.add(new javax.swing.JScrollPane(ta));
+			panel.add(new JLabel("Sign style:"));
+			panel.add(typeBox);
+			if (JOptionPane.showConfirmDialog(ctrmap.Ui.parent(), panel, "Sign text",
+					JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+				return null;
+			}
+			return new MapPainter.SignText(ta.getText(), typeBox.getSelectedIndex());
+		}
+
+		@Override
+		public void tell(String text, String title) {
+			ctrmap.Ui.message(text, title, JOptionPane.INFORMATION_MESSAGE);
+		}
+
+		@Override
+		public void error(String text, String title) {
+			ctrmap.Ui.error(text, title);
+		}
+
+		@Override
+		public void slotTaken(int slot) {
+			zones.clearForkDecline(slot);
+		}
+
+		@Override
+		public void applied(int zoneIndex, String report) {
+			zones.rebuild(() -> {
+				zones.open(zoneIndex);
+				ctrmap.Ui.message(report, "Tile painter", JOptionPane.INFORMATION_MESSAGE);
+			});
+		}
 	}
 }

@@ -53,7 +53,7 @@
    "note": "a frozen-tree measurement refuses to begin on a dirty tree"
   },
   "NEVER EDIT SOURCE WHILE THE SUITE IS RUNNING": {
-   "by": "tools/hooks/guard_suite_running.py",
+   "by": ".claude/hooks/guard_suite_running.py",
    "note": "a write to anything the build compiles is refused while a battery or mutation run holds its lock - and since 2026-09-21 record_run digests the tree on BOTH sides of the battery and refuses to record a run whose subject moved underneath it, which is the half that does not care whether the edit went through a tool or through the owner's IDE"
   },
   "RECORD TRAPS YOU PAID FOR, WITH THE COST": {
@@ -74,10 +74,10 @@
   },
   "A QUERY THAT CANNOT READ ITS SUBJECT MUST NOT REPORT IT ABSENT": {
    "by": "tools/guard/liveness_check.py",
-   "note": "one probe in tools/hooks/liveness.py that returns its reason, and a refusal for any other spelling in any .py or .ps1 here"
+   "note": "one probe in .claude/hooks/liveness.py that returns its reason, and a refusal for any other spelling in any .py or .ps1 here"
   },
   "A REMEDY'S EXIT CODE ANSWERS ITS OWN QUESTION, NOT YOURS": {
-   "by": "tools/hooks/guard_exit_code.py",
+   "by": ".claude/hooks/guard_exit_code.py",
    "note": "reading $? after a pipeline into a filter is refused; ${PIPESTATUS[0]} is not"
   },
   "A RUN THAT KNOWS WHAT IT MISSED GOES BACK": {
@@ -96,11 +96,11 @@
    "note": "vouching for what the diff did not open needs Reviewed: n/n by a path that exists"
   },
   "DO THE WORK MECHANICALLY; AN AGENT FAN-OUT NEEDS A YES AND A PRICE": {
-   "by": "tools/hooks/guard_fanout.py",
+   "by": ".claude/hooks/guard_fanout.py",
    "note": "caps agents, workflows and fan-out width, and refuses a width it cannot read"
   },
   "DO THE WORK MECHANICALLY. AGENT SWEEPS ARE THE LAST RESORT": {
-   "by": "tools/hooks/guard_fanout.py",
+   "by": ".claude/hooks/guard_fanout.py",
    "note": "the owner's own wording of the same rule; the same hook answers both - the ledger carried this rule under HALF its name until 2026-09-21, because the parser cut a headline at its first full stop while the body parser did not, and the clause audit then looked the body up by a name that did not exist and found none"
   },
   "MAKE IT IMPOSSIBLE AT THE POINT OF ACTION": {
@@ -108,7 +108,7 @@
    "note": "the kind of guard a fix carries must be named, and a detector must say why a refusal was impossible"
   },
   "NEVER PUSH WITHOUT EXPLICIT PER-PUSH APPROVAL": {
-   "by": "tools/hooks/guard_push.py",
+   "by": ".claude/hooks/guard_push.py",
    "note": "a push needs a token naming THIS commit; one more commit expires it"
   },
   "FINISH CHANGES BEFORE STARTING A LONG MEASUREMENT": {
@@ -124,13 +124,13 @@
    }
   },
   "GAME DATA IS READ-ONLY": {
-   "by": "tools/hooks/guard_game_data.py",
+   "by": ".claude/hooks/guard_game_data.py",
    "note": "a write under a protected root is refused from any tool; reads are untouched",
    "clauses": {
-    "Never run Tidewater": "tools/hooks/guard_forbidden_command.py",
-    "Never `git stash": "tools/hooks/guard_forbidden_command.py",
-    "Never hand-edit a NetBeans `initComponents` block": "tools/hooks/guard_generated_code.py",
-    "No Bash heredocs for Java or Python — write the script to a file": "tools/hooks/guard_heredoc.py"
+    "Never run Tidewater": ".claude/hooks/guard_forbidden_command.py",
+    "Never `git stash": ".claude/hooks/guard_forbidden_command.py",
+    "Never hand-edit a NetBeans `initComponents` block": ".claude/hooks/guard_generated_code.py",
+    "No Bash heredocs for Java or Python — write the script to a file": ".claude/hooks/guard_heredoc.py"
    }
   },
   "THE OWNER DOES THE IN-APP AND IN-GAME TESTING": {
@@ -138,7 +138,7 @@
    "note": "a commit claiming an in-game result is refused unless it quotes the owner"
   },
   "AGENTS THAT CANNOT EDIT EACH OTHER'S FILES MUST NOT EDIT AT THE SAME TIME": {
-   "by": "tools/hooks/guard_fanout.py",
+   "by": ".claude/hooks/guard_fanout.py",
    "note": "parallel_edit reads the fan-out's own script text and refuses a launch whose workers WRITE in parallel, however many they are - a survey composes and a parallel rewrite does not, which is why 476 finding headlines over 41 locations closed nothing. The rule was running here before it was written down, which is as invisible as the opposite"
   },
   "A GUARD'S TRIGGER IS A CLASS, NOT A LIST OF NAMES": {

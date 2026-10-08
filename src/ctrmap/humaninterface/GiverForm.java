@@ -21,20 +21,11 @@ public final class GiverForm {
 	public final JPanel panel = Forms.stackedForm();
 	private final IdChooser item;
 	private final JSpinner count = new JSpinner(new javax.swing.SpinnerNumberModel(1, 1, 99, 1));
-	/** The registry the model picker lists, and the previews it registers - the editor's, handed in. */
-	private final NPCRegistry reg;
-	private final List<CustomH3DPreview> livePreviews;
 
 	private final ModelPicker model;
 
-	/** The open game the model picker browses; handed in, never fetched. */
-	private final ctrmap.formats.GameFiles game;
-
 	public GiverForm(ctrmap.formats.GameFiles game, NPCRegistry reg, List<CustomH3DPreview> livePreviews, List<String> itemNames) {
-		this.game = game;
 		this.item = new IdChooser(itemNames, NpcTemplates.ITEM_ID_MAX, 1);
-		this.reg = reg;
-		this.livePreviews = livePreviews;
 		this.model = new ModelPicker(reg, livePreviews, game, -1);
 		Forms.addLabeled(panel, "Item (type to search):", item);
 		Forms.addLabeled(panel, "Quantity:", count);

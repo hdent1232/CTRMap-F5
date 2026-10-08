@@ -25,6 +25,24 @@ import java.awt.Point;
  */
 public interface MatrixCanvas {
 
+	/** Pixels one region of the matrix grid is drawn across (F117). */
+	int REGION_PX = 100;
+
+	/** Zone cells across one region: the zone grid is four times finer than the region grid. */
+	int ZONE_CELLS_PER_REGION = 4;
+
+	/** Pixels one zone cell is drawn across. */
+	int ZONE_CELL_PX = REGION_PX / ZONE_CELLS_PER_REGION;
+
+	/**
+	 * Pixels across a distance in world units, 720 units to a region (F117). The camera bounds were
+	 * drawn with a float 100f / 720f and hit-tested with this double one, so a boundary could be
+	 * drawn a pixel from where a click found it.
+	 */
+	static double toPx(double world) {
+		return world * 100d / 720d;
+	}
+
 	/** Draw the matrix grid again, because what it shows has changed. */
 	void redraw();
 

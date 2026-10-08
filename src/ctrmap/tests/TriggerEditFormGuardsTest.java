@@ -1,6 +1,5 @@
 package ctrmap.tests;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.ZO;
@@ -54,10 +53,10 @@ import javax.swing.JFormattedTextField;
  *     after every showEntry.</li>
  * </ol>
  *
- * <p>Type 2 (step-on), New entry and Remove entry go through
- * {@code CtrmapMainframe.frame.repaint()}, so they need a main window to exist.
- * The suite makes a JFrame when the JVM has a display (the battery runs with
- * one) and says out loud which checks it had to skip when it has not.
+ * <p>Type 2 (step-on), New entry and Remove entry ask for a redraw through what
+ * the form was handed, so every section runs headless (F250: a flag that once
+ * skipped them without a display was left set to true, its branches dead).
+ * Without a dump the suite ran nothing it is for, and says so: exit 3.
  *
  * Usage: java ctrmap.tests.TriggerEditFormGuardsTest &lt;pristine dump root&gt;
  */
@@ -88,27 +87,17 @@ public class TriggerEditFormGuardsTest {
 	static final int ZONE = 48;
 
 	static int fails = 0;
-	/** True when a JFrame could be made, so the form's repaint calls do not throw. */
-	static boolean windowed = false;
 
 	public static void main(String[] args) throws Exception {
 		File dump = new File(args.length > 0 ? args[0] : "no-dump-given");
 		if (!dump.isDirectory()) {
-			Skip.section("no dump at " + dump + " - the trigger form checks need zone " + ZONE);
-			System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
-			System.exit(fails == 0 ? 0 : 1);
+			Skip.suite("no dump at " + dump + " - the trigger form checks need zone " + ZONE);
 		}
 		Workspace.GAMEDIR_PATH = dump.getAbsolutePath();
 		//the script dropdown only reads the zone inside a workspace; the form is
 		//handed its zone by hand, so no archive has to be opened through the session
 		Sessions.bare(Scratch.dir("ctrmap_trigform_ws"), dump, GameType.ORAS);
 		GARC zo = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(ArchiveType.ZONE_DATA, Workspace.game())));
-
-		//WAS: a JFrame was built here and three sections were skipped without one,
-		//because "Type 2, New entry and Remove entry repaint the main window and
-		//cannot be driven". The form asks for a redraw through what it was handed
-		//now, so there is nothing here that needs a display.
-		windowed = true;
 
 		theZoneIsTheOneTheseChecksDescribe(zo);
 		openingAZoneShowsTheFirstTrigger(zo);
@@ -131,8 +120,8 @@ public class TriggerEditFormGuardsTest {
 	static void theZoneIsTheOneTheseChecksDescribe(GARC zo) throws Exception {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
-		check(e.triggers1.size() == 3 && e.trigger1Count == 3, "zone " + ZONE + " holds 3 interaction triggers (found " + e.triggers1.size() + ")");
-		check(e.triggers2.size() == 4 && e.trigger2Count == 4, "and 4 step-on triggers (found " + e.triggers2.size() + ")");
+		check(e.triggers1.size() == 3, "zone " + ZONE + " holds 3 interaction triggers (found " + e.triggers1.size() + ")");
+		check(e.triggers2.size() == 4, "and 4 step-on triggers (found " + e.triggers2.size() + ")");
 		check(e.furniture.size() == 2 && e.npcs.size() == 25 && e.warps.size() == 3,
 				"behind 2 props, 25 NPCs and 3 warps - the offsets the byte checks below count from");
 		check(Arrays.equals(e.assembleData(), zone.file.getFile(1)),
@@ -322,10 +311,6 @@ public class TriggerEditFormGuardsTest {
 
 	/** Type 2 is a second, independent list, with its own count byte. */
 	static void stepOnTriggersAreASecondList(GARC zo) throws Exception {
-		if (!windowed) {
-			Skip.section("the Type dropdown repaints the main window - no display");
-			return;
-		}
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
 		byte[] before = zone.file.getFile(1);
@@ -374,8 +359,8 @@ public class TriggerEditFormGuardsTest {
 		int before = e.triggers1.size();
 		invoke(form, "btnAddActionPerformed");
 		check(e.triggers1.size() == before + 1, "New entry added an interaction trigger");
-		check(e.trigger1Count == before + 1, "and the count byte follows");
-		check(e.triggers2.size() == 4 && e.trigger2Count == 4, "leaving the step-on list alone");
+		check(e.triggers1.size() == before + 1, "and the count byte follows");
+		check(e.triggers2.size() == 4, "leaving the step-on list alone");
 		ZoneEntities.Trigger added = e.triggers1.get(before);
 		check(added.x == 23 && added.y == 17,
 			"IT LANDED WHERE THE USER IS LOOKING, which is what this check is named for: "
@@ -389,10 +374,6 @@ public class TriggerEditFormGuardsTest {
 
 	/** Remove entry deletes the selected slot, not the first field-identical one. */
 	static void removeEntryTakesTheSelectedSlot(GARC zo) throws Exception {
-		if (!windowed) {
-			Skip.section("Remove entry repaints the main window - no display");
-			return;
-		}
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
 		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW, CENTRE);
@@ -401,7 +382,7 @@ public class TriggerEditFormGuardsTest {
 		survivors.remove(1);
 		form.setTrigger(1);
 		invoke(form, "btnRemoveActionPerformed");
-		check(e.triggers1.size() == 2 && e.trigger1Count == 2, "Remove dropped one interaction trigger and the count follows");
+		check(e.triggers1.size() == 2, "Remove dropped one interaction trigger and the count follows");
 		check(e.triggers1.equals(survivors) && e.triggers1.get(0) == survivors.get(0) && e.triggers1.get(1) == survivors.get(1),
 				"and the two that are left are the ones that were not selected");
 		check(entries(form) == 2, "the dropdown lost one item");
@@ -417,13 +398,13 @@ public class TriggerEditFormGuardsTest {
 	static Zone openZone(GARC zo, int index) throws Exception {
 		File f = Scratch.file("ctrmap_trigform");
 		Files.write(f.toPath(), zo.getDecompressedEntry(index));
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(LOADED, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(LOADED, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
 		Zone[] table = new Zone[index + 1];
 		table[index] = new Zone(new ZO(f, Workspace.session()), Workspace.game());
 		java.util.Arrays.fill(table, 0, index, table[index]);   //a table has no holes (F208)
 		LOADED.table(table);
 		LOADED.open(index, table[index]);
-		CtrmapMainframe.mZonePnl = pnl;
+		TestWindow.mZonePnl(pnl);
 		return table[index];
 	}
 

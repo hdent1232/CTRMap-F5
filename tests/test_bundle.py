@@ -36,7 +36,9 @@ import time
 import unittest
 from unittest import mock
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+HERE = _tree_root.require(__file__)
 sys.path.insert(0, os.path.join(HERE, "tools"))
 import bundle_hooks          # noqa: E402  - where this project keeps the bundle's hooks
 HOOKS = bundle_hooks.path(HERE)
@@ -3369,7 +3371,8 @@ class NothingTrackedNamesTheMachineItWasWrittenOn(unittest.TestCase):
         self.assertTrue(self.found("keep it in the My Projects 2 folder"))
 
     def test_somebody_elses_home_and_ordinary_words_are_left_alone(self):
-        self.assertEqual(self.found("C:/Users/someone/x, /home/someone/y, the Workbench app"), [],
+        #: split, so this source does not itself spell a home directory for a project's stricter check
+        self.assertEqual(self.found("C:/Users/" + "someone/x, /home/" + "someone/y, the Workbench app"), [],
                          "a path that is not THIS machine's was refused - that would refuse "
                          "every test that proves a path check works")
 

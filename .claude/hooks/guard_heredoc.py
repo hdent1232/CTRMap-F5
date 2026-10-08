@@ -27,7 +27,10 @@ THE RULE: file content never travels in a command string.
     writing a file        -> the Write tool. It is exact and it is not a shell.
     running a script      -> Write it, then `python tools/dev/safe.py run-script <path>`,
                              which compiles it and refuses the mangling this hook is about.
-    a genuine one-liner   -> still fine; a short heredoc feeding an interpreter is allowed.
+    a genuine one-liner   -> still fine - but NO heredoc feeds Python or Java, at any length:
+                             CLAUDE.md, "No Bash heredocs for Java or Python - write the script to
+                             a file." This allowed a short one by design, one rule spelled two
+                             ways (F174).
 
 TO RUN ONE ANYWAY: the owner sets CTRMAP_ALLOW_HEREDOC=1 for that session. The name is
 built by hook_env.name("ALLOW_HEREDOC"), so the prefix has one place to change.
@@ -41,9 +44,15 @@ import sys
 _HEREDOC = re.compile(r"(?<!<)<<-?\s*(?![<])(" + chr(39) + r"[^" + chr(39) + r"]+" + chr(39) +
                       r'|"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)')
 
-#: A heredoc feeding an interpreter is the project's own edit idiom and a short one is honest
+#: A heredoc feeding another program - a commit message, `cat` into a pipe - may be short honest
 #: work. Past this many body lines it is a file being typed through a channel that loses bytes.
 MAX_SCRIPT_LINES = 20
+
+#: CLAUDE.md, section 2: "No Bash heredocs for Java or Python - write the script to a file." A
+#: heredoc whose COMMAND is one of these interpreters is refused at any length (F174): the line limit
+#: above made the guard's rule narrower than the owner's.
+_PY_OR_JAVA = re.compile(r"(?:^|[\s/\\])(?:python[0-9.]*w?|pythonw|py|java|javaw|javac|jshell)"
+                         r"(?:\.exe)?(?=\s|$)", re.I)
 
 NEWLINE = chr(10)
 BACKSLASH = chr(92)
@@ -114,10 +123,11 @@ def unquoted(line):
 
 
 def heredocs(command):
-    """[(delimiter, body_line_count, writes_to_file, body_text)] for each heredoc.
+    """[(delimiter, body_line_count, writes_to_file, body_text, command)] for each heredoc.
 
     `writes_to_file` is true when the heredoc's own command line redirects to a path - the
-    `cat > file <<EOF` shape - as opposed to feeding an interpreter's stdin.
+    `cat > file <<EOF` shape - as opposed to feeding an interpreter's stdin. `command` is the
+    command the heredoc feeds, as written before the `<<`.
     """
     found = []
     lines = command.splitlines()
@@ -141,7 +151,7 @@ def heredocs(command):
         # of a `cat` three commands earlier and refused an interpreter heredoc.
         before = commands(line[:match.start()])[-1]
         writes = bool(re.search(r">>?\s*[^|&\s]", before)) or "tee " in before
-        found.append((delimiter, body, writes, NEWLINE.join(text)))
+        found.append((delimiter, body, writes, NEWLINE.join(text), before))
     return found
 
 
@@ -180,7 +190,7 @@ def verdict(command):
                 "the same shape from the outside." + NEWLINE + NEWLINE +
                 "Write the script with the Write tool and run the file. It is exact and it is "
                 "not a shell." + NEWLINE)
-    for delimiter, body, writes, text in heredocs(command):
+    for delimiter, body, writes, text, feeds in heredocs(command):
         if writes:
             return True, (
                 "BLOCKED BY PROJECT POLICY (.claude/hooks/guard_heredoc.py).\n"
@@ -192,6 +202,14 @@ def verdict(command):
                 "MEASURED: the same body written to a script FILE and run with `bash file.sh` "
                 "round-trips byte-identical. Bash is not the problem; the command string is.\n\n"
                 "Use the Write tool. It is exact and it is not a shell.\n" % (delimiter, body))
+        if _PY_OR_JAVA.search(feeds):
+            return True, (
+                "BLOCKED BY PROJECT POLICY (.claude/hooks/guard_heredoc.py)." + NEWLINE +
+                "This heredoc (<<%s, %d lines) feeds Python or Java, and the owner's rule has no "
+                "length in it: CLAUDE.md, 'No Bash heredocs for Java or Python - write the script "
+                "to a file.'" % (delimiter, body) + NEWLINE + NEWLINE +
+                "Write the script with the Write tool and run the file. It is exact and it is "
+                "not a shell." + NEWLINE)
         if BACKSLASH in text:
             return True, (
                 "BLOCKED BY PROJECT POLICY (.claude/hooks/guard_heredoc.py)." + NEWLINE +
@@ -214,7 +232,7 @@ def verdict(command):
                 "Write the script with the Write tool, then run it through the checker that "
                 "refuses the mangling:\n"
                 "    python tools/dev/safe.py run-script <path>\n"
-                "Short heredocs feeding an interpreter (up to %d lines) are still allowed.\n"
+                "Short heredocs feeding another program (up to %d lines) are still allowed.\n"
                 % (body, delimiter, MAX_SCRIPT_LINES))
     return False, None
 

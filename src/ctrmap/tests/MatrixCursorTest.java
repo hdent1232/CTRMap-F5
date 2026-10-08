@@ -82,7 +82,7 @@ public class MatrixCursorTest {
 	static MatrixEditForm form(int w, int h) throws Exception {
 		FakeGameFiles fake = new FakeGameFiles();
 		MapMatrix mm = new MapMatrix(new MM(new File(fake.scratch(), "cursor.mm"), 2, MM.MM_MAP_MATRIX, fake), w, h, 1);
-		MatrixEditForm form = new MatrixEditForm(new LoadedZone(), MatrixEditFormGuardsTest.CANVAS);
+		MatrixEditForm form = new MatrixEditForm(new LoadedZone(), MatrixEditFormGuardsTest.CANVAS, UndoHistoryTest.overOneNumber(new int[]{0}));
 		form.mm = mm;
 		form.loaded = true;
 		((JCheckBox) MatrixEditFormGuardsTest.field(form, "allowExtended")).setSelected(true);

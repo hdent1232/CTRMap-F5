@@ -65,7 +65,7 @@ public class AreaEnvTest {
 			if (entry == null || entry.length < 16 || entry[0] != 'A' || entry[1] != 'D') {
 				continue;
 			}
-			byte[] s4 = subfile(entry, 4);
+			byte[] s4 = subfile(entry, ctrmap.formats.containers.AD.ENVIRONMENT);
 			if (s4 == null || s4.length != AreaEnv.SUB4_LEN) {
 				continue;
 			}
@@ -178,7 +178,7 @@ public class AreaEnvTest {
 		//AND THE ONE THING THAT MUST NEVER COME BACK: fog read out of channel 0.
 		byte[] probe = new byte[AreaEnv.SUB4_LEN];
 		for (int l = 0; l < AreaEnv.LANES; l++) {
-			ctrmap.formats.LittleEndian.putF32(probe, AreaEnv.offsetOf(0, l), 0.5f);
+			ctrmap.util.LittleEndian.putF32(probe, AreaEnv.offsetOf(0, l), 0.5f);
 		}
 		AreaEnv fromProbe = AreaEnv.read(probe);
 		boolean anyHalf = false;
@@ -197,7 +197,7 @@ public class AreaEnvTest {
 		//handed 92 whenever the 3D view existed, which is why the owner reported the
 		//atmospheres as a blank page: the part that was drawn was the part that was
 		//cropped. Reading the code cannot catch that - it has to be drawn.
-		cardFitsItsBox(AreaEnv.read(subfile(ad.getDecompressedEntry(24), 4)));
+		cardFitsItsBox(AreaEnv.read(subfile(ad.getDecompressedEntry(24), ctrmap.formats.containers.AD.ENVIRONMENT)));
 
 		System.out.println("AreaEnv: " + checked + " areas, " + AreaEnv.CHANNELS + "x" + AreaEnv.LANES
 				+ " floats each, fog on channels " + AreaEnv.CH_FOG_STRENGTH + ".." + AreaEnv.CH_FOG_FAR

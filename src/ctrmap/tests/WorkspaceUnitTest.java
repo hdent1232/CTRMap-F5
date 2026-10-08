@@ -45,6 +45,7 @@ public class WorkspaceUnitTest {
 			whatCannotBePutBackIsSaid();
 			rawWritesOnlyFall(new File(args.length > 0 ? args[0] : "build/classes"));
 			theOperationsASuiteCannotRunOpenAUnit(new File(args.length > 0 ? args[0] : "build/classes"));
+			everyCallerOfASaveThatStagesSeveralFilesOpensAUnit(new File(args.length > 0 ? args[0] : "build/classes"));
 		} finally {
 			Workspace.reset();
 		}
@@ -105,6 +106,63 @@ public class WorkspaceUnitTest {
 			check(m != null && begin >= 0 && first > begin && last >= first && commit > last,
 					op[0] + "." + op[1] + " begins a unit before " + op[2] + " and commits it after " + op[3]
 					+ " (call order: begin " + begin + ", first write " + first + ", last " + last + ", commit " + commit + ")");
+		}
+	}
+
+	/**
+	 * Saves that stage more than one file and cannot open a unit themselves - a format class may not
+	 * reach the application's unit (F214) - so whoever calls one runs it inside a unit: {owner, name}.
+	 */
+	private static final String[][] SAVES_THAT_STAGE_SEVERAL_FILES = {
+		//an item's record and its name and description are staged together, and a failure part way
+		//puts all of them back (F082)
+		{"ctrmap/formats/pokedata/ItemEditSession", "save"},
+	};
+
+	/**
+	 * Every caller of such a save, in any compiled class of the program, begins a unit before the call
+	 * and commits it after, in the same method (F082). Read from the bytecode of every class rather
+	 * than from a list of callers, so a second caller is held to it the day it is written - a lambda's
+	 * body is a method of its own and is read as one.
+	 */
+	static void everyCallerOfASaveThatStagesSeveralFilesOpensAUnit(File classes) throws IOException {
+		System.out.println("--- every caller of a save that stages several files runs it in one unit (F082)");
+		java.util.Map<String, Bytecode.Cls> all = Bytecode.read(classes);
+		for (String[] save : SAVES_THAT_STAGE_SEVERAL_FILES) {
+			int calls = 0;
+			List<String> outside = new ArrayList<>();
+			for (Bytecode.Cls c : all.values()) {
+				if (c.name.startsWith("ctrmap/tests/")) {
+					continue; //suites drive the save bare, on purpose
+				}
+				for (Bytecode.Method m : c.methods.values()) {
+					int begin = -1, commit = -1;
+					List<Integer> at = new ArrayList<>();
+					for (int i = 0; m.hasCode && i < m.code.size(); i++) {
+						Bytecode.Insn x = m.code.get(i);
+						if (!x.isInvoke()) {
+							continue;
+						}
+						boolean unit = x.owner.equals("ctrmap/WorkspaceUnit");
+						if (unit && x.name.equals("begin") && begin < 0) {
+							begin = i;
+						} else if (unit && x.name.equals("commit")) {
+							commit = i;
+						} else if (x.owner.equals(save[0]) && x.name.equals(save[1])) {
+							at.add(i);
+						}
+					}
+					for (int call : at) {
+						calls++;
+						if (begin < 0 || begin > call || commit < call) {
+							outside.add(m + " (begin " + begin + ", call " + call + ", commit " + commit + ")");
+						}
+					}
+				}
+			}
+			check(calls > 0, "control: the program calls " + save[0] + "." + save[1] + " (" + calls + " call(s))");
+			check(outside.isEmpty(), "and every call is inside a unit begun before it and committed after it"
+					+ (outside.isEmpty() ? "" : " - not: " + outside));
 		}
 	}
 
@@ -326,12 +384,17 @@ public class WorkspaceUnitTest {
 	 * the classes gone being ShopEditDialog and ItemEditDialog; then 23 over 47 once removing
 	 * added zones dropped its stale extracted copies through WorkspaceSession.dropExtracted instead
 	 * of the window's own File.delete loop (F043), the edge gone being CtrmapMainframe's
-	 * java/io/File.delete.
+	 * java/io/File.delete; then 22 over 47 once the bundled-resource copy moved from ResourceAccess
+	 * into the Builder that uses it (F130) and the updater's set-aside list went through
+	 * Bytes.replaceFile (F120), the class gone being ResourceAccess; then, 2026-10-08, 22 over 46
+	 * once an item record was staged in the workspace instead of written into the game folder
+	 * through its own RandomAccessFile (F082), the edge gone being ItemTable's
+	 * java/io/RandomAccessFile.&lt;init&gt; - the tree before it measured 22 over 47 with that edge.
 	 * Some are the unit's own seams - a container reports its store through {@code aboutToWrite}
 	 * before writing raw - so this is an upper bound on the debt, not the debt.
 	 */
-	private static final int RAW_WRITE_CLASSES = 23;
-	private static final int RAW_WRITE_EDGES = 47;
+	private static final int RAW_WRITE_CLASSES = 22;
+	private static final int RAW_WRITE_EDGES = 46;
 
 	/** The members that write, move or delete a file without asking anything first. */
 	private static final String[][] RAW_WRITES = {

@@ -1,7 +1,7 @@
 package ctrmap.formats.propdata;
 
-import ctrmap.LittleEndianDataInputStream;
-import ctrmap.LittleEndianDataOutputStream;
+import ctrmap.util.LittleEndianDataInputStream;
+import ctrmap.util.LittleEndianDataOutputStream;
 import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.AD;
 import ctrmap.formats.containers.BM;

@@ -8,18 +8,54 @@ import ctrmap.formats.h3d.MapModelObjImporter;
 import ctrmap.formats.h3d.RegionFactory;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import static ctrmap.formats.LittleEndian.f32;
-import static ctrmap.formats.tilemap.PaintedCliffMesh.*;
-import static ctrmap.formats.tilemap.PaintedCollision.*;
-import static ctrmap.formats.tilemap.PaintedFloorMesh.*;
-import static ctrmap.formats.tilemap.PaintedHeights.*;
-import static ctrmap.formats.tilemap.PaintedMaterials.*;
-import static ctrmap.formats.tilemap.PaintedTiles.*;
+import static ctrmap.formats.tilemap.PaintedCliffMesh.bakeQuadLighting;
+import static ctrmap.formats.tilemap.PaintedCliffMesh.cliffEdge;
+import static ctrmap.formats.tilemap.PaintedCliffMesh.emitCliffStrips;
+import static ctrmap.formats.tilemap.PaintedCollision.buildCollision;
+import static ctrmap.formats.tilemap.PaintedCollision.buildCollisionComposite;
+import static ctrmap.formats.tilemap.PaintedFloorMesh.addChurnLayer;
+import static ctrmap.formats.tilemap.PaintedFloorMesh.addEdgeStrips;
+import static ctrmap.formats.tilemap.PaintedFloorMesh.addShoreBands;
+import static ctrmap.formats.tilemap.PaintedFloorMesh.backingWall;
+import static ctrmap.formats.tilemap.PaintedFloorMesh.cornerPost;
+import static ctrmap.formats.tilemap.PaintedFloorMesh.decodeVertex;
+import static ctrmap.formats.tilemap.PaintedFloorMesh.encodeVertex;
+import static ctrmap.formats.tilemap.PaintedFloorMesh.floorQuad;
+import static ctrmap.formats.tilemap.PaintedFloorMesh.isWet;
+import static ctrmap.formats.tilemap.PaintedFloorMesh.meshFromQuads;
+import static ctrmap.formats.tilemap.PaintedFloorMesh.rampApron;
+import static ctrmap.formats.tilemap.PaintedFloorMesh.rampSkirt;
+import static ctrmap.formats.tilemap.PaintedGeometry.CliffEdge;
+import static ctrmap.formats.tilemap.PaintedGeometry.DIM;
+import static ctrmap.formats.tilemap.PaintedGeometry.EDGE_W;
+import static ctrmap.formats.tilemap.PaintedGeometry.ORIGIN;
+import static ctrmap.formats.tilemap.PaintedGeometry.Quad;
+import static ctrmap.formats.tilemap.PaintedGeometry.STEP;
+import static ctrmap.formats.tilemap.PaintedGeometry.TILE;
+import static ctrmap.formats.tilemap.PaintedGeometry.WATER_SINK;
+import static ctrmap.formats.tilemap.PaintedHeights.baseFloor;
+import static ctrmap.formats.tilemap.PaintedHeights.borrowedGroundTiles;
+import static ctrmap.formats.tilemap.PaintedHeights.floorYOf;
+import static ctrmap.formats.tilemap.PaintedHeights.isTouched;
+import static ctrmap.formats.tilemap.PaintedHeights.nearestGround;
+import static ctrmap.formats.tilemap.PaintedHeights.neighbourTopY;
+import static ctrmap.formats.tilemap.PaintedHeights.noRamps;
+import static ctrmap.formats.tilemap.PaintedHeights.rampDir;
+import static ctrmap.formats.tilemap.PaintedHeights.rampFoot;
+import static ctrmap.formats.tilemap.PaintedHeights.sampleBaseY;
+import static ctrmap.formats.tilemap.PaintedHeights.walkableTiles;
+import static ctrmap.formats.tilemap.PaintedMaterials.centreInRegion;
+import static ctrmap.formats.tilemap.PaintedMaterials.defaultGroundMesh;
+import static ctrmap.formats.tilemap.PaintedMaterials.isSurface;
+import static ctrmap.formats.tilemap.PaintedMaterials.resolveCliffMesh;
+import static ctrmap.formats.tilemap.PaintedMaterials.resolveEdgeMesh;
+import static ctrmap.formats.tilemap.PaintedMaterials.resolveMesh;
+import static ctrmap.formats.tilemap.PaintedTiles.buildTilemap;
+import static ctrmap.formats.tilemap.PaintedTiles.buildTilemapComposite;
 
 /**
  * Builds a full map region (visual model + collision + tilemap) from a painted
@@ -37,35 +73,9 @@ import static ctrmap.formats.tilemap.PaintedTiles.*;
  * <li>lighting is baked into vertex colors (tint x brightness x edge AO).</li>
  * </ul>
  * Frame: 40x40 tiles, 18 world units per tile, center origin (tile (0,0) at
- * world -360,-360); one height level = {@link #STEP} world units.
+ * world -360,-360); one height level = {@link PaintedGeometry#STEP} world units.
  */
 public class PaintedRegionBuilder {
-
-	public static final int DIM = 40;
-	public static final float TILE = 18f;
-	public static final float ORIGIN = -360f;
-	/** World Y per height level (one tile tall). */
-	public static final float STEP = 18f;
-	/** The ramp grid's value for a tile that is not a ramp; 0..3 is the way down (E, W, S, N). */
-	public static final int NO_RAMP = -1;
-	static final String[] DIR_NAMES = {"east", "west", "south", "north"};
-
-	/** A textured quad (4 corners TL/TR/BL/BR) destined for one mesh. */
-	static final class Quad {
-
-		final float[][] pos = new float[4][];
-		final float[][] uv = new float[4][];
-		final float[][] nrm = new float[4][];
-		final float[] ao = new float[4];
-	}
-
-	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid) {
-		return build(donorModel, grid, null, TerrainLighting.daytime());
-	}
-
-	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid, TerrainLighting light) {
-		return build(donorModel, grid, null, light);
-	}
 
 	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid, int[][] height, TerrainLighting light) {
 		return build(donorModel, grid, height, null, light);
@@ -73,7 +83,7 @@ public class PaintedRegionBuilder {
 
 	/**
 	 * @param height per-tile elevation in levels (null = all flat at 0).
-	 * @param ramp per-tile ramp direction ({@link #NO_RAMP} = flat, else the way
+	 * @param ramp per-tile ramp direction ({@link PaintedGeometry#NO_RAMP} = flat, else the way
 	 *             DOWN: 0 E, 1 W, 2 S, 3 N; null = no ramps); a ramp tile slopes
 	 *             from its level to that neighbour's floor, replacing the cliff
 	 *             so the player walks it. Stair brushes slope on their own.
@@ -476,7 +486,7 @@ public class PaintedRegionBuilder {
 			backing.add(cornerPost(p[0], p[1], p[2], p[3], false, -1f));
 		}
 
-		emitCliffStrips(cliffEdges, quadsByMesh, cliffMesh, groundMesh);
+		emitCliffStrips(cliffEdges, quadsByMesh, cliffMesh);
 
 		// GameFreak-style transition strips along grass<->dirt/sand seams
 		if (edgeMesh >= 0) {
@@ -711,80 +721,4 @@ public class PaintedRegionBuilder {
 		}
 		return m.setMeshGeometry(mi, vtx, newTris);
 	}
-
-	// ---- generic vertex codec (clip-vertex reconstruction) ----------------
-
-	/** Bytes per PICA component type: 0=s8, 1=u8, 2=s16, 3=float. */
-	static final int[] COMP_BYTES = {1, 1, 2, 4};
-
-	// ---- edge transition strips (the GameFreak "blend" look) --------------
-
-	static final int GRP_GRASS = 1, GRP_DIRT = 2;
-	/** Half-visual constants: strip reaches EDGE_W world units onto the lower
-	 *  (dirt/sand) side of a seam, lifted EDGE_LIFT above ground to overlay it. */
-	static final float EDGE_W = 9f, EDGE_LIFT = 0.6f;
-
-	/** Ground texture repeats: one per 72 world units, i.e. per four tiles. */
-	static final float FLOOR_UV = 1f / 72f;
-
-	/** How far the water surface sits below the ground it runs through. */
-	static final float WATER_SINK = 7f;
-
-	/** One tile-boundary segment where water meets land at the same height. */
-	static final class ShoreEdge {
-
-		float ax, az, bx, bz;   // the segment, head to tail around the water
-		float nx, nz;           // unit normal pointing from the land INTO the water
-		float y;                // both surfaces are at this height
-		int h;                  // that height as a level, for ambient occlusion
-		int landMesh;
-
-		String startKey() {
-			return CliffEdge.key(ax, az);
-		}
-
-		String endKey() {
-			return CliffEdge.key(bx, bz);
-		}
-	}
-
-	/** How far a bank reaches out over the water before meeting its surface. */
-	static final float BANK_RUN = 7f;
-
-	/**
-	 * One tile-edge segment where the ground steps down, before it is joined to
-	 * its neighbours. Endpoints run head-to-tail around a raised area (east,
-	 * south, west, north each start where the previous one ended), so chaining
-	 * is just "find the edge whose start is this edge's end".
-	 */
-	static final class CliffEdge {
-
-		float ax, az, bx, bz;   // the tile-boundary segment, in world units
-		float nx, nz;           // outward, away from the high ground
-		float yTop, yBot;
-		/** The ground this face would lean over is walkable, so it must not. */
-		boolean tight;
-		/** The low side is untouched retail terrain, which backs itself. */
-		boolean donorSide;
-
-		String startKey() {
-			return key(ax, az);
-		}
-
-		String endKey() {
-			return key(bx, bz);
-		}
-
-		static String key(float x, float z) {
-			return Math.round(x * 4f) + ":" + Math.round(z * 4f);
-		}
-
-		/** Same step, so the strip can run continuously through it. */
-		String levelKey() {
-			return Math.round(yTop * 4f) + "/" + Math.round(yBot * 4f) + (tight ? "/t" : "");
-		}
-	}
-
-	/** Fraction of a mesh's surface area that faces up; a floor ~1, a wall ~0. */
-	static final double MIN_GROUND_FLATNESS = 0.5;
 }

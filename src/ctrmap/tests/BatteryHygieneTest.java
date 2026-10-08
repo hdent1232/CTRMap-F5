@@ -5,6 +5,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -97,6 +99,8 @@ public class BatteryHygieneTest {
 		fixedTempPaths(tests);
 		overridableCorpusPath(tests);
 		everyBannedLiteralPinsItsSymbol(tests, root);
+		//source-only, so before anything below that execs a tool this machine may not have
+		everyCeilingIsHeldTight(tests);
 		File repo = root.getParentFile() == null ? new File(".") : root.getParentFile();
 		//every script the battery or a harness executes, not just the runner: the
 		//same heredoc trap that put NUL bytes into test.ps1 put them into
@@ -114,6 +118,10 @@ public class BatteryHygieneTest {
 			}
 		}
 		thePublishInstructionCannotSilentlySkipTheTag(repo);
+		onlyTheProgramsEntryPointsShip(repo, root);
+		theFeatureTableIsWhatTheProfilesSay(repo);
+		theIdeBuildsWhereTheScriptsDoNot(repo, root);
+		noRecordFieldIsCutUnsaid(repo);
 		theRecorderReadsTheVerdictLineWhole(repo);
 		theRecorderDoesNotCallItsOwnOutputATreeThatMoved(repo);
 		theDigestIgnoresLineEndingsButOnlyForText();
@@ -122,6 +130,7 @@ public class BatteryHygieneTest {
 		noOrphanClassFiles(repo, root);
 		noDialogsUnderTest(new File(root, "ctrmap"));
 		publishedCountsAreMeasured(repo, root, new File(repo, "test.ps1"));
+		theTestWorldSaysWhichCodeItChecks(repo);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -328,6 +337,319 @@ public class BatteryHygieneTest {
 		} finally {
 			Scratch.deleteTree(dir);
 		}
+	}
+
+	/**
+	 * A release ships the program's entry points and nothing else that runs (F133). The packager
+	 * stripped the suites by name, and the four developer harvesters - each with a main that reads a
+	 * dump and writes tables - went into every jar. Derived, never listed: every source that declares
+	 * a main is the manifest's Main-Class, a class a launcher the release ships runs, or in a package
+	 * the packager strips. And no developer tool names a resource the release ships as an output: two
+	 * harvesters rewrote shipped tables when run with one argument.
+	 */
+	static void onlyTheProgramsEntryPointsShip(File repo, File srcRoot) throws Exception {
+		System.out.println("--- a release ships the program's entry points, and no tool writes what it ships (F133)");
+		File packager = new File(repo, "package.ps1");
+		if (!packager.isFile()) {
+			check(false, "no package.ps1 at " + packager);
+			return;
+		}
+		String pkg = read(packager);
+		Matcher mc = Pattern.compile("(?m)^Main-Class:\\s*([\\w.]+)").matcher(pkg);
+		String mainClass = mc.find() ? mc.group(1) : null;
+		Set<String> stripped = new TreeSet<>();
+		Matcher st = Pattern.compile("(?m)^[ \\t]*Remove-Item\\b[^\\n]*Join-Path \\$shipDir \"(ctrmap\\\\[\\w\\\\]+)\"").matcher(pkg);
+		while (st.find()) {
+			stripped.add(st.group(1).replace('\\', '/'));
+		}
+		Set<String> launched = new TreeSet<>();
+		Matcher cp = Pattern.compile("(?m)^[ \\t]*Copy-Item\\s+([^\\n]*?)\\s+\"\\$stage\\\\\"").matcher(pkg);
+		while (cp.find()) {
+			for (String item : cp.group(1).split(",")) {
+				String name = item.trim();
+				File launcher = new File(repo, name);
+				if ((name.endsWith(".bat") || name.endsWith(".sh")) && launcher.isFile()) {
+					Matcher lm = Pattern.compile("\\b(ctrmap(?:\\.\\w+)+)\\b").matcher(read(launcher));
+					while (lm.find()) {
+						launched.add(lm.group(1));
+					}
+				}
+			}
+		}
+		List<String> mains = new ArrayList<>();
+		List<String> strays = new ArrayList<>();
+		List<String> writers = new ArrayList<>();
+		Pattern main = Pattern.compile("static\\s+void\\s+main\\s*\\(");
+		for (File f : DialogSeamTest.javaSources(new File(srcRoot, "ctrmap"))) {
+			String rel = srcRoot.toPath().relativize(f.toPath()).toString().replace('\\', '/');
+			String code = SourceSeamTest.stripComments(read(f));
+			if (!main.matcher(code).find()) {
+				continue;
+			}
+			String cls = rel.substring(0, rel.length() - ".java".length()).replace('/', '.');
+			mains.add(cls);
+			boolean strip = false;
+			for (String p : stripped) {
+				strip |= rel.startsWith(p + "/");
+			}
+			if (!cls.equals(mainClass) && !launched.contains(cls) && !strip) {
+				strays.add(cls);
+			}
+			if (strip && !rel.startsWith("ctrmap/tests/") && code.contains("\"src/ctrmap/resources/")) {
+				writers.add(cls);
+			}
+		}
+		check(mainClass != null && mains.contains(mainClass) && stripped.contains("ctrmap/tests")
+				&& mains.stream().anyMatch(m -> m.startsWith("ctrmap.tests.")) && !launched.isEmpty(),
+				"control: the manifest names " + mainClass + ", which has a main; the packager strips " + stripped
+				+ "; the suites' mains are found; the shipped launchers run " + launched);
+		check(strays.isEmpty(), "every class with a main is the program's: its Main-Class, one a shipped launcher"
+				+ " runs, or in a package the packager strips (" + mains.size() + " mains read)"
+				+ (strays.isEmpty() ? "" : " - these would ship and run: " + strays + ". Strip their package in"
+				+ " package.ps1, or launch them from a script the release ships"));
+		check(writers.isEmpty(), "and no developer tool writes a resource the release ships unless told to"
+				+ (writers.isEmpty() ? "" : " - these name one: " + writers + ". Make the output an argument"));
+	}
+
+	/**
+	 * The per-game feature table a document publishes is what each profile answers (F136). The table
+	 * said Sun/Moon declared one feature while SmProfile.supports answers false for every one: a
+	 * count restated by hand from code, the F134 shape, about a game the editor cannot open. Every
+	 * current document carrying the table is read, each row asked of the profile it names.
+	 */
+	static void theFeatureTableIsWhatTheProfilesSay(File repo) throws Exception {
+		System.out.println("--- a published feature count is what the game's profile answers (F136)");
+		Pattern row = Pattern.compile("(?m)^\\s+([A-Z]+)\\s+(\\d+)\\b");
+		int rows = 0;
+		List<String> wrong = new ArrayList<>();
+		for (File doc : documentsReadAsCurrent(repo)) {
+			String text = read(doc);
+			int at = text.indexOf("Verified-feature declarations");
+			if (at < 0) {
+				continue;
+			}
+			int end = text.indexOf("\n\n", at);
+			Matcher m = row.matcher(text.substring(at, end < 0 ? text.length() : end));
+			while (m.find()) {
+				ctrmap.gamedef.GameType game;
+				try {
+					game = ctrmap.gamedef.GameType.valueOf(m.group(1));
+				} catch (IllegalArgumentException notAGame) {
+					continue;
+				}
+				rows++;
+				int supported = 0;
+				for (ctrmap.gamedef.GameProfile.Feature f : ctrmap.gamedef.GameProfile.Feature.values()) {
+					supported += ctrmap.gamedef.GameProfile.of(game).supports(f) ? 1 : 0;
+				}
+				if (supported != Integer.parseInt(m.group(2))) {
+					wrong.add(doc.getName() + " says " + game + " " + m.group(2) + " - its profile supports " + supported);
+				}
+			}
+		}
+		check(rows == ctrmap.gamedef.GameType.values().length, "control: the feature table is found, one row per game ("
+				+ rows + " of " + ctrmap.gamedef.GameType.values().length + ")");
+		check(wrong.isEmpty(), "every published feature count is what the profile answers" + (wrong.isEmpty() ? ""
+				: " - wrong: " + wrong));
+	}
+
+	/**
+	 * The IDE project builds where the build and package scripts do not (F141). NetBeans' clean
+	 * deleted build/ - build.ps1's stamped, gated classes with it - its build wrote build/classes
+	 * past those gates, and its jar went to dist/, where package.ps1 stages releases. The folders the
+	 * scripts use are read off the scripts themselves; the IDE's are read off its properties. And
+	 * every IDE library on its classpath is one some source or form uses: AbsoluteLayout sat there
+	 * with no form laid out by it.
+	 */
+	static void theIdeBuildsWhereTheScriptsDoNot(File repo, File srcRoot) throws Exception {
+		System.out.println("--- the IDE project builds where the build and package scripts do not (F141)");
+		File props = new File(repo, "nbproject/project.properties");
+		if (!props.isFile()) {
+			check(true, "no IDE project here, so nothing of it can build into the scripts' folders");
+			return;
+		}
+		java.util.Properties p = new java.util.Properties();
+		try (java.io.Reader r = new java.io.InputStreamReader(new java.io.FileInputStream(props), StandardCharsets.ISO_8859_1)) {
+			p.load(r);
+		}
+		Set<String> scriptRoots = new TreeSet<>();
+		Pattern quoted = Pattern.compile("\"([A-Za-z][\\w.-]*)\\\\[^\"]*\"");
+		for (String script : new String[]{"build.ps1", "package.ps1"}) {
+			File f = new File(repo, script);
+			if (f.isFile()) {
+				Matcher m = quoted.matcher(read(f));
+				while (m.find()) {
+					scriptRoots.add(m.group(1));
+				}
+			}
+		}
+		String buildDir = p.getProperty("build.dir", "");
+		String distDir = p.getProperty("dist.dir", "").replace("${build.dir}", buildDir);
+		String classesDir = p.getProperty("build.classes.dir", "").replace("${build.dir}", buildDir);
+		List<String> clash = new ArrayList<>();
+		for (String d : new String[]{buildDir, distDir, classesDir}) {
+			String top = d.replace('\\', '/').split("/")[0];
+			if (scriptRoots.contains(top)) {
+				clash.add(d);
+			}
+		}
+		check(scriptRoots.contains("build") && scriptRoots.contains("dist") && !buildDir.isEmpty(),
+				"control: the scripts' folders are read off them (" + scriptRoots + ") and the IDE's build folder is "
+				+ buildDir);
+		check(clash.isEmpty(), "the IDE builds, cleans and jars outside every folder the scripts use"
+				+ (clash.isEmpty() ? "" : " - these are inside one: " + clash));
+		//: Known answers first: every form carries the form-info type name and no Java source does, so
+		//: this reads the forms; and this file's own javadoc names AbsoluteLayout, so a comment is not
+		//: counted a use. Both names are split here, or this very line would be the use it finds.
+		check(usedBySourceOrForm(srcRoot, "form" + "info") && !usedBySourceOrForm(srcRoot, "absolute" + "layout"),
+				"control: a name only the forms carry reads as used, and one only a comment carries does not");
+		List<String> unused = new ArrayList<>();
+		Matcher lib = Pattern.compile("\\$\\{libs\\.([\\w-]+)\\.classpath\\}").matcher(p.getProperty("javac.classpath", ""));
+		while (lib.find()) {
+			if (!usedBySourceOrForm(srcRoot, lib.group(1))) {
+				unused.add(lib.group(1));
+			}
+		}
+		check(unused.isEmpty(), "every IDE library on the classpath is one a source or a form uses" + (unused.isEmpty() ? ""
+				: " - these are not: " + unused));
+		//: The IDE names and runs the program as package.ps1 ships it. Its title, jar and launcher still
+		//: said GRParser, and its default configuration named no main class - only the per-user
+		//: config.properties chose one, so untracking that folder would have left Run asking which.
+		File packager = new File(repo, "package.ps1");
+		Matcher ship = Pattern.compile("--main-jar\\s+(\\S+)\\.jar\\s+--main-class\\s+(\\S+)")
+				.matcher(packager.isFile() ? read(packager) : "");
+		boolean shipped = ship.find();
+		check(shipped, "control: package.ps1 names the jar and the main class it ships"
+				+ (shipped ? " (" + ship.group(1) + ".jar, " + ship.group(2) + ")" : ""));
+		if (shipped) {
+			String distJar = p.getProperty("dist.jar", "");
+			String[][] named = {
+				{"application.title", p.getProperty("application.title", ""), ship.group(1)},
+				{"jlink.launcher.name", p.getProperty("jlink.launcher.name", ""), ship.group(1)},
+				{"dist.jar", distJar.substring(distJar.lastIndexOf('/') + 1), ship.group(1) + ".jar"},
+				{"main.class", p.getProperty("main.class", ""), ship.group(2)},
+			};
+			List<String> misnamed = new ArrayList<>();
+			for (String[] n : named) {
+				if (!n[1].equals(n[2])) {
+					misnamed.add(n[0] + "=" + n[1] + " (package.ps1: " + n[2] + ")");
+				}
+			}
+			check(misnamed.isEmpty(), "the IDE names and runs the program as package.ps1 ships it"
+					+ (misnamed.isEmpty() ? "" : " - " + misnamed));
+		}
+		//: NetBeans' per-user folder - open tabs, the active configuration, a home path - is not shipped,
+		//: and the ignore rules keep it so. Asked of git, with the file name a NetBeans install writes:
+		//: whether it is on this disk is the machine's business, not the tree's.
+		List<String> listed = SourceSeamTest.shippable(repo);
+		List<String> perUser = new ArrayList<>();
+		for (String f : listed == null ? new ArrayList<String>() : listed) {
+			if (f.startsWith("nbproject/private/")) {
+				perUser.add(f);
+			}
+		}
+		check(listed != null && listed.contains("nbproject/project.properties"),
+				"control: git lists what a commit would ship, the IDE's shared properties among it");
+		check(perUser.isEmpty(), "nothing in NetBeans' per-user folder ships" + (perUser.isEmpty() ? "" : " - " + perUser));
+		Boolean ignored = gitIgnores(repo, "nbproject/private/private.xml");
+		check(Boolean.TRUE.equals(ignored), "and the ignore rules keep it out" + (ignored == null
+				? " - git could not be asked, which is not a yes" : ignored ? "" : " - .gitignore lets nbproject/private/ in"));
+	}
+
+	/** Whether git's ignore rules ignore {@code rel}, tracked or not, on disk or not; null when git cannot answer. */
+	static Boolean gitIgnores(File repo, String rel) {
+		try {
+			ProcessBuilder pb = new ProcessBuilder("git", "-C", repo.getAbsolutePath(), "check-ignore", "-q", "--no-index", rel);
+			pb.redirectErrorStream(true);
+			Process proc = pb.start();
+			CommitGuardTest.drain(proc);
+			int code = proc.waitFor();
+			return code == 0 ? Boolean.TRUE : code == 1 ? Boolean.FALSE : null;
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			return null;
+		} catch (Exception e) {
+			return null;
+		}
+	}
+
+	/** Whether any Java source's code (comments stripped) or any form under srcRoot names {@code name}. */
+	static boolean usedBySourceOrForm(File srcRoot, String name) throws Exception {
+		String want = name.toLowerCase(java.util.Locale.ROOT);
+		for (File f : DialogSeamTest.javaSources(new File(srcRoot, "ctrmap"))) {
+			if (SourceSeamTest.stripComments(read(f)).toLowerCase(java.util.Locale.ROOT).contains(want)) {
+				return true;
+			}
+		}
+		java.util.ArrayDeque<File> dirs = new java.util.ArrayDeque<>(java.util.Arrays.asList(new File(srcRoot, "ctrmap")));
+		while (!dirs.isEmpty()) {
+			File[] kids = dirs.poll().listFiles();
+			for (File k : kids == null ? new File[0] : kids) {
+				if (k.isDirectory()) {
+					dirs.add(k);
+				} else if (k.getName().endsWith(".form") && read(k).toLowerCase(java.util.Locale.ROOT).contains(want)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * No record field is cut short without saying so (F201). The 2026-09-13 census cut its Verified
+	 * evidence when it was assembled: 235 of 280 paragraphs stop at exactly 1400 characters, most of
+	 * them mid-word, while the fields beside them pile up at no length - and nothing said so, under a
+	 * guide telling the reader every entry carried its evidence. A field that many bodies end at one
+	 * exact length is a field something truncated; each such body must carry a [CUT ...] marker.
+	 */
+	static void noRecordFieldIsCutUnsaid(File repo) throws Exception {
+		System.out.println("--- no record field is cut short without saying so (F201)");
+		StringBuilder cut = new StringBuilder(), marked = new StringBuilder(), varied = new StringBuilder();
+		for (int i = 0; i < 12; i++) {
+			String body = String.format("%600s", "evidence " + i).replace(' ', 'x');
+			cut.append("**Verified.** ").append(body).append('\n');
+			marked.append("**Verified.** ").append(body).append(" [CUT - truncated]\n");
+			varied.append("**Verified.** ").append(body, 0, 500 + i * 7).append(".\n");
+		}
+		check(!cutFields("c.md", cut.toString()).isEmpty() && cutFields("m.md", marked.toString()).isEmpty()
+				&& cutFields("v.md", varied.toString()).isEmpty(),
+				"control: twelve bodies at one length are a cut field; marked, or of twelve lengths, they are not");
+		List<String> listed = SourceSeamTest.shippable(repo);
+		List<String> problems = new ArrayList<>();
+		int records = 0;
+		for (String rel : listed == null ? new ArrayList<String>() : listed) {
+			if (!rel.endsWith(".md")) {
+				continue;
+			}
+			String text = read(new File(repo, rel));
+			records += text.contains("**Verified.** ") ? 1 : 0;
+			problems.addAll(cutFields(rel, text));
+		}
+		check(listed != null && records > 0, "control: the documents a commit would ship were read, and records with"
+				+ " Verified paragraphs among them (" + records + ")");
+		check(problems.isEmpty(), "no record field stops at one exact length unmarked" + (problems.isEmpty() ? ""
+				: " - " + problems + ". Mark each cut body [CUT ...] where it stops, or restore it from its source"));
+	}
+
+	/** Every label in {@code text} whose unmarked bodies pile up at one length of 400 or more, ten or more times. */
+	static List<String> cutFields(String name, String text) {
+		java.util.Map<String, java.util.Map<Integer, Integer>> lengths = new java.util.TreeMap<>();
+		Matcher m = Pattern.compile("(?m)^\\*\\*([A-Z][^*\\n]{0,40}?)\\.\\*\\* (.*)$").matcher(text);
+		while (m.find()) {
+			if (!m.group(2).contains("[CUT")) {
+				lengths.computeIfAbsent(m.group(1), k -> new java.util.TreeMap<>()).merge(m.group(2).length(), 1, Integer::sum);
+			}
+		}
+		List<String> out = new ArrayList<>();
+		for (java.util.Map.Entry<String, java.util.Map<Integer, Integer>> label : lengths.entrySet()) {
+			for (java.util.Map.Entry<Integer, Integer> at : label.getValue().entrySet()) {
+				if (at.getKey() >= 400 && at.getValue() >= 10) {
+					out.add(name + ": " + at.getValue() + " '" + label.getKey() + "' bodies stop at exactly " + at.getKey()
+							+ " characters");
+				}
+			}
+		}
+		return out;
 	}
 
 	/**
@@ -610,7 +932,56 @@ public class BatteryHygieneTest {
 			"([0-9][0-9,]*)\\s*(?:\\*\\*\\s*)?(?:catalogued|auto-harvested|curated)");
 	/** ...and about the size of this battery. */
 	private static final Pattern DOC_SUITES = Pattern.compile(
-			"([0-9][0-9,]*)(?:\\*\\*)?\\s+(?:headless\\s+)?(?:test\\s+)?suites?\\b");
+			"([0-9][0-9,]*)(?:\\*\\*)?(?:\\s+|-)(?:headless\\s+)?(?:test\\s+)?suites?\\b");
+
+	/** A line that says when, or on what tree, it was measured: a date or a commit. */
+	private static final Pattern DATED = Pattern.compile(
+			"\\b20\\d\\d-\\d\\d-\\d\\d\\b|\\b(?=[0-9a-f]*[a-f])(?=[0-9a-f]*[0-9])[0-9a-f]{7,40}\\b");
+
+	/**
+	 * The text without its dated lines (F134). A number that says when, or on what tree, it was taken
+	 * is a record - CLAUDE.md's rule is that a recorded measurement carries its subject, and such a
+	 * line does; one with no subject is a claim about the tree as it is, and is held to it.
+	 */
+	static String undated(String text) {
+		StringBuilder out = new StringBuilder();
+		for (String line : text.split("\n", -1)) {
+			out.append(DATED.matcher(line).find() ? "" : line).append('\n');
+		}
+		return out.substring(0, out.length() - 1);
+	}
+
+	/**
+	 * Every Markdown file and PowerShell script a reader takes as describing the tree as it is,
+	 * walked: not a dot-folder, the build's output, the libraries, a game dump or a workspace; not a
+	 * file whose NAME carries a date (an audit, a census - records of their day); and not CLAUDE.md,
+	 * whose numbers are the bills of past incidents, kept as they were paid.
+	 */
+	static List<File> documentsReadAsCurrent(File repo) {
+		List<File> out = new ArrayList<>();
+		java.util.ArrayDeque<File> todo = new java.util.ArrayDeque<>();
+		todo.add(repo);
+		while (!todo.isEmpty()) {
+			File[] kids = todo.poll().listFiles();
+			if (kids == null) {
+				continue;
+			}
+			java.util.Arrays.sort(kids);
+			for (File k : kids) {
+				String n = k.getName();
+				if (k.isDirectory()) {
+					if (!n.startsWith(".") && !n.equals("build") && !n.equals("dist") && !n.equals("lib")
+							&& !n.equals("node_modules") && !n.startsWith("RomFS") && !n.equals("Workspace")) {
+						todo.add(k);
+					}
+				} else if ((n.endsWith(".md") || n.endsWith(".ps1")) && !n.equals("CLAUDE.md")
+						&& !n.matches(".*\\d{4}-\\d{2}-\\d{2}.*")) {
+					out.add(k);
+				}
+			}
+		}
+		return out;
+	}
 	/** A data row in one of the catalogue tables: not blank, not a '#' comment. */
 	private static final Pattern TSV_COMMENT = Pattern.compile("^\\s*(#.*)?$");
 
@@ -675,12 +1046,23 @@ public class BatteryHygieneTest {
 		List<Integer> catalogOk = java.util.Arrays.asList(curated, auto, curated + auto);
 		List<String> wrong = new ArrayList<>();
 		int catalogClaims = 0, suiteClaims = 0;
-		for (String name : new String[]{"README.md", "NOTES.md", "TESTING.md", "QUICKSTART.md"}) {
-			File doc = new File(repo, name);
-			if (!doc.isFile()) {
-				continue;
-			}
-			String text = read(doc);
+		//THE TREE, NOT FOUR NAMES (F134). This read README, NOTES, TESTING and QUICKSTART, and the
+		//battery's size was restated five more ways where it did not look - ARCHITECTURE.md's
+		//"124-suite battery", PROPERTIES.md's 128, build.ps1's 129 - while 136 were registered.
+		List<File> docs = documentsReadAsCurrent(repo);
+		Set<String> scope = new TreeSet<>();
+		for (File doc : docs) {
+			scope.add(repo.toPath().relativize(doc.toPath()).toString().replace('\\', '/'));
+		}
+		check(scope.containsAll(java.util.Arrays.asList("README.md", "TESTING.md", "ARCHITECTURE.md", "build.ps1"))
+				&& !scope.contains("CLAUDE.md") && DOC_SUITES.matcher("the 124-suite battery").find()
+				&& undated("measured 2026-10-06: 136 suites\nthe 124-suite battery\n").equals("\nthe 124-suite battery\n"),
+				"control: the documents read as current are walked (" + scope.size() + ", README, TESTING, ARCHITECTURE"
+				+ " and build.ps1 among them, CLAUDE.md not), a hyphenated count is a claim, and a dated line is a"
+				+ " record, not a claim");
+		for (File doc : docs) {
+			String name = repo.toPath().relativize(doc.toPath()).toString().replace('\\', '/');
+			String text = undated(read(doc));
 			Matcher m = DOC_CATALOG.matcher(text);
 			while (m.find()) {
 				catalogClaims++;
@@ -781,8 +1163,8 @@ public class BatteryHygieneTest {
 
 	/**
 	 * A top-level type declared in a source file that is not named after it.
-	 * Three exist here (FATBEntry and GARCEntry in GARC.java, OBJMesh in
-	 * WavefrontOBJ.java; TileDBWriter.java's Tile went with F026), and each compiles to a class file whose name matches
+	 * One exists here (GARCEntry in GARC.java; TileDBWriter.java's Tile went with F026,
+	 * GARC.java's FATBEntry with F056, WavefrontOBJ.java's OBJMesh with F070), and each compiles to a class file whose name matches
 	 * no .java at all. Anchored at column 0 because that is where a top-level
 	 * declaration sits: a nested type is indented, and it compiles to
 	 * Outer$Inner.class, which this check has already resolved to its outer name
@@ -986,7 +1368,17 @@ public class BatteryHygieneTest {
 				"-Command", ". '" + stamp.getAbsolutePath() + "'; $ErrorActionPreference = 'Stop'; "
 				+ "Write-BuildStamp '" + dir.getAbsolutePath() + "'");
 		pb.redirectErrorStream(true);
-		Process p = pb.start();
+		Process p;
+		try {
+			p = pb.start();
+		} catch (java.io.IOException noPowershell) {
+			//COULD NOT LOOK, NOT PASSED: with no catch, a machine without powershell ended the whole
+			//suite here and every rule after this one never ran there (F189)
+			Skip.section("powershell.exe is not on this machine, so stamp.ps1 cannot be run ("
+					+ noPowershell.getMessage() + ")");
+			Scratch.deleteTree(dir);
+			return;
+		}
 		StringBuilder said = new StringBuilder();
 		try (java.io.BufferedReader r = new java.io.BufferedReader(
 				new java.io.InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
@@ -1005,6 +1397,58 @@ public class BatteryHygieneTest {
 					+ "already had and could never reach: " + text.replace("\n", " | ").trim());
 		}
 		Scratch.deleteTree(dir);
+	}
+
+	/** The commit a test world says it was built from. */
+	static final Pattern BUILT_FROM = Pattern.compile("[Bb]uilt by hand from commit ([0-9a-f]{7,40})");
+
+	/**
+	 * The in-game test world says which code it checks, and the checklist that sends the owner to it says
+	 * the same (F138). TESTING.md sent them to walk a world "packed into your game data" first, built by
+	 * hand once on 2026-08-30 with nothing in the tree able to rebuild it - and 518 of the 642 commits came
+	 * after it, 87 in the subsystems its symptom table isolates. Walking it tested that commit's output.
+	 */
+	static void theTestWorldSaysWhichCodeItChecks(File repo) throws Exception {
+		System.out.println("--- the in-game test world says which commit it was built from (F138)");
+		String zone = quoteless(new File(repo, "TESTZONE.md")), testing = quoteless(new File(repo, "TESTING.md"));
+		java.util.regex.Matcher built = BUILT_FROM.matcher(zone);
+		check(built.find(), "TESTZONE.md says which commit the test world was built by hand from");
+		if (!built.find(0)) {
+			return;
+		}
+		String hash = built.group(1);
+		check(testing.contains("built by hand from commit " + hash), "and TESTING.md, which sends the owner there"
+				+ " first, says the same commit (" + hash + ")");
+		Process git;
+		try {
+			git = new ProcessBuilder("git", "cat-file", "-e", hash + "^{commit}").directory(repo).redirectErrorStream(true).start();
+		} catch (java.io.IOException noGit) {
+			Skip.section("git cannot be started, so whether commit " + hash + " exists was NOT checked");
+			return;
+		}
+		drainQuietly(git);
+		int code = git.waitFor();
+		boolean isRepo = new File(repo, ".git").exists();
+		if (!isRepo) {
+			Skip.section("this copy is not a git repository, so whether commit " + hash + " exists was NOT checked");
+			return;
+		}
+		check(code == 0, "and that commit is in this repository's history (git cat-file exit " + code + ")");
+	}
+
+	/** A markdown file's text with its quote markers and line breaks folded into single spaces. */
+	static String quoteless(File md) throws Exception {
+		String text = new String(Files.readAllBytes(md.toPath()), StandardCharsets.UTF_8);
+		return text.replaceAll("(?m)^>\\s?", "").replaceAll("\\s+", " ");
+	}
+
+	static void drainQuietly(Process p) throws Exception {
+		try (java.io.InputStream in = p.getInputStream()) {
+			byte[] buf = new byte[4096];
+			while (in.read(buf) >= 0) {
+				//the answer is the exit code; what it says is not read
+			}
+		}
 	}
 
 	/**
@@ -1085,6 +1529,85 @@ public class BatteryHygieneTest {
 			}
 		}
 		return out;
+	}
+
+	/**
+	 * The ceilings a suite may hold without holding them tight, each with what it is instead:
+	 * {file, constant, why}. A bound that is not a ratchet belongs here; a ratchet never does.
+	 */
+	static final String[][] NOT_HELD_TIGHT = {
+		{"NpcMoveCodesTest.java", "PROBE_CEILING",
+			"the highest movement code the probe asks about - a loop bound over codes, not a count that may only fall"},
+		{"WarpTransitionsTest.java", "PROBE_CEILING",
+			"the highest transition code the probe asks about - a loop bound over codes, not a count that may only fall"},
+		{"PaintSealTest.java", "NOTCH_COMPOSITE_CEILING",
+			"held tight per painted height in its own form: e.holes >= allowed fails when the notch falls, naming"
+			+ " the value to lower it to"},
+	};
+
+	/** A ceiling: a static final int whose name says CEILING. */
+	private static final Pattern CEILING_DECL = Pattern.compile("static\\s+final\\s+int\\s+(\\w*CEILING\\w*)\\s*=\\s*\\d+\\s*;");
+
+	/** The ceilings declared in one suite's text that nothing compares for equality or hands to Ratchet.tight. */
+	static List<String> looseCeilings(String text) {
+		List<String> loose = new ArrayList<>();
+		Matcher m = CEILING_DECL.matcher(text);
+		while (m.find()) {
+			String c = m.group(1);
+			boolean held = Pattern.compile("[=!]=\\s*" + c + "\\b|\\b" + c + "\\s*[=!]=|Ratchet\\.tight\\([^;]*\\b" + c
+					+ "\\)").matcher(text).find();
+			if (!held) {
+				loose.add(c);
+			}
+		}
+		return loose;
+	}
+
+	/**
+	 * Every ceiling a suite holds is held TIGHT (F189). A ratchet only bites while it is kept tight:
+	 * a ceiling above what it bounds is room for the next defect to land with every suite green -
+	 * "a plant that added a silent catch landed in it and SURVIVED". Measured 2026-10-08: 14 of the
+	 * 20 int ceilings in this package were only bounded. A ceiling is held when its suite compares
+	 * it for equality or hands it to {@link Ratchet#tight}; one that is not a ratchet says why in
+	 * {@link #NOT_HELD_TIGHT}, and an argument for a ceiling that is gone or now held is stale.
+	 */
+	static void everyCeilingIsHeldTight(File tests) throws Exception {
+		System.out.println("--- every ceiling a suite holds is held tight");
+		//THE INSTRUMENT FIRST, on samples - split, so this file's own text declares no ceiling
+		String decl = "static final int SAMPLE_" + "CEILING = 3;\n";
+		check(looseCeilings(decl + "check(n <= SAMPLE_" + "CEILING, \"\");").size() == 1,
+				"a ceiling that is only bounded is called loose");
+		check(looseCeilings(decl + "check(Ratchet.tight(n, SAMPLE_" + "CEILING), \"\");").isEmpty()
+				&& looseCeilings(decl + "if (n != SAMPLE_" + "CEILING) {}").isEmpty(),
+				"and one compared for equality, or handed to Ratchet.tight, is not");
+		List<String> loose = new ArrayList<>();
+		List<String> argued = new ArrayList<>();
+		int declared = 0;
+		for (File f : sources(tests)) {
+			String text = SourceSeamTest.stripComments(read(f));
+			for (Matcher m = CEILING_DECL.matcher(text); m.find();) {
+				declared++;
+			}
+			for (String c : looseCeilings(text)) {
+				boolean isArgued = false;
+				for (String[] a : NOT_HELD_TIGHT) {
+					isArgued |= a[0].equals(f.getName()) && a[1].equals(c) && a[2].trim().length() > 40;
+				}
+				(isArgued ? argued : loose).add(f.getName() + " " + c);
+			}
+		}
+		List<String> stale = new ArrayList<>();
+		for (String[] a : NOT_HELD_TIGHT) {
+			if (!argued.contains(a[0] + " " + a[1])) {
+				stale.add(a[0] + " " + a[1]);
+			}
+		}
+		check(declared >= 10, declared + " ceiling(s) declared in the suites, so the scan reads them");
+		check(loose.isEmpty(), "every ceiling a suite holds is held tight - equal to what it measures - or argued"
+				+ " as not a ratchet" + (loose.isEmpty() ? "" : "; these are only bounded: " + loose
+				+ ". Hand each to Ratchet.tight beside its bound, or argue it in NOT_HELD_TIGHT"));
+		check(stale.isEmpty(), "and every argued one is still an unheld ceiling" + (stale.isEmpty() ? ""
+				: " - not: " + stale + ". Take it out of NOT_HELD_TIGHT"));
 	}
 
 	static String read(File f) throws Exception {

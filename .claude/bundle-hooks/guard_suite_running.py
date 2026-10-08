@@ -52,7 +52,7 @@ MEASURES = (
     r"^(?:go|cargo|dotnet|swift) test\b",
 )
 
-#: Adapted per project: see ADAPT.md.
+#: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("MEASURES",)
 
 _TASK_ID = re.compile(r"<task-id>([^<\s]+)</task-id>")

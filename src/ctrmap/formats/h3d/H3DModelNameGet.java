@@ -1,7 +1,7 @@
 
 package ctrmap.formats.h3d;
 
-import ctrmap.formats.LittleEndian;
+import ctrmap.util.LittleEndian;
 
 /**
  * Reads the name of a BCH container's first model, by following the content header's model
@@ -30,7 +30,7 @@ public class H3DModelNameGet {
 			s = BchSections.read(bchFile); //the one header reader, and the one refusal of what is not a BCH (F066)
 		} catch (IllegalArgumentException notWhole) {
 			throw new IllegalStateException("A model's name cannot be read from this (" + (bchFile == null ? "absent"
-					: bchFile.length + " byte(s)") + "): " + notWhole.getMessage(), notWhole);
+					: bchFile.length + " byte(s)") + "): " + ctrmap.util.Bytes.reason(notWhole), notWhole);
 		}
 		int contentHeaderOffset = s.contentsAddr;
 		int stringTableOffset = s.stringsAddr;
@@ -41,7 +41,7 @@ public class H3DModelNameGet {
 		try {
 			return StringUtils.cString(bchFile, name);
 		} catch (IllegalArgumentException runsOff) {
-			throw new IllegalStateException("A model's name cannot be read: " + runsOff.getMessage(), runsOff);
+			throw new IllegalStateException("A model's name cannot be read: " + ctrmap.util.Bytes.reason(runsOff), runsOff);
 		}
 	}
 

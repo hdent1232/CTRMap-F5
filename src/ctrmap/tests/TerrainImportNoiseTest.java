@@ -4,6 +4,7 @@ import ctrmap.Ui;
 import ctrmap.Workspace;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.BchMapModel;
+import ctrmap.formats.tilemap.PaintedGeometry;
 import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainCatalog;
 import ctrmap.formats.tilemap.TerrainLighting;
@@ -175,7 +176,7 @@ public class TerrainImportNoiseTest {
 			System.out.println("no donor");
 			return;
 		}
-		int dim = PaintedRegionBuilder.DIM;
+		int dim = PaintedGeometry.DIM;
 		PaintedRegionBuilder.build(donor, PaintedRegionTest.grid(TilePalette.GRASS),
 				new int[dim][dim], TerrainLighting.daytime());
 		PaintedRegionBuilder.build(donor, PaintedRegionTest.grid(TilePalette.GRASS),

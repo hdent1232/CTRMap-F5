@@ -1,6 +1,5 @@
 package ctrmap.tests;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.Ui;
 import ctrmap.formats.npcreg.NPCRegistry;
 import java.io.File;
@@ -103,8 +102,8 @@ public class DialogSeamTest {
 		{"NPCEditForm.java", "body", "1",
 			"showForm, the one place the Add NPC wizards and the dialogue editor show their forms;"
 			+ " the forms are built by the *Form classes and acted on by the add*/editDialogue methods, without a window"},
-		{"TilePainterForm.java", "panel", "1",
-			"the sign-text form"},
+		{"PaintForm.java", "panel", "1",
+			"the map painter's sign-text form (its Prompts)"},
 		{"ZoneLoadingPanel.java", "form", "2",
 			"the clone-zone and add-zones forms"},
 		{"UpdateUI.java", "body", "1",
@@ -142,7 +141,7 @@ public class DialogSeamTest {
 	static int fails = 0;
 
 	public static void main(String[] args) throws Exception {
-		System.setProperty("java.awt.headless", "true");
+		Headless.require();
 		File root = new File(args.length > 0 ? args[0] : "src");
 		if (!new File(root, "ctrmap").isDirectory()) {
 			System.out.println("FAIL: source root not found: " + root.getAbsolutePath());
@@ -355,8 +354,6 @@ public class DialogSeamTest {
 			+ "to put it in"},
 		{"UpdateUI.java", "1",
 			"the update progress window, shown before the editor is usable"},
-		{"AboutDialog.java", "1",
-			"an About box - the case the rule names as legitimately transient"},
 		{"PokePickers.java", "1",
 			"a modal picker: it returns the chosen species to its caller and closes"},
 		{"GfEnvPicker.java", "1",
@@ -364,12 +361,10 @@ public class DialogSeamTest {
 			+ "editor it is opened from is a pane in the World Editor now"},
 		{"BuildingPaletteDialog.java", "1",
 			"a modal picker: it returns the chosen building to the paint tool that asked"},
-		{"ESPICAControl.java", "1",
-			"inherited from upstream CTRMap: the model viewer control window"},
 	};
 
 	/** Windows allowed in all. It may fall and it may not rise quietly. */
-	private static final int WINDOW_CEILING = 9;
+	private static final int WINDOW_CEILING = 7; //9 -> 7: About is a message over the window and ESPICA a pane in Extras (F243)
 
 	/** new JFrame / new JDialog / new JWindow, and classes that ARE one. */
 	private static final Pattern WINDOW_MADE = Pattern.compile(
@@ -431,11 +426,14 @@ public class DialogSeamTest {
 			+ made.size() + " file(s) make one)" + (wrong.isEmpty() ? "" : " - " + wrong));
 		check(recorded <= WINDOW_CEILING, recorded + " window(s) recorded, ceiling "
 			+ WINDOW_CEILING + " - this may fall and may not rise quietly");
+		check(Ratchet.tight(recorded, WINDOW_CEILING), Ratchet.said("window", recorded, WINDOW_CEILING));
 	}
 	/** Rule two: the list of exceptions is a ceiling, and each one is argued. */
 	static void theAllowedListCannotGrowQuietly() {
 		check(ALLOWED.length <= ALLOWED_CEILING, ALLOWED.length + " allowed entry/entries, ceiling "
 				+ ALLOWED_CEILING + " - growing the list is a decision a human has to make");
+		check(Ratchet.tight(ALLOWED.length, ALLOWED_CEILING), Ratchet.said("allowed-dialog", ALLOWED.length,
+				ALLOWED_CEILING));
 		int total = 0;
 		boolean argued = true;
 		for (String[] e : ALLOWED) {
@@ -723,7 +721,7 @@ public class DialogSeamTest {
 		//them and never reaches the game it is handed
 		NPCRegistry reg = new NPCRegistry(f, new FakeGameFiles());
 		reg.modified = true;
-		ctrmap.humaninterface.NPCEditForm form = new ctrmap.humaninterface.NPCEditForm(new ctrmap.LoadedZone(), TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, CtrmapMainframe.mTileMapPanel, pane -> { });
+		ctrmap.humaninterface.NPCEditForm form = new ctrmap.humaninterface.NPCEditForm(new ctrmap.LoadedZone(), TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, TestWindow.mTileMapPanel(), pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
 		form.reg = reg;
 		boolean stored;
 		List<String> said = Ui.record();

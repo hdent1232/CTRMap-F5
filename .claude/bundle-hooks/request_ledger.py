@@ -78,9 +78,10 @@ import time
 
 LF = chr(10)
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(os.path.dirname(HERE))
 FOLDER = ".claude/" + os.path.basename(HERE)
 sys.path.insert(0, HERE)
+import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
+ROOT = _tree_root.require(__file__)
 import bundle_env        # noqa: E402  - the one spelling of the owner's switches
 import bundle_shell      # noqa: E402  - an agent launch, found by shape
 
@@ -143,7 +144,7 @@ REASONS_LIMIT = 1500
 #: What the reviewer may spend checking evidence.
 REVIEW_CALLS = 8
 
-#: Adapted per project: see ADAPT.md.
+#: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("STORE", "SESSION_VAR", "REVIEW_CALLS")
 
 

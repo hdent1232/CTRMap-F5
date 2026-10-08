@@ -10,9 +10,12 @@ the rule is trying to stop being automatic.
 """
 import io
 import os
+import sys
 
 LF = chr(10)
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+ROOT = _tree_root.require(__file__)
 SRC = os.path.join(ROOT, "src")
 OUT = os.path.join(ROOT, "tools", "guard", "classes.txt")
 

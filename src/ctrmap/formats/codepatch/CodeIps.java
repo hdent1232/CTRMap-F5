@@ -18,7 +18,7 @@ import java.util.List;
  * the saving patch owns - so a value put back to the game's own is put back in the file too, which
  * a plain merge of the new patch over the old would not do.
  *
- * <p>Not: {@link ShopData#mergeIPS} - the byte machinery a merge is made of, with no idea which
+ * <p>Not: {@link Ips#merge} - the byte machinery a merge is made of, with no idea which
  * bytes a save owns.
  */
 public final class CodeIps {
@@ -39,13 +39,13 @@ public final class CodeIps {
 		if (existing == null) {
 			return ours;
 		}
-		if (!isIps(existing)) {
+		if (!Ips.isIps(existing)) {
 			throw new IllegalStateException("the code.ips there is not an IPS patch (it does not start with PATCH and end"
 					+ " with EOF), so it was neither merged into nor replaced");
 		}
 		List<int[]> records;
 		try {
-			records = ShopData.parseIPS(existing);
+			records = Ips.parse(existing);
 		} catch (RuntimeException unreadable) {   //a record running past the end, or one this reader does not take
 			throw new IllegalStateException("the code.ips there could not be read record by record ("
 					+ ctrmap.util.Bytes.reason(unreadable) + "), so it was neither merged into nor replaced", unreadable);
@@ -67,7 +67,7 @@ public final class CodeIps {
 				}
 			}
 		}
-		return ShopData.mergeIPS(emit(kept), ours);
+		return Ips.merge(Ips.write(kept), ours);
 	}
 
 	/**
@@ -81,8 +81,8 @@ public final class CodeIps {
 		return existing == null ? "" : " (the patches already in it were kept)";
 	}
 
-	/** A patch that patches nothing. */
-	static final byte[] EMPTY = {'P', 'A', 'T', 'C', 'H', 'E', 'O', 'F'};
+	/** A patch that patches nothing - written by the one writer, not spelled here (F047). */
+	static final byte[] EMPTY = Ips.write(new ArrayList<>());
 
 	/**
 	 * Takes the patch that owns {@code owned} out of the code.ips at {@code file} and keeps every
@@ -95,15 +95,10 @@ public final class CodeIps {
 		byte[] left = merged(Files.readAllBytes(file.toPath()), EMPTY, owned);
 		ctrmap.util.Bytes.replaceFile(file, left);
 		int n = 0;
-		for (int[] rec : ShopData.parseIPS(left)) {
+		for (int[] rec : Ips.parse(left)) {
 			n += rec[1];
 		}
 		return n;
-	}
-
-	static boolean isIps(byte[] b) {
-		return b.length >= 8 && b[0] == 'P' && b[1] == 'A' && b[2] == 'T' && b[3] == 'C' && b[4] == 'H'
-				&& b[b.length - 3] == 'E' && b[b.length - 2] == 'O' && b[b.length - 1] == 'F';
 	}
 
 	private static boolean inside(int offset, int[][] owned) {
@@ -115,26 +110,4 @@ public final class CodeIps {
 		return false;
 	}
 
-	private static byte[] emit(List<int[]> records) {
-		java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
-		b.write('P');
-		b.write('A');
-		b.write('T');
-		b.write('C');
-		b.write('H');
-		for (int[] rec : records) {
-			b.write((rec[0] >> 16) & 0xFF);
-			b.write((rec[0] >> 8) & 0xFF);
-			b.write(rec[0] & 0xFF);
-			b.write((rec[1] >> 8) & 0xFF);
-			b.write(rec[1] & 0xFF);
-			for (int k = 0; k < rec[1]; k++) {
-				b.write(rec[2 + k]);
-			}
-		}
-		b.write('E');
-		b.write('O');
-		b.write('F');
-		return b.toByteArray();
-	}
 }

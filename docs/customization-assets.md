@@ -610,7 +610,8 @@ field skeleton.
 ## Reproducing this
 
 Probes are in
-`wt/_state/queue1/assets/probe/`
+`wt/_state/queue1/assets/probe/` - outside the repository: derived from the owner's game dump, which is never
+committed, so the figures below cannot be re-run from a clone
 (`Enum1`, `Names1`, `Scan1`, `Ctx1`, `One`, `Hex1`, `Bch1`, `Skel1`, `Mm1`,
 `Txt1`, `Line1`), compiled against
 `CTRMap/build/classes` plus `CTRMap/lib/*.jar`:

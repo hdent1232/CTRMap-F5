@@ -2,8 +2,8 @@ package ctrmap.formats.trainers;
 
 import java.util.ArrayList;
 import java.util.List;
-import static ctrmap.formats.LittleEndian.u16;
-import static ctrmap.formats.LittleEndian.putU16;
+import static ctrmap.util.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.putU16;
 
 /**
  * One ORAS trainer: the 24-byte trdata record (a/0/3/6) plus its party from

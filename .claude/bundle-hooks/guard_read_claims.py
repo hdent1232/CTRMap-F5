@@ -43,6 +43,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bundle_shell      # noqa: E402  - the call, found by shape
+import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
 
 LF = chr(10)
 
@@ -59,15 +60,8 @@ SIZE_CLAIM = re.compile(
 
 
 def _repo_root():
-    """The project root, ANCHORED against a file that must be in it (see guard_promise)."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    while True:
-        if os.path.isfile(os.path.join(here, "CLAUDE.md")):
-            return here
-        parent = os.path.dirname(here)
-        if parent == here:
-            return None
-        here = parent
+    """The project root, ANCHORED - `_tree_root.repo_root`, the one definition (F216)."""
+    return _tree_root.repo_root(__file__)
 
 
 def _entries(transcript_path):

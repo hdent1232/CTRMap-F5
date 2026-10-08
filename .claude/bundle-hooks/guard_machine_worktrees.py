@@ -45,7 +45,8 @@ if __name__ == "__main__":
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bundle_shell      # noqa: E402  - the command, found by shape, at any depth
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+ROOT = _tree_root.require(__file__)
 STATE = os.path.join(ROOT, ".sweep")
 RUN_LOCK = os.path.join(STATE, "running")
 
@@ -66,7 +67,7 @@ READ_ONLY = (
     r"^\s*Test-Path\b",
 )
 
-#: Adapted per project: see ADAPT.md.
+#: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("STATE", "RUN_LOCK", "WORKTREE", "READ_ONLY")
 
 

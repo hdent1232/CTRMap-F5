@@ -74,7 +74,7 @@ RESTORES = (r"^\s*git\s+(-C\s+\S+\s+)?(checkout|restore|stash)\b",)
 #: The owner's way past, spelled once in `bundle_env`.
 ALLOW = bundle_env.name("ALLOW_HELD_CHANGES")
 
-#: Adapted per project: see ADAPT.md.
+#: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("READERS", "RESTORES")
 
 

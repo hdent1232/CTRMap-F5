@@ -17,7 +17,6 @@ import java.awt.GradientPaint;
 import java.awt.RenderingHints;
 import java.io.File;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,16 +32,15 @@ import javax.swing.ListSelectionModel;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
-import static ctrmap.CtrmapMainframe.mTileMapPanel;
-import static ctrmap.formats.LittleEndian.u16;
-import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.u16;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * "Pick GameFreak's atmosphere": browse every retail zone by name, see a LIVE
- * preview of the environment GameFreak gave it (fog/sky color, ambient, fog
- * range, indoor/outdoor character), and take that COMPLETE per-area lighting
- * block to apply to your own area - no hand-tuning needed, but everything stays
+ * preview of the environment GameFreak gave it (fog colour across the four times
+ * of day, fog range, indoor/outdoor character), and take that COMPLETE per-area
+ * block - its lighting included, which nothing here decodes - to apply to your
+ * own area - no hand-tuning needed, but the fog stays
  * editable afterwards. Reads the pristine snapshot of the game data when
  * available, so the values are what GameFreak shipped even if the live
  * workspace was edited.
@@ -51,12 +49,6 @@ public class GfEnvPicker {
 
 	/** Returned by {@link #pick} when the user asked for the custom-settings form. */
 	public static final byte[] CUSTOM = new byte[0];
-
-	/** Opens the picker; returns the chosen zone's full 2944-byte env block, or null. */
-	public static byte[] pick(Dialog parent, LoadedZone loaded,
-			List<ctrmap.formats.h3d.texturing.H3DTexture> worldTextures) {
-		return pick((java.awt.Window) parent, false, loaded, worldTextures);
-	}
 
 	/**
 	 * Opens the picker; returns the chosen env block, {@link #CUSTOM} when the
@@ -119,7 +111,8 @@ public class GfEnvPicker {
 		// so they see each atmosphere on their own map. Falls back to a card.
 		final byte[] curModel = currentZoneModel(loaded);
 		final List<ctrmap.formats.h3d.texturing.H3DTexture> curTex = worldTextures;
-		final MapPreview3D view3d = (curModel != null) ? new MapPreview3D() : null;
+		//and the card alone where OpenGL cannot start (F077), as where there is no zone
+		final MapPreview3D view3d = (curModel != null && GlSupport.available()) ? new MapPreview3D() : null;
 		if (view3d != null) {
 			view3d.setRegion(curModel, curTex);
 			view3d.setPreferredSize(new Dimension(420, 340));
@@ -221,7 +214,7 @@ public class GfEnvPicker {
 		buttons.add(ok);
 		if (offerCustom) {
 			JButton custom = new JButton("Custom settings");
-			custom.setToolTipText("Hand-tune the fog color, strength, distances and ambient light instead.");
+			custom.setToolTipText("Hand-tune the fog colour, strength and distances instead.");
 			custom.addActionListener(e -> {
 				result[0] = CUSTOM;
 				dlg.dispose();
@@ -268,17 +261,7 @@ public class GfEnvPicker {
 				return null;
 			}
 			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, loaded.open().header.mapmatrixID);
-			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
-			int s0 = i32(mm, 4);
-			int w = u16(mm, s0 + 4), h = u16(mm, s0 + 6);
-			int region = -1;
-			for (int k = 0; k < w * h; k++) {
-				int id = u16(mm, s0 + 8 + k * 2);
-				if (id != 0xFFFF) {
-					region = id;
-					break;
-				}
-			}
+			int region = ctrmap.formats.mapmatrix.MapMatrix.firstRegionId(java.nio.file.Files.readAllBytes(mmFile.toPath()));
 			if (region < 0) {
 				return null;
 			}
@@ -328,7 +311,7 @@ public class GfEnvPicker {
 	private static byte[] areaSub4(GARC adG, int area) {
 		try {
 			byte[] entry = adG.getDecompressedEntry(area);
-			byte[] s4 = subfile(entry, 4);
+			byte[] s4 = subfile(entry, ctrmap.formats.containers.AD.ENVIRONMENT);
 			return s4 != null && s4.length == AreaEnv.SUB4_LEN ? s4 : null;
 		} catch (Exception ex) {
 			return null;

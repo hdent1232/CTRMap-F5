@@ -2,7 +2,9 @@ package ctrmap.tests;
 
 import ctrmap.formats.scripts.GFLPawnScript;
 import ctrmap.formats.zone.ZoneEntities;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * A zone script is read only when its header holds together, and refused in words when it does not
@@ -56,6 +58,45 @@ public class PawnHeaderTest {
 		refused("code that starts inside the tables", b, "code starts at 60");
 		refused("a header cut short, handed back half built", Arrays.copyOf(HandedGameTest.amx(), 30), "ends before");
 
+		System.out.println("--- a script whose code has outgrown its code/data boundary is refused by the injectors (F146)");
+		GFLPawnScript grown = new GFLPawnScript(withOnePublic());
+		grown.decompressThis();
+		check(boundaryHolds(grown), "control: a script as read ends its code where its boundary says");
+		ctrmap.formats.scripts.PawnInstruction wired = new ctrmap.formats.scripts.PawnInstruction(0, 0x81, "WIRED");
+		wired.argumentCount = 1;
+		wired.argumentCells = new int[]{0};
+		grown.instructions.add(wired);
+		grown.updateRaw();
+		String said = refusal(grown);
+		check(said != null && said.contains("Inject this routine first"), "a routine wired in without the script"
+				+ " being read again is refused before anything is written over it: " + said);
+		GFLPawnScript reread = new GFLPawnScript(grown.getScriptBytes());
+		reread.decompressThis();
+		check(boundaryHolds(reread) && reread.instructions.size() == 1, "and the same script written and read again"
+				+ " is accepted, its routine kept");
+		java.util.regex.Pattern writesAtBoundary = java.util.regex.Pattern.compile(
+				"int\\s+base\\s*=\\s*\\w+\\.dataStart\\s*-\\s*\\w+\\.instructionStart");
+		List<String> writers = new ArrayList<>(), unasked = new ArrayList<>();
+		for (java.io.File f : DialogSeamTest.javaSources(new java.io.File("src/ctrmap"))) {
+			String code = SourceSeamTest.stripComments(new String(java.nio.file.Files.readAllBytes(f.toPath()),
+					java.nio.charset.StandardCharsets.UTF_8));
+			if (writesAtBoundary.matcher(code).find()) {
+				writers.add(f.getName());
+				//a CALL, qualified or not - the engine asks its own precondition by its plain name
+				if (!java.util.regex.Pattern.compile("\\brequireCodeEndsAtDataBoundary\\s*\\(\\s*\\w+\\s*\\)")
+						.matcher(code).find()) {
+					unasked.add(f.getName());
+				}
+			}
+		}
+		//ONE WRITER (F087): both transplants write through PawnClosure.inject now, and neither injector
+		//writes at the boundary itself
+		check(writers.contains("PawnClosure.java") && !writers.contains("SignWrapperInjector.java")
+				&& !writers.contains("MsgWrapperInjector.java"),
+				"control: the writers at the code/data boundary are found (" + writers + ")");
+		check(unasked.isEmpty(), "and every one asks the precondition before it writes" + (unasked.isEmpty() ? ""
+				: " - these do not: " + unasked));
+
 		System.out.println("--- a zone whose entities do not read is refused, not handed back short (F149)");
 		byte[] script = HandedGameTest.amx();
 		MapResizeTest.putU16(script, 4, 0);
@@ -92,6 +133,20 @@ public class PawnHeaderTest {
 	}
 
 	/** The retail-shaped script with one 8-byte public and four bytes of code. */
+	static boolean boundaryHolds(GFLPawnScript s) {
+		return refusal(s) == null;
+	}
+
+	/** What the injectors' precondition says about {@code s}, or null when it lets it through. */
+	static String refusal(GFLPawnScript s) {
+		try {
+			ctrmap.formats.scripts.PawnClosure.requireCodeEndsAtDataBoundary(s);
+			return null;
+		} catch (ctrmap.formats.scripts.PawnClosure.Refused said) {
+			return said.getMessage();
+		}
+	}
+
 	static byte[] withOnePublic() {
 		byte[] b = Arrays.copyOf(HandedGameTest.amx(), 0x3C + 8 + 4);
 		for (int off = 12; off < 0x3C; off += 4) {

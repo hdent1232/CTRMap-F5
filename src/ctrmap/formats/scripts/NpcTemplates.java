@@ -166,7 +166,7 @@ public class NpcTemplates {
 	 * Highest trainer ID with a name line (the ORAS trainer-name text file
 	 * has 950 lines; observed NPC references stop around 830).
 	 */
-	public static final int TRAINER_ID_MAX = GameProfile.of(ctrmap.gamedef.GameType.ORAS).trainerIdMax(); //the profile's one answer (F085)
+	public static final int TRAINER_ID_MAX = GameProfile.onlyGameWith(GameProfile.Feature.NPC_SCRIPTS).trainerIdMax(); //the profile's one answer (F085, F207)
 
 	/**
 	 * movePerm2 of the dominant vanilla single-trainer profile ("approaching
@@ -183,7 +183,7 @@ public class NpcTemplates {
 	 * Highest item ID with a name line (the ORAS item-name text file has 776
 	 * lines, index 0 is the null item).
 	 */
-	public static final int ITEM_ID_MAX = GameProfile.of(ctrmap.gamedef.GameType.ORAS).itemIdMax(); //the profile's one answer (F085)
+	public static final int ITEM_ID_MAX = GameProfile.onlyGameWith(GameProfile.Feature.NPC_SCRIPTS).itemIdMax(); //the profile's one answer (F085, F207)
 
 	/**
 	 * GAMETEXT file index of the trainer-name list for the handed game (on

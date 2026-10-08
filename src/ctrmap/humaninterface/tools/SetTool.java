@@ -32,9 +32,7 @@ public class SetTool extends AbstractTool {
 			Selector.acqCurTile(host.inspector(), host.map());
 		}
 		else{
-			ctrmap.humaninterface.TileUndo.begin();
-			updateTile();
-			ctrmap.humaninterface.TileUndo.end();
+			updateTile();   //one click, one gesture, one undo step: the zone's history reads it (F209)
 		}
 	}
 
@@ -44,15 +42,13 @@ public class SetTool extends AbstractTool {
 
 	@Override
 	public void onTileMouseUp(MouseEvent e) {
-		CM2DNoUpdate = false;
-		ctrmap.humaninterface.TileUndo.end(); // one undo step per paint drag
+		CM2DNoUpdate = false;   //one drag, one gesture, one undo step (F209)
 	}
 
 	@Override
 	public void onTileMouseDragged(MouseEvent e) {
 		if (!SwingUtilities.isRightMouseButton(e)){
 			CM2DNoUpdate = true;
-			ctrmap.humaninterface.TileUndo.begin();
 			updateTile();
 		}
 	}
@@ -65,9 +61,7 @@ public class SetTool extends AbstractTool {
 			}
 			int lx = Selector.hilightTileX % 40, ly = Selector.hilightTileY % 40;
 			if (!Arrays.equals(tm.getTileData(lx, ly), actTileData)) {
-				byte[] before = tm.getTileData(lx, ly).clone();
 				tm.setTileData(lx, ly, actTileData);
-				ctrmap.humaninterface.TileUndo.record(tm, lx, ly, before, actTileData);
 				tm.updateImage();
 				host.map().perfScale(host.map().tilemapScale, Selector.hilightTileX / 40, Selector.hilightTileY / 40);
 			}

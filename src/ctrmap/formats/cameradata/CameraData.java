@@ -4,8 +4,8 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 
-import ctrmap.LittleEndianDataInputStream;
-import ctrmap.LittleEndianDataOutputStream;
+import ctrmap.util.LittleEndianDataInputStream;
+import ctrmap.util.LittleEndianDataOutputStream;
 import java.util.Arrays;
 
 /**
@@ -50,9 +50,13 @@ public class CameraData {
 	 * back records made of -1s for as long as the count said, and the only sign was a
 	 * stack trace on a console this program's users do not have. The editor then
 	 * offered those records, and its Save wrote them back over the real table.
+	 *
+	 * <p>ALL SIXTEEN OF THE FIRST BYTES (F221): they were read with read(byte[]), which may hand
+	 * over fewer than asked while more remain, and the count was dropped - every field after them
+	 * was then read from the wrong place. readFully takes all sixteen or throws.
 	 */
 	public CameraData(LittleEndianDataInputStream dis) throws IOException {
-		dis.read(unknownBytes);
+		dis.readFully(unknownBytes);
 		acceptCoords2 = dis.read();
 		acceptCoords1 = dis.read();
 		transitionPeriod = dis.readShort();

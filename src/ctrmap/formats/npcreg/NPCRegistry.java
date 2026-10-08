@@ -1,7 +1,7 @@
 package ctrmap.formats.npcreg;
 
-import ctrmap.LittleEndianDataInputStream;
-import ctrmap.LittleEndianDataOutputStream;
+import ctrmap.util.LittleEndianDataInputStream;
+import ctrmap.util.LittleEndianDataOutputStream;
 import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.MM;
 import ctrmap.formats.h3d.BCHFile;
@@ -118,6 +118,23 @@ public class NPCRegistry {
 		for (NPCRegistryEntry e : all) {
 			byUid.put(e.uid, e);
 		}
+	}
+
+	/** Every entry in file order (F209), a UID held twice included: what an undo history reads. READ-ONLY. */
+	public List<NPCRegistryEntry> inFileOrder() {
+		return Collections.unmodifiableList(all);
+	}
+
+	/**
+	 * Puts the registry back as an undo history read it (F209): {@code entries}, in file order - the
+	 * history's own copies, which become the registry's - indexed again, and marked changed from what was
+	 * saved. The entries held before are let go: the registry editor replaces entries by UID, not in place.
+	 */
+	public void restore(List<NPCRegistryEntry> entries) {
+		all.clear();
+		all.addAll(entries);
+		reindex();
+		modified = true;
 	}
 
 	private int indexOf(NPCRegistryEntry e) {

@@ -797,7 +797,7 @@ public class PawnInstruction {
 			case 0x81: // Jump
 			{
 				int newOfs = ins.pointer + ins.argumentCells[0];
-				op = Commands.values()[c].toString() + " => 0x" + Integer.toHexString(newOfs);
+				op = ctrmap.util.Bytes.enumOf(Commands.values(), c & 0x7FFF, null).toString() + " => 0x" + Integer.toHexString(newOfs);
 				break;
 			}
 			case 0x7B: {
@@ -820,7 +820,7 @@ public class PawnInstruction {
 					tree.add("\t" + ifValue + " => 0x" + Integer.toHexString(toOffset));
 				}
 
-				op = Commands.values()[c].toString() + "\n{\n" + String.join("\n", tree) + "\n}";
+				op = ctrmap.util.Bytes.enumOf(Commands.values(), c & 0x7FFF, null).toString() + "\n{\n" + String.join("\n", tree) + "\n}";
 				break;
 			}
 			case 0x87: {
@@ -940,11 +940,11 @@ public class PawnInstruction {
 			return eA(ins);
 		}
 		String args = ins.argumentCount >= 2 ? String.valueOf(ins.argumentCells[1]) : "";
-		return Commands.values()[ins.getCommand()].toString() + "(" + who + "," + args + ")";
+		return ctrmap.util.Bytes.enumOf(Commands.values(), ins.getCommand(), null).toString() + "(" + who + "," + args + ")";
 	}
 
 	private static String eA(int customCommand, PawnInstruction ins) {
-		String cmd = Commands.values()[customCommand].toString();
+		String cmd = ctrmap.util.Bytes.enumOf(Commands.values(), customCommand, null).toString();
 		StringBuilder params = new StringBuilder();
 		params.append("(");
 		for (int i = 0; i < ins.argumentCount; i++) {
@@ -955,7 +955,7 @@ public class PawnInstruction {
 	}
 
 	private static String eF(PawnInstruction ins) {
-		String cmd = Commands.values()[ins.getCommand()].toString();
+		String cmd = ctrmap.util.Bytes.enumOf(Commands.values(), ins.getCommand(), null).toString();
 		StringBuilder params = new StringBuilder();
 		params.append("(");
 		for (int i = 0; i < ins.argumentCount; i++) {

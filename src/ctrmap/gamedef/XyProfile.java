@@ -124,6 +124,16 @@ public class XyProfile extends GameProfile {
 		return true;
 	}
 
+	/**
+	 * Ghosting at bit 0, special walking OFF at 2, cold breath at 11, the Dowsing Machine at 12 and
+	 * stereoscopic 3D at 15; no flashable-darkness bit. As upstream CTRMap read and wrote them,
+	 * moved here from the header's X/Y branch (F207).
+	 */
+	@Override
+	public ZoneFlagLayout zoneFlagLayout() {
+		return new ZoneFlagLayout(0, 11, 12, 15, 2, -1);
+	}
+
 	/** X and Y: the two titles this profile covers, neither the default (F238). */
 	@Override
 	public java.util.Map<String, String> titleIds() {

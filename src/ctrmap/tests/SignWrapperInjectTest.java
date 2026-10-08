@@ -1,6 +1,14 @@
 package ctrmap.tests;
 
-import ctrmap.formats.scripts.*;
+import ctrmap.formats.scripts.GFLPawnScript;
+import ctrmap.formats.scripts.PawnClosure;
+import ctrmap.formats.scripts.MsgWrapperInjector;
+import ctrmap.formats.scripts.NpcTemplates;
+import ctrmap.formats.scripts.PawnInstruction;
+import ctrmap.formats.scripts.PawnPrefixEntry;
+import ctrmap.formats.scripts.SignWrapperInjector;
+import ctrmap.formats.scripts.TalkerScriptWizard;
+import ctrmap.formats.scripts.ZoneScriptAnalyzer;
 
 import ctrmap.formats.garc.GARC;
 import java.io.File;
@@ -118,7 +126,7 @@ public class SignWrapperInjectTest {
 			}
 		}
 		try {
-			SignWrapperInjector.pickDonor(new MsgWrapperInjector.ScriptSource() {
+			SignWrapperInjector.pickDonor(new PawnClosure.ScriptSource() {
 				@Override
 				public GFLPawnScript get(int zoneIndex) {
 					return getZoneScript(garc, zoneIndex);
@@ -179,7 +187,7 @@ public class SignWrapperInjectTest {
 				boolean refused = false;
 				try {
 					SignWrapperInjector.injectSignWrapper(NpcScriptGateTest.ORAS, s, donor);
-				} catch (SignWrapperInjector.InjectionException ex) {
+				} catch (PawnClosure.Refused ex) {
 					refused = true;
 				}
 				if (!refused) {
@@ -248,7 +256,7 @@ public class SignWrapperInjectTest {
 	 */
 	private static String[] injectAndVerify(GARC garc, int z, GFLPawnScript donor) {
 		GFLPawnScript t = getZoneScript(garc, z);
-		boolean needStub = !MsgWrapperInjector.hasStubAt4(t);
+		boolean needStub = !PawnClosure.hasStubAt4(t);
 
 		//pre-injection snapshots
 		int preCodeCells = (t.dataStart - t.instructionStart) / 4;
@@ -275,7 +283,7 @@ public class SignWrapperInjectTest {
 		int wrapperPtr;
 		try {
 			wrapperPtr = SignWrapperInjector.injectSignWrapper(NpcScriptGateTest.ORAS, t, donor);
-		} catch (SignWrapperInjector.InjectionException ex) {
+		} catch (PawnClosure.Refused ex) {
 			return new String[]{"refused: " + ex.getMessage(), "skipped"};
 		}
 
@@ -297,7 +305,7 @@ public class SignWrapperInjectTest {
 			return new String[]{"cell 0 changed", "skipped"};
 		}
 		if (needStub) {
-			if (!MsgWrapperInjector.hasStubAt4(fresh)) {
+			if (!PawnClosure.hasStubAt4(fresh)) {
 				return new String[]{"stub not recognized at 4 after injection", "skipped"};
 			}
 			int stubNativeIdx = fresh.instructions.get(3).argumentCells[0];
@@ -436,7 +444,7 @@ public class SignWrapperInjectTest {
 		boolean refused = false;
 		try {
 			SignWrapperInjector.injectSignWrapper(NpcScriptGateTest.ORAS, fresh, donor);
-		} catch (SignWrapperInjector.InjectionException ex) {
+		} catch (PawnClosure.Refused ex) {
 			refused = true;
 		}
 		if (!refused) {
@@ -538,7 +546,7 @@ public class SignWrapperInjectTest {
 				return "post-clone public " + i + " target command changed";
 			}
 		}
-		if (!MsgWrapperInjector.hasStubAt4(s3)) {
+		if (!PawnClosure.hasStubAt4(s3)) {
 			return "stub at 0x4 lost after addSignScript";
 		}
 		return null;
@@ -592,7 +600,7 @@ public class SignWrapperInjectTest {
 		if (sw.pointer != signPtr) {
 			return "sign wrapper at 0x" + Integer.toHexString(sw.pointer) + ", injected at 0x" + Integer.toHexString(signPtr);
 		}
-		if (!MsgWrapperInjector.hasStubAt4(fresh)) {
+		if (!PawnClosure.hasStubAt4(fresh)) {
 			return "stub at 0x4 missing after composition";
 		}
 		//no duplicated native hashes after both injections
@@ -764,6 +772,6 @@ public class SignWrapperInjectTest {
 	}
 
 	private static GFLPawnScript getZoneScript(GARC garc, int index) {
-		return MsgWrapperInjector.extractZoneScript(garc.getDecompressedEntry(index));
+		return ctrmap.formats.scripts.PawnClosure.extractZoneScript(garc.getDecompressedEntry(index));
 	}
 }

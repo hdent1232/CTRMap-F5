@@ -125,7 +125,7 @@ public class MainframeActionGuardsTest {
 	static void everyActionRefusesWithNoWorkspace() throws Exception {
 		System.out.println("--- with no workspace, every action refuses under its own title");
 		Workspace.reset();
-		CtrmapMainframe.mZonePnl = null;
+		TestWindow.mZonePnl(null);
 
 		String settings = "Load a workspace first (Options > Workspace settings).";
 		refuses("deployModAction", "Deploy mod: Load a workspace first.");
@@ -174,7 +174,7 @@ public class MainframeActionGuardsTest {
 		System.out.println("--- an XY workspace is refused by the ORAS-only actions, in their own words");
 		Workspace.reset();
 		openWithNoArchives(GameType.XY);
-		CtrmapMainframe.mZonePnl = null;
+		TestWindow.mZonePnl(null);
 
 		refuses("makeZoneIndependentAction", "Make zone independent: " + unsupported("Making a zone independent",
 				"Giving one zone its own copy of its map appends to FieldData and the"
@@ -221,26 +221,21 @@ public class MainframeActionGuardsTest {
 	 * reaches when a load fails part way. Three of the four actions that need
 	 * the table say exactly that.
 	 *
-	 * <p>The fourth does not, and this pins what it says today rather than what
-	 * it ought to: "Remove added zones" folds a MISSING zone table into the
-	 * same branch as a stock one and reports "This ZoneData has no added zones
-	 * (stock layout)" - a statement about an archive it never looked at. See
-	 * suspected_defects; it is left exactly as it is so the refactor this suite
-	 * guards is measured against today's behaviour and not against an
-	 * improvement smuggled in here.
+	 * <p>The fourth said something else until F156: "Remove added zones" folded a
+	 * MISSING zone table into the same branch as a stock one and reported "This
+	 * ZoneData has no added zones (stock layout)" - a statement about an archive
+	 * it never looked at. It says what the other three say now.
 	 */
 	static void aMissingZoneTableIsNamed() throws Exception {
 		System.out.println("--- a valid ORAS workspace with no zone table loaded");
 		Workspace.reset();
 		openWithNoArchives(GameType.ORAS);
-		CtrmapMainframe.mZonePnl = null;
+		TestWindow.mZonePnl(null);
 
 		refuses("makeZoneIndependentAction", "Make zone independent: ZoneData archive unavailable.");
 		refuses("renameZoneAction", "Rename zone: ZoneData archive unavailable.");
 		refuses("emptyZoneAction", "Empty zone: ZoneData archive unavailable.");
-		//PINNED AS IS, NOT AS IT SHOULD BE - see the javadoc above
-		refuses("removeAddedZonesAction",
-				"Remove added zones: This ZoneData has no added zones (stock layout).");
+		refuses("removeAddedZonesAction", "Remove added zones: ZoneData archive unavailable.");
 	}
 
 	// ---- the mod switch, which is reachable end to end ----------------------
@@ -471,7 +466,7 @@ public class MainframeActionGuardsTest {
 		int len = Workspace.getArchive(ArchiveType.ZONE_DATA).length;
 		check(len == STOCK_ZONEDATA_ENTRIES,
 				"the retail ZoneData holds " + STOCK_ZONEDATA_ENTRIES + " entries (got " + len + ")");
-		CtrmapMainframe.mZonePnl = null;
+		TestWindow.mZonePnl(null);
 		refuses("removeAddedZonesAction",
 				"Remove added zones: This ZoneData has no added zones (stock layout).");
 	}
@@ -487,8 +482,8 @@ public class MainframeActionGuardsTest {
 	 */
 	static void theActionsThatNeedAZoneSayWhichTab() throws Exception {
 		System.out.println("--- the zone-scoped actions name the tab to open");
-		CtrmapMainframe.mZonePnl = null;
-		CtrmapMainframe.bindLoadedZone(null);
+		TestWindow.mZonePnl(null);
+		TestWindow.bindLoadedZone(null);
 		refuses("blankCanvasAction", "Blank map canvas: Load the zone first (Zone tab).");
 		refuses("resizeMapAction", "Resize map: Load the zone first (Zone tab).");
 		refuses("setupFacilityAction", "Set up Battle facility: Load the base zone to convert first (Zone tab).");
@@ -496,9 +491,9 @@ public class MainframeActionGuardsTest {
 		//a panel with no zone selected is the same situation, and must read the
 		//same way: zoneIndex is -1 until the dropdown has been used
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
-		CtrmapMainframe.mZonePnl = pnl;
-		CtrmapMainframe.bindLoadedZone(lz);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		TestWindow.mZonePnl(pnl);
+		TestWindow.bindLoadedZone(lz);
 		check(lz.index() == -1 && lz.open() == null, "a fresh zone panel holds no zone");
 		refuses("blankCanvasAction", "Blank map canvas: Load the zone first (Zone tab).");
 		refuses("setupFacilityAction", "Set up Battle facility: Load the base zone to convert first (Zone tab).");
@@ -518,11 +513,11 @@ public class MainframeActionGuardsTest {
 	static void facilitySetupRefusesAnAppendedZone() throws Exception {
 		System.out.println("--- a facility refuses an appended zone, and says where to put it instead");
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
 		int baseZones = Workspace.getArchive(ArchiveType.ZONE_DATA).length - 2;
 		lz.open(baseZones + 4, null);
-		CtrmapMainframe.mZonePnl = pnl;
-		CtrmapMainframe.bindLoadedZone(lz);
+		TestWindow.mZonePnl(pnl);
+		TestWindow.bindLoadedZone(lz);
 
 		List<String> said = record("setupFacilityAction");
 		check(said.size() == 1 && said.get(0).startsWith("Set up Battle facility: This is an appended zone (index "
@@ -551,22 +546,20 @@ public class MainframeActionGuardsTest {
 	 * covered by ZoneClonerTest against the bytes; what has never been measured
 	 * is the routing that decides whether to call it at all.
 	 *
-	 * <p>Pinned on the way through, and NOT fixed: the facility kind is matched
-	 * with {@code ==} against the option array, so an answer that is EQUAL to
-	 * "Battle Institute" but not the same object selects the Maison. A real
-	 * JOptionPane returns the very object it was given, so the application is
-	 * not wrong today; the check below records that the identity is what the
-	 * code depends on, so a refactor that rebuilds the array (or routes the
-	 * answer through anything that copies a String) has to trip here rather
-	 * than quietly cloning the wrong facility.
+	 * <p>The facility kind is matched by EQUALITY (F157). It was matched with
+	 * {@code ==} against the option array, so an answer EQUAL to "Battle
+	 * Institute" but not the same object selected the Maison - right only while
+	 * the dialog hands back the very object it was given, and the wrong branch
+	 * replaces a zone with the other lobby for good. The last check below hands
+	 * it an equal copy and expects the Institute.
 	 */
 	static void facilitySetupOffersBothWaysAndActsOnNeitherUnasked() throws Exception {
 		System.out.println("--- the facility action offers two paths and acts on neither unasked");
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
 		lz.open(100, null); //a base zone, well under the stock bound
-		CtrmapMainframe.mZonePnl = pnl;
-		CtrmapMainframe.bindLoadedZone(lz);
+		TestWindow.mZonePnl(pnl);
+		TestWindow.bindLoadedZone(lz);
 
 		List<String> said = record("setupFacilityAction");
 		check(said.size() == 1 && said.get(0).startsWith("Set up Battle facility: How should this facility's battles work?"),
@@ -608,14 +601,10 @@ public class MainframeActionGuardsTest {
 				"choosing the Institute clones zone " + INSTITUTE_ZONE + " instead: "
 				+ (said.size() > 2 ? line(said.get(2)) : said.toString()));
 
-		//PINNED AS IS: the answer is matched by IDENTITY, not by equality. It
-		//works today only because both sides are the same interned literal; an
-		//answer that is equal but not the same object silently falls through to
-		//the Maison, which zone 517 then rejects as itself.
+		//an answer EQUAL to the Institute's label but not the same object is still the Institute
 		said = record("setupFacilityAction", 1, new String("Battle Institute (single test)"));
-		check(said.size() == 3 && said.get(2).contains("That IS the source facility zone"),
-				"an equal-but-not-identical answer selects the Maison instead, which zone "
-				+ MAISON_LOBBY_ZONE + " rejects as itself: "
+		check(said.size() == 3 && said.get(2).contains("lobby (zone " + INSTITUTE_ZONE + ")"),
+				"an equal-but-not-identical answer is matched as the Institute, not the Maison: "
 				+ (said.size() > 2 ? line(said.get(2)) : said.toString()));
 	}
 
@@ -631,14 +620,14 @@ public class MainframeActionGuardsTest {
 	 */
 	static void theObjToolsDefaultToTheLoadedZonesRegion() throws Exception {
 		System.out.println("--- the OBJ tools default to the loaded zone's own map region");
-		CtrmapMainframe.mZonePnl = null;
-		CtrmapMainframe.bindLoadedZone(null);
+		TestWindow.mZonePnl(null);
+		TestWindow.bindLoadedZone(null);
 		check(defaultRegion() == -1, "with no zone owner at all the default is -1, not a guess");
 
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
-		CtrmapMainframe.mZonePnl = pnl;
-		CtrmapMainframe.bindLoadedZone(lz);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		TestWindow.mZonePnl(pnl);
+		TestWindow.bindLoadedZone(lz);
 		check(defaultRegion() == -1, "with an owner holding no zone it is still -1");
 
 		int zoneIndex = 15; //Mauville: its map matrix is its own in the retail game
@@ -715,7 +704,7 @@ public class MainframeActionGuardsTest {
 		try {
 			Method m = CtrmapMainframe.class.getDeclaredMethod(action);
 			m.setAccessible(true);
-			m.invoke(null);
+			m.invoke(TestWindow.W);
 		} catch (InvocationTargetException ex) {
 			//a thrown action is a failure of the action, not of the suite: it
 			//is reported as one rather than ending the run at the first one
@@ -737,7 +726,7 @@ public class MainframeActionGuardsTest {
 		try {
 			Method m = CtrmapMainframe.class.getDeclaredMethod("toggleModAction", File.class);
 			m.setAccessible(true);
-			m.invoke(null, modRoot);
+			m.invoke(TestWindow.W, modRoot);
 		} catch (InvocationTargetException ex) {
 			said.add("THREW: " + (ex.getCause() == null ? ex : ex.getCause()));
 		} finally {
@@ -749,7 +738,7 @@ public class MainframeActionGuardsTest {
 	static int defaultRegion() throws Exception {
 		Method m = CtrmapMainframe.class.getDeclaredMethod("defaultRegionForLoadedZone");
 		m.setAccessible(true);
-		return (Integer) m.invoke(null);
+		return (Integer) m.invoke(TestWindow.W);
 	}
 
 	static File temp(byte[] bytes) throws Exception {
@@ -826,7 +815,7 @@ public class MainframeActionGuardsTest {
 		};
 
 		editors.allow = false;
-		CtrmapMainframe.openChosenGr(editors, load);
+		TestWindow.openChosenGr(editors, load);
 		check(editors.count() == 1,
 				"Open GR Mapfile asks the open editors before it replaces anything ("
 				+ editors.count() + " ask(s))");
@@ -836,7 +825,7 @@ public class MainframeActionGuardsTest {
 				"an editor that refuses stops the open: nothing was loaded over what was on screen");
 
 		editors.allow = true;
-		CtrmapMainframe.openChosenGr(editors, load);
+		TestWindow.openChosenGr(editors, load);
 		check(editors.count() == 2, "the next open asks again rather than remembering the answer");
 		check(loads[0] == 1, "and when every editor has written, the file the user picked IS opened");
 
@@ -848,8 +837,8 @@ public class MainframeActionGuardsTest {
 					+ " - the routing check reads the window's source");
 		} else {
 			String text = new String(java.nio.file.Files.readAllBytes(src.toPath()), "UTF-8");
-			int at = text.indexOf("private static void openGrAction()");
-			int end = text.indexOf("private static void openMapMatrixAction()");
+			int at = text.indexOf("private void openGrAction()");
+			int end = text.indexOf("private void openMapMatrixAction()");
 			String body = (at >= 0 && end > at) ? text.substring(at, end) : "";
 			check(body.contains("openChosenGr(openEditors,"),
 					"and File > Open GR Mapfile is what runs that decision, not a second copy of it");

@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import ctrmap.util.LittleEndian;
 
 /**
  * The master zone-header table - the copy of every zone's header the game itself reads - read,
@@ -137,8 +138,7 @@ public final class MasterTable {
 	public void set(ZoneResource res, int zone, int id) {
 		requireZone(zone);
 		int at = zone * ROW + res.headerOffset;
-		rows[at] = (byte) id;
-		rows[at + 1] = (byte) (id >> 8);
+		LittleEndian.putU16(rows, at, id);
 	}
 
 	/** A copy of zone {@code zone}'s whole row. */

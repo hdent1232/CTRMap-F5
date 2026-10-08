@@ -30,10 +30,11 @@ WHAT THIS REFUSES, and each one is a way the same thing happens again:
   4. a settings file or hooks directory it cannot read - because "I could not look" is not
      "there is nothing there", and collapsing the two is what reported twelve live workers
      gone and discarded 134 verdicts here
-  5. an installed hook that differs from its version-controlled copy in `tools/hooks` - the
-     installed directory is outside version control, so a hook hollowed out there leaves no
-     diff, no history and no review, and goes on looking installed and wired
-  6. a hook in `tools/hooks` that is not installed at all - a guard that exists only on paper
+  5. a hook git does not track - one dropped into the folder and run from there leaves no diff,
+     no history and no review, and goes on looking installed and wired; a folder git cannot be
+     asked about is UNKNOWN, never clean. (This compared the installed hooks with a second,
+     "version-controlled" copy in tools/hooks, from when .claude/hooks was untracked; the copies
+     drifted, one fix in each, and neither was the guard - F187.)
 
 Usage: python tools/guard/hooks_wired.py [repo-root]
 Exit 1 with reasons, 0 when every installed guard is reachable for every tool.
@@ -43,7 +44,11 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
+
+#: No console window for a captured child (F184) - this runs inside guard_all on every tool call.
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
 #: A matcher that covers every tool. Anything else enumerates call sites.
 UNIVERSAL = ("*", ".*", "", "**")
@@ -328,7 +333,7 @@ def findings(root):
                 "command issued through it. Use \"*\" and let each guard decide."
                 % (event, matcher))
 
-    why.extend(_differs_from_the_versioned_copy(root, hooks_dir))
+    why.extend(_untracked(hooks_dir))
     #: the three adopted refusals, over every installed hook
     every = sorted(n for n in os.listdir(hooks_dir) if n.endswith(".py"))
     why.extend(hooks_that_run_on_import(hooks_dir, every))
@@ -354,82 +359,29 @@ def findings(root):
     return why
 
 
-#: Where the version-controlled copy of each hook lives, relative to the repository root. The
-#: installed copy in `.claude/hooks` is outside version control entirely, so a hook edited
-#: there leaves no trace anywhere: no diff, no history, and a suite that read the installed
-#: copy would simply agree with whatever it now says.
-VERSIONED = os.path.join("tools", "hooks")
+def _untracked(hooks_dir):
+    """Every hook in HOOKS_DIR git does not track - the one edit that still leaves no trace (F187).
 
-
-def _repo_root(root):
-    """The repository holding tools/hooks, at `root` or one level down."""
-    if os.path.isdir(os.path.join(root, VERSIONED)):
-        return root
-    try:
-        for name in sorted(os.listdir(root)):
-            if os.path.isdir(os.path.join(root, name, VERSIONED)):
-                return os.path.join(root, name)
-    except OSError:
-        pass
-    return None
-
-
-def _text(path):
-    """The file with line endings normalised, or None when it cannot be read.
-
-    Normalised because this tree is checked out with autocrlf, so the working copy of a
-    versioned file legitimately differs from the installed one by line endings alone. The
-    project's own build digest ignores endings for text for exactly this reason; a check that
-    did not would cry wolf on every clone and be switched off within a day.
+    `.claude/hooks` is tracked: an edit there has a diff, a history and a review. A second copy in
+    tools/hooks was kept for when it was not, and every change had to be made twice - two fixes of
+    guard_push landed one in each copy, and the one the harness ran was neither. What can still
+    leave no trace is a hook git never saw. A folder git cannot be asked about is UNKNOWN.
     """
     try:
-        with open(path, "rb") as handle:
-            return handle.read().replace(b"\r\n", b"\n")
-    except OSError:
-        return None
-
-
-def _differs_from_the_versioned_copy(root, hooks_dir):
-    """Every installed hook that is not what the repository says it is.
-
-    A HOOK EDITED IN PLACE LEAVES NO TRACE. `.claude/hooks` is not in version control: an edit
-    there has no diff, no history and no review, and the guard goes on looking installed and
-    wired. This is the half that makes the versioned copy mean anything.
-    """
-    repo = _repo_root(root)
-    if repo is None:
-        return ["there is no %s in or under %s, so what the installed hooks are SUPPOSED to "
-                "say is unknown - and an unknown is not a match"
-                % (VERSIONED, os.path.abspath(root))]
-    versioned_dir = os.path.join(repo, VERSIONED)
-    try:
-        versioned = sorted(name for name in os.listdir(versioned_dir)
-                           if name.endswith((".py", ".txt")))
-        beside = sorted(name for name in os.listdir(hooks_dir)
-                        if name.endswith((".py", ".txt")))
-    except OSError as cannotList:
-        return ["cannot list the hooks to compare them (%s)" % cannotList]
-
-    why = []
-    for name in beside:
-        want = _text(os.path.join(versioned_dir, name))
-        if want is None:
-            why.append("%s is installed in %s but has no version-controlled copy in %s. A hook "
-                       "edited in place leaves no diff and no history."
-                       % (name, hooks_dir, VERSIONED))
-            continue
-        got = _text(os.path.join(hooks_dir, name))
-        if got is None:
-            why.append("cannot read the installed %s" % name)
-        elif got != want:
-            why.append("%s as installed differs from %s/%s (%d bytes vs %d). Whichever is "
-                       "right, they are not the same guard, and only one of them runs."
-                       % (name, VERSIONED, name, len(got), len(want)))
-    for name in versioned:
-        if name not in beside:
-            why.append("%s/%s is in version control but is NOT installed in %s - a guard that "
-                       "exists only on paper" % (VERSIONED, name, hooks_dir))
-    return why
+        done = subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "--", "."],
+                              cwd=hooks_dir, capture_output=True, text=True, timeout=60,
+                              creationflags=NO_WINDOW)
+    except (OSError, subprocess.TimeoutExpired) as cannotAsk:
+        return ["cannot ask git which hooks in %s are tracked (%s) - whether one leaves no trace is "
+                "UNKNOWN, and unknown is not tracked" % (hooks_dir, cannotAsk)]
+    if done.returncode != 0:
+        return ["git cannot say which hooks in %s are tracked (exit %d: %s) - whether one leaves no "
+                "trace is UNKNOWN, and unknown is not tracked"
+                % (hooks_dir, done.returncode, (done.stderr or "").strip()[:120])]
+    return ["%s is in %s and git does not track it - a hook git never saw leaves no diff, no "
+            "history and no review" % (rel, hooks_dir)
+            for rel in done.stdout.splitlines()
+            if "/" not in rel and rel.endswith((".py", ".txt"))]
 
 
 def main(argv):

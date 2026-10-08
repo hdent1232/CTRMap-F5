@@ -1,6 +1,5 @@
 package ctrmap.tests;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.formats.zone.Zone;
 import ctrmap.humaninterface.ZoneEditors;
 import java.util.ArrayList;
@@ -61,12 +60,12 @@ class ZoneEditorsSpy extends ZoneEditors {
 		calls.add("commit");
 		//what the Zone tab's save used to do by name, so the suites that assert
 		//on those forms' records keep asserting the same thing
-		boolean ok = CtrmapMainframe.mNPCEditForm == null || CtrmapMainframe.mNPCEditForm.saveEntry();
-		if (CtrmapMainframe.mWarpEditForm != null) {
-			CtrmapMainframe.mWarpEditForm.saveEntry();
+		boolean ok = TestWindow.mNPCEditForm() == null || TestWindow.mNPCEditForm().saveEntry();
+		if (TestWindow.mWarpEditForm() != null) {
+			TestWindow.mWarpEditForm().saveEntry();
 		}
-		if (CtrmapMainframe.mTriggerEditForm != null) {
-			CtrmapMainframe.mTriggerEditForm.saveEntry();
+		if (TestWindow.mTriggerEditForm() != null) {
+			TestWindow.mTriggerEditForm().saveEntry();
 		}
 		return ok;
 	}
@@ -74,14 +73,14 @@ class ZoneEditorsSpy extends ZoneEditors {
 	@Override
 	public void clear() {
 		calls.add("clear");
-		if (CtrmapMainframe.mNPCEditForm != null) {
-			CtrmapMainframe.mNPCEditForm.loadFromEntities(null, null);
+		if (TestWindow.mNPCEditForm() != null) {
+			TestWindow.mNPCEditForm().loadFromEntities(null, null);
 		}
-		if (CtrmapMainframe.mWarpEditForm != null) {
-			CtrmapMainframe.mWarpEditForm.loadFromEntities(null);
+		if (TestWindow.mWarpEditForm() != null) {
+			TestWindow.mWarpEditForm().loadFromEntities(null);
 		}
-		if (CtrmapMainframe.mTriggerEditForm != null) {
-			CtrmapMainframe.mTriggerEditForm.loadFromEntities(null);
+		if (TestWindow.mTriggerEditForm() != null) {
+			TestWindow.mTriggerEditForm().loadFromEntities(null);
 		}
 	}
 

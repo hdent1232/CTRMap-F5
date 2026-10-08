@@ -67,7 +67,6 @@ public class ComboRawTest {
 		odd.x = 9;
 		odd.y = 27;
 		e.warps.add(odd);
-		e.warpCount = 1;
 		WarpEditForm form = new WarpEditForm(new LoadedZone(), DataSafetyGuardsTest.REDRAW, DataSafetyGuardsTest.CENTRE);
 		Throwable thrown = null;
 		try {

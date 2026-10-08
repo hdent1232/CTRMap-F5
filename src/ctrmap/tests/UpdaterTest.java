@@ -8,6 +8,10 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -32,6 +36,8 @@ public class UpdaterTest {
 		applyKeepsEverythingElse();
 		zipSlipRefused();
 		unverifiedRefused();
+		asidesAreSweptAway();
+		linksNameThisProject();
 
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT (" + failures + ")");
 		if (failures > 0) {
@@ -156,7 +162,10 @@ public class UpdaterTest {
 			refused = ex.getCause() instanceof IOException;
 		}
 		check("path traversal refused", refused);
-		check("nothing escaped", !new File(install.getParentFile(), "escaped.txt").exists());
+		//WHERE THE ENTRY WOULD LAND, resolved against the folder unpacked into (F164): this looked one
+		//directory higher, where no escape could ever be, so it passed with the refusal removed
+		File landing = new File(new File(install, "out"), "../escaped.txt").getCanonicalFile();
+		check("nothing escaped to " + landing, !landing.exists());
 		System.out.println("  refuses packages that write outside the folder");
 	}
 
@@ -176,6 +185,74 @@ public class UpdaterTest {
 		check("unverifiable update refused", msg != null && msg.contains("checksum"));
 		check("nothing was downloaded", !new File(install, Updater.STAGE_DIR + "/staged").exists());
 		System.out.println("  refuses an update it cannot verify");
+	}
+
+	/**
+	 * A file the apply cannot overwrite in place is renamed beside itself, and the next startup's
+	 * sweep deletes it (F120) - it used to stay next to the app for good. The locked-jar path is
+	 * driven with a target that is a non-empty folder: like a jar Windows holds mapped, it cannot
+	 * be copied over and can be renamed out of the way.
+	 */
+	private static void asidesAreSweptAway() throws IOException {
+		File install = temp("aside");
+		write(new File(install, "CTRMap-F5.jar/held"), "IN USE");
+		write(new File(install, "my notes.old-abcdef12"), "MINE, NAMED LIKE ONE");
+		File staged = new File(new File(install, Updater.STAGE_DIR), "staged");
+		write(new File(staged, "CTRMap-F5.jar"), "NEW");
+		ready(install, "3.0.0");
+		Updater.applyStaged(install);
+		check("the held file was replaced", "NEW".equals(read(new File(install, "CTRMap-F5.jar"))));
+		List<String> set = asides(install);
+		check("and what held its place was set aside beside it, once (" + set + ")", set.size() == 1);
+		Updater.sweep(install);
+		check("the next startup's sweep deletes what was set aside (left: " + asides(install) + ")",
+				asides(install).isEmpty());
+		check("a file of the user's that is merely NAMED like one stays: only what an apply recorded goes",
+				"MINE, NAMED LIKE ONE".equals(read(new File(install, "my notes.old-abcdef12"))));
+		System.out.println("  sweeps away what an apply set aside, and nothing else");
+	}
+
+	private static List<String> asides(File install) {
+		List<String> out = new ArrayList<>();
+		File[] kids = install.listFiles();
+		for (File k : kids == null ? new File[0] : kids) {
+			if (k.getName().startsWith("CTRMap-F5.jar.old-")) {
+				out.add(k.getName());
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * Every link the program sends the user to for an issue, a release or a pull request names this
+	 * project (F005): Help's issue tracker opened the upstream 2019 repository's. Read from the
+	 * compiled program's string constants, where {@code "https://github.com/" + REPO + "/issues"} is
+	 * one folded string, so a link spelled in pieces is read whole.
+	 */
+	private static void linksNameThisProject() throws IOException {
+		File classes = new File("build/classes");
+		if (!new File(classes, "ctrmap").isDirectory()) {
+			check("there is a compiled program to read at " + classes.getAbsolutePath(), false);
+			return;
+		}
+		Pattern link = Pattern.compile("github\\.com/([^/\\s\"<>]+/[^/\\s\"<>]+)/(issues|releases|pulls)");
+		List<String> foreign = new ArrayList<>();
+		boolean releases = false;
+		for (ClassFileScanner.ClassFile cf : ClassFileScanner.application(classes)) {
+			for (String s : cf.strings) {
+				Matcher m = link.matcher(s);
+				while (m.find()) {
+					releases |= cf.name.equals("ctrmap/update/UpdateChecker") && m.group(2).equals("releases");
+					if (!m.group(1).equals(UpdateChecker.REPO)) {
+						foreign.add(cf.name + ": " + m.group());
+					}
+				}
+			}
+		}
+		check("control: the releases page is read whole from the updater's folded constant", releases);
+		check("every issue, release and pull-request link names " + UpdateChecker.REPO
+				+ (foreign.isEmpty() ? "" : " - these do not: " + foreign), foreign.isEmpty());
+		System.out.println("  every link a user is sent to names this project");
 	}
 
 	// ---- helpers ----------------------------------------------------------

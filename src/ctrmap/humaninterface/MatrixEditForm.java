@@ -1,6 +1,5 @@
 package ctrmap.humaninterface;
 
-import static ctrmap.CtrmapMainframe.*;
 import ctrmap.LoadedZone;
 import ctrmap.formats.mapmatrix.MapMatrix;
 import ctrmap.formats.mapmatrix.MatrixCameraBoundaries;
@@ -35,7 +34,7 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 	/**
 	 * Creates new form MatrixEditForm
 	 */
-	public MatrixEditForm(LoadedZone loadedZone, MatrixCanvas canvas) {
+	public MatrixEditForm(LoadedZone loadedZone, MatrixCanvas canvas, UndoHistory history) {
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("MatrixEditForm must be handed a LoadedZone");
 		}
@@ -47,14 +46,15 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 				+ " - the grid it redraws and hit-tests against");
 		}
 		this.canvas = canvas;
-		initComponents();
-		setFloatValueClass(new JFormattedTextField[]{northBound, southBound, westBound, eastBound});
-	}
-
-	public void setFloatValueClass(JFormattedTextField[] fields) {
-		for (int i = 0; i < fields.length; i++) {
-			((NumberFormatter) fields[i].getFormatter()).setValueClass(Float.class);
+		if (history == null) {
+			throw new IllegalArgumentException("MatrixEditForm must be handed the zone's history its matrix"
+					+ " is a document of");
 		}
+		//the matrix is one of the zone's documents while one is loaded: watched, not recorded by hand (F209)
+		history.watch(() -> mm == null ? java.util.Collections.<UndoHistory.Document<?>>emptyList()
+				: java.util.Collections.<UndoHistory.Document<?>>singletonList(matrix()));
+		initComponents();
+		Forms.numberClass(Float.class, new JFormattedTextField[]{northBound, southBound, westBound, eastBound});
 	}
 
 	public void loadMatrix(MapMatrix mm) {
@@ -112,6 +112,74 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 			ctrmap.Ui.error(this, "The map matrix could not be shown:" + '\n' + failed
 					+ '\n' + "The matrix editor is holding nothing until a zone is opened.",
 					"Matrix editor");
+		}
+	}
+
+	/**
+	 * The loaded matrix as a document of the zone's history (F209): its four header numbers, its camera
+	 * boundaries and its four grids, put back whole - the boundaries into the records the form holds -
+	 * after which the form shows the matrix again. The matrix editor had no undo at all.
+	 */
+	private UndoHistory.Document<Object[]> matrix() {
+		final MapMatrix m = mm;
+		return new UndoHistory.Document<Object[]>() {
+			@Override
+			public Object subject() {
+				return m;
+			}
+
+			@Override
+			public Object[] take() {
+				return new Object[]{new short[]{m.hasLOD, m.unknown, m.width, m.height}, FlatCopy.copyAll(m.cambounds),
+					cells(m.regions), cells(m.ids), cells(m.zones), cells(m.LOD)};
+			}
+
+			@Override
+			@SuppressWarnings("unchecked")
+			public void put(Object[] s) {
+				short[] numbers = (short[]) s[0];
+				m.hasLOD = numbers[0];
+				m.unknown = numbers[1];
+				m.width = numbers[2];
+				m.height = numbers[3];
+				FlatCopy.putAll((java.util.List<MatrixCameraBoundaries>) s[1], m.cambounds);
+				fill(m.regions, (java.util.List<java.util.List<ctrmap.formats.containers.GR>>) s[2]);
+				fill(m.ids, (java.util.List<java.util.List<Short>>) s[3]);
+				fill(m.zones, (java.util.List<java.util.List<Short>>) s[4]);
+				fill(m.LOD, (java.util.List<java.util.List<Short>>) s[5]);
+				if (mm == m) {
+					loadMatrix(m);   //clears 'loaded' first, so nothing the widgets hold is saved over this
+				}
+			}
+
+			@Override
+			@SuppressWarnings("unchecked")
+			public boolean same(Object[] a, Object[] b) {
+				return Arrays.equals((short[]) a[0], (short[]) b[0]) && FlatCopy.sameAll((java.util.List<?>) a[1], (java.util.List<?>) b[1])
+						&& a[2].equals(b[2]) && a[3].equals(b[3]) && a[4].equals(b[4]) && a[5].equals(b[5]);
+			}
+
+			@Override
+			public String what() {
+				return "the map matrix";
+			}
+		};
+	}
+
+	/** A grid's cells, column by column: a copy of the lists, the cells themselves shared - numbers, or handles. */
+	private static <T> java.util.List<java.util.List<T>> cells(MapMatrix.ResizeableMatrix<T> grid) {
+		java.util.List<java.util.List<T>> out = new java.util.ArrayList<>(grid.list.size());
+		for (java.util.ArrayList<T> column : grid.list) {
+			out.add(new java.util.ArrayList<>(column));
+		}
+		return out;
+	}
+
+	/** Puts a grid's cells back, its columns and rows as many as the state had. */
+	private static <T> void fill(MapMatrix.ResizeableMatrix<T> grid, java.util.List<java.util.List<T>> state) {
+		grid.list.clear();
+		for (java.util.List<T> column : state) {
+			grid.list.add(new java.util.ArrayList<>(column));
 		}
 	}
 
@@ -245,15 +313,19 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 		canvas.redraw();
 	}
 
+	/** The grid's labels: built once, not once per cell per repaint (F117). */
+	private static final Font LABEL_FONT = new Font(Font.SERIF, Font.PLAIN, 11);
+	private static final Font BOUND_FONT = new Font(Font.SERIF, Font.PLAIN, 15);
+
 	public void drawToolGraphics(Graphics g, int imgstartx, int imgstarty) {
 		if (mm != null) {
 			if (btnChunkTool.isSelected()) {
 				for (int x = 0; x < mm.width; x++) {
 					for (int y = 0; y < mm.height; y++) {
 						g.setColor(Color.BLACK);
-						int regionX = x * 100 + imgstartx;
-						int regionY = y * 100 + imgstarty;
-						g.setFont(new Font(Font.SERIF, Font.PLAIN, 11));
+						int regionX = x * MatrixCanvas.REGION_PX + imgstartx;
+						int regionY = y * MatrixCanvas.REGION_PX + imgstarty;
+						g.setFont(LABEL_FONT);
 						g.drawString("Region " + x + "x" + y, regionX + 5, regionY + 11);
 						g.drawString("Refers to:", regionX + 5, regionY + 22);
 						g.setColor(mm.ids.get(x, y) == -1 ? Color.GRAY : new Color(0, 150, 0));
@@ -266,35 +338,34 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 				}
 				g.setColor(Color.RED);
 				if (MatrixSelector.hilightRegionX != -1) {
-					g.drawRect(MatrixSelector.hilightRegionX * 100 + imgstartx, MatrixSelector.hilightRegionY * 100 + imgstarty, 100, 100);
+					g.drawRect(MatrixSelector.hilightRegionX * MatrixCanvas.REGION_PX + imgstartx, MatrixSelector.hilightRegionY * MatrixCanvas.REGION_PX + imgstarty, MatrixCanvas.REGION_PX, MatrixCanvas.REGION_PX);
 				}
 				if (MatrixSelector.selRegionX != -1) {
-					g.drawRect(MatrixSelector.selRegionX * 100 + imgstartx, MatrixSelector.selRegionY * 100 + imgstarty, 100, 100);
+					g.drawRect(MatrixSelector.selRegionX * MatrixCanvas.REGION_PX + imgstartx, MatrixSelector.selRegionY * MatrixCanvas.REGION_PX + imgstarty, MatrixCanvas.REGION_PX, MatrixCanvas.REGION_PX);
 				}
 			} else if (btnMzTool.isSelected()) {
 				for (int x = 0; x < mm.zones.getWidth(); x++) {
 					for (int y = 0; y < mm.zones.getHeight(); y++) {
 						g.setColor(Color.BLACK);
-						int regionX = x * 25 + imgstartx;
-						int regionY = y * 25 + imgstarty;
-						g.setFont(new Font(Font.SERIF, Font.PLAIN, 11));
+						int regionX = x * MatrixCanvas.ZONE_CELL_PX + imgstartx;
+						int regionY = y * MatrixCanvas.ZONE_CELL_PX + imgstarty;
+						g.setFont(LABEL_FONT);
 						g.drawString(String.valueOf(mm.zones.get(x, y)), regionX + 5, regionY + 11);
 					}
 				}
 				g.setColor(Color.RED);
 				if (MatrixSelector.hilightRegionX != -1) {
-					g.drawRect(MatrixSelector.hilightRegionX * 25 + imgstartx, MatrixSelector.hilightRegionY * 25 + imgstarty, 25, 25);
+					g.drawRect(MatrixSelector.hilightRegionX * MatrixCanvas.ZONE_CELL_PX + imgstartx, MatrixSelector.hilightRegionY * MatrixCanvas.ZONE_CELL_PX + imgstarty, MatrixCanvas.ZONE_CELL_PX, MatrixCanvas.ZONE_CELL_PX);
 				}
 				if (MatrixSelector.selRegionX != -1) {
-					g.drawRect(MatrixSelector.selRegionX * 25 + imgstartx, MatrixSelector.selRegionY * 25 + imgstarty, 25, 25);
+					g.drawRect(MatrixSelector.selRegionX * MatrixCanvas.ZONE_CELL_PX + imgstartx, MatrixSelector.selRegionY * MatrixCanvas.ZONE_CELL_PX + imgstarty, MatrixCanvas.ZONE_CELL_PX, MatrixCanvas.ZONE_CELL_PX);
 				}
 			} else if (btnCamTool.isSelected()) {
-				float transform = 100f / 720f;
 				for (int i = 0; i < mm.cambounds.size(); i++) {
 					MatrixCameraBoundaries b = mm.cambounds.get(i);
 					g.setColor(Color.WHITE);
 					if (b.isRepeal == 1) {
-						g.fillRect((int) (b.west * transform + imgstartx), (int) (b.north * transform + imgstarty), (int) ((b.east - b.west) * transform), (int) ((b.south - b.north) * transform));
+						g.fillRect((int) (MatrixCanvas.toPx(b.west) + imgstartx), (int) (MatrixCanvas.toPx(b.north) + imgstarty), (int) (MatrixCanvas.toPx(b.east - b.west)), (int) (MatrixCanvas.toPx(b.south - b.north)));
 						g.setColor(Color.BLACK);
 					} else {
 						g.setColor(Color.BLUE);
@@ -302,9 +373,9 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 					if (i == currentCam) {
 						g.setColor(Color.RED);
 					}
-					g.drawRect((int) (b.west * transform + imgstartx), (int) (b.north * transform + imgstarty), (int) ((b.east - b.west) * transform), (int) ((b.south - b.north) * transform));
-					g.setFont(new Font(Font.SERIF, Font.PLAIN, 15));
-					g.drawString("C" + i, (int) (b.west * transform + imgstartx) + 2, (int) (b.north * transform + imgstarty) + 16);
+					g.drawRect((int) (MatrixCanvas.toPx(b.west) + imgstartx), (int) (MatrixCanvas.toPx(b.north) + imgstarty), (int) (MatrixCanvas.toPx(b.east - b.west)), (int) (MatrixCanvas.toPx(b.south - b.north)));
+					g.setFont(BOUND_FONT);
+					g.drawString("C" + i, (int) (MatrixCanvas.toPx(b.west) + imgstartx) + 2, (int) (MatrixCanvas.toPx(b.north) + imgstarty) + 16);
 				}
 			}
 		}
@@ -417,10 +488,10 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 				java.awt.Point origin = canvas.imageOrigin();
 				int imgstartx = origin.x;
 				int imgstarty = origin.y;
-				double xBase = b.west * 100d / 720d + imgstartx;
-				double yBase = b.north * 100d / 720d + imgstarty;
-				double x2Base = b.east * 100d / 720d + imgstartx;
-				double y2Base = b.south * 100d / 720d + imgstarty;
+				double xBase = MatrixCanvas.toPx(b.west) + imgstartx;
+				double yBase = MatrixCanvas.toPx(b.north) + imgstarty;
+				double x2Base = MatrixCanvas.toPx(b.east) + imgstartx;
+				double y2Base = MatrixCanvas.toPx(b.south) + imgstarty;
 				if (e.getX() > xBase && e.getX() < x2Base && e.getY() > yBase && e.getY() < y2Base) {
 					setCam(i);
 					break;
@@ -1000,6 +1071,16 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 
     private void allowExtendedActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_allowExtendedActionPerformed
 		if (mm != null) {
+			//DROPPING THE LAYER IS ASKED (F160): the next save writes the matrix without its zone-switch
+			//and LOD layers - 2,176 of 2,312 bytes on retail matrix 1 - and the box was all it took.
+			//Anything but yes, a closed dialog included, ticks it back.
+			if (!allowExtended.isSelected() && mm.hasLOD == 1 && ctrmap.Ui.confirm(this,
+					"Unticking this drops the zone-switch and LOD layers from this matrix on the next save -\n"
+					+ "every zone assignment and LOD entry in it. Drop them?", "Allow LOD and Multizone",
+					javax.swing.JOptionPane.YES_NO_OPTION) != javax.swing.JOptionPane.YES_OPTION) {
+				allowExtended.setSelected(true);
+				return;
+			}
 			mm.hasLOD = allowExtended.isSelected() ? (short) 1 : 0;
 		}
 		switchTools();

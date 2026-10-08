@@ -7,6 +7,7 @@ import ctrmap.formats.garc.GarcRebuilder;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.BuildingCatalog;
 import ctrmap.formats.h3d.MapPrefab;
+import ctrmap.formats.tilemap.PaintedGeometry;
 import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
@@ -302,7 +303,7 @@ public class HarvesterGuardsTest {
 		check(!rows.isEmpty(), "the harvester catalogued " + rows.size() + " cuts out of "
 				+ keep.size() + " regions");
 
-		int dim = PaintedRegionBuilder.DIM;
+		int dim = PaintedGeometry.DIM;
 		TilePalette[][] grid = new TilePalette[dim][dim];
 		for (TilePalette[] row : grid) {
 			Arrays.fill(row, TilePalette.GRASS);

@@ -6,12 +6,8 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import static ctrmap.formats.LittleEndian.u16;
-import static ctrmap.formats.LittleEndian.i32;
-import static ctrmap.formats.LittleEndian.putU16;
+import static ctrmap.util.LittleEndian.i32;
 import java.nio.file.Files;
 
 /**
@@ -57,15 +53,14 @@ public class AreaForker {
 	 * AreaData index of the global per-area table (not an area itself): Omega Ruby / Alpha Sapphire's
 	 * profile answers it, the only game the fork is open to (F205).
 	 */
-	public static final int AD_GLOBAL_TABLE = ctrmap.gamedef.GameProfile.of(ctrmap.gamedef.GameType.ORAS).areaTableIndex();
+	public static final int AD_GLOBAL_TABLE = ctrmap.gamedef.GameProfile.onlyGameWith(
+			ctrmap.gamedef.GameProfile.Feature.AREA_FORK).areaTableIndex();
 	/** Its per-area record stride, measured from the engine's row arithmetic. */
 	public static final int AREA_ROW = 44;
 	/** The engine masks area ids to 8 bits in the global-table lookup. */
 	public static final int MAX_AREA_ID = 255;
 	/** Master zone-header table row stride (shared with {@link GeometryForker}). */
 	public static final int MASTER_ROW = GeometryForker.MASTER_ROW;
-	/** Byte offset of areadataID inside a zone header. */
-	public static final int HDR_AREA_OFF = 2;
 
 	/** What a fork produced, for user-facing reporting. */
 	public static class ForkResult {
@@ -75,6 +70,18 @@ public class AreaForker {
 		public int newArea;
 		/** False when the zone already owned its area and nothing was appended. */
 		public boolean forked;
+
+		/** What the user is told an area fork did; both branches, said rather than implied. */
+		public String report(int zoneIndex) {
+			if (!forked) {
+				return "Zone " + zoneIndex + " already has its own area (area " + oldArea + ").\n\n"
+						+ "Nothing was changed - editing its fog, lighting, props or textures already affects"
+						+ " no other zone.";
+			}
+			return "Zone " + zoneIndex + " now has its own area.\n\nArea " + oldArea + " -> " + newArea
+					+ " (private copy, identical until you edit it). Its fog, lighting, props, textures and NPC"
+					+ " models no longer change any other zone.";
+		}
 	}
 
 	/**
@@ -106,10 +113,10 @@ public class AreaForker {
 			throw new IllegalArgumentException("Area id " + AD_GLOBAL_TABLE + " is the engine's per-area table, not an area.");
 		}
 		int hdrOff = i32(zoBytes, 4);
-		if (hdrOff < 0 || hdrOff + HDR_AREA_OFF + 2 > zoBytes.length) {
+		if (hdrOff < 0 || hdrOff + ZoneResource.AREA.headerOffset + 2 > zoBytes.length) {
 			throw new IllegalArgumentException("Zone header subfile out of range.");
 		}
-		int oldArea = u16(zoBytes, hdrOff + HDR_AREA_OFF);
+		int oldArea = ZoneResource.AREA.idIn(zoBytes);
 		//ONLY THE TABLE'S SLOT IS NOT AN AREA (F001). This refused every id from 228 up - and a
 		//fork's new areas are 229..255, so a zone cloned from a forked one could never be forked
 		if (oldArea == AD_GLOBAL_TABLE || oldArea > MAX_AREA_ID) {
@@ -124,7 +131,7 @@ public class AreaForker {
 		ForkPlan p = new ForkPlan();
 		p.oldArea = oldArea;
 		p.newZoBytes = zoBytes.clone();
-		putU16(p.newZoBytes, hdrOff + HDR_AREA_OFF, newArea);
+		ZoneResource.AREA.setIn(p.newZoBytes, newArea);
 		p.newAdBytes = srcAd.clone();
 		p.newNpcBytes = srcNpc == null ? new byte[0] : srcNpc.clone();
 		//grow the global table so the new id has a row, copied from the source
@@ -156,7 +163,7 @@ public class AreaForker {
 			throw new IOException("Could not extract zone " + zoneIndex + " from the workspace.");
 		}
 		byte[] zoBytes = Files.readAllBytes(zoneFile.toPath());
-		return u16(zoBytes, i32(zoBytes, 4) + HDR_AREA_OFF);
+		return ZoneResource.AREA.idIn(zoBytes);
 	}
 
 	/**
@@ -358,7 +365,7 @@ public class AreaForker {
 		int npReaches = np.length;
 		for (int i = 0; i < count; i++) {
 			int newArea = ids[i];
-			int oldArea = u16(zos[i], i32(zos[i], 4) + HDR_AREA_OFF);
+			int oldArea = ZoneResource.AREA.idIn(zos[i]);
 			File srcAdFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, oldArea);
 			if (srcAdFile == null) {
 				throw new IOException("Could not extract area " + oldArea + " from the workspace.");
@@ -453,7 +460,7 @@ public class AreaForker {
 			throw new IOException("Could not extract zone " + zoneIndex + " from the workspace.");
 		}
 		byte[] zoBytes = Files.readAllBytes(zoneFile.toPath());
-		int oldArea = u16(zoBytes, i32(zoBytes, 4) + HDR_AREA_OFF);
+		int oldArea = ZoneResource.AREA.idIn(zoBytes);
 		File srcAdFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, oldArea);
 		File srcNpFile = Workspace.getWorkspaceFile(ArchiveType.NPC_REGISTRIES, oldArea);
 		File tableFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, AD_GLOBAL_TABLE);
@@ -493,7 +500,8 @@ public class AreaForker {
 
 		WorkspaceUnit.write(zoneFile, plan.newZoBytes);
 		Workspace.addPersist(zoneFile);
-		repointMasterArea(zo, zoneIndex, newArea);
+		//the one repoint (F012): this class carried its own copy of the row arithmetic
+		GeometryForker.repointMasterRow(zo, zoneIndex, ZoneResource.AREA, newArea);
 
 		ForkResult r = new ForkResult();
 		r.zoneIndex = zoneIndex;
@@ -507,16 +515,6 @@ public class AreaForker {
 		//it could only ever report clean; Workspace.packArchives runs it after
 		//the writes instead, and shows what it finds.
 		return r;
-	}
-
-	/** Repoints a zone's areadataID in the master zone-header table file. */
-	public static void repointMasterArea(GARC zo, int zoneIndex, int newArea) throws IOException {
-		MasterTable master = MasterTable.read(Workspace.session());
-		if (zoneIndex < 0 || zoneIndex >= master.zones()) {
-			throw new IOException("Master-table row for zone " + zoneIndex + " out of range.");
-		}
-		master.set(ZoneResource.AREA, zoneIndex, newArea);
-		master.write();
 	}
 
 	/** The open workspace's AreaData pending-compression flag for an added area (F014: the session holds them). */

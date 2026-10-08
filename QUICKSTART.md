@@ -18,7 +18,9 @@ editing only - see the README's table of what works on which game). Gen 7 (Sun/M
 USUM) is **not supported** — it will say "Could not detect game version".
 
 > **Work on a COPY of your dump.** `File → Pack Workspace` repacks the archives and writes
-> them back **over the originals in your RomFS folder**, in place. There is no undo.
+> them back **over the originals in your RomFS folder**, in place. The way back is
+> `Options → Restore from pristine backup...`, which puts back the game as CTRMap first
+> found it - every edit since is lost with it, so work on a copy all the same.
 
 ## 2. Open a zone
 
@@ -82,7 +84,8 @@ the current view:
   zone with a script dispatch; if the zone lacks the message-display routine, CTRMap
   offers to inject one copied from the game's own code (~2.4 KB).
 - **Sign** — a readable sign furniture object with your text and a chosen frame style.
-  Available in the 69 zones whose script already contains a sign routine.
+  Works in every base zone: the 69 whose script has a sign routine use their own, and
+  the other 467 are offered one transplanted from the game's own code, as talking NPCs are.
 - **Item giver** — an NPC that hands over an item (and quantity) when talked to. Available
   in the 120 zones with a give-item routine. Repeatable (no one-time flag yet); enter the
   item ID from pk3DS.
@@ -107,12 +110,14 @@ The Zone Loader tab has **Clone zone...**: it copies the currently loaded zone (
 NPCs, warps, triggers, scripts — not wild encounters) over another existing zone slot.
 Pending edits are saved first; the overwrite is only reversible by restoring a backup.
 
-**Add new zone (EXPERIMENTAL)...** (ORAS only) is different — it creates a brand-new zone
-slot rather than overwriting one, by copying a source zone to the next free index and
-growing the game's master and encounter tables to match. **This has never been done in any
+**Add zones (lift limit)...** (ORAS only) is different — it creates brand-new zone slots
+rather than overwriting one, by copying a source zone to the next free index and
+growing the game's master and encounter tables to match, and writes a `code.ips` patch
+that lifts the game's 536-zone limit. **This has never been done in any
 X/Y/ORAS fan hack.** The archive rebuild is fully verified — every existing zone stays
-byte-identical, so your existing content is safe — but whether the *game* accepts a 537th
-zone (its code may hard-code the zone count) is unknown until tested. Keep a RomFS backup,
+byte-identical, so your existing content is safe. An added zone holds a map, warps and
+NPCs that stand still, but runs no field scripts, so talking NPCs, signs and battle
+facilities need a base zone (`Zone → Find reusable base zones`). Keep a RomFS backup,
 test in an emulator first, and confirm you can still load a save in an old zone. Point a
 warp at the new zone to reach it.
 

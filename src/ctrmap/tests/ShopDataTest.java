@@ -2,6 +2,7 @@ package ctrmap.tests;
 
 import ctrmap.formats.codepatch.ShopData;
 import ctrmap.formats.codepatch.ZoneLimitPatch;
+import ctrmap.formats.codepatch.Ips;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.Arrays;
@@ -72,22 +73,28 @@ public class ShopDataTest {
 		edited[18] = new int[]{50, 51, 52, 53}; // Rare Candy, PP Up, Zinc, PP Max
 		byte[] patched = ShopData.write(code, edited);
 		fails += check("edit reads back", Arrays.equals(ShopData.read(patched)[18], edited[18]));
-		byte[] ips = ShopData.diffIPS(code, patched);
+		byte[] ips = Ips.diff(code, patched);
 		fails += check("diff-IPS small", ips.length < 64);
-		fails += check("diff-IPS applies", Arrays.equals(ShopData.applyIPS(code, ips), patched));
+		fails += check("diff-IPS applies", Arrays.equals(Ips.apply(code, ips), patched));
 
 		// merge with the zone-limit patch: one code.ips must carry both edits
 		byte[] zoneIps = ZoneLimitPatch.buildIPS(4, code);
-		byte[] merged = ShopData.mergeIPS(zoneIps, ips);
-		byte[] both = ShopData.applyIPS(code, merged);
+		byte[] merged = Ips.merge(zoneIps, ips);
+		byte[] both = Ips.apply(code, merged);
 		fails += check("merged keeps shop edit", Arrays.equals(ShopData.read(both)[18], edited[18]));
 		byte[] zoneOnly = ZoneLimitPatch.applyToCode(4, code);
-		//THE FILE OFFSET, 0x012bc0 - this read 0x112bc0, the VIRTUAL address, a window neither patch
-		//touches, so it compared stock bytes with stock bytes and could not fail
-		byte[] zoneRegion = Arrays.copyOfRange(both, 0x012bc0, 0x012bc4);
-		fails += check("the window is one the zone patch changes",
-				!Arrays.equals(Arrays.copyOfRange(zoneOnly, 0x012bc0, 0x012bc4), Arrays.copyOfRange(code, 0x012bc0, 0x012bc4)));
-		fails += check("merged keeps zone patch", Arrays.equals(zoneRegion, Arrays.copyOfRange(zoneOnly, 0x012bc0, 0x012bc4)));
+		//EVERY SITE THE ZONE PATCH WRITES, at the offsets the patch itself names (F162). This read a
+		//literal 0x112bc0 - the VIRTUAL address, a window neither patch touches - so it compared stock
+		//bytes with stock bytes and could not fail; a literal is the copy that goes wrong first
+		java.util.List<ZoneLimitPatch.Patch> sites = ZoneLimitPatch.patches(4);
+		fails += check("the zone patch names its sites (" + sites.size() + ")", sites.size() >= 5);
+		for (ZoneLimitPatch.Patch site : sites) {
+			int at = site.fileOffset;
+			fails += check("0x" + Integer.toHexString(at) + " is a window the zone patch changes",
+					!Arrays.equals(Arrays.copyOfRange(zoneOnly, at, at + 4), Arrays.copyOfRange(code, at, at + 4)));
+			fails += check("merged keeps the zone patch at 0x" + Integer.toHexString(at),
+					Arrays.equals(Arrays.copyOfRange(both, at, at + 4), Arrays.copyOfRange(zoneOnly, at, at + 4)));
+		}
 
 		System.out.println("shops: " + shops.length + " lists, table 0x" + Integer.toHexString(table)
 				+ ", ips " + ips.length + "B, merged " + merged.length + "B");

@@ -1,7 +1,7 @@
 package ctrmap.formats.h3d;
 
-import static ctrmap.formats.LittleEndian.i32;
-import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.u16;
 
 /**
  * A BCH file's header - where each section starts and how long it is - and its relocation table:

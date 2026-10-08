@@ -32,7 +32,7 @@ public class ZoneListThreadTest {
 		//NO DISPLAY, as the order line says, before anything touches AWT: the battery runs on one,
 		//and a progress window made from this main thread is refused there (F220) - and would
 		//flash on the owner's screen if it were not
-		System.setProperty("java.awt.headless", "true");
+		Headless.require();
 		Workspace.reset();
 		try {
 			run();
@@ -56,21 +56,14 @@ public class ZoneListThreadTest {
 			java.nio.file.Files.write(ws.getWorkspaceFile(ctrmap.gamedef.ArchiveType.ZONE_DATA, z).toPath(),
 					HandedGameTest.container("ZO", new byte[ctrmap.formats.zone.ZoneHeader.SIZE], entities, amx));
 		}
-		//one location name, empty: header, section length, one line entry, the line's single
-		//u16 encrypted to 0 under the first key (0x7C89)
-		byte[] names = new byte[30];
-		names[0] = 1;
-		names[2] = 1;
-		names[12] = 0x10;
-		names[20] = 0;
-		names[24] = 1;
-		names[28] = (byte) 0x89;
-		names[29] = 0x7C;
+		//one location name, empty, written by the one GameText codec the names are read with (F089):
+		//the bytes were built by hand in the legacy decoder's layout, which that codec refuses
+		byte[] names = ctrmap.formats.text.GFMessageFile.write(java.util.Arrays.asList(""), true);
 		java.io.File text = new java.io.File(Scratch.dir("ctrmap_zonelist_text"), "names.bin");
 		java.nio.file.Files.write(text.toPath(), names);
 		ctrmap.formats.text.LocationNames.load(ws, text);
 		ZoneLoadingPanel tab = new ZoneLoadingPanel(new ctrmap.LoadedZone(), MatrixEditFormGuardsTest.TOOLS,
-				MatrixEditFormGuardsTest.EDITORS, MatrixEditFormGuardsTest.ZONE_EDITORS, MatrixEditFormGuardsTest.NAVI);
+				MatrixEditFormGuardsTest.EDITORS, MatrixEditFormGuardsTest.ZONE_EDITORS, MatrixEditFormGuardsTest.NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
 		List<String> off = Collections.synchronizedList(new ArrayList<>());
 		int[] heard = {0};
 		for (String name : new String[]{"zoneList", "tmg", "type", "weather"}) {

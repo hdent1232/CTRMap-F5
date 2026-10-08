@@ -6,7 +6,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -62,6 +61,22 @@ public class MainframeEdgesTest {
 	private static final String[][] REACHES = {};
 
 	/**
+	 * {method, callers, why} - the window's static METHODS other classes call (F143), measured the
+	 * same way and asserted with the same equality. The field table above was the whole rule, so
+	 * "nothing reaches in" was true of fields and silent about these seven calls from five classes:
+	 * a dialog that has changed the scene asks the window to redraw its fog, the workspace settings
+	 * and the setup wizard tell it a workspace opened, the facility editor asks it to show the Game
+	 * Data tab. Each is a call UP from a panel the window built; a new one is a class that started
+	 * asking the window to do something instead of being handed the thing to ask.
+	 *
+	 * <p>EMPTY SINCE F007: the six calls from six classes listed here were each handed in instead - every
+	 * one of those panels is built by the window, so it says what to ask as it builds them (a Runnable
+	 * for a redraw or an unload, a title-and-editor sink for a tab, the workspace-opened answer as a
+	 * function), and none of the six names the window any more. A row here now is a regression.
+	 */
+	private static final String[][] CALLS = {};
+
+	/**
 	 * How many DISTINCT (class file, field) pairs reach in from outside. ZERO.
 	 *
 	 * <p>THIS IS NOT A COUNT OF CALL SITES, whatever this javadoc said for three
@@ -77,8 +92,7 @@ public class MainframeEdgesTest {
 	 * number is a floor and not a target, and that the table above is the thing
 	 * to read when it stops being zero.
 	 *
-	 * <p>WHAT THIS DOES NOT MEAN. The window still HOLDS these panels, and it
-	 * still has {@value #PUBLIC_STATICS} public statics for its own use. What
+	 * <p>WHAT THIS DOES NOT MEAN. The window still HOLDS these panels. What
 	 * changed is that nothing else asks it for them: every editor is handed what
 	 * it needs, so two of anything can exist at once and a suite can hand a
 	 * different one. Three of the handings are two-phase - the matrix grid, the
@@ -86,15 +100,6 @@ public class MainframeEdgesTest {
 	 * are real construction cycles, and each says so where it is written.
 	 */
 	private static final int REFERENCES = 0;
-
-	/**
-	 * Public static fields on the window: 91 before the structure sweep, 22 after
-	 * it, 21 for a long time, 19 now. The two that went - the text editor and the
-	 * map builder - had ZERO readers anywhere, program or suite. Nobody proposed
-	 * them because nobody had counted; a public static with no readers is not
-	 * coupling anyone has, it is coupling nobody has had to argue against.
-	 */
-	private static final int PUBLIC_STATICS = 19;
 
 	static int fails = 0;
 
@@ -107,8 +112,12 @@ public class MainframeEdgesTest {
 		}
 
 		everyReachIntoTheWindowIsNamed(classes);
+		everyCallIntoTheWindowIsNamed(classes);
 		nothingOutsideTheWindowWritesItsStatics(classes);
-		theWindowKeepsNoMoreStaticsThanRecorded();
+		noFileImportsTheWindowsStatics(new File(args.length > 1 ? args[1] : "src"));
+		theWindowKeepsNoStateInStatics();
+		theWindowExposesNothing();
+		theSuitesWayInRefusesAStaleName();
 		nothingIsHandedAStaticTheWindowHasNotBuiltYet(new File(args.length > 1 ? args[1] : "src"));
 		everyZoneHandedToTheTabIsGivenASlot(new File(args.length > 1 ? args[1] : "src"));
 		theRuleSeesTheShapesItUsedToMiss();
@@ -176,6 +185,70 @@ public class MainframeEdgesTest {
 						+ references + ")");
 	}
 
+	/** {@link #CALLS}: who calls which of the window's static methods, asserted with equality. */
+	static void everyCallIntoTheWindowIsNamed(File classes) throws Exception {
+		System.out.println("--- what still calls into the window, method by method (F143)");
+		Map<String, Set<String>> calls = new TreeMap<>();
+		int own = 0;
+		for (ClassFileScanner.ClassFile cf : ClassFileScanner.application(classes)) {
+			for (ClassFileScanner.Ref r : cf.refs) {
+				if (!r.owner.equals(WINDOW) || !r.method) {
+					continue;
+				}
+				if (cf.topLevel().equals(WINDOW)) {
+					own++;
+					continue;
+				}
+				Set<String> who = calls.get(r.name);
+				if (who == null) {
+					who = new TreeSet<>();
+					calls.put(r.name, who);
+				}
+				who.add(simple(cf.topLevel()));
+			}
+		}
+		//a reader that cannot see method refs reports none, so it must see the window's own first
+		check(own > 0, "control: the window's calls to its own methods are seen (" + own + ")");
+		Map<String, Set<String>> recorded = new TreeMap<>();
+		for (String[] row : CALLS) {
+			recorded.put(row[0], new TreeSet<>(Arrays.asList(row[1].split(","))));
+		}
+		check(calls.equals(recorded), "the window's static methods other classes call are exactly the "
+				+ recorded.size() + " recorded, by exactly the recorded callers"
+				+ (calls.equals(recorded) ? "" : " - measured " + calls + ", recorded " + recorded
+				+ ". A new caller is a class asking the window instead of being handed what to ask;"
+				+ " one gone is a line to delete here"));
+	}
+
+	/**
+	 * No file imports the window's statics (F008). Nineteen production files carried
+	 * {@code import static ctrmap.CtrmapMainframe.*} and sixteen used nothing through it: every
+	 * window global one bare identifier away, so a reach could come back with no visible change
+	 * at the top of the file. Suites included - a suite qualifies what it touches.
+	 */
+	static void noFileImportsTheWindowsStatics(File srcRoot) throws Exception {
+		System.out.println("--- no file imports the window's statics (F008)");
+		java.util.regex.Pattern imp = java.util.regex.Pattern.compile(
+				"(?m)^\\s*import\\s+static\\s+ctrmap\\.CtrmapMainframe\\s*\\.\\s*[\\w*]+\\s*;");
+		check(imp.matcher("import static ctrmap.CtrmapMainframe.*;").find()
+				&& imp.matcher("  import static ctrmap.CtrmapMainframe.mTileMapPanel;").find()
+				&& !imp.matcher("import ctrmap.CtrmapMainframe;").find(),
+				"control: the rule matches the wildcard and the by-name import, and not a plain one");
+		List<File> files = DialogSeamTest.javaSources(new File(srcRoot, "ctrmap"));
+		List<String> importers = new ArrayList<>();
+		for (File f : files) {
+			String text = SourceSeamTest.stripComments(new String(java.nio.file.Files.readAllBytes(f.toPath()),
+					java.nio.charset.StandardCharsets.UTF_8));
+			if (imp.matcher(text).find()) {
+				importers.add(f.getName());
+			}
+		}
+		check(files.size() >= 400, "the sources were read (" + files.size() + " under " + srcRoot + ")");
+		check(importers.isEmpty(), "no file imports the window's statics"
+				+ (importers.isEmpty() ? "" : " - these do: " + importers + ". Qualify what is used"
+				+ " (CtrmapMainframe.x), or better, be handed it"));
+	}
+
 	// ------------------------------------------------------- 2. nobody writes them
 	static void nothingOutsideTheWindowWritesItsStatics(File classes) throws Exception {
 		System.out.println("--- and nothing outside the window assigns one");
@@ -241,9 +314,28 @@ public class MainframeEdgesTest {
 		}
 		r.close();
 
+		//A RULE THAT READS NO FIELDS PASSES: it read `static` declarations, and since F007 the window's
+		//panels are its instance fields - so it is asked here that it still reads them
+		Set<String> fields = fieldsOf(lines);
+		check(fields.contains("mTileMapPanel") && fields.contains("mZonePnl") && fields.contains("frame"),
+				"control: the window's own fields are what this rule reads (" + fields.size() + ")");
 		List<String> handedEarly = handedTooEarly(lines);
-		check(handedEarly.isEmpty(), "every static handed to something the window builds is already built "
+		check(handedEarly.isEmpty(), "every field handed to something the window builds is already built "
 				+ handedEarly);
+	}
+
+	/** The fields a class's source declares, instance or static: a member declaration carries an access modifier. */
+	static Set<String> fieldsOf(List<String> lines) {
+		java.util.regex.Pattern decl = java.util.regex.Pattern.compile(
+				"^\\s*(?:public|private|protected)\\s+(?:static\\s+)?(?:final\\s+)?[\\w.<>\\[\\]]+\\s+(\\w+)\\s*[;=]");
+		Set<String> fields = new TreeSet<>();
+		for (String line : lines) {
+			java.util.regex.Matcher m = decl.matcher(line);
+			if (m.find()) {
+				fields.add(m.group(1));
+			}
+		}
+		return fields;
 	}
 
 	/**
@@ -255,19 +347,11 @@ public class MainframeEdgesTest {
 	 * section below hands it four small sources whose answers are known.
 	 */
 	static List<String> handedTooEarly(List<String> lines) {
-		java.util.regex.Pattern decl = java.util.regex.Pattern.compile(
-				"^\\s*(?:public|private|protected)\\s+static\\s+(?:final\\s+)?[\\w.<>\\[\\]]+\\s+(\\w+)\\s*[;=]");
-		Set<String> statics = new TreeSet<>();
-		for (String line : lines) {
-			java.util.regex.Matcher m = decl.matcher(line);
-			if (m.find()) {
-				statics.add(m.group(1));
-			}
-		}
+		Set<String> statics = fieldsOf(lines);
 
 		int start = -1;
 		for (int i = 0; i < lines.size(); i++) {
-			if (lines.get(i).contains("private static void createAndShowGUI()")) {
+			if (lines.get(i).matches("\\s*private (?:static )?void createAndShowGUI\\(\\) \\{\\s*")) {
 				start = i;
 				break;
 			}
@@ -424,25 +508,45 @@ public class MainframeEdgesTest {
 			lines.add(line);
 		}
 		r.close();
-		List<String> unslotted = new ArrayList<>();
+		//KNOWN ANSWERS FIRST (F250): the rule skipped any line holding "//", so a real call with a
+		//comment after it was exempt, and it saw only the receiver spelled mZonePnl
+		check(unslotted(Arrays.asList("mZonePnl.loadZone(z); // why", "x();")).size() == 1
+				&& unslotted(Arrays.asList("panel.loadZone(z);", "x();")).size() == 1
+				&& unslotted(Arrays.asList("// mZonePnl.loadZone(z);", "x();")).isEmpty()
+				&& unslotted(Arrays.asList("mZonePnl.loadZone(z); // why", "loadedZone.open(z, 3);")).isEmpty(),
+				"control: a call with a comment after it and a call on another receiver are seen, a call in a"
+				+ " comment is not, and a call followed by its slot passes");
+		List<String> unslotted = unslotted(lines);
 		int calls = 0;
-		for (int i = 0; i < lines.size(); i++) {
-			if (lines.get(i).contains("//") || !lines.get(i).contains("mZonePnl.loadZone(")) {
-				continue;
-			}
-			calls++;
-			boolean slotted = false;
-			for (int j = i + 1; j < Math.min(lines.size(), i + 6) && !slotted; j++) {
-				slotted = lines.get(j).contains("loadedZone.open(") && !lines.get(j).contains("//");
-			}
-			if (!slotted) {
-				unslotted.add((i + 1) + ": " + lines.get(i).trim());
-			}
+		for (String line : SourceSeamTest.stripComments(String.join("\n", lines)).split("\n", -1)) {
+			calls += LOAD_ZONE.matcher(line).find() ? 1 : 0;
 		}
 		check(calls > 0, "the window hands the Zone tab a zone somewhere (" + calls
 			+ " call site(s)) - a rule with nothing to check is not a rule");
 		check(unslotted.isEmpty(), "and every one records the slot it belongs to, or -1 for none "
 			+ unslotted);
+	}
+
+	/** A zone handed to a panel, whatever the receiver is called. */
+	static final java.util.regex.Pattern LOAD_ZONE = java.util.regex.Pattern.compile("\\.loadZone\\(");
+
+	/** The lines, comments blanked, that hand a zone over with no slot recorded within the next five. */
+	static List<String> unslotted(List<String> raw) {
+		String[] lines = SourceSeamTest.stripComments(String.join("\n", raw)).split("\n", -1);
+		List<String> out = new ArrayList<>();
+		for (int i = 0; i < lines.length; i++) {
+			if (!LOAD_ZONE.matcher(lines[i]).find()) {
+				continue;
+			}
+			boolean slotted = false;
+			for (int j = i + 1; j < Math.min(lines.length, i + 6) && !slotted; j++) {
+				slotted = lines[j].contains("loadedZone.open(");
+			}
+			if (!slotted) {
+				out.add((i + 1) + ": " + lines[i].trim());
+			}
+		}
+		return out;
 	}
 
 	/**
@@ -566,17 +670,152 @@ public class MainframeEdgesTest {
 	}
 
 	// -------------------------------------------------------- 3. the window's own
-	static void theWindowKeepsNoMoreStaticsThanRecorded() {
-		System.out.println("--- and the window keeps no more public statics than recorded");
+	/**
+	 * The window keeps its state in itself, not in its class (F007).
+	 *
+	 * <p>It was a class of statics: 43 fields - 19 of them public - and every method that touched them,
+	 * so one window per process was the only shape the program could take, and the suites set its
+	 * fields as the program's globals. This counted the public ones down to 19 and stopped there; it was
+	 * a ratchet on a number, and a number is satisfied by moving a field from public to private. Now the
+	 * rule is the shape: a static field of the window is a compile-time constant - final, and a primitive
+	 * or a String - or it is refused by name, public or not.
+	 */
+	static void theWindowKeepsNoStateInStatics() {
+		System.out.println("--- and the window keeps no state in statics (F007)");
 		List<String> statics = new ArrayList<>();
+		List<String> constants = new ArrayList<>();
+		int instance = 0;
 		for (Field f : CtrmapMainframe.class.getDeclaredFields()) {
-			if (Modifier.isPublic(f.getModifiers()) && Modifier.isStatic(f.getModifiers())) {
+			if (f.isSynthetic()) {
+				continue;
+			}
+			if (!Modifier.isStatic(f.getModifiers())) {
+				instance++;
+			} else if (Modifier.isFinal(f.getModifiers())
+					&& (f.getType().isPrimitive() || f.getType() == String.class)) {
+				constants.add(f.getName());
+			} else {
 				statics.add(f.getName());
 			}
 		}
-		check(statics.size() == PUBLIC_STATICS,
-				"the window has " + PUBLIC_STATICS + " public statics (it has " + statics.size() + ": "
-				+ statics + ")");
+		check(instance > 0 && constants.contains("INDEPENDENT_TITLE"),
+				"control: the window's own fields are read - " + instance + " instance, constants " + constants);
+		check(statics.isEmpty(), "and none is static but a constant: " + statics);
+	}
+
+	/**
+	 * Nothing of the window can be reached but its entry point and its constructor (F007).
+	 *
+	 * <p>Its panels were public statics that existed for the suites alone - no class of the program read
+	 * one - and its methods were public for the same reason; the program's only way in was main. Every
+	 * member is private now: a field, a method, a nested type, anything but {@code main} and the
+	 * constructor the program and the suites build it with. The suites reach what they drive through
+	 * TestWindow, by reflection, which nothing in the program does by accident. The rule reads the
+	 * modifier of every member the class declares, so a public field added tomorrow is refused by name,
+	 * whatever it is for.
+	 */
+	static void theWindowExposesNothing() {
+		System.out.println("--- nothing of the window is reachable but main and its constructor (F007)");
+		List<String> fixture = exposed(ExposedFixture.class);
+		check(fixture.equals(Arrays.asList("constructor[int]", "field shown", "method open()", "type Open")),
+				"control: a public field, a package method, a public nested type and a constructor that takes"
+				+ " something are caught, the private ones, main and the bare constructor are not: " + fixture);
+		List<String> window = exposed(CtrmapMainframe.class);
+		check(window.isEmpty(), "and the window exposes nothing else: " + window);
+	}
+
+	/** Every member {@code c} declares that is not private - but main(String[]) and a constructor that takes nothing. */
+	static List<String> exposed(Class<?> c) {
+		List<String> out = new ArrayList<>();
+		for (Field f : c.getDeclaredFields()) {
+			if (!f.isSynthetic() && !Modifier.isPrivate(f.getModifiers())) {
+				out.add("field " + f.getName());
+			}
+		}
+		for (java.lang.reflect.Method m : c.getDeclaredMethods()) {
+			if (m.isSynthetic() || Modifier.isPrivate(m.getModifiers())) {
+				continue;
+			}
+			if (m.getName().equals("main") && Modifier.isStatic(m.getModifiers())
+					&& Arrays.equals(m.getParameterTypes(), new Class<?>[]{String[].class})) {
+				continue;
+			}
+			out.add("method " + m.getName() + "()");
+		}
+		for (java.lang.reflect.Constructor<?> k : c.getDeclaredConstructors()) {
+			if (!k.isSynthetic() && !Modifier.isPrivate(k.getModifiers()) && k.getParameterTypes().length > 0) {
+				out.add("constructor" + Arrays.toString(k.getParameterTypes()));
+			}
+		}
+		for (Class<?> n : c.getDeclaredClasses()) {
+			if (!n.isSynthetic() && !Modifier.isPrivate(n.getModifiers())) {
+				out.add("type " + n.getSimpleName());
+			}
+		}
+		java.util.Collections.sort(out);
+		return out;
+	}
+
+	/** The rule's known answer: one of each thing it refuses, beside one of each it lets be. */
+	@SuppressWarnings("unused")
+	static final class ExposedFixture {
+
+		public int shown;
+		private int hidden;
+
+		ExposedFixture() {
+		}
+
+		ExposedFixture(int given) {
+		}
+
+		public static void main(String[] args) {
+		}
+
+		void open() {
+		}
+
+		private void closed() {
+		}
+
+		public static final class Open {
+		}
+
+		private static final class Closed {
+		}
+	}
+
+	/**
+	 * The suites' way into the window refuses a member it was not written for (F007). TestWindow reads the
+	 * window's private members by name; one renamed, removed or retyped must stop the suites, naming it,
+	 * rather than hand them a null - or a ClassCastException - twenty checks on.
+	 */
+	static void theSuitesWayInRefusesAStaleName() {
+		System.out.println("--- the suites' way into the window refuses a member it was not written for (F007)");
+		javax.swing.JScrollPane was = TestWindow.mCamScrollPane();
+		javax.swing.JScrollPane mine = new javax.swing.JScrollPane();
+		TestWindow.mCamScrollPane(mine);
+		check(TestWindow.field("mCamScrollPane") == mine, "control: a member set through its accessor is the one read by name");
+		TestWindow.mCamScrollPane(was);
+		check(refusal(() -> TestWindow.field("noSuchPanel")).contains("no field noSuchPanel"),
+				"a name the window does not declare is refused by name: " + refusal(() -> TestWindow.field("noSuchPanel")));
+		String retyped = refusal(() -> TestWindow.field("mTileMapPanel", javax.swing.JScrollPane.class));
+		check(retyped.contains("TileMapPanel") && retyped.contains("not the javax.swing.JScrollPane"),
+				"a member of another type than the suites were written for is refused, naming both: " + retyped);
+		String returns = refusal(() -> TestWindow.method("buildMenuBar", void.class));
+		check(returns.contains("returns javax.swing.JMenuBar"), "a method returning another type is refused, naming both: " + returns);
+		String params = refusal(() -> TestWindow.method("buildMenuBar", javax.swing.JMenuBar.class, int.class));
+		check(params.contains("no buildMenuBar"), "and one with other parameters is refused: " + params);
+	}
+
+	/** What {@code r} was refused with, or "(nothing was thrown)". */
+	static String refusal(Runnable r) {
+		try {
+			r.run();
+			return "(nothing was thrown)";
+		} catch (IllegalStateException refused) {
+			return refused.getMessage();
+		}
 	}
 
 	// ---- plumbing ----------------------------------------------------------

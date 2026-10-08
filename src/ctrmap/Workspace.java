@@ -57,8 +57,10 @@ public class Workspace {
 	 * The open game, or null when no workspace has validated. Installed
 	 * whole by {@link #validate} (or {@link #install}) and never edited in
 	 * place: a failed switch leaves this null, never half of two games.
+	 * Volatile (F016): the building preview's worker reads it while the
+	 * event thread may be installing the next game.
 	 */
-	private static WorkspaceSession current;
+	private static volatile WorkspaceSession current;
 
 	public static void loadWorkspace() {
 		prefs = Preferences.userRoot().node(Workspace.class.getName());
@@ -67,14 +69,6 @@ public class Workspace {
 		ESPICA_PATH = prefs.get("ESPICA_PATH", "");
 		TILESET_DEFAULT = prefs.getBoolean("TILESET_DEFAULT", true);
 		TILESET_PATH = prefs.get("TILESET_PATH", "");
-	}
-
-	public static void createWorkspace(String wspath, String gamepath, String espicapath, boolean tilesetDefault, String customTilesetPath) {
-		WORKSPACE_PATH = wspath;
-		GAMEDIR_PATH = gamepath;
-		ESPICA_PATH = espicapath;
-		TILESET_DEFAULT = tilesetDefault;
-		TILESET_PATH = customTilesetPath;
 	}
 
 	/**
@@ -96,8 +90,8 @@ public class Workspace {
 				TILESET_DEFAULT = true;
 			}
 		}
-		try {
-			return new EditorTileset(ResourceAccess.getStream("DefaultTileset.mets"));
+		try (java.io.InputStream in = ResourceAccess.getStream("DefaultTileset.mets")) {
+			return new EditorTileset(in);
 		} catch (java.io.IOException broken) {
 			throw new IllegalStateException("the default tileset built into the program could not be read: "
 					+ Ui.reason(broken), broken);
@@ -281,24 +275,34 @@ public class Workspace {
 		return ctrmap.gamedef.GameProfile.of(game());
 	}
 
-	public static void cleanAll() {
+	/**
+	 * Forgets the workspace's edits, and the declined fork offers with them.
+	 *
+	 * @throws IOException when the edits were cleaned but the declines could not be forgotten -
+	 * said, not logged: a log line nobody reads left the old answers silencing the offer (F016's sweep)
+	 */
+	public static void cleanAll() throws IOException {
 		if (current != null) {
 			current.cleanAll();
 		} else if (WORKSPACE_PATH != null) {
 			WorkspaceSession.cleanDirectories(new File(WORKSPACE_PATH), true, NO_PERSISTED);
 		}
+		IOException notForgotten = null;
+		if (WORKSPACE_PATH != null) {
+			//A CLEAN FORGETS THE EDITS, AND THE DECLINED FORK OFFERS WITH THEM (F253): the zones
+			//are the game's own again, so a shared map is worth asking about again
+			try {
+				ForkDeclines.forget(new File(WORKSPACE_PATH));
+			} catch (IOException ex) {
+				notForgotten = ex;   //thrown below, once the settings are saved as cleaned
+			}
+		}
 		saveWorkspace();
-	}
-
-	/**
-	 * Deletes the workspace's working copies. The editors showing them have to
-	 * be unloaded FIRST, and their owner does that: this used to call the main
-	 * window itself, which is why WorkspaceRepointTest records that the path
-	 * where the user answers both questions "cannot run without a window at
-	 * all". It runs without one now.
-	 */
-	public static void cleanAndReload() {
-		cleanAll();
+		if (notForgotten != null) {
+			throw new IOException("The workspace was cleaned, but the zones you declined a private map for could not be"
+					+ " forgotten (" + ctrmap.util.Bytes.reason(notForgotten) + "), so those offers stay silent until the"
+					+ " file " + ForkDeclines.FILE + " is removed.", notForgotten);
+		}
 	}
 
 	/**
@@ -395,7 +399,11 @@ public class Workspace {
 			return false; //Cancel, or the question closed: not consent to delete anything
 		}
 		before.run();
-		cleanAll();
+		try {
+			cleanAll();
+		} catch (IOException partly) {
+			Ui.error(parent, ctrmap.util.Bytes.reason(partly), "Clean workspace");
+		}
 		return true;
 	}
 
@@ -656,9 +664,16 @@ public class Workspace {
 	 * onDone runs on the EDT after packing and the GARC reloads are complete.
 	 */
 	public static void packWorkspace(final Runnable onDone) {
+		if (current == null) {
+			//SAID, NOT SKIPPED (F230): this returned without a word and dropped onDone, and File >
+			//Pack Workspace was wired straight here - with no game set up, a click did nothing and
+			//said nothing, where every sibling action refuses by name
+			Ui.error(Ui.parent(), "Load a workspace first (Options > Workspace settings).", "Pack workspace");
+			return;
+		}
 		//a read-only session (a suite over the pristine dump) has nothing to
 		//commit TO; the application never opens one
-		if (current != null && !current.isReadOnly()) {
+		if (!current.isReadOnly()) {
 			final WorkspaceSession packing = current;
 			LoadingDialog progress = LoadingDialog.makeDialog("Packing");
 			final java.util.List<String> warnings = new ArrayList<>();

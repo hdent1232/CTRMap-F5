@@ -45,12 +45,6 @@ public class GfHash {
 		return NAME_BY_HASH.get(hash);
 	}
 
-	/** A display label for a hash: the name, or "0x&lt;hash&gt;" when unknown. */
-	public static String label(int hash) {
-		String n = nameForHash(hash);
-		return n != null ? n : String.format("0x%08X", hash);
-	}
-
 	/** The hash for a known native name (from the table), or hash(name) if absent. */
 	public static synchronized int hashForName(String name) {
 		ensureLoaded();
@@ -64,32 +58,45 @@ public class GfHash {
 		return HASH_BY_NAME;
 	}
 
-	private static void ensureLoaded() {
+	private static synchronized void ensureLoaded() {   //the lock its callers hold, said where the tables are written (F016)
 		if (NAME_BY_HASH != null) {
 			return;
 		}
 		Map<Integer, String> byHash = new HashMap<>();
 		Map<String, Integer> byName = new HashMap<>();
-		try (InputStream in = GfHash.class.getClassLoader()
-				.getResourceAsStream("ctrmap/resources/oras_natives.tsv")) {
-			if (in != null) {
-				BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
-				String line;
-				while ((line = r.readLine()) != null) {
-					int tab = line.indexOf('\t');
-					if (tab <= 0) {
-						continue;
-					}
-					int h = (int) Long.parseLong(line.substring(0, tab).trim(), 16);
-					String name = line.substring(tab + 1).trim();
-					byName.putIfAbsent(name, h);
-					byHash.putIfAbsent(h, name); // first (canonical) name wins on collisions
-				}
-			}
-		} catch (Exception ex) {
-			System.err.println("GfHash: native table load failed: " + ex);
+		//REFUSED, NOT EMPTY (F130): a table that was missing or that one row stopped read as "no
+		//native has a name", every hash printed bare, with a line on a console the build does not have
+		try (InputStream in = ctrmap.resources.ResourceAccess.getStream("oras_natives.tsv")) {
+			read(new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8)), byHash, byName);
+		} catch (java.io.IOException ex) {
+			throw new IllegalStateException("The native-name table built into the program could not be read: "
+					+ ctrmap.util.Bytes.reason(ex), ex);
 		}
 		NAME_BY_HASH = byHash;
 		HASH_BY_NAME = byName;
+	}
+
+	/**
+	 * Reads a native-name table: one {@code HASH<tab>name} row per line, the hash in hex; the first
+	 * name given a hash is its canonical one. STRICT: a row that is not that throws, naming its line.
+	 */
+	static void read(BufferedReader r, Map<Integer, String> byHash, Map<String, Integer> byName) throws java.io.IOException {
+		int lineNo = 0;
+		for (String line; (line = r.readLine()) != null;) {
+			lineNo++;
+			if (line.trim().isEmpty()) {
+				continue;
+			}
+			int tab = line.indexOf('\t');
+			int h;
+			try {
+				h = (int) Long.parseLong(tab <= 0 ? "" : line.substring(0, tab).trim(), 16);
+			} catch (NumberFormatException notHex) {
+				throw new java.io.IOException("line " + lineNo + " is not a hex hash, a tab and a name: \"" + line + "\"");
+			}
+			String name = line.substring(tab + 1).trim();
+			byName.putIfAbsent(name, h);
+			byHash.putIfAbsent(h, name); // first (canonical) name wins on collisions
+		}
 	}
 }

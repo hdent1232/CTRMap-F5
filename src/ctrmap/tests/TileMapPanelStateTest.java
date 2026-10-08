@@ -1,6 +1,5 @@
 package ctrmap.tests;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.LoadedZone;
 import ctrmap.Ui;
 import ctrmap.Workspace;
@@ -430,21 +429,20 @@ public class TileMapPanelStateTest {
 	 */
 	static void unloadingDropsTheUndoHistoryWithTheMap() {
 		System.out.println("--- unloading drops the undo history with the map it belongs to");
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null);
 		Tilemap region = new Tilemap(null, 40, 40, null);
 		panel.tilemaps = new Tilemap[][]{{region}};
 		panel.loaded = true;
-		ctrmap.humaninterface.TileUndo.clear();
-		byte[] before = region.getTileData(1, 1).clone();
+		ctrmap.humaninterface.UndoHistory history = historyOver(panel);
 		byte[] after = new byte[]{1, 2, 3, 4};
 		region.setTileData(1, 1, after);
-		ctrmap.humaninterface.TileUndo.record(region, 1, 1, before, after);
-		check(ctrmap.humaninterface.TileUndo.canUndo(),
+		history.settle();
+		check(history.canUndo(),
 				"fixture: an edit to the open map leaves an undo step behind it");
 
 		panel.unload();
 		check(panel.tilemaps == null, "the unload drops the tilemaps that step is over");
-		check(!ctrmap.humaninterface.TileUndo.canUndo(),
+		check(!history.canUndo(),
 				"and the undo history goes with them, so nothing offers to take back an edit to a map that is no longer open");
 	}
 
@@ -461,7 +459,7 @@ public class TileMapPanelStateTest {
 	 */
 	static void aRegionIsPickedByTileNumber() {
 		System.out.println("--- a tile number picks its region");
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null);
 		check(panel.getRegionForTile(0, 0) == null,
 				"with no map open the lookup answers null rather than throwing");
 
@@ -486,10 +484,10 @@ public class TileMapPanelStateTest {
 	 */
 	static void theHeightLookupReadsThePanelsOwnCollisions() {
 		System.out.println("--- the panel's height lookup reads the panel's own collisions");
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
-		panel.colls = new GRCollisionFile[2][4]; //2 wide, 4 tall, all cells empty
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null);
+		panel.colls = NpcEntityGuardsTest.grounded(2, 4); //2 wide, 4 tall, each a blank collision at 0
 		check(panel.getHeightAtWorldLoc(100f, 3 * 720f + 10f) == 0f,
-				"a position inside this panel's 2x4 matrix reads its empty cell as height 0");
+				"a position inside this panel's 2x4 matrix reads its cell's ground, 0");
 		check(Float.isNaN(panel.getHeightAtWorldLoc(2 * 720f, 100f)),
 				"and one past its width is NaN, which is the caller's cue to leave the altitude alone");
 		panel.colls = new GRCollisionFile[1][1];
@@ -554,7 +552,7 @@ public class TileMapPanelStateTest {
 		sp.getViewport().setSize(300, 200);
 		sp.getViewport().setViewPosition(new Point(640, 480));
 		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, sp,
-			new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+			new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null);
 
 		panel.height = 2;                       //2 regions tall
 		panel.tilemapScale = 0.5d;
@@ -611,7 +609,7 @@ public class TileMapPanelStateTest {
 	 */
 	static void scalingRefusesWhatItCannotDraw() {
 		System.out.println("--- scaling refuses a zoom it cannot draw, and does not remember it");
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null);
 		panel.tilemapScale = 0.25d;
 
 		panel.loaded = false;
@@ -649,7 +647,7 @@ public class TileMapPanelStateTest {
 	 */
 	static void aStaleReloadIsIgnoredRatherThanWritten() {
 		System.out.println("--- a stale region refresh is dropped rather than written into another map");
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null);
 		byte[] notEvenAModel = new byte[]{'B', 'C', 'H'};
 
 		panel.models = null;
@@ -676,7 +674,7 @@ public class TileMapPanelStateTest {
 
 	/** A panel holding one region, the way loadTileMap leaves it. */
 	static TileMapPanel single(int regionId) throws Exception {
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null);
 		GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, regionId), Workspace.session());
 		panel.mode = TileMapPanel.ViewportMode.SINGLE;
 		panel.mainGR = gr;
@@ -707,7 +705,7 @@ public class TileMapPanelStateTest {
 	static void theAnimatorFindsNothingToDrawBeforeAZoneOpens() {
 		System.out.println("--- the 3D renderer draws nothing before a zone is open");
 		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE,
-			new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+			new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null);
 		check(panel.models == null && !panel.loaded, "a fresh panel holds no models");
 		for (String when : new String[]{"fresh", "after unload"}) {
 			Throwable thrown = null;
@@ -775,7 +773,7 @@ public class TileMapPanelStateTest {
 		final java.awt.Color[] palette = {java.awt.Color.RED};
 		ctrmap.formats.tilemap.Tilemap.TileColors live = tile -> palette[0];
 		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE,
-			new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), live);
+			new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), live);
 		ctrmap.formats.tilemap.Tilemap.TileColors handedOut = colours(panel);
 		check(handedOut == live, "the panel hands a region the view it was given, not a copy");
 		check(handedOut.colorOf(7).equals(java.awt.Color.RED), "which answers out of the tileset");
@@ -784,7 +782,7 @@ public class TileMapPanelStateTest {
 			"and keeps answering out of it after Workspace settings replaces it, which is"
 			+ " what makes the repaint show the new palette rather than the old one");
 		TileMapPanel headless = new TileMapPanel(new LoadedZone(), TOOLS, SCENE,
-			new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+			new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null);
 		check(colours(headless) == null,
 			"and a panel with no palette hands out none, so a headless holder paints nothing");
 	}
@@ -861,10 +859,12 @@ public class TileMapPanelStateTest {
 		setField(panel, "savedPropTextures", new java.util.ArrayList<ctrmap.formats.h3d.texturing.H3DTexture>());
 		check(panel.getWorldTextures() == world, "the panel is handing out a zone's textures");
 		GR loose = firstPopulated(panel);
+		ctrmap.humaninterface.UndoHistory history = historyOver(panel);
 		ctrmap.humaninterface.Selector.selTileX = 500;
 		ctrmap.humaninterface.Selector.selTileY = 500;
 		editOneTile(panel);
-		check(ctrmap.humaninterface.TileUndo.canUndo() 
+		history.settle();
+		check(history.canUndo() 
 			&& ctrmap.humaninterface.Selector.selTileX != -1,
 			"fixture: there is an undo step and a picked tile to lose");
 		check(loose != null, "and there is a region container to open as a loose map");
@@ -896,7 +896,7 @@ public class TileMapPanelStateTest {
 		//loadMatrix nor unload, so it dropped neither, and "open a zone, paint a tile,
 		//File > Open GR Mapfile" left the Undo button lit over a Tilemap the panel no
 		//longer held.
-		check(!ctrmap.humaninterface.TileUndo.canUndo(),
+		check(!history.canUndo(),
 			"and the undo history of the map it replaced, so nothing offers to take back an"
 			+ " edit to a map that is not open");
 		check(ctrmap.humaninterface.Selector.selTileX == -1
@@ -962,7 +962,23 @@ public class TileMapPanelStateTest {
 			+ " region(s) across - so the cursor could not have survived the load");
 	}
 
-	/** Records one tile edit through TileUndo, so there is a history to drop. */
+	/**
+	 * The zone's history over a panel, told when the panel replaces its regions - as the window builds
+	 * it (F209). It replaced a static tile history the panel cleared by hand.
+	 */
+	static ctrmap.humaninterface.UndoHistory historyOver(TileMapPanel panel) {
+		LoadedZone lz = new LoadedZone();
+		ctrmap.humaninterface.UndoHistory h = new ctrmap.humaninterface.UndoHistory(
+				ctrmap.humaninterface.ZoneDocuments.scope(lz, () -> panel),
+				ctrmap.humaninterface.ZoneDocuments.entities(lz, () -> {
+				}));
+		panel.useHistory(h, () -> {
+		});
+		h.settle();
+		return h;
+	}
+
+	/** Edits one tile, so there is a history to drop once the edit is settled. */
 	static void editOneTile(TileMapPanel panel) {
 		for (Tilemap[] col : panel.tilemaps) {
 			for (Tilemap tm : col) {
@@ -973,7 +989,6 @@ public class TileMapPanelStateTest {
 				byte[] now = was.clone();
 				now[0] = (byte) (now[0] ^ 0x20);
 				tm.setTileData(1, 1, now);
-				ctrmap.humaninterface.TileUndo.record(tm, 1, 1, was, now);
 				return;
 			}
 		}
@@ -1021,7 +1036,7 @@ public class TileMapPanelStateTest {
 
 	/** A panel over a parsed map matrix, the way loadMatrix leaves one. */
 	static TileMapPanel over(MapMatrix mm) throws Exception {
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null);
 		panel.mm = mm;
 		panel.mode = TileMapPanel.ViewportMode.MULTI;
 		panel.tilemaps = new Tilemap[mm.width][mm.height];

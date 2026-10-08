@@ -13,7 +13,7 @@ import ctrmap.formats.zone.ZoneEntities;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameType;
 import ctrmap.humaninterface.Selector;
-import ctrmap.humaninterface.TileUndo;
+import ctrmap.humaninterface.UndoHistory;
 import ctrmap.humaninterface.tools.AbstractTool;
 import ctrmap.humaninterface.tools.CameraTool;
 import ctrmap.humaninterface.tools.GeoTool;
@@ -50,16 +50,11 @@ import javax.swing.SwingUtilities;
  *
  * <p>WHAT IS PINNED, INCLUDING WHAT LOOKS WRONG. These are characterization
  * tests for a step that is about to move this code, so they assert today's
- * behaviour, not the behaviour it ought to have. Two things are odd on purpose
- * and are marked where they are asserted:
- * <ul>
- * <li>{@link WarpTool#updateComponents} and {@link TriggerTool#updateComponents}
- *     both refresh the CAMERA form rather than their own, which is what the 3D
- *     view calls after a navigator drag. Neither line can be reached today
- *     (both tools drop the navigator), which is why nothing has noticed.</li>
- * <li>{@link PropTool#updateComponents} marks the prop file modified whether or
- *     not anything moved.</li>
- * </ul>
+ * behaviour, not the behaviour it ought to have. Two things were odd on purpose
+ * and were fixed (F148): the Warp and Trigger tools refreshed the CAMERA form after
+ * a navigator drag, from lines no drag could reach - they are gone - and the Prop
+ * tool marked its file modified after any drag event, moved or not - the 3D view
+ * now tells a tool only about a drag that moved its target.
  *
  * <p>WHAT NEEDS A SCREEN. Nine lines across these classes repaint the
  * mainframe's JFrame, which cannot exist with no display, and every
@@ -303,7 +298,7 @@ public class EditToolGuardsTest {
 	 * tool must still build. Every other check in this suite rests on it.
 	 */
 	static void everyToolAnswersForItself() {
-		check(CtrmapMainframe.m3DDebugPanel == null,
+		check(TestWindow.m3DDebugPanel() == null,
 				"fixture: there is no 3D panel, which is the case the guard in AbstractTool's constructor is for");
 		AbstractTool[] tools = new AbstractTool[]{
 			paintTool(), setTool(), geoTool(), propTool(), triggerTool(), warpTool(), cameraTool()
@@ -410,7 +405,7 @@ public class EditToolGuardsTest {
 	 */
 	static void setToolWritesTheTileBytes() {
 		SetTool t = setTool();
-		TileUndo.clear();
+		UndoHistory h = benchHistory();
 		Selector.unfocus(null);
 		byte[] before = EditorBench.region.getTileData(3, 4).clone();
 		check(Arrays.equals(before, new byte[]{0x21, 0, 0, 1}), "fixture: the scratch region starts as unwalkable tiles");
@@ -422,14 +417,16 @@ public class EditToolGuardsTest {
 		check(Arrays.equals(EditorBench.region.getTileData(3, 4), new byte[]{1, 2, 3, 4}),
 				"a left click writes the tool's four bytes into the region");
 		check(EditorBench.region.modified, "and marks the region modified, which is what makes a save write it");
-		check(TileUndo.canUndo(), "and leaves an undo step");
+		h.settle();   //the release: what the gesture hook does once the click's handlers have run
+		check(h.canUndo(), "and leaves an undo step");
 
 		t.onTileClick(EditorBench.click(30, 40, false));
-		check(TileUndo.undo(RecordingHost.INSPECTOR, CtrmapMainframe.mTileMapPanel), "undo takes the tile back");
+		h.settle();
+		check(h.undo(), "undo takes the tile back");
 		check(Arrays.equals(EditorBench.region.getTileData(3, 4), before), "to exactly the bytes that were there");
-		check(!TileUndo.canUndo(),
+		check(!h.canUndo(),
 				"and there is nothing behind it: clicking the same tile twice with the same bytes is one step, not two");
-		check(TileUndo.redo(RecordingHost.INSPECTOR, CtrmapMainframe.mTileMapPanel) && Arrays.equals(EditorBench.region.getTileData(3, 4), new byte[]{1, 2, 3, 4}),
+		check(h.redo() && Arrays.equals(EditorBench.region.getTileData(3, 4), new byte[]{1, 2, 3, 4}),
 				"redo puts the edit back");
 
 		//right button: pick the tile up into the inspector, and pick it up again
@@ -443,17 +440,19 @@ public class EditToolGuardsTest {
 
 		//no region under the cursor: the tool must do nothing rather than throw
 		//on the event thread, which is where a null region would land
-		TileUndo.clear();
+		h = benchHistory();
 		Tilemap[][] was = EditorBench.map.tilemaps;
 		EditorBench.map.tilemaps = null;
 		EditorBench.hilight(1, 1);
 		t.onTileClick(EditorBench.click(10, 10, false));
 		EditorBench.map.tilemaps = was;
-		check(!TileUndo.canUndo(), "a click where there is no region writes nothing and records nothing");
+		h.settle();
+		check(!h.canUndo(), "a click where there is no region writes nothing and records nothing");
 
 		EditorBench.hilight(-1, -1);
 		t.onTileClick(EditorBench.click(0, 0, false));
-		check(!TileUndo.canUndo(), "and neither does a click off the map");
+		h.settle();
+		check(!h.canUndo(), "and neither does a click off the map");
 	}
 
 	/**
@@ -465,41 +464,58 @@ public class EditToolGuardsTest {
 	 */
 	static void setToolMakesOneUndoStepPerDrag() {
 		SetTool t = setTool();
-		TileUndo.clear();
+		UndoHistory h = benchHistory();
 		Selector.unfocus(null);
 		byte[] before = EditorBench.region.getTileData(10, 20).clone();
 		t.actTileData = new byte[]{9, 8, 7, 6};
 
 		EditorBench.hilight(10, 20);
+		h.settle();   //the press: the hook notes what is there before the gesture
 		t.onTileMouseDown(EditorBench.press(100, 200, false));
-		check(!TileUndo.isOpen(), "the press alone opens nothing: this tool paints on the drag");
+		check(Arrays.equals(EditorBench.region.getTileData(10, 20), before), "the press alone paints nothing: this tool paints on the drag");
 		t.onTileMouseDragged(EditorBench.drag(100, 200, false));
 		check(t.CM2DNoUpdate, "the drag freezes the map view");
 		EditorBench.hilight(11, 20);
 		t.onTileMouseDragged(EditorBench.drag(110, 200, false));
 		EditorBench.hilight(12, 20);
 		t.onTileMouseDragged(EditorBench.drag(120, 200, false));
-		check(TileUndo.isOpen(), "and the batch is still open mid-stroke");
+		check(!h.canUndo(), "and mid-stroke nothing is recorded: the gesture has not ended");
 		t.onTileMouseUp(EditorBench.release(120, 200, false));
-		check(!t.CM2DNoUpdate && !TileUndo.isOpen(), "the release unfreezes the view and closes the batch");
+		h.settle();   //the release, once its handlers have run
+		check(!t.CM2DNoUpdate && h.canUndo(), "the release unfreezes the view, and the stroke is an edit");
 
 		boolean painted = Arrays.equals(EditorBench.region.getTileData(10, 20), new byte[]{9, 8, 7, 6})
 				&& Arrays.equals(EditorBench.region.getTileData(11, 20), new byte[]{9, 8, 7, 6})
 				&& Arrays.equals(EditorBench.region.getTileData(12, 20), new byte[]{9, 8, 7, 6});
 		check(painted, "all three tiles of the stroke carry the tool's bytes");
-		check(TileUndo.undo(RecordingHost.INSPECTOR, CtrmapMainframe.mTileMapPanel), "one undo");
+		check(h.undo(), "one undo");
 		boolean allBack = Arrays.equals(EditorBench.region.getTileData(10, 20), before)
 				&& Arrays.equals(EditorBench.region.getTileData(11, 20), before)
 				&& Arrays.equals(EditorBench.region.getTileData(12, 20), before);
 		check(allBack, "takes the whole stroke back, all three tiles");
-		check(!TileUndo.canUndo(), "and there is nothing behind it: the stroke was one step");
+		check(!h.canUndo(), "and there is nothing behind it: the stroke was one step");
 
 		//a right drag is the inspector's gesture, not a stroke
-		TileUndo.clear();
+		h = benchHistory();
 		EditorBench.hilight(13, 20);
 		t.onTileMouseDragged(EditorBench.drag(130, 200, true));
 		check(Arrays.equals(EditorBench.region.getTileData(13, 20), before), "a right drag paints nothing");
-		check(!TileUndo.canUndo() && !TileUndo.isOpen(), "and opens no undo batch");
+		h.settle();
+		check(!h.canUndo(), "and records no edit");
+	}
+
+	/**
+	 * The zone's history over the editor bench's map, settled where it starts - what the window builds,
+	 * and what the gesture hook settles around each press and release (F209). It replaced a static tile
+	 * history the tools called by hand.
+	 */
+	static UndoHistory benchHistory() {
+		UndoHistory h = new UndoHistory(ctrmap.humaninterface.ZoneDocuments.scope(EditorBench.LOADED, () -> EditorBench.map),
+				UndoHistoryTest.zone(EditorBench.LOADED, () -> EditorBench.map, () -> {
+				}, () -> {
+				}));
+		h.settle();
+		return h;
 	}
 
 	// ---- GeoTool ------------------------------------------------------------
@@ -804,20 +820,12 @@ public class EditToolGuardsTest {
 	// ---- the copy-paste in updateComponents ---------------------------------
 
 	/**
-	 * PINNED, NOT FIXED. {@code updateComponents()} is what the 3D view calls on
-	 * the tool in hand after a navigator drag ({@code H3DRenderingPanel.doNavi}),
-	 * so it is the tool's chance to put the number the user just dragged into
-	 * its own form. The Prop tool refreshes the prop form and the NPC tool the
-	 * NPC form, which is the shape.
-	 *
-	 * <p>The Warp tool and the Trigger tool refresh the CAMERA form. Neither can
-	 * reach the line today, because {@code doNavi} returns with no bound target
-	 * and both tools answer false to {@link AbstractTool#getNaviEnabled} - which
-	 * is exactly what makes it worth pinning. It is unreachable wrong code that
-	 * reads as reachable, so a refactor that gives either tool a navigator, or
-	 * that calls updateComponents from anywhere else, ships a tool that redraws
-	 * a form the user is not looking at and leaves the one they are looking at
-	 * stale. Asserted as it stands, and reported separately.
+	 * {@code updateComponents()} is what the 3D view calls on the tool in hand after a
+	 * navigator drag that moved its target ({@code H3DRenderingPanel.doNavi}), so it is
+	 * the tool's chance to put the number the user just dragged into its own form. The
+	 * Prop tool refreshes the prop form and the NPC tool the NPC form, which is the shape.
+	 * The Warp and Trigger tools refreshed the CAMERA form, from lines no drag could reach
+	 * (both drop the navigator); those lines are gone and both now update nothing (F148).
 	 */
 	static void theToolsThatRefreshTheCameraForm() {
 		EditorBench.cam.camIndex = 4;
@@ -828,16 +836,10 @@ public class EditToolGuardsTest {
 
 		EditorBench.cam.calls.clear();
 		warpTool().updateComponents();
-		check(EditorBench.cam.calls.equals(Arrays.asList("showCamera 4,false")),
-				"SO DOES THE WARP TOOL, which is a copy-paste the Warp tool's own form pays for"
-				+ " if the line ever becomes reachable: " + EditorBench.cam.calls);
-
-		EditorBench.cam.calls.clear();
 		triggerTool().updateComponents();
-		check(EditorBench.cam.calls.equals(Arrays.asList("showCamera 4,false")),
-				"and so does the Trigger tool: " + EditorBench.cam.calls);
-		check(!warpTool().getNaviEnabled() && !triggerTool().getNaviEnabled(),
-				"which nothing has noticed because both tools drop the navigator, so doNavi never calls either line");
+		check(EditorBench.cam.calls.isEmpty() && !warpTool().getNaviEnabled() && !triggerTool().getNaviEnabled(),
+				"the Warp and Trigger tools, which drop the navigator, refresh no form - not the camera's (F148): "
+				+ EditorBench.cam.calls);
 
 		EditorBench.cam.calls.clear();
 		paintTool().updateComponents();
@@ -851,7 +853,7 @@ public class EditToolGuardsTest {
 		EditorBench.prop.calls.clear();
 		propTool().updateComponents();
 		check(EditorBench.prop.props.modified,
-				"PINNED: the Prop tool's updateComponents marks the prop file modified even when nothing changed");
+				"the Prop tool's updateComponents - asked only after a drag that moved the prop - marks the file modified");
 		check(EditorBench.prop.calls.equals(Arrays.asList("showProp 1")),
 				"and re-shows the selected prop: " + EditorBench.prop.calls);
 	}
@@ -889,38 +891,38 @@ public class EditToolGuardsTest {
 	static void toolStartupSwitchesTheSidePanel() throws Exception {
 		EditorBench.paint.calls.clear();
 		start(EditorBench.BOX.paint());
-		check(EditorBench.HOST.lastShown() == CtrmapMainframe.mPaintForm,
+		check(EditorBench.HOST.lastShown() == TestWindow.mPaintForm(),
 				"the Paint tool puts the painter in the side panel");
 		check(EditorBench.paint.calls.equals(Arrays.asList("activate")), "and activates it: " + EditorBench.paint.calls);
 
 		EditorBench.tiles.lockTile(false);
 		start(EditorBench.BOX.set());
-		check(EditorBench.HOST.lastShown() == CtrmapMainframe.mTileEditForm,
+		check(EditorBench.HOST.lastShown() == TestWindow.mTileEditForm(),
 				"the Set tool puts the tile inspector in the side panel");
 		check(Boolean.TRUE.equals(EditorBench.field(EditorBench.tiles, "isLocked")),
 				"and locks it, so hovering the map no longer overwrites the bytes being stamped");
 
 		start(EditorBench.BOX.geometry());
-		check(EditorBench.HOST.lastShown() == CtrmapMainframe.mGeoEditForm,
+		check(EditorBench.HOST.lastShown() == TestWindow.mGeoEditForm(),
 				"the Geometry tool puts the geometry form in the side panel");
 
 		EditorBench.prop.calls.clear();
 		start(EditorBench.BOX.prop());
-		check(EditorBench.HOST.lastShown() == CtrmapMainframe.mPropEditForm,
+		check(EditorBench.HOST.lastShown() == TestWindow.mPropEditForm(),
 				"the Prop tool puts the prop form in the side panel");
 		check(EditorBench.prop.calls.equals(Arrays.asList("saveAndRefresh")),
 				"and saves and refreshes it: " + EditorBench.prop.calls);
 
 		start(EditorBench.BOX.warp());
-		check(EditorBench.HOST.lastShown() == CtrmapMainframe.mWarpEditForm,
+		check(EditorBench.HOST.lastShown() == TestWindow.mWarpEditForm(),
 				"the Warp tool puts the warp form in the side panel");
 
 		start(EditorBench.BOX.trigger());
-		check(EditorBench.HOST.lastShown() == CtrmapMainframe.mTriggerEditForm,
+		check(EditorBench.HOST.lastShown() == TestWindow.mTriggerEditForm(),
 				"the Trigger tool puts the trigger form in the side panel");
 
 		start(EditorBench.BOX.camera());
-		check(EditorBench.HOST.lastShown() == CtrmapMainframe.mCamScrollPane,
+		check(EditorBench.HOST.lastShown() == TestWindow.mCamScrollPane(),
 				"the Camera tool puts the camera form in the side panel");
 
 		//every one of those let go of the 3D navigator on its way in, which is
@@ -943,7 +945,7 @@ public class EditToolGuardsTest {
 	/** The side panel's component, unwrapped from the scroll pane switchToolUI puts round a bare form. */
 	static Component rightForm() {
 		Component c = EditorBench.worldSplit().getRightComponent();
-		if (c instanceof JScrollPane && c != CtrmapMainframe.mCamScrollPane) {
+		if (c instanceof JScrollPane && c != TestWindow.mCamScrollPane()) {
 			return ((JScrollPane) c).getViewport().getView();
 		}
 		return c;
@@ -1077,7 +1079,7 @@ public class EditToolGuardsTest {
 		//stream answers with - because both record readers caught their own
 		//IOException and printed it.
 		java.io.ByteArrayOutputStream table = new java.io.ByteArrayOutputStream();
-		ctrmap.LittleEndianDataOutputStream into = new ctrmap.LittleEndianDataOutputStream(table);
+		ctrmap.util.LittleEndianDataOutputStream into = new ctrmap.util.LittleEndianDataOutputStream(table);
 		into.writeInt(3);
 		new ctrmap.formats.cameradata.CameraData().write(into);
 		into.close();
@@ -1090,7 +1092,7 @@ public class EditToolGuardsTest {
 				public void all() {
 					//nothing to draw in a suite
 				}
-			});
+			}, UndoHistoryTest.overOneNumber(new int[]{0}));
 		final java.util.List<String> said = new java.util.ArrayList<>();
 		ctrmap.Ui.into(new ctrmap.Ui.Sink() {
 			@Override
@@ -1215,8 +1217,6 @@ public class EditToolGuardsTest {
 		e.triggers1.add(trigger(2, 3));
 		e.triggers1.add(trigger(10, 3));
 		e.triggers2.add(trigger(20, 3));
-		e.trigger1Count = 2;
-		e.trigger2Count = 1;
 		e.modified = false;
 		return e;
 	}
@@ -1245,14 +1245,13 @@ public class EditToolGuardsTest {
 		ZoneEntities e = EditorBench.emptyEntities();
 		e.warps.add(warp(2, 3));
 		e.warps.add(warp(10, 3));
-		e.warpCount = 2;
 		e.modified = false;
 		EditorBench.warps.loaded = false;
 		EditorBench.warps.e = e;
 		@SuppressWarnings("unchecked")
 		JComboBox<String> box = (JComboBox<String>) EditorBench.field(EditorBench.warps, "entryBox");
 		box.removeAllItems();
-		for (int i = 0; i < e.warpCount; i++) {
+		for (int i = 0; i < e.warps.size(); i++) {
 			box.addItem(i + " - test");
 		}
 		if (EditorBench.warps.transitionModel.getSize() == 0) {

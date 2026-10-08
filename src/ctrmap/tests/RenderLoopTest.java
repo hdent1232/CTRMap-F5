@@ -45,6 +45,7 @@ public class RenderLoopTest {
 		aPreviewUploadsItsModelOnce();
 		aTriangleColourIsMadeOncePerHeight();
 		anOffscreenDrawableIsEndedWhenReplaced();
+		aMeshWithNoMaterialUploadsAndDraws();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		System.exit(fails == 0 ? 0 : 1);
 	}
@@ -232,6 +233,70 @@ public class RenderLoopTest {
 		if (t == int.class || t == long.class || t == float.class || t == double.class || t == short.class
 				|| t == byte.class || t == char.class) {
 			return java.lang.reflect.Array.get(java.lang.reflect.Array.newInstance(t, 1), 0);
+		}
+		return null;
+	}
+
+	/**
+	 * A mesh with no material uploads and draws, and an upload keeps its GL names (F078). makeBOs
+	 * leaves a material-less mesh with no texture coordinates; uploadVBO rewound them before asking,
+	 * a NullPointerException on the render thread, and the immediate-mode path read the null
+	 * material's name. Each upload also deleted its buffer and texture and bound the deleted names.
+	 * Driven on a GL2 proxy that counts what is asked of it.
+	 */
+	static void aMeshWithNoMaterialUploadsAndDraws() throws Exception {
+		System.out.println("--- a mesh with no material uploads and draws, and keeps its GL names (F078)");
+		H3DModel.H3DMesh mesh = new H3DModel.H3DMesh();
+		for (int i = 0; i < 3; i++) {
+			mesh.vertices.add(new ctrmap.formats.h3d.model.H3DVertex());
+		}
+		mesh.hasColor = true;
+		mesh.makeBOs(null);
+		java.lang.reflect.Method rewound = H3DModel.H3DMesh.class.getDeclaredMethod("rewound");
+		java.lang.reflect.Method coloured = H3DModel.H3DMesh.class.getDeclaredMethod("vertexColoured", H3DMaterial.class);
+		rewound.setAccessible(true);
+		coloured.setAccessible(true);
+		String upload;
+		long bytes = -1;
+		try {
+			bytes = (Long) rewound.invoke(mesh);
+			upload = null;
+		} catch (java.lang.reflect.InvocationTargetException ex) {
+			upload = String.valueOf(ex.getCause());
+		}
+		check(upload == null && bytes == 3 * 3 * Float.BYTES + 3 * 4, "a mesh with no material is made ready to upload:"
+				+ " positions and colours, no texture coordinates (" + (upload == null ? bytes + " bytes" : upload) + ")");
+		String drawn;
+		try {
+			drawn = "coloured " + coloured.invoke(mesh, (Object) null);
+		} catch (java.lang.reflect.InvocationTargetException ex) {
+			drawn = "threw " + ex.getCause();
+		}
+		check(drawn.equals("coloured true"), "and it draws without a material, its vertices coloured (" + drawn + ")");
+
+		String src = new String(Files.readAllBytes(new File("src/ctrmap/formats/h3d/model/H3DModel.java").toPath()),
+				StandardCharsets.UTF_8);
+		String upload_ = body(src, "public void uploadVBO(GL2 gl) {");
+		String destroy = body(src, "public void destroyGl(GL2 gl) {");
+		check(destroy != null && destroy.contains("glDeleteBuffers"), "control: the mesh's teardown is read and deletes its"
+				+ " buffer");
+		check(upload_ != null && !upload_.contains("glDelete"), "and its upload deletes nothing: it deleted the buffer and"
+				+ " texture it had been given and bound the deleted names");
+	}
+
+	/** The text of the method whose header is {@code head}, to its matching brace; null when absent. */
+	static String body(String src, String head) {
+		int at = src.indexOf(head);
+		if (at < 0) {
+			return null;
+		}
+		int depth = 0;
+		for (int i = at + head.length() - 1; i < src.length(); i++) {
+			char c = src.charAt(i);
+			depth += c == '{' ? 1 : c == '}' ? -1 : 0;
+			if (depth == 0) {
+				return src.substring(at, i + 1);
+			}
 		}
 		return null;
 	}

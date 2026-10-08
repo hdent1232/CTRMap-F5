@@ -54,24 +54,19 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bundle_shell      # noqa: E402  - whose turn is ending, by shape and event
+import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
 
 LF = chr(10)
 
 
 def _repo_root():
-    """The repository root, ANCHORED against a file that must be in it.
+    """The repository root, ANCHORED - `_tree_root.repo_root`, the one definition (F216).
 
     A hook that resolves its own root by counting `dirname` calls is one rename from reading an
     empty tree and reporting it clean, which `liveness.py` shipped here and this file will not.
+    This walked for `CLAUDE.md` alone: one of four anchor sets the project root had grown.
     """
-    here = os.path.dirname(os.path.abspath(__file__))
-    while True:
-        if os.path.isfile(os.path.join(here, "CLAUDE.md")):
-            return here
-        parent = os.path.dirname(here)
-        if parent == here:
-            return None
-        here = parent
+    return _tree_root.repo_root(__file__)
 
 
 #: FORWARD-LOOKING ASPECT. A closed class in English, not a roster of phrases somebody thought
@@ -308,7 +303,7 @@ CHECKABLE = (
 #: the open item. `guard_unfinished` asked only for the name.
 QUEUE = ("OUTSTANDING.md",)
 
-#: Adapted per project: see ADAPT.md. The lock files a blocker can be checked against, and
+#: Adapted per project: see the bootstrap's ADAPT.md. The lock files a blocker can be checked against, and
 #: where the project keeps its queue.
 ADAPT = ("CHECKABLE", "QUEUE")
 

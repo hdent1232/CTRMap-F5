@@ -66,7 +66,7 @@ DESTRUCTIVE_IF_INTERRUPTED = ("tools/audit/mutate.py", "tools/audit/weigh.py")
 #: run through them ends up executing the same driver.
 INTERPRETERS = ("python", "python3", "python.exe", "py", "sh", "bash")
 
-#: Adapted per project: see ADAPT.md.
+#: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("DESTRUCTIVE_IF_INTERRUPTED",)
 
 

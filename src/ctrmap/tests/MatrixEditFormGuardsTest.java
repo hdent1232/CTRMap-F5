@@ -1,6 +1,5 @@
 package ctrmap.tests;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.MM;
@@ -182,7 +181,7 @@ public class MatrixEditFormGuardsTest {
 			}
 		}
 		mm.zones.set(5, 2, (short) 2);
-		MatrixEditForm form = new MatrixEditForm(new LoadedZone(), CANVAS);
+		MatrixEditForm form = new MatrixEditForm(new LoadedZone(), CANVAS, UndoHistoryTest.overOneNumber(new int[]{0}));
 		form.mm = mm;
 		JComboBox<String> zones = combo(form, "zoneRefDropdown");
 		for (int i = 0; i < 4; i++) {
@@ -250,8 +249,61 @@ public class MatrixEditFormGuardsTest {
 		check(mm.zones.get(5, 2) == 1, "and fills nothing (" + mm.zones.get(5, 2) + ")");
 	}
 
+	/**
+	 * The matrix is a document of the zone's history (F209): a column added, a cell typed, a camera boundary
+	 * moved, is taken back by the same Undo as everything else. The matrix editor had no undo at all.
+	 * Needs no dump: the matrix is built here.
+	 */
+	static void theMatrixIsADocumentOfTheZonesHistory() throws Exception {
+		System.out.println("--- the matrix is a document of the zone's history (F209)");
+		String said = "(nothing was thrown)";
+		try {
+			new MatrixEditForm(new LoadedZone(), CANVAS, null);
+		} catch (RuntimeException refused) {
+			said = refused.getClass().getSimpleName() + ": " + refused.getMessage();
+		}
+		check(said.startsWith("IllegalArgumentException") && said.contains("must be handed the zone's history"),
+				"a matrix editor built without the zone's history is refused: " + said);
+		int[] npc = {0};
+		ctrmap.humaninterface.UndoHistory zone = UndoHistoryTest.overOneNumber(npc);
+		MatrixEditForm form = new MatrixEditForm(new LoadedZone(), CANVAS, zone);
+		MapMatrix mm = new MapMatrix(null, 2, 2, 1);
+		form.loadMatrix(mm);
+		zone.settle();
+		check(!zone.canUndo() && form.loaded, "control: a matrix loaded is noted, not an edit");
+		((javax.swing.JButton) field(form, "btnAddCol")).doClick();
+		check(zone.settle() && "the map matrix".equals(zone.undoName()) && mm.width == 3 && mm.ids.getWidth() == 3,
+				"a column added is an edit of the zone's history: " + zone.undoName() + ", width " + mm.width);
+		check(zone.undo() && mm.width == 2 && mm.ids.getWidth() == 2 && mm.zones.getWidth() == 8 && mm.LOD.getWidth() == 2
+				&& mm.regions.getWidth() == 2, "Undo takes the column away from every grid (" + mm.width + " wide, ids "
+				+ mm.ids.getWidth() + ", zones " + mm.zones.getWidth() + ")");
+		check(zone.redo() && mm.width == 3 && mm.ids.getWidth() == 3, "and Redo adds it again");
+		mm.ids.set(0, 0, (short) 7);
+		check(zone.settle() && zone.undo() && mm.ids.get(0, 0) == -1, "a cell typed is an edit, and Undo empties it again");
+		MatrixCameraBoundaries held = mm.cambounds.get(0);
+		held.north = 5f;
+		check(zone.settle() && zone.undo() && mm.cambounds.get(0) == held && held.north == -20f,
+				"a boundary moved is put back into the record the form holds (north " + held.north + ")");
+		JComboBox<?> bounds = (JComboBox<?>) field(form, "boundEntryBox");
+		((javax.swing.JRadioButton) field(form, "btnCamTool")).doClick();   //the boundary buttons are the camera tool's
+		((javax.swing.JButton) field(form, "btnNewCam")).doClick();
+		check(zone.settle() && mm.cambounds.size() == 2 && bounds.getItemCount() == 2, "control: a boundary added, and listed");
+		check(zone.undo() && mm.cambounds.size() == 1 && bounds.getItemCount() == 1,
+				"Undo takes it away, and the form lists the boundaries the matrix has (" + bounds.getItemCount() + ")");
+		form.loadMatrix(null);
+		String refused = "(nothing was thrown)";
+		try {
+			zone.undo();
+		} catch (IllegalStateException notOpen) {
+			refused = notOpen.getMessage();
+		}
+		check(refused.contains("no longer open") && refused.contains("the map matrix"),
+				"with no matrix loaded, an Undo reaching it is refused, naming it: " + refused);
+	}
+
 	public static void main(String[] args) throws Exception {
 		theMultizoneToolStoresTheZoneItIsGiven();
+		theMatrixIsADocumentOfTheZonesHistory();
 		File dump = new File(args.length > 0 ? args[0] : "no-dump-given");
 		if (!dump.isDirectory()) {
 			Skip.section("no dump at " + dump + " - the matrix form checks need matrix " + MATRIX);
@@ -266,7 +318,7 @@ public class MatrixEditFormGuardsTest {
 		//the zone dropdown names every row after its location; Workspace.validate
 		//loads this in the app, and loadArchives (which ScratchGame calls) does not
 		ctrmap.formats.text.LocationNames.loadFromGarc(Workspace.session());
-		CtrmapMainframe.mMtxPanel = new MapMatrixPanel();
+		TestWindow.mMtxPanel(new MapMatrixPanel());
 
 		theMatrixIsTheOneTheseChecksDescribe();
 		theCursorTurnsAPointIntoACell();
@@ -274,6 +326,7 @@ public class MatrixEditFormGuardsTest {
 		openingAndSavingUntouchedWritesNothing();
 		typingARegionIdWritesItIntoTheCell();
 		aRegionThatDoesNotExistIsRefusedAndSaid();
+		unTickingTheLayerIsAskedFirst();
 		clearingTheLodCheckboxDropsTheZoneLayer();
 		cameraBoundsRoundTripAndTheSaveTruncatesSubfileOne();
 		newAndRemoveCameraChangeTheEntryCount();
@@ -384,9 +437,44 @@ public class MatrixEditFormGuardsTest {
 	 * "Allow LOD and Multizone" is read on every save, not only when it is
 	 * clicked, and clearing it makes the next save write a matrix section with
 	 * no zone-switch and no LOD layer at all - on this matrix, 136 bytes where
-	 * there were 2312. Whether that should be possible without a warning is a
-	 * question for the report; that it happens is the fact pinned here.
+	 * there were 2312. The click now asks first (F160, {@link #unTickingTheLayerIsAskedFirst});
+	 * what the save does with a box the user did untick is the fact pinned here.
 	 */
+	static void unTickingTheLayerIsAskedFirst() throws Exception {
+		System.out.println("--- unticking the LOD and zone layer asks first (F160)");
+		Fixture f = open();
+		JCheckBox lod = (JCheckBox) field(f.form, "allowExtended");
+		lod.setSelected(false);
+		answer(javax.swing.JOptionPane.NO_OPTION);
+		invoke(f.form, "allowExtendedActionPerformed");
+		check(lod.isSelected() && f.mm.hasLOD == 1, "no ticks the box back and keeps the layer");
+		lod.setSelected(false);
+		answer(javax.swing.JOptionPane.YES_OPTION);
+		invoke(f.form, "allowExtendedActionPerformed");
+		ctrmap.Ui.into(null);
+		check(!lod.isSelected() && f.mm.hasLOD == 0, "and yes drops it");
+	}
+
+	/** Answers every question the next calls ask with {@code reply}. */
+	static void answer(int reply) {
+		ctrmap.Ui.into(new ctrmap.Ui.Sink() {
+			public void message(java.awt.Component p, String t, String ti, int ty) {
+			}
+
+			public int confirm(java.awt.Component p, String t, String ti, int o) {
+				return reply;
+			}
+
+			public int option(java.awt.Component p, String t, String ti, Object[] o) {
+				return -1;
+			}
+
+			public Object input(java.awt.Component p, String t, String ti, int ty, Object[] o, Object i) {
+				return null;
+			}
+		});
+	}
+
 	static void clearingTheLodCheckboxDropsTheZoneLayer() throws Exception {
 		Fixture f = open();
 		JCheckBox lod = (JCheckBox) field(f.form, "allowExtended");
@@ -555,7 +643,7 @@ public class MatrixEditFormGuardsTest {
 	 */
 	static void aToolButtonBeforeAMatrixIsLoadedDoesNothing() throws Exception {
 		System.out.println("--- a tool button before any matrix is open");
-		MatrixEditForm cold = new MatrixEditForm(new LoadedZone(), CANVAS);
+		MatrixEditForm cold = new MatrixEditForm(new LoadedZone(), CANVAS, UndoHistoryTest.overOneNumber(new int[]{0}));
 		check(cold.mm == null && !cold.loaded, "a form that was never handed a matrix holds none");
 		for (String button : new String[]{"btnChunkTool", "btnMzTool", "btnCamTool"}) {
 			Throwable thrown = null;
@@ -663,7 +751,9 @@ public class MatrixEditFormGuardsTest {
 		JCheckBox lod = (JCheckBox) field(f.form, "allowExtended");
 		check(lod.isSelected() && f.mm.hasLOD == 1, "matrix " + MATRIX + " opens with the layer on");
 		lod.setSelected(false);
+		answer(javax.swing.JOptionPane.YES_OPTION);   //the drop is asked now (F160): say yes
 		invoke(f.form, "allowExtendedActionPerformed");
+		ctrmap.Ui.into(null);
 		invoke(f.form, "btnAddColActionPerformed");
 		check(f.mm.width == 9, "the grid is " + f.mm.width + " wide with the box unticked");
 		check(f.mm.LOD.getWidth() == 9 && f.mm.zones.getWidth() == 36,
@@ -828,11 +918,11 @@ public class MatrixEditFormGuardsTest {
 		Arrays.fill(rows, oneZone);
 		LoadedZone lz = new LoadedZone();
 		lz.table(rows);
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
-		CtrmapMainframe.mZonePnl = pnl;
-		f.form = new MatrixEditForm(lz, CANVAS);
-		CtrmapMainframe.mMtxEditForm = f.form;
-		CtrmapMainframe.mMtxPanel.mm = f.mm;
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		TestWindow.mZonePnl(pnl);
+		f.form = new MatrixEditForm(lz, CANVAS, UndoHistoryTest.overOneNumber(new int[]{0}));
+		TestWindow.mMtxEditForm(f.form);
+		TestWindow.mMtxPanel().mm = f.mm;
 		f.form.loadMatrix(f.mm);
 		return f;
 	}

@@ -7,7 +7,7 @@ import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.List;
-import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.i32;
 
 /**
  * Cross-archive references must resolve.

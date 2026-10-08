@@ -51,8 +51,8 @@ LF = chr(10)
 #: every call, answers nothing, and is counted as a tool guard - installed and off.
 EVENT = "Stop"
 
-if __name__ == "__main__":
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
 
 #: Commitments that cross a turn boundary. Measured, not imagined - see the header.
 OWED = re.compile(
@@ -70,7 +70,7 @@ def project_root():
     here = os.environ.get("CLAUDE_PROJECT_DIR")
     if here:
         return here
-    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    return _tree_root.require(__file__)
 
 
 def open_items(root):

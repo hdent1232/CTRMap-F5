@@ -81,11 +81,11 @@ public final class ToolBox {
 	}
 
 	public AbstractTool warp() {
-		return new WarpTool(host, warps, cameras);
+		return new WarpTool(host, warps);
 	}
 
 	public AbstractTool trigger() {
-		return new TriggerTool(host, triggers, cameras);
+		return new TriggerTool(host, triggers);
 	}
 
 	public AbstractTool paint() {

@@ -1,6 +1,5 @@
 package ctrmap.tests;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.gfcollision.GfColl;
@@ -8,9 +7,8 @@ import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.MapPrefab;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.util.ArrayList;
 import java.util.List;
-import static ctrmap.formats.LittleEndian.f32;
+import static ctrmap.util.LittleEndian.f32;
 
 /**
  * Prefab pipeline validation on real regions (sampled): a tile box is cut out
@@ -289,11 +287,12 @@ public class MapPrefabTest {
 	 * and panel each time, so one stamp never lands on another's model.
 	 */
 	private static String stampInto(GR region, MapPrefab p) throws Exception {
-		ctrmap.humaninterface.TileMapPanel panel = new ctrmap.humaninterface.TileMapPanel(new ctrmap.LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+		ctrmap.humaninterface.TileMapPanel panel = new ctrmap.humaninterface.TileMapPanel(new ctrmap.LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null);
 		panel.mainGR = region;
-		ctrmap.CtrmapMainframe.mTileMapPanel = panel;
-		ctrmap.CtrmapMainframe.mZonePnl = null;
-		ctrmap.humaninterface.GeoEditForm form = new ctrmap.humaninterface.GeoEditForm(new ctrmap.LoadedZone(), CtrmapMainframe.mTileMapPanel);
+		TestWindow.mTileMapPanel(panel);
+		TestWindow.mZonePnl(null);
+		ctrmap.humaninterface.GeoEditForm form = new ctrmap.humaninterface.GeoEditForm(new ctrmap.LoadedZone(), TestWindow.mTileMapPanel(),
+				UndoHistoryTest.overOneNumber(new int[]{0}));
 		form.setSelection(2, 2, 5, 5);
 		form.stampHere(p);
 		java.lang.reflect.Field f = ctrmap.humaninterface.GeoEditForm.class.getDeclaredField("status");

@@ -1,10 +1,10 @@
 package ctrmap.humaninterface;
 
-import static ctrmap.CtrmapMainframe.*;
 import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.text.LocationNames;
 import ctrmap.formats.zone.WarpTransitions;
+import ctrmap.formats.zone.WorldGrid;
 import ctrmap.formats.zone.ZoneEntities;
 import java.awt.Point;
 import javax.swing.DefaultComboBoxModel;
@@ -36,7 +36,7 @@ public class WarpEditForm extends javax.swing.JPanel {
 			tgtZone.addItem(i + " - " + LocationNames.getLocName(ctrmap.Workspace.session(), loadedZone.at(i).header.parentMap));
 		}
 		fillTransitionDropdown();
-		reloadEntries(e.warpCount > 0 ? 0 : -1);
+		reloadEntries(e.warps.size() > 0 ? 0 : -1);
 	}
 
 	/**
@@ -46,7 +46,7 @@ public class WarpEditForm extends javax.swing.JPanel {
 	private void reloadEntries(int select) {
 		loaded = false;
 		entryBox.removeAllItems();
-		for (int i = 0; i < e.warpCount; i++) {
+		for (int i = 0; i < e.warps.size(); i++) {
 			addNamedWarpEntry(e.warps.get(i), i);
 		}
 		loaded = true;
@@ -100,17 +100,11 @@ public class WarpEditForm extends javax.swing.JPanel {
 		this.loadedZone = loadedZone;
 		initComponents();
 		transition.setModel(transitionModel);
-		setIntegerValueClass(new JFormattedTextField[]{x, y, z, w, h, tgtWarp});
-	}
-
-	public void setIntegerValueClass(JFormattedTextField[] fields) {
-		for (int i = 0; i < fields.length; i++) {
-			((NumberFormatter) fields[i].getFormatter()).setValueClass(Integer.class);
-		}
+		Forms.numberClass(Integer.class, new JFormattedTextField[]{x, y, z, w, h, tgtWarp});
 	}
 
 	public void showEntry(int index) {
-		if (index == -1 || index >= e.warpCount) {
+		if (index == -1 || index >= e.warps.size()) {
 			return;
 		}
 		warpIndex = index;
@@ -204,11 +198,10 @@ public class WarpEditForm extends javax.swing.JPanel {
 	 */
 	public void addEntry(Point tile) {
 		ZoneEntities.Warp newWarp = new ZoneEntities.Warp();
-		newWarp.x = tile.x * 18 + 9;
-		newWarp.y = tile.y * 18 + 9;
+		newWarp.x = WorldGrid.tileCentre(tile.x);
+		newWarp.y = WorldGrid.tileCentre(tile.y);
 		e.warps.add(newWarp);
-		e.warpCount++;
-		reloadEntries(e.warpCount - 1);
+		reloadEntries(e.warps.size() - 1);
 		e.modified = true;
 	}
 
@@ -218,10 +211,9 @@ public class WarpEditForm extends javax.swing.JPanel {
 		}
 		int removed = warpIndex;
 		e.warps.remove(warpIndex);
-		e.warpCount--;
 		warp = null;
 		warpIndex = -1;
-		reloadEntries(Math.min(removed, e.warpCount - 1));
+		reloadEntries(Math.min(removed, e.warps.size() - 1));
 		e.modified = true;
 	}
 

@@ -11,9 +11,7 @@ import java.awt.Cursor;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,7 +24,6 @@ import javax.swing.JPanel;
 import javax.swing.JSpinner;
 import javax.swing.SpinnerNumberModel;
 
-import static ctrmap.CtrmapMainframe.*;
 
 /**
  * Side panel of the Geometry tool - the in-app map editor. Drag a tile
@@ -55,24 +52,23 @@ public class GeoEditForm extends JPanel {
 	private byte[] currentModel;
 	private final Map<Integer, byte[]> currentColl = new HashMap<>();
 	private boolean unsaved = false;
-	private final Deque<Snapshot> undo = new ArrayDeque<>();
+	/**
+	 * The zone's history the region being edited is a document of (F209), handed in. The form kept a
+	 * stack of its own, so Ctrl+Z on the map never reached a geometry edit and the form's Undo never
+	 * reached a tile painted after one.
+	 */
+	private final UndoHistory history;
+	/** The model and collision as last read or saved, by reference: what 'unsaved' is measured against. */
+	private byte[] savedModel;
+	private Map<Integer, byte[]> savedColl = new HashMap<>();
 	/**
 	 * Each tile this form has changed since the region was picked or saved, as it was before the
 	 * first change (key x * 40 + y), and the tilemap they are in: what a discard puts back (F106).
-	 * Not the undo stack, which keeps only the last UNDO_DEPTH edits.
+	 * Not the history, which keeps only its newest edits.
 	 */
 	private final Map<Integer, byte[]> tilesAsSaved = new HashMap<>();
 	private Tilemap tilesIn;
 	private GeoBoxOps.Box box;
-
-	private static class Snapshot {
-
-		byte[] model;
-		Map<Integer, byte[]> coll;
-		List<int[]> tiles;      // {x, y, b0..b3} per changed tile
-		/** How many texture carries were waiting before this edit, or -1 for an edit that adds none. */
-		int carries = -1;
-	}
 
 	/**
 	 * A texture import a stamp needs, waiting for Save (F101). The stamp used to write it into the
@@ -94,20 +90,6 @@ public class GeoEditForm extends JPanel {
 
 	private final List<Carry> pendingCarries = new ArrayList<>();
 
-	/**
-	 * How many edits Undo keeps. It kept every one, each a whole copy of the region model and its
-	 * collision, for as long as the session lasted (F101).
-	 */
-	static final int UNDO_DEPTH = 32;
-
-	/** Pushes an edit's snapshot, letting the oldest go past the depth. */
-	private void remember(Snapshot snap) {
-		undo.push(snap);
-		while (undo.size() > UNDO_DEPTH) {
-			undo.removeLast();
-		}
-	}
-
 	private final JLabel selLabel = new JLabel("Drag on the map to select tiles.");
 	private final JLabel statsLabel = new JLabel(" ");
 	private final JSpinner dx = new JSpinner(new SpinnerNumberModel(0.0, -20000.0, 20000.0, 18.0));
@@ -121,6 +103,7 @@ public class GeoEditForm extends JPanel {
 	private final JButton btnCopyPrefab = new JButton("Copy selection as prefab...");
 	private final JButton btnStampPrefab = new JButton("Stamp prefab here...");
 	private final JButton btnUndo = new JButton("Undo");
+	private final JButton btnRedo = new JButton("Redo");
 	private final JButton btnSave = new JButton("Save to workspace");
 	private final JLabel status = new JLabel(" ");
 
@@ -142,8 +125,16 @@ public class GeoEditForm extends JPanel {
 	 */
 	private final TileMapPanel map;
 
-	public GeoEditForm(LoadedZone loadedZone, TileMapPanel map) {
+	public GeoEditForm(LoadedZone loadedZone, TileMapPanel map, UndoHistory history) {
 		this.map = map;
+		if (history == null) {
+			throw new IllegalArgumentException("GeoEditForm must be handed the zone's history the region it"
+					+ " edits is a document of");
+		}
+		this.history = history;
+		//the region being edited is one of the zone's documents from now on: watched, not recorded by hand
+		history.watch(() -> gr == null ? java.util.Collections.<UndoHistory.Document<?>>emptyList()
+				: java.util.Collections.<UndoHistory.Document<?>>singletonList(geometry()));
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("GeoEditForm must be handed a LoadedZone");
 		}
@@ -192,7 +183,10 @@ public class GeoEditForm extends JPanel {
 		add(btnStampPrefab, c);
 		c.gridy++;
 		c.gridwidth = 1;
-		add(btnUndo, c);
+		JPanel undoRow = new JPanel(new java.awt.GridLayout(1, 2, 4, 0));
+		undoRow.add(btnUndo);
+		undoRow.add(btnRedo);
+		add(undoRow, c);
 		c.gridx = 1;
 		add(btnSave, c);
 		c.gridx = 0;
@@ -210,7 +204,9 @@ public class GeoEditForm extends JPanel {
 		btnDel.addActionListener(e -> op("del"));
 		btnCopyPrefab.addActionListener(e -> copyPrefab());
 		btnStampPrefab.addActionListener(e -> stampPrefab());
-		btnUndo.addActionListener(e -> undo());
+		btnUndo.addActionListener(e -> step(true));
+		btnRedo.addActionListener(e -> step(false));
+		history.addListener(this::updateEnabled);
 		btnSave.addActionListener(e -> save());
 		updateEnabled();
 	}
@@ -264,7 +260,7 @@ public class GeoEditForm extends JPanel {
 		} catch (Exception ex) {
 			//a refused cut - faces across the selection, none inside - is the
 			//answer to the click, not a footnote for the status bar
-			ctrmap.Ui.error(this, "Copy failed: " + ex.getMessage(), "Copy prefab");
+			ctrmap.Ui.error(this, "Copy failed: " + ctrmap.util.Bytes.reason(ex), "Copy prefab");
 		}
 	}
 
@@ -310,7 +306,7 @@ public class GeoEditForm extends JPanel {
 				p = loadPrefabFile(this, fc.getSelectedFile());
 				clipboard = p;
 			} catch (Exception ex) {
-				status.setText("Could not load the prefab: " + ex.getMessage());
+				status.setText("Could not load the prefab: " + ctrmap.util.Bytes.reason(ex));
 				return;
 			}
 		}
@@ -343,11 +339,6 @@ public class GeoEditForm extends JPanel {
 		int anchorX = selTx0 - cellX * 40, anchorY = selTy0 - cellY * 40;
 		setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
 		try {
-			Snapshot snap = new Snapshot();
-			snap.model = currentModel;
-			snap.coll = new HashMap<>(currentColl);
-			snap.tiles = new ArrayList<>();
-
 			ctrmap.formats.h3d.MapPrefab.StampResult r = p.stampGeometry(currentModel, anchorX, anchorY, fy);
 			if (r.stamped.isEmpty()) {
 				status.setText("No piece could be stamped - this region shares no materials with the prefab."
@@ -371,7 +362,7 @@ public class GeoEditForm extends JPanel {
 						for (int x = 0; x < p.tilesW; x++) {
 							int nx = anchorX + x, ny = anchorY + y;
 							if (nx >= 0 && nx < 40 && ny >= 0 && ny < 40) {
-								recordTile(snap.tiles, tm, nx, ny);
+								recordTile(tm, nx, ny);
 							}
 						}
 					}
@@ -389,12 +380,10 @@ public class GeoEditForm extends JPanel {
 					&& loadedZone.open().header.areadataID != p.donorArea) {
 				//RECORDED, NOT WRITTEN (F101): it goes into the area on Save, with the region, and an
 				//Undo of this stamp takes it back with the geometry
-				snap.carries = pendingCarries.size();
 				pendingCarries.add(new Carry(p.donorArea, loadedZone.open().header.areadataID,
 						new ArrayList<>(r.texturesNeeded)));
 				texNote = "  " + r.texturesNeeded.size() + " texture(s) from area " + p.donorArea + " will be imported on Save";
 			}
-			remember(snap);
 			currentModel = r.newModel;
 			unsaved = true;
 			map.reloadRegionModel(cellX, cellY, currentModel);
@@ -406,7 +395,7 @@ public class GeoEditForm extends JPanel {
 				System.out.println("Prefab stamp skipped pieces: " + r.missingMaterials);
 			}
 		} catch (RuntimeException ex) {
-			status.setText("Stamp failed: " + ex.getMessage());
+			status.setText("Stamp failed: " + ctrmap.util.Bytes.reason(ex));
 		} finally {
 			setCursor(Cursor.getDefaultCursor());
 			updateEnabled();
@@ -468,7 +457,9 @@ public class GeoEditForm extends JPanel {
 		if (currentModel != null && BchMapModel.isMapModel(currentModel)) {
 			try {
 				GeoBoxOps.Selection q = GeoBoxOps.query(new BchMapModel(currentModel), box);
-				statsLabel.setText(q.vertices + " verts, " + q.fullFaces + " faces, " + q.touchedMeshes + " meshes selected");
+				statsLabel.setText(q.vertices + " verts, " + q.fullFaces + " faces, " + q.touchedMeshes + " meshes selected"
+						+ (q.undecodedMeshes == 0 ? "" : "; " + q.undecodedMeshes + " mesh(es) in this region could not be"
+						+ " decoded and stay where they are"));
 			} catch (RuntimeException ex) {
 				statsLabel.setText("(could not inspect the model)");
 			}
@@ -526,12 +517,6 @@ public class GeoEditForm extends JPanel {
 				status.setText("Edit failed validation - not applied.");
 				return;
 			}
-			//snapshot BEFORE side effects
-			Snapshot snap = new Snapshot();
-			snap.model = currentModel;
-			snap.coll = new HashMap<>(currentColl);
-			snap.tiles = new ArrayList<>();
-
 			//collision, every layer
 			String collNote = "";
 			if (chkColl.isSelected()) {
@@ -556,17 +541,16 @@ public class GeoEditForm extends JPanel {
 			//movement tiles (layer 0)
 			String tileNote = "";
 			if (chkTiles.isSelected()) {
-				tileNote = applyTiles(kind, fx, fz, snap.tiles);
+				tileNote = applyTiles(kind, fx, fz);
 			}
 
-			remember(snap);
 			currentModel = result;
 			unsaved = true;
 			map.reloadRegionModel(cellX, cellY, currentModel);
 			status.setText(("move".equals(kind) ? "Moved" : "dup".equals(kind) ? "Duplicated" : "Deleted")
 					+ collNote + tileNote + ".  (unsaved)");
 		} catch (RuntimeException ex) {
-			status.setText("Failed: " + ex.getMessage());
+			status.setText("Failed: " + ctrmap.util.Bytes.reason(ex));
 		} finally {
 			setCursor(Cursor.getDefaultCursor());
 			updateEnabled();
@@ -576,9 +560,10 @@ public class GeoEditForm extends JPanel {
 	/**
 	 * Copies/voids the 4-byte tile tuples for the op. Move/dup need a
 	 * tile-aligned XZ offset to know the destination cells; delete voids the
-	 * selection. Every change is recorded for undo.
+	 * selection. Each tile is kept as it was first, for a discard; the zone's history sees the
+	 * region's tiles as a document of their own.
 	 */
-	private String applyTiles(String kind, float fx, float fz, List<int[]> changed) {
+	private String applyTiles(String kind, float fx, float fz) {
 		Tilemap tm = map.getRegionForTile(selTx0, selTy0);
 		if (tm == null) {
 			return "";
@@ -588,7 +573,7 @@ public class GeoEditForm extends JPanel {
 			byte[] voidTuple = {0x21, 0, 0, 1};
 			for (int y = ly0; y <= ly1; y++) {
 				for (int x = lx0; x <= lx1; x++) {
-					recordTile(changed, tm, x, y);
+					recordTile(tm, x, y);
 					tm.setTileData(x, y, voidTuple);
 				}
 			}
@@ -615,7 +600,7 @@ public class GeoEditForm extends JPanel {
 			for (int x = 0; x < w; x++) {
 				int nx = lx0 + x + tdx, ny = ly0 + y + tdy;
 				if (nx >= 0 && nx < 40 && ny >= 0 && ny < 40) {
-					recordTile(changed, tm, nx, ny);
+					recordTile(tm, nx, ny);
 					tm.setTileData(nx, ny, src[x][y]);
 					copied++;
 				}
@@ -625,9 +610,8 @@ public class GeoEditForm extends JPanel {
 		return copied > 0 ? " +" + copied + " tiles" : "";
 	}
 
-	private void recordTile(List<int[]> changed, Tilemap tm, int x, int y) {
+	private void recordTile(Tilemap tm, int x, int y) {
 		byte[] b = tm.getTileData(x, y);
-		changed.add(new int[]{x, y, b[0] & 0xFF, b[1] & 0xFF, b[2] & 0xFF, b[3] & 0xFF});
 		//as it was before this form first changed it, for a discard (F106)
 		tilesIn = tm;
 		tilesAsSaved.putIfAbsent(x * 40 + y, b.clone());
@@ -646,11 +630,12 @@ public class GeoEditForm extends JPanel {
 				currentColl.put(cs, cb);
 			}
 		}
-		undo.clear();
 		pendingCarries.clear();
 		tilesAsSaved.clear();
 		tilesIn = null;
 		unsaved = false;
+		savedModel = currentModel;
+		savedColl = new HashMap<>(currentColl);
 	}
 
 	/**
@@ -703,30 +688,73 @@ public class GeoEditForm extends JPanel {
 		return ctrmap.formats.h3d.BchTexturePack.carryToArea(Workspace.session(), donorArea, targetArea, needed, live, editingZone);
 	}
 
-	private void undo() {
-		if (undo.isEmpty()) {
-			return;
+	/** Undo or Redo of the zone's history, said on the status line by what it took back or put again. */
+	private void step(boolean back) {
+		String what = back ? history.undoName() : history.redoName();
+		history.act(this, back);
+		if (what != null && what.equals(back ? history.redoName() : history.undoName())) {
+			status.setText((back ? "Undone: " : "Redone: ") + what + ".");
 		}
-		Snapshot snap = undo.pop();
-		while (snap.carries >= 0 && pendingCarries.size() > snap.carries) {
-			pendingCarries.remove(pendingCarries.size() - 1);
-		}
-		currentModel = snap.model;
-		currentColl.clear();
-		currentColl.putAll(snap.coll);
-		Tilemap tm = map.getRegionForTile(cellX * 40, cellY * 40);
-		if (tm != null && !snap.tiles.isEmpty()) {
-			//restore in reverse so overlapping records unwind correctly
-			for (int i = snap.tiles.size() - 1; i >= 0; i--) {
-				int[] r = snap.tiles.get(i);
-				tm.setTileData(r[0], r[1], new byte[]{(byte) r[2], (byte) r[3], (byte) r[4], (byte) r[5]});
+	}
+
+	/**
+	 * The region being edited as a document of the zone's history (F209): its model, its collision layers
+	 * and the texture imports waiting for Save. Read BY REFERENCE - every edit here builds new arrays and
+	 * none writes into one it read, so a state is the arrays themselves - and put back whole. Its subject
+	 * is the region's container: an edit to a region the form has since left is refused by the history,
+	 * never put into the region now picked. The region's tiles are the map view's, a document of their own.
+	 */
+	private UndoHistory.Document<Object[]> geometry() {
+		final GR region = gr;
+		final int id = regionId;
+		return new UndoHistory.Document<Object[]>() {
+			@Override
+			public Object subject() {
+				return region;
 			}
-			refreshTiles(tm);
+
+			@Override
+			public Object[] take() {
+				return new Object[]{currentModel, new HashMap<>(currentColl), new ArrayList<>(pendingCarries)};
+			}
+
+			@Override
+			@SuppressWarnings("unchecked")
+			public void put(Object[] state) {
+				currentModel = (byte[]) state[0];
+				currentColl.clear();
+				currentColl.putAll((Map<Integer, byte[]>) state[1]);
+				pendingCarries.clear();
+				pendingCarries.addAll((List<Carry>) state[2]);
+				unsaved = currentModel != savedModel || !sameLayers(currentColl, savedColl) || !pendingCarries.isEmpty();
+				map.reloadRegionModel(cellX, cellY, currentModel);
+				updateEnabled();
+			}
+
+			@Override
+			@SuppressWarnings("unchecked")
+			public boolean same(Object[] a, Object[] b) {
+				return a[0] == b[0] && sameLayers((Map<Integer, byte[]>) a[1], (Map<Integer, byte[]>) b[1]) && a[2].equals(b[2]);
+			}
+
+			@Override
+			public String what() {
+				return "the geometry of region " + id;
+			}
+		};
+	}
+
+	/** Two sets of collision layers are the same when each layer is the same array: an edit builds new ones. */
+	private static boolean sameLayers(Map<Integer, byte[]> a, Map<Integer, byte[]> b) {
+		if (!a.keySet().equals(b.keySet())) {
+			return false;
 		}
-		unsaved = !undo.isEmpty();
-		map.reloadRegionModel(cellX, cellY, currentModel);
-		status.setText("Undone.");
-		updateEnabled();
+		for (Map.Entry<Integer, byte[]> e : a.entrySet()) {
+			if (e.getValue() != b.get(e.getKey())) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private void save() {
@@ -764,6 +792,8 @@ public class GeoEditForm extends JPanel {
 		tilesAsSaved.clear();
 		tilesIn = null;
 		unsaved = false;
+		savedModel = currentModel;
+		savedColl = new HashMap<>(currentColl);
 		status.setText("Saved." + texNote + " Deploy to emulator to see it in game.");
 		updateEnabled();
 	}
@@ -799,7 +829,10 @@ public class GeoEditForm extends JPanel {
 		btnDel.setEnabled(sel);
 		btnCopyPrefab.setEnabled(sel);
 		btnStampPrefab.setEnabled(sel);
-		btnUndo.setEnabled(!undo.isEmpty());
+		btnUndo.setEnabled(history.canUndo());
+		btnRedo.setEnabled(history.canRedo());
+		btnUndo.setToolTipText(history.canUndo() ? "Undo " + history.undoName() : "Nothing to undo");
+		btnRedo.setToolTipText(history.canRedo() ? "Redo " + history.redoName() : "Nothing to redo");
 		btnSave.setEnabled(unsaved);
 	}
 

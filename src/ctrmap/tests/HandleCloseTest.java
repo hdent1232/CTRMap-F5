@@ -53,6 +53,8 @@ public class HandleCloseTest {
 			noBufferIsSizedByAvailable();
 			aResourceReadsWholeFromAJar();
 			aTextFileThatDoesNotReadIsNotOffered();
+			aPrefabCannotAskForMoreThanItHolds();
+			aMissingResourceIsABrokenBuild();
 		} finally {
 			ctrmap.Ui.stopRecording();
 			Workspace.reset();
@@ -371,6 +373,142 @@ public class HandleCloseTest {
 		check(te.store(false) && said.isEmpty() && new GFMessageFile(Files.readAllBytes(good.toPath())).getLines().equals(Arrays.asList("goodbye")),
 				"and once it can, the edit is written");
 		ctrmap.Ui.stopRecording();
+	}
+
+	/**
+	 * A prefab's lengths are held to the file (F240): a minimal prefab loads, and one whose vertex
+	 * length or triangle count claims more than the file holds is refused in words - not an
+	 * OutOfMemoryError past the loader's callers, not a NegativeArraySizeException.
+	 */
+	static void aPrefabCannotAskForMoreThanItHolds() throws Exception {
+		System.out.println("--- a prefab cannot ask for more than its file holds (F240)");
+		java.io.File dir = Scratch.dir("ctrmap_prefab_bounds");
+		check(loads(prefab(dir, "ok", 0, 0)) == null, "control: a minimal prefab with no pieces loads ("
+				+ loads(prefab(dir, "ok", 0, 0)) + ")");
+		String vertex = loads(prefab(dir, "vertex", 0x7FFFFFF0, 0));
+		check(vertex != null && vertex.startsWith("IOException") && vertex.contains("vertex block length"),
+				"a vertex length past the file is refused, naming the field (" + vertex + ")");
+		String tris = loads(prefab(dir, "tris", 0, -5));
+		check(tris != null && tris.startsWith("IOException") && tris.contains("triangle index count"),
+				"a negative triangle count is refused, naming the field (" + tris + ")");
+		String boxNoTiles = loads(prefab2(dir, "box", 100, 100, null, false));
+		check(boxNoTiles == null, "control: a 100 x 100 box larger than its file loads when it carries no tile block ("
+				+ boxNoTiles + ")");
+		String tiles = loads(prefab2(dir, "tiles", 0x7FFFFFFF, 0x7FFFFFFF, null, true));
+		check(tiles != null && tiles.startsWith("IOException") && tiles.contains("tile block"),
+				"a tile block claiming more than the file is refused, naming it (" + tiles + ")");
+		byte[] lz = {0x11, 0, 0, 0, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, 0x7F};
+		String donor = loads(prefab2(dir, "donor", 1, 1, lz, false));
+		check(donor != null && donor.startsWith("IOException") && donor.contains("donor model"),
+				"an embedded donor declaring 2^31-1 bytes in 8 is refused in words, not an OutOfMemoryError ("
+				+ donor + ")");
+	}
+
+	/** A version-2 prefab with no pieces: its box, an embedded donor's stored bytes (or none), tiles or not. */
+	private static java.io.File prefab2(java.io.File dir, String name, int w, int h, byte[] donor, boolean tiles)
+			throws Exception {
+		java.io.File f = new java.io.File(dir, name + ".ctrprefab");
+		try (java.io.DataOutputStream o = new java.io.DataOutputStream(new java.io.FileOutputStream(f))) {
+			o.writeInt(ctrmap.formats.h3d.MapPrefab.MAGIC);
+			o.writeInt(2);
+			o.writeUTF(name);
+			o.writeInt(0);
+			o.writeInt(w);
+			o.writeInt(h);
+			o.writeInt(0);
+			o.writeInt(0);
+			o.writeInt(donor == null ? 0 : donor.length);
+			if (donor != null) {
+				o.write(donor);
+			}
+			o.writeInt(0);
+			o.writeBoolean(tiles);
+		}
+		return f;
+	}
+
+	/**
+	 * A resource the build ships that is missing or damaged is said as that, by name (F130): the
+	 * opener answered null and five loaders read it as an empty table; the gizmo's mesh reader
+	 * answered an empty mesh for a stream that was not one; the native-name table dropped a row it
+	 * could not read and every row after it. The bundled ones are read first, as the controls.
+	 */
+	static void aMissingResourceIsABrokenBuild() throws Exception {
+		System.out.println("--- a resource the build ships that is missing or damaged is said by name (F130)");
+		try (java.io.InputStream in = ctrmap.resources.ResourceAccess.getStream("MoveArrowX.cmvd")) {
+			check(new ctrmap.formats.CMVD(in).vertices.size() > 0, "control: a bundled arrow opens and has vertices");
+		}
+		check(ctrmap.scripts.GfHash.table().size() > 700, "control: the bundled native-name table reads "
+				+ ctrmap.scripts.GfHash.table().size() + " names");
+		String missing;
+		try {
+			java.io.InputStream in = ctrmap.resources.ResourceAccess.getStream("no-such-table.tsv");
+			missing = null;
+			if (in != null) {
+				in.close();
+			}
+		} catch (IllegalStateException ex) {
+			missing = ctrmap.util.Bytes.reason(ex);
+		}
+		check(missing != null && missing.contains("no-such-table.tsv"), "a resource this build does not have is"
+				+ " refused by name, not handed back as null (" + missing + ")");
+		String mesh;
+		try {
+			new ctrmap.formats.CMVD(new java.io.ByteArrayInputStream(new byte[16]));
+			mesh = null;
+		} catch (java.io.IOException ex) {
+			mesh = ctrmap.util.Bytes.reason(ex);
+		}
+		check(mesh != null && mesh.contains("not a CMVD"), "a stream that is not a CMVD mesh is refused, not read as"
+				+ " an empty one (" + mesh + ")");
+		String row;
+		try {
+			java.lang.reflect.Method read = ctrmap.scripts.GfHash.class.getDeclaredMethod("read",
+					java.io.BufferedReader.class, java.util.Map.class, java.util.Map.class);
+			read.setAccessible(true);
+			read.invoke(null, new java.io.BufferedReader(new java.io.StringReader("0000002B\t+\nnot-hex\tName\n")),
+					new java.util.HashMap<>(), new java.util.HashMap<>());
+			row = null;
+		} catch (java.lang.reflect.InvocationTargetException ex) {
+			row = ctrmap.util.Bytes.reason(ex.getCause());
+		}
+		check(row != null && row.contains("line 2"), "a native-name row that is not one is refused, naming its line ("
+				+ row + ")");
+	}
+
+	/** A version-1 prefab with one piece carrying the given lengths, or none when both are 0. */
+	private static java.io.File prefab(java.io.File dir, String name, int vertexLen, int triCount) throws Exception {
+		java.io.File f = new java.io.File(dir, name + ".ctrprefab");
+		try (java.io.DataOutputStream o = new java.io.DataOutputStream(new java.io.FileOutputStream(f))) {
+			o.writeInt(ctrmap.formats.h3d.MapPrefab.MAGIC);
+			o.writeInt(1);
+			o.writeUTF(name);
+			o.writeInt(0);
+			o.writeInt(1);
+			o.writeInt(1);
+			boolean piece = vertexLen != 0 || triCount != 0;
+			o.writeInt(piece ? 1 : 0);
+			if (piece) {
+				o.writeUTF("mat");
+				o.writeInt(12);
+				o.writeInt(0);
+				o.writeInt(vertexLen);
+				o.writeInt(triCount);
+			}
+			o.writeInt(0);
+			o.writeBoolean(false);
+		}
+		return f;
+	}
+
+	/** null when the prefab loads, else the throwable's class and message. */
+	private static String loads(java.io.File f) {
+		try {
+			ctrmap.formats.h3d.MapPrefab.load(f);
+			return null;
+		} catch (Throwable t) {
+			return t.getClass().getSimpleName() + ": " + t.getMessage();
+		}
 	}
 
 	static void check(boolean ok, String what) {

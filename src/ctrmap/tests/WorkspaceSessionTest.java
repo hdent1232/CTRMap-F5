@@ -72,9 +72,10 @@ public class WorkspaceSessionTest {
 	 * {@code GameType}; a type is not state, so they are not counted.)
 	 * LOWER THIS as callers are migrated to a session they are handed; never
 	 * raise it without saying in the commit message which file went back to
-	 * the global and why it had to.
+	 * the global and why it had to. 40 on 2026-10-08, measured by this suite: TerrainHarvester went,
+	 * its catalogues read by nothing (F119).
 	 */
-	private static final int FILES_REACHING_WORKSPACE = 42; //GARC, WorkspaceIntegrity, ZoneManager, MapResizer, MapMatrix, BchTexturePack, MaisonPoolGuard, ItemTable, ItemText, PokeData, LocationNames, ADPropRegistry, GRProp, PropDatabase, NPCRegistry, MoveModelPool, NpcTemplates, ZoneHeader, BuildingCatalog handed what they read; AbstractGamefreakContainer's transitional constructors, the format layer's last reach, deleted
+	private static final int FILES_REACHING_WORKSPACE = 40; //ResourceAccess no longer (its temp copy moved to the Builder, F130); GARC, WorkspaceIntegrity, ZoneManager, MapResizer, MapMatrix, BchTexturePack, MaisonPoolGuard, ItemTable, ItemText, PokeData, LocationNames, ADPropRegistry, GRProp, PropDatabase, NPCRegistry, MoveModelPool, NpcTemplates, ZoneHeader, BuildingCatalog handed what they read; AbstractGamefreakContainer's transitional constructors, the format layer's last reach, deleted
 
 	static int fails = 0;
 
@@ -91,6 +92,7 @@ public class WorkspaceSessionTest {
 		try {
 			File noGame = Scratch.dir("ctrmap_session_nogame");
 			stagedCompressionBelongsToItsWorkspace(noGame);
+			aReloadReopensWhatItNames(Scratch.dir("ctrmap_session_reload"));
 		} finally {
 			Workspace.reset();
 		}
@@ -113,6 +115,48 @@ public class WorkspaceSessionTest {
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * A reload reopens the archive it names and no other, and reloadAll each one once (F037). The
+	 * named one used to be the first of a run - "reload X" reopened X and every archive after it in
+	 * the reload order, which no caller could see, and a pack's seven reloads opened up to 105
+	 * handles where 17 would do. Three synthetic archives; no game needed.
+	 */
+	static void aReloadReopensWhatItNames(File dir) throws Exception {
+		System.out.println("--- a reload reopens the archive it names, and only that one (F037)");
+		ArchiveType[] kinds = {ArchiveType.AREA_DATA, ArchiveType.ZONE_DATA, ArchiveType.GAMETEXT};
+		java.util.EnumMap<ArchiveType, ctrmap.formats.garc.GARC> open = new java.util.EnumMap<>(ArchiveType.class);
+		for (ArchiveType t : kinds) {
+			File f = new File(dir, t.name());
+			HandedGameTest.writeGarc(f, ("an entry of " + t).getBytes("US-ASCII"));
+			open.put(t, new ctrmap.formats.garc.GARC(f));
+		}
+		WorkspaceSession s = new WorkspaceSession(new File(dir, "ws"), new File(dir, "game"), GameType.ORAS, open);
+		java.util.Map<ArchiveType, ctrmap.formats.garc.GARC> before = new java.util.EnumMap<>(ArchiveType.class);
+		for (ArchiveType t : kinds) {
+			before.put(t, s.getArchive(t));
+		}
+		s.reloadGARC(ArchiveType.AREA_DATA);
+		List<ArchiveType> reopened = new ArrayList<>();
+		for (ArchiveType t : kinds) {
+			if (s.getArchive(t) != before.get(t)) {
+				reopened.add(t);
+			}
+		}
+		check(reopened.equals(java.util.Collections.singletonList(ArchiveType.AREA_DATA)),
+				"reloading the area archive reopens it and nothing listed after it: " + reopened);
+		for (ArchiveType t : kinds) {
+			before.put(t, s.getArchive(t));
+		}
+		s.reloadAll();
+		reopened.clear();
+		for (ArchiveType t : kinds) {
+			if (s.getArchive(t) != before.get(t) && s.getArchive(t).file.equals(before.get(t).file)) {
+				reopened.add(t);
+			}
+		}
+		check(reopened.size() == kinds.length, "and reloading all reopens every open one, from the same file: " + reopened);
 	}
 
 	// ------------------------------------------------------- 1. the instance is real

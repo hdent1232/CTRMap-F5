@@ -1,11 +1,7 @@
 package ctrmap.formats.codepatch;
 
-import java.io.ByteArrayOutputStream;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.putU16;
 
 /**
  * The ORAS shop (Poke Mart) inventories - u16 item-id lists embedded in the
@@ -86,7 +82,7 @@ public class ShopData {
 	/** File offset of the shop table in a decompressed code.bin, or -1. */
 	public static int locate(byte[] code) {
 		for (byte[] a : new byte[][]{ANCHOR, ANCHOR_PATCHED}) {
-			int off = indexOf(code, a, 0x400000);
+			int off = Ips.indexOf(code, a, 0x400000);
 			if (off >= 0) {
 				return off + a.length;
 			}
@@ -167,8 +163,7 @@ public class ShopData {
 					throw new IllegalArgumentException(NAMES[s] + ": " + id + " is no item (they run 0 to "
 							+ (ITEM_COUNT - 1) + "), so it is not written");
 				}
-				out[p] = (byte) id;
-				out[p + 1] = (byte) (id >> 8);
+				putU16(out, p, id);
 				p += 2;
 			}
 		}
@@ -177,139 +172,4 @@ public class ShopData {
 
 	// ---- IPS (diff + merge) ------------------------------------------------
 
-	/**
-	 * A minimal IPS diffing {@code patched} against {@code original}
-	 * (contiguous changed runs; offsets fit IPS's 24 bits for code.bin).
-	 */
-	public static byte[] diffIPS(byte[] original, byte[] patched) {
-		if (original.length != patched.length) {
-			throw new IllegalArgumentException("length mismatch");
-		}
-		ByteArrayOutputStream b = new ByteArrayOutputStream();
-		ascii(b, "PATCH");
-		int i = 0;
-		while (i < original.length) {
-			if (original[i] == patched[i]) {
-				i++;
-				continue;
-			}
-			int start = i;
-			while (i < original.length && i - start < 0xFFFF
-					&& (original[i] != patched[i] || (i + 1 < original.length && i - start + 1 < 0xFFFF && original[i + 1] != patched[i + 1]))) {
-				i++;
-			}
-			int len = i - start;
-			if (start > 0xFFFFFF) {
-				throw new IllegalStateException("offset beyond IPS range");
-			}
-			b.write((start >> 16) & 0xFF);
-			b.write((start >> 8) & 0xFF);
-			b.write(start & 0xFF);
-			b.write((len >> 8) & 0xFF);
-			b.write(len & 0xFF);
-			b.write(patched, start, len);
-		}
-		ascii(b, "EOF");
-		return b.toByteArray();
-	}
-
-	/**
-	 * Merges two IPS patches into one (records applied in order; {@code ours}
-	 * wins where they overlap). Lets the shop patch share code.ips with the
-	 * zone-limit patch.
-	 */
-	public static byte[] mergeIPS(byte[] theirs, byte[] ours) {
-		Map<Integer, Byte> bytes = new LinkedHashMap<>();
-		for (byte[] ips : new byte[][]{theirs, ours}) {
-			for (int[] rec : parseIPS(ips)) {
-				for (int k = 0; k < rec[1]; k++) {
-					bytes.put(rec[0] + k, (byte) rec[2 + k]);
-				}
-			}
-		}
-		// re-emit as contiguous runs
-		List<Integer> offs = new ArrayList<>(bytes.keySet());
-		java.util.Collections.sort(offs);
-		ByteArrayOutputStream b = new ByteArrayOutputStream();
-		ascii(b, "PATCH");
-		int i = 0;
-		while (i < offs.size()) {
-			int start = offs.get(i), end = i;
-			while (end + 1 < offs.size() && offs.get(end + 1) == offs.get(end) + 1 && offs.get(end + 1) - start < 0xFFFF) {
-				end++;
-			}
-			int len = offs.get(end) - start + 1;
-			b.write((start >> 16) & 0xFF);
-			b.write((start >> 8) & 0xFF);
-			b.write(start & 0xFF);
-			b.write((len >> 8) & 0xFF);
-			b.write(len & 0xFF);
-			for (int k = 0; k < len; k++) {
-				b.write(bytes.get(start + k));
-			}
-			i = end + 1;
-		}
-		ascii(b, "EOF");
-		return b.toByteArray();
-	}
-
-	/** Parses IPS records as {offset, len, data...} ints (no RLE support - we never emit it; throws if seen). */
-	public static List<int[]> parseIPS(byte[] ips) {
-		List<int[]> out = new ArrayList<>();
-		if (ips == null || ips.length < 8) {
-			return out;
-		}
-		int p = 5; // "PATCH"
-		while (p + 3 <= ips.length) {
-			int off = ((ips[p] & 0xFF) << 16) | ((ips[p + 1] & 0xFF) << 8) | (ips[p + 2] & 0xFF);
-			if (off == 0x454F46) { // "EOF"
-				break;
-			}
-			p += 3;
-			int len = ((ips[p] & 0xFF) << 8) | (ips[p + 1] & 0xFF);
-			p += 2;
-			if (len == 0) {
-				throw new IllegalArgumentException("RLE IPS records not supported");
-			}
-			int[] rec = new int[2 + len];
-			rec[0] = off;
-			rec[1] = len;
-			for (int k = 0; k < len; k++) {
-				rec[2 + k] = ips[p + k] & 0xFF;
-			}
-			p += len;
-			out.add(rec);
-		}
-		return out;
-	}
-
-	/** Applies an IPS to a copy of code (for tests / verification). */
-	public static byte[] applyIPS(byte[] code, byte[] ips) {
-		byte[] out = code.clone();
-		for (int[] rec : parseIPS(ips)) {
-			for (int k = 0; k < rec[1]; k++) {
-				out[rec[0] + k] = (byte) rec[2 + k];
-			}
-		}
-		return out;
-	}
-
-	private static void ascii(ByteArrayOutputStream b, String s) {
-		for (int i = 0; i < s.length(); i++) {
-			b.write(s.charAt(i));
-		}
-	}
-
-	private static int indexOf(byte[] hay, byte[] needle, int from) {
-		outer:
-		for (int i = Math.max(0, from); i <= hay.length - needle.length; i++) {
-			for (int j = 0; j < needle.length; j++) {
-				if (hay[i + j] != needle[j]) {
-					continue outer;
-				}
-			}
-			return i;
-		}
-		return -1;
-	}
 }

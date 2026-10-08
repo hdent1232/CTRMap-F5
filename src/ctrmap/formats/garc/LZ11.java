@@ -1,6 +1,7 @@
 package ctrmap.formats.garc;
 
 import java.io.ByteArrayOutputStream;
+import ctrmap.util.LittleEndian;
 
 /**
  * LZ11 decompression ported from C# source of PK3DS, originally from dsdecmp
@@ -32,21 +33,25 @@ public class LZ11 {
 			throw new IllegalStateException("Not an LZ11 stream: its type byte is 0x"
 					+ Integer.toHexString(data[0] & 0xFF) + ", not 0x11.");
 		}
-		int decompressedSize = (data[1] & 0xFF) | ((data[2] & 0xFF) << 8) | ((data[3] & 0xFF) << 16);
+		int decompressedSize = LittleEndian.u24(data, 1);
 		int in = 4;
 		if (decompressedSize == 0 && data.length > 4) {
 			if (data.length < 8) {
 				throw new IllegalStateException("An LZ11 stream with an extended size header needs 8 header bytes;"
 						+ " this is " + data.length + ".");
 			}
-			decompressedSize = (data[4] & 0xFF) | ((data[5] & 0xFF) << 8) | ((data[6] & 0xFF) << 16) | ((data[7] & 0xFF) << 24);
+			decompressedSize = LittleEndian.i32(data, 4);
 			if (decompressedSize < 0) {
 				throw new IllegalStateException("An LZ11 stream declares " + Integer.toUnsignedString(decompressedSize)
 						+ " bytes, more than this program can hold.");
 			}
 			in = 8;
 		}
-		ByteArrayOutputStream outstream = new ByteArrayOutputStream(decompressedSize);
+		//GROWN, NOT PRE-SIZED (F240): the declared size is a header field, and handing it to the
+		//buffer allocated whatever a damaged header said - 8 bytes declaring 2^31-1 were an
+		//OutOfMemoryError before a byte was read. Output now grows with what is decoded, and a
+		//stream that runs out says so (next) long before a false size could cost anything
+		ByteArrayOutputStream outstream = new ByteArrayOutputStream(Math.min(decompressedSize, 1 << 16));
 
 		final int bufferLength = 0x1000;
 		byte[] buffer = new byte[bufferLength];
@@ -174,7 +179,7 @@ public class LZ11 {
 		if (stored < 4 || data.length < Math.min(maxInput, stored)) {
 			return false;
 		}
-		int declared = (data[1] & 0xFF) | ((data[2] & 0xFF) << 8) | ((data[3] & 0xFF) << 16);
+		int declared = LittleEndian.u24(data, 1);
 		if (declared <= 0) {
 			return false;
 		}
@@ -358,7 +363,7 @@ public class LZ11 {
 	}
 
 	private static int hash3(byte[] d, int i) {
-		int h = (d[i] & 0xFF) | ((d[i + 1] & 0xFF) << 8) | ((d[i + 2] & 0xFF) << 16);
+		int h = LittleEndian.u24(d, i);
 		h = (h * 0x9E3779B1) >>> (32 - HASH_BITS);
 		return h & (HASH_SIZE - 1);
 	}

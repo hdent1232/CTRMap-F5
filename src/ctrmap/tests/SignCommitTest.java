@@ -59,7 +59,7 @@ public class SignCommitTest {
 		story.getParentFile().mkdirs();
 		Files.write(story.toPath(), GFMessageFile.write(Arrays.asList("already here")));
 
-		Method commit = ctrmap.humaninterface.TilePainterForm.class.getDeclaredMethod("commitSigns", ZO.class, File.class,
+		Method commit = ctrmap.MapPainter.class.getDeclaredMethod("commitSigns", ZO.class, File.class,
 				GFMessageFile.class, ZoneEntities.class, GFLPawnScript.class);
 		commit.setAccessible(true);
 

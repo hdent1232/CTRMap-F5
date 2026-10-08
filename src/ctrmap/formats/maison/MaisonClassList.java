@@ -2,8 +2,8 @@ package ctrmap.formats.maison;
 
 import java.util.ArrayList;
 import java.util.List;
-import static ctrmap.formats.LittleEndian.u16;
-import static ctrmap.formats.LittleEndian.putU16;
+import static ctrmap.util.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.putU16;
 
 /**
  * One Battle Maison class-to-set-list record: which opponent {@link MaisonSet}s

@@ -3,10 +3,11 @@ package ctrmap.tests;
 import ctrmap.formats.codepatch.ItemIconTable;
 import ctrmap.formats.codepatch.ShopData;
 import ctrmap.formats.codepatch.ZoneLimitPatch;
+import ctrmap.formats.codepatch.Ips;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.Arrays;
-import static ctrmap.formats.LittleEndian.putI32;
+import static ctrmap.util.LittleEndian.putI32;
 
 /**
  * The item-icon patch must refuse the wrong build, and must never write outside
@@ -154,7 +155,7 @@ public class ItemIconPatchTest {
 		edited[0] = 1;
 		edited[ItemIconTable.COUNT - 1] = 2;
 		byte[] ips = ItemIconTable.diffIPS(code, edited);
-		byte[] applied = ShopData.applyIPS(code, ips);
+		byte[] applied = Ips.apply(code, ips);
 		check(Arrays.equals(applied, ItemIconTable.write(code, edited)),
 				"the IPS reproduces the patched file exactly");
 
@@ -246,10 +247,10 @@ public class ItemIconPatchTest {
 			shopsEdited[i] = shops[i].clone();
 		}
 		shopsEdited[18] = new int[]{50, 51, 52, 53};
-		byte[] shopIps = ShopData.diffIPS(code, ShopData.write(code, shopsEdited));
+		byte[] shopIps = Ips.diff(code, ShopData.write(code, shopsEdited));
 
-		byte[] merged = ShopData.mergeIPS(ShopData.mergeIPS(zoneIps, shopIps), iconIps);
-		byte[] all = ShopData.applyIPS(code, merged);
+		byte[] merged = Ips.merge(Ips.merge(zoneIps, shopIps), iconIps);
+		byte[] all = Ips.apply(code, merged);
 
 		check(ItemIconTable.read(all)[50] == icons[2], "the icon edit survives the merge");
 		check(Arrays.equals(ShopData.read(all)[18], shopsEdited[18]), "the shop edit survives it");

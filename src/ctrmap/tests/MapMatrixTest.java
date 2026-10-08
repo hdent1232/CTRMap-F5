@@ -44,6 +44,27 @@ public class MapMatrixTest {
 				"the builder's blank matrix has one camera boundary, and writes it ("
 				+ blank.cambounds.size() + " kept, count " + (cam.length >= 4 ? cam[0] & 0xFF : -1) + " written)");
 
+		System.out.println("--- a save carries the camera section's bytes it does not understand (F160)");
+		byte[] section = java.util.Arrays.copyOf(bounds(1, 1), 324);
+		for (int i = 24; i < section.length; i++) {
+			section[i] = (byte) (i * 7 + 1);
+		}
+		MapMatrix tail = new MapMatrix(new MM(mm(dir, "tail", grid(0, 1, 1, 7), section), game), null);
+		check(tail.cambounds.size() == 1 && section[300] != 0, "control: one boundary read, and 300 bytes after it"
+				+ " that are not zero");
+		check(java.util.Arrays.equals(tail.assembleCamData(), section), "an unchanged matrix writes its camera section"
+				+ " back as it read it, all " + section.length + " bytes, not just the 24 its one boundary needs");
+		tail.cambounds.add(new ctrmap.formats.mapmatrix.MatrixCameraBoundaries());
+		byte[] grown = tail.assembleCamData();
+		check(grown.length == section.length && grown[0] == 2
+				&& java.util.Arrays.equals(java.util.Arrays.copyOfRange(grown, 44, grown.length),
+				java.util.Arrays.copyOfRange(section, 44, section.length)),
+				"a boundary added is written over the next 20 bytes, and every byte after it is kept");
+		tail.cambounds.clear();
+		byte[] none = tail.assembleCamData();
+		check(none.length == section.length && none[0] == 0 && none[30] == section[30],
+				"and with none left the count says 0 and the section keeps its length and its bytes");
+
 		System.out.println("--- a layer refuses to lose rows or columns it does not have");
 		MapMatrix.ResizeableMatrix<Short> layer = new MapMatrix.ResizeableMatrix<>(1, 1, (short) -1);
 		layerRefuses("removing 2 rows of 1", () -> layer.removeRows(2));
@@ -60,8 +81,20 @@ public class MapMatrixTest {
 		gridRefuses("a container too short", new byte[4], "too short");
 		gridRefuses("a grid larger than its subfile", MapResizeTest.container(0x4D4D, grid(0, 9, 9, 1), bounds(0, 0)), "does not fit");
 		int hand = 0, scanned = 0;
-		java.util.regex.Pattern parse = java.util.regex.Pattern.compile("sub0\\s*\\+\\s*8\\s*\\+");
-		check(parse.matcher("u16(mat, sub0 + 8 + k * 2)").find(), "control: the scan matches a hand-parsed cell id");
+		//BY SHAPE, NOT BY NAME (F248): this looked for the variable sub0, and GfEnvPicker called it s0 - so
+		//its hand-parsed grid passed. Two shapes: a grid header read (width at +4, then h/height = the +6
+		//read of the same buffer and base) and a cell read (<offset> + 8 + <index> * 2)
+		java.util.regex.Pattern parse = java.util.regex.Pattern.compile(
+				"u16\\(\\s*(\\w+)\\s*,\\s*((?:\\w+\\s*\\+\\s*)?)4\\s*\\)[^;\\n]*(?:;[^\\n]*\\n[^\\n]*)?"
+				+ "\\b(?:h|height)\\s*=\\s*u16\\(\\s*\\1\\s*,\\s*\\2\\s*6\\s*\\)"
+				+ "|\\b\\w+\\s*\\+\\s*8\\s*\\+\\s*\\(?\\s*\\w+(?:\\s*\\*\\s*\\w+\\s*\\+\\s*\\w+\\s*\\)?)?\\s*\\)?\\s*\\*\\s*2\\b");
+		for (String probe : new String[]{"u16(mat, sub0 + 8 + k * 2)", "u16(mm, s0 + 8 + k * 2)",
+				"int w = u16(mm, s0 + 4), h = u16(mm, s0 + 6);", "int w = u16(grid, 4);\n\t\tint h = u16(grid, 6);"}) {
+			check(parse.matcher(probe).find(), "control: the scan matches a hand-parsed grid whatever its names: " + probe);
+		}
+		check(!parse.matcher("mon.level = u16(e, o + 4); mon.form = u16(e, o + 6);").find()
+				&& !parse.matcher("int w = u16(a, 4), h = u16(b, 6);").find(),
+				"control: and not a record's +4/+6 fields, nor two buffers' words");
 		for (File f : CollisionReadTest.javaFiles(new File("src/ctrmap"), new java.util.ArrayList<>())) {
 			if (f.getPath().contains(File.separator + "tests" + File.separator) || f.getName().equals("MapMatrix.java")) {
 				continue;

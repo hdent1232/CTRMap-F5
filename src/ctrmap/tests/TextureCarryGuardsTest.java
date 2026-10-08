@@ -3,7 +3,6 @@ package ctrmap.tests;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.AD;
 import ctrmap.formats.h3d.BchTexturePack;
-import ctrmap.formats.propdata.PropDatabase;
 import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.nio.file.Files;
@@ -197,7 +196,7 @@ public class TextureCarryGuardsTest {
 			return names;
 		}
 		for (int sub : new int[]{11, 1}) {
-			addNames(PropDatabase.getSubfile(c, sub), names);
+			addNames(ctrmap.formats.containers.ContainerBytes.subfile(c, sub), names);
 		}
 		return names;
 	}

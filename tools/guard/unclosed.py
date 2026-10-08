@@ -13,7 +13,7 @@ All 70 are held now: 69 hoisted into a `with` around their statement by a script
 folding every single-use `with` back and comparing syntax trees, and one by hand
 (`rule_map.summary`, under a conditional expression). The hook copies outside this repository,
 `../.claude/hooks`, were hoisted in the same step, because `guard_all` refuses every call while
-they differ from `tools/hooks`.
+they differed from `tools/hooks` (one copy since F187).
 
 WHAT IS REFUSED - an open whose handle is used INLINE:
 
@@ -41,7 +41,9 @@ import io
 import os
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+ROOT = _tree_root.require(__file__)
 
 #: The folders whose code this rule reads.
 ROOTS = ("tools", ".claude")

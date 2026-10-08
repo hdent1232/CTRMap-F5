@@ -6,13 +6,11 @@ import ctrmap.formats.trainers.TrainerEntry;
 import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
-import java.awt.Frame;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.file.Files;
 import java.util.List;
 import javax.swing.JButton;
-import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -22,7 +20,6 @@ import javax.swing.JTable;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.table.AbstractTableModel;
 
-import static ctrmap.CtrmapMainframe.*;
 
 /**
  * The trainer editor: edits a trainer's party (species/level/IVs/items/moves)
@@ -236,14 +233,14 @@ public class TrainerEditDialog {
 					ctrmap.Ui.message(parent, "Trainer " + tid + " saved. Deploy to emulator to apply.",
 							"Trainer editor", JOptionPane.INFORMATION_MESSAGE);
 				} catch (Exception ex) {
-					ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Trainer editor");
+					ctrmap.Ui.error(dlg, "Save failed:\n" + ctrmap.util.Bytes.reason(ex), "Trainer editor");
 				}
 			});
 			cancel.addActionListener(e -> onClose.run());
 
 			return dlg;
 		} catch (Exception ex) {
-			ctrmap.Ui.error(parent, "Could not open trainer " + tid + ":\n" + ex.getMessage(), "Trainer editor");
+			ctrmap.Ui.error(parent, "Could not open trainer " + tid + ":\n" + ctrmap.util.Bytes.reason(ex), "Trainer editor");
 		}
 		return null;
 	}

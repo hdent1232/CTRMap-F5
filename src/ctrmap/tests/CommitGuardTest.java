@@ -82,6 +82,7 @@ public class CommitGuardTest {
 		aMeasurementThatFoundNothingNeedsItsControl(guard);
 		aNewGuardMustSayHowToGetRoundIt(guard);
 		aMenuItemMustSayWhyItIsNotATab(guard);
+		aScoredFileChangesWithItsScore(guard);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -386,10 +387,10 @@ public class CommitGuardTest {
 	 *
 	 * <p>WHY THIS EXISTS. The work-order refusal was added to tools/mutate2.py
 	 * because that is the sweep that was started in front of known work. That
-	 * closed the INSTANCE. tools/mutate.py - the superseded first mutator, which
-	 * nothing runs today - does the same hard reset and writes the same kind of
-	 * baseline and was not gated at all, and a long measurement added next year
-	 * would not be either. Gating one tool is a convention that the next tool
+	 * closed the INSTANCE. tools/mutate.py - the superseded first mutator, deleted
+	 * since (F195) - did the same hard reset and wrote the same kind of baseline
+	 * and was not gated at all, and a long measurement added next year would not
+	 * be either. Gating one tool is a convention that the next tool
 	 * follows if somebody remembers.
 	 *
 	 * <p>The class is decidable from the source: a tool that hard-resets the tree
@@ -398,11 +399,18 @@ public class CommitGuardTest {
 	 */
 	static void everyFrozenTreeMeasurementAsksTheWorkOrder(File repo) throws Exception {
 		System.out.println("--- every tool that measures a frozen tree asks the work order first");
-		check(!pythonCode("\"\"\"reads a record such as mutation_baseline.json\"\"\"\nx = 1\n")
-				.contains("mutation_baseline.json")
-				&& pythonCode("PATH = 'mutation_baseline.json'\n").contains("mutation_baseline.json"),
+		check(!measuresAFrozenTree(pythonCode("\"\"\"reads a record such as mutation_baseline.json\"\"\"\nx = 1\n"
+				+ "with open(p, 'w') as h:\n    h.write(x)\n"))
+				&& measuresAFrozenTree(pythonCode("PATH = 'mutation_baseline.json'\nwith io.open(PATH, \"w\") as h:\n"
+				+ "    h.write(x)\n")),
 			"DOCUMENTED: a tool that only DOCUMENTS the baseline is not one that writes it, and one "
-			+ "that names it in code still is");
+			+ "that names it in code and writes still is");
+		//READ, NOT WRITTEN (F132): the commit guard reads the staged baseline to refuse a stale score,
+		//writes nothing, and runs at every commit - it was counted a measurement owing the work order
+		check(!measuresAFrozenTree(pythonCode("book = json.loads(show(':mutation_baseline.json'))\n"
+				+ "sys.stderr.write('REFUSING')\n"))
+				&& measuresAFrozenTree(pythonCode("git([\"reset\", \"--hard\"])\n")),
+			"and one that READS the baseline and writes no file is not, while one that resets the tree is");
 		File tools = new File(repo, "tools");
 		java.util.List<String> ungated = new java.util.ArrayList<>();
 		int measured = 0;
@@ -414,9 +422,7 @@ public class CommitGuardTest {
 			if (py.getName().equals("work_order.py")) {
 				continue; //the guard itself
 			}
-			boolean freezes = src.contains("\"reset\", \"--hard\"")
-				|| src.contains("mutation_baseline.json");
-			if (!freezes) {
+			if (!measuresAFrozenTree(src)) {
 				continue;
 			}
 			measured++;
@@ -429,6 +435,16 @@ public class CommitGuardTest {
 			+ " anything");
 		check(ungated.isEmpty(), "and every one of them asks the work order before it starts "
 			+ ungated);
+	}
+
+	/** A file write in Python code: an open for writing or appending, or a write of a whole file. */
+	static final java.util.regex.Pattern WRITES_A_FILE = java.util.regex.Pattern.compile(
+			"open\\([^)]*[\"'][wa]b?[\"']|\\.write_(?:text|bytes)\\(|json\\.dump\\(");
+
+	/** Whether code measures a frozen tree: it resets the tree, or names the mutation baseline and writes a file. */
+	static boolean measuresAFrozenTree(String code) {
+		return code.contains("\"reset\", \"--hard\"")
+				|| (code.contains("mutation_baseline.json") && WRITES_A_FILE.matcher(code).find());
 	}
 
 	/**
@@ -470,14 +486,6 @@ public class CommitGuardTest {
 		}
 	}
 
-	/**
-	 * Runs the guard over {@code message} in a fresh repository where exactly
-	 * {@code staged} is staged, and {@code lastRun} is the recorded run (or none).
-	 *
-	 * <p>The guard finds its root three directories above itself, so the copy has
-	 * to sit at tools/guard/ inside the scratch repository for the root it
-	 * computes to be the scratch repository.
-	 */
 	// ------------------------------------------- 9. refusal six: a hole handed over
 	/**
 	 * A run that knows what it did not cover may not file that as somebody else's work.
@@ -607,7 +615,7 @@ public class CommitGuardTest {
 		String said = drain(p);
 		int code = p.waitFor();
 		check(code == 0 && said.contains("ALL PASS"),
-			"and its own five refusals still refuse (exit " + code + ") " + oneLine(said));
+			"and its own five refusals still refuse (exit " + code + ") " + oneLine(failing(said)));
 		check(said.contains("NOTHING WAS READ") && said.contains("WERE NOT READ")
 			&& said.contains("NO COMPLETENESS CHECK RAN") && said.contains("STILL NAMES"),
 			"including the anti-gaming one: scope is expanded from disk, so looking at less is"
@@ -704,8 +712,9 @@ public class CommitGuardTest {
 			if (!guardDir.mkdirs() || !docs.mkdirs()) {
 				throw new java.io.IOException("could not build the fixture tree under " + tree);
 			}
-			Files.write(new File(docs, "note.md").toPath(),
-				("The evidence is in `" + cited + "`." + NEWLINE).getBytes(StandardCharsets.UTF_8));
+			File note = new File(docs, "note.md");
+			Files.write(note.toPath(), ("The evidence is in `" + cited + "`, outside the repository." + NEWLINE)
+				.getBytes(StandardCharsets.UTF_8));
 			git(tree, "init", "-q");
 
 			//UNDECLARED: an empty manifest, and a citation the tree makes. It must refuse.
@@ -739,6 +748,17 @@ public class CommitGuardTest {
 			check(verdict == 0,
 				"and the same citation declared, with the file where it says, passes (exit "
 				+ verdict + "): " + oneLine(about));
+
+			//UNMARKED (F139): the same declared citation on a line that does not say it is outside
+			//the repository. A reader takes the figure as one a clone can re-run; it must refuse.
+			Files.write(note.toPath(), ("The evidence is in `" + cited + "`." + NEWLINE).getBytes(StandardCharsets.UTF_8));
+			Process r = new ProcessBuilder("python", "-B", tool.getPath(), "--root",
+				tree.getAbsolutePath()).directory(tree).redirectErrorStream(true).start();
+			String hidden = drain(r);
+			int refused = r.waitFor();
+			check(refused == 1 && hidden.contains("UNMARKED") && hidden.contains(cited),
+				"and on a line that does not say it is outside the repository, it is refused (exit "
+				+ refused + "): " + oneLine(hidden));
 		} finally {
 			Scratch.deleteTree(session);
 		}
@@ -749,6 +769,21 @@ public class CommitGuardTest {
 
 	/** A double quote, for building a message without escaping it twice. */
 	static final String QUOTE = String.valueOf((char) 34);
+
+	/**
+	 * The lines of a selftest's output that name what failed, or all of it when none does. The
+	 * census selftest prints its passing cases first, and {@link #oneLine} keeps 150 characters:
+	 * a failure was reported as a run of "ok:" lines that never reached its own name (F185).
+	 */
+	static String failing(String said) {
+		StringBuilder out = new StringBuilder();
+		for (String line : (said == null ? "" : said).split("\n")) {
+			if (line.contains("FAIL")) {
+				out.append(line.trim()).append(' ');
+			}
+		}
+		return out.length() == 0 ? said : out.toString();
+	}
 
 	/** One line of whatever a tool said, for a message that has to fit on a terminal. */
 	static String oneLine(String said) {
@@ -824,7 +859,6 @@ public class CommitGuardTest {
 			+ commented.code + ")");
 	}
 
-	/** The four-argument form: every staged file gets the comment body it always had. */
 	// ------------------------------- 11. refusal seven: vouching for what you did not open
 	/**
 	 * A message may not say the rest are fine without citing the measurement that says so.
@@ -903,7 +937,9 @@ public class CommitGuardTest {
 		check(body.contains("why.extend(unproven_plants())"),
 			"and blockers() actually calls it - a predicate nobody asks is a comment");
 		
-		//the three states it must refuse, driven through python so this is the real code
+		//the real code, run: it must answer a COUNT. Its states - no record, plants not proven, a
+		//stale target digest, a different plant count, a stale src/ digest, and a record that
+		//matches - are each driven against a scratch root in tests/test_work_order.py (F145).
 		String probe = "import importlib.util, sys" + NEWLINE
 			+ "spec = importlib.util.spec_from_file_location('wo', r'"
 			+ gate.getAbsolutePath() + "')" + NEWLINE
@@ -917,8 +953,12 @@ public class CommitGuardTest {
 		Process p = pb.start();
 		String said = drain(p).trim();
 		p.waitFor();
-		check(!said.isEmpty() && !said.startsWith("0") || said.startsWith("0"),
-			"the gate answers how many reasons it has: " + oneLine(said));
+		//THIS WAS A TAUTOLOGY (F145): (!said.isEmpty() && !said.startsWith("0")) || said.startsWith("0")
+		//is true for any output at all, a python traceback included.
+		String last = said.substring(said.lastIndexOf('\n') + 1).trim();
+		check(p.exitValue() == 0 && last.matches("\\d+"),
+			"the gate answers how many reasons it has, as a number - not a traceback (exit " + p.exitValue()
+			+ "): " + oneLine(said));
 	}
 
 	// ------------------------------ 13. EXTRACTION IS NOT TESTING
@@ -1153,6 +1193,70 @@ public class CommitGuardTest {
 			+ canvas.code + ") " + oneLine(canvas.said));
 	}
 
+	/**
+	 * A commit that changes a file the mutation baseline scored carries a baseline whose digest of it is
+	 * the staged file's, or says why the sweep is owed (F132). Two scored files changed after the sweep
+	 * and the committed tree failed its own gate from 2026-09-21: MutationBaselineTest only fails a stale
+	 * entry after the commit, when nobody is about to re-run an hour's sweep.
+	 */
+	static void aScoredFileChangesWithItsScore(File guard) throws Exception {
+		System.out.println("--- a file the mutation baseline scored changes only with its score (F132)");
+		//the rules before this one judge a code change a fix; this case is about the score, so it says so
+		String message = "Rename a field in the scored file" + NEWLINE + NEWLINE + "Tidies a name." + NEWLINE + NEWLINE
+				+ "No-guard: a renamed field changes no behaviour, so there is no second occurrence for a guard to catch";
+		String scored = "src/ctrmap/Scored.java", other = "src/ctrmap/Other.java", book = "mutation_baseline.json";
+		String now = "package ctrmap;\nclass Scored { int renamed; }\n";
+		String fresh = "{\"" + scored + "\": {\"killed\": 1, \"sha256\": \"" + sha256(now) + "\"}}\n";
+		String stale = "{\"" + scored + "\": {\"killed\": 1, \"sha256\": \"" + sha256("package ctrmap;\nclass Scored { int old; }\n") + "\"}}\n";
+		java.util.Map<String, String> files = new java.util.HashMap<>();
+		files.put(scored, now);
+		files.put(book, stale);
+		Run refused = run(guard, message, new String[]{scored, book}, null, null, null, files);
+		check(refused.code != 0 && refused.said.contains("    " + scored), "a scored file staged with a baseline that"
+				+ " scores its old bytes is refused, by name (exit " + refused.code + ") " + oneLine(refused.said));
+		files.put(book, fresh);
+		Run allowed = run(guard, message, new String[]{scored, book}, null, null, null, files);
+		check(allowed.code == 0, "and allowed with the baseline re-measured over it (exit " + allowed.code + ") "
+				+ oneLine(allowed.said));
+		//the file's digest is the CR-stripped one MutationBaselineTest takes: the same text saved CRLF is fresh
+		files.put(scored, now.replace("\n", "\r\n"));
+		Run crlf = run(guard, message, new String[]{scored, book}, null, null, null, files);
+		check(crlf.code == 0, "and a CRLF copy of the measured text is the measured file (exit " + crlf.code + ") "
+				+ oneLine(crlf.said));
+		files.put(scored, now);
+		files.put(book, stale);
+		Run owed = run(guard, message + NEWLINE + NEWLINE + "Mutation-owed: the sweep needs the owner's JDK and"
+				+ " game dump, and neither is on the machine this was written on",
+				new String[]{scored, book}, null, null, null, files);
+		check(owed.code == 0, "and allowed when the message says why the sweep is owed (exit " + owed.code + ") "
+				+ oneLine(owed.said));
+		java.util.Map<String, String> unscored = new java.util.HashMap<>();
+		unscored.put(other, now);
+		unscored.put(book, stale);
+		Run elsewhere = run(guard, message, new String[]{other, book}, null, null, null, unscored);
+		check(elsewhere.code == 0, "while a file the baseline does not score is not asked about (exit "
+				+ elsewhere.code + ") " + oneLine(elsewhere.said));
+		java.util.Map<String, String> gone = new java.util.HashMap<>();
+		gone.put(scored, null);
+		gone.put(book, fresh);
+		Run removed = run(guard, message, new String[]{scored, book}, null, null, null, gone);
+		check(removed.code != 0 && removed.said.contains("removed, and still scored"), "a scored file removed while"
+				+ " the baseline still scores it is refused (exit " + removed.code + ") " + oneLine(removed.said));
+		files.put(book, "{ not json");
+		Run unread = run(guard, message, new String[]{scored, book}, null, null, null, files);
+		check(unread.code != 0 && unread.said.contains("UNKNOWN"), "and a baseline that cannot be read is UNKNOWN,"
+				+ " not fresh (exit " + unread.code + ") " + oneLine(unread.said));
+	}
+
+	static String sha256(String text) throws Exception {
+		StringBuilder hex = new StringBuilder();
+		for (byte b : java.security.MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8))) {
+			hex.append(String.format("%02x", b & 0xFF));
+		}
+		return hex.toString();
+	}
+
+	/** The four-argument form: every staged file gets the comment body it always had. */
 	static Run run(File guard, String message, String[] staged, String lastRun) throws Exception {
 		return run(guard, message, staged, lastRun, null);
 	}
@@ -1170,12 +1274,28 @@ public class CommitGuardTest {
 	}
 
 	/**
+	 * Runs the guard over {@code message} in a fresh repository where exactly
+	 * {@code staged} is staged, and {@code lastRun} is the recorded run (or none).
+	 *
+	 * <p>The guard finds its root by the anchor above it - the scratch repository's
+	 * {@code .git} - through {@code _tree_root.py} beside it (F216), so the copy sits at
+	 * tools/guard/ with that file next to it, as it does in the repository.
+	 *
 	 * @param message the message, or null to hand the guard a path with no file at it
 	 * @param env     variables set for the guard's process only - the scratch repository is built
 	 *                without them - or null
 	 */
 	static Run run(File guard, String message, String[] staged, String lastRun, String stagedBody,
 			java.util.Map<String, String> env) throws Exception {
+		return run(guard, message, staged, lastRun, stagedBody, env, null);
+	}
+
+	/**
+	 * As above, with {@code contents} giving a staged file its own bytes, written as they are; a file
+	 * mapped to null is committed first and its REMOVAL staged.
+	 */
+	static Run run(File guard, String message, String[] staged, String lastRun, String stagedBody,
+			java.util.Map<String, String> env, java.util.Map<String, String> contents) throws Exception {
 		File dir = Scratch.dir("commit-guard");
 		try {
 			File tools = new File(dir, "tools/guard");
@@ -1183,6 +1303,12 @@ public class CommitGuardTest {
 				throw new java.io.IOException("could not make " + tools);
 			}
 			Files.copy(guard.toPath(), new File(tools, "commit_guard.py").toPath());
+			//AND THE ONE DEFINITION OF ITS ROOT, which it imports from its own folder: a file can
+			//always reach its own folder, and reaching any other first needs the root (F216).
+			File root = new File(guard.getParentFile(), "_tree_root.py");
+			if (root.isFile()) {
+				Files.copy(root.toPath(), new File(tools, "_tree_root.py").toPath());
+			}
 			//THE GUARD'S SIBLINGS COME WITH IT. It asks the bundle's commit_gate.py for every rule
 			//the two share, and require_build.py for the tree's subject (F183, F186); a copy of
 			//this one file crashed the first fixture that needed either. Every top-level tool, not
@@ -1197,14 +1323,26 @@ public class CommitGuardTest {
 				}
 			}
 			git(dir, "init", "-q");
+			java.util.List<String> removed = new java.util.ArrayList<>();
 			for (String rel : staged) {
 				File f = new File(dir, rel);
 				if (f.getParentFile() != null) {
 					f.getParentFile().mkdirs();
 				}
-				Files.write(f.toPath(), (stagedBody == null ? "//staged for the guard to see"
-					: stagedBody).concat("\n").getBytes(StandardCharsets.UTF_8));
+				String own = contents == null ? null : contents.get(rel);
+				if (contents != null && contents.containsKey(rel) && own == null) {
+					removed.add(rel);
+					own = "//committed, then removed\n";
+				}
+				Files.write(f.toPath(), (own != null ? own : (stagedBody == null ? "//staged for the guard to see"
+					: stagedBody).concat("\n")).getBytes(StandardCharsets.UTF_8));
 				git(dir, "add", "--", rel);
+			}
+			if (!removed.isEmpty()) {
+				git(dir, "-c", "user.name=guard", "-c", "user.email=guard@example.invalid", "commit", "-q", "-m", "before");
+				for (String rel : removed) {
+					git(dir, "rm", "-q", "--", rel);
+				}
 			}
 			// The message file lands in the tree, and it is not a dotfile, so it is part of
 			// what the tree digests to. Written BEFORE the record, or the subject recorded

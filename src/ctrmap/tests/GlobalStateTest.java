@@ -135,7 +135,11 @@ public class GlobalStateTest {
 	//frame private, both of which were public and mutable.
 	//36 -> 34: measured by this suite on 2026-10-07 (F218), the number it printed;
 	//section 4 now names every one of them, and every other static that can change.
-	private static final int CEILING = 34;
+	//34 -> 33: MatrixSelector.selecting, written by nothing and read by nothing, went when the field
+	//walk first told a read from a write (F204) - measured by this suite on 2026-10-08.
+	//33 -> 15: the main window became an object (F007) and its 18 public statics its fields - measured
+	//by this suite on 2026-10-08, the number it printed.
+	private static final int CEILING = 15;
 
 	static int fails = 0;
 
@@ -153,6 +157,7 @@ public class GlobalStateTest {
 		File classes = new File(args.length > 1 ? args[1] : "build/classes");
 
 		List<ClassFileScanner.Member> globals = ceiling(classes);
+		theDocumentStatesTheCount(src.getAbsoluteFile().getParentFile(), globals);
 		neverWritten(src, globals);
 		resetCoversWorkspace(src);
 		everyStaticThatCanChangeIsArgued(src, classes);
@@ -198,7 +203,70 @@ public class GlobalStateTest {
 		check(globals.size() <= CEILING,
 				"the count of public static mutable fields has not risen above " + CEILING
 				+ " (it is " + globals.size() + ")");
+		//A CEILING ABOVE THE TRUTH LETS THAT MANY IN UNSEEN (F135): it sat at 36 over a measured 34
+		check(globals.size() == CEILING, "and the recorded ceiling is the measured count - lower it in the change"
+				+ " that removes one (measured " + globals.size() + ", recorded " + CEILING + ")");
 		return globals;
+	}
+
+	/** The public statics per class, by the class's simple name. */
+	static Map<String, Integer> perClass(List<ClassFileScanner.Member> globals) {
+		Map<String, Integer> out = new LinkedHashMap<>();
+		for (ClassFileScanner.Member g : globals) {
+			String k = g.simpleOwner();
+			out.put(k, out.containsKey(k) ? out.get(k) + 1 : 1);
+		}
+		return out;
+	}
+
+	/**
+	 * ARCHITECTURE.md states the count and a table of where the globals sit; both are held to the
+	 * measurement (F135). The document said 36 and 38 for a measured 34, and 20 for a window that
+	 * holds 18 - each restated by hand, each drifted. A number a document states is a measurement,
+	 * so it is read back here; a table that misses a class holding one fails too.
+	 */
+	static void theDocumentStatesTheCount(File repo, List<ClassFileScanner.Member> globals) throws IOException {
+		File doc = new File(repo, "ARCHITECTURE.md");
+		if (!doc.isFile()) {
+			check(false, "ARCHITECTURE.md is there to state the count - none at " + doc);
+			return;
+		}
+		String text = new String(Files.readAllBytes(doc.toPath()), StandardCharsets.UTF_8);
+		int from = text.indexOf("## Global mutable state");
+		int to = from < 0 ? -1 : text.indexOf("\n## ", from + 1);
+		String section = from < 0 ? "" : text.substring(from, to < 0 ? text.length() : to);
+		java.util.regex.Matcher total = Pattern.compile("\\*\\*(\\d+) public static mutable fields outside").matcher(section);
+		List<Integer> stated = new ArrayList<>();
+		while (total.find()) {
+			stated.add(Integer.parseInt(total.group(1)));
+		}
+		Map<String, Integer> measured = perClass(globals);
+		java.util.regex.Matcher row = Pattern.compile("(?m)^\\| ((?:`\\w+`(?:, )?)+) \\| (\\d+) \\|").matcher(section);
+		List<String> wrong = new ArrayList<>();
+		Set<String> covered = new TreeSet<>();
+		int rows = 0;
+		while (row.find()) {
+			rows++;
+			int sum = 0;
+			java.util.regex.Matcher name = Pattern.compile("`(\\w+)`").matcher(row.group(1));
+			while (name.find()) {
+				covered.add(name.group(1));
+				sum += measured.containsKey(name.group(1)) ? measured.get(name.group(1)) : 0;
+			}
+			if (sum != Integer.parseInt(row.group(2))) {
+				wrong.add(row.group(1) + " says " + row.group(2) + ", measured " + sum);
+			}
+		}
+		//ROWS READ AT ALL, not a row count: the table shrinks as statics go (three rows until F007 took the
+		//window's out), and a table read short is caught by the coverage check below, class by class
+		check(!section.isEmpty() && rows > 0, "control: the global-state section and its table are found (" + rows + " rows)");
+		check(stated.size() == 1 && stated.get(0) == globals.size(), "ARCHITECTURE.md states the measured count, once"
+				+ " (it states " + stated + ", measured " + globals.size() + ")");
+		Set<String> missing = new TreeSet<>(measured.keySet());
+		missing.removeAll(covered);
+		check(wrong.isEmpty() && missing.isEmpty(), "and its table states each class's measured count, every class"
+				+ " holding one included" + (wrong.isEmpty() ? "" : " - wrong: " + wrong)
+				+ (missing.isEmpty() ? "" : " - missing: " + missing));
 	}
 
 	// ------------------------------------------------- 2. a global nothing writes
@@ -336,28 +404,25 @@ public class GlobalStateTest {
 	 * <p>Each row: the reason, its words, then "owner field field ..." in internal names.
 	 */
 	static final String[][] ARGUED = {
-		{"the window", "the one main window's parts and what its editors have selected: one window per"
-			+ " process. Its current game and zone are the window's own, replaced whole when a workspace"
-			+ " opens - not a copy of anything read from the game. The tile undo history holds the loaded"
-			+ " zone's own tile maps and is cleared whenever they change; the clipboard is what the user"
-			+ " copied",
-			"ctrmap/CtrmapMainframe CM3DComponents collEditMasterPnl extrasBrowser extrasDefault extrasHost extrasOpen frame game gameDataHost jsp jsp2 jsp3 loadedZone m3DDebugPanel mBuilder mCamEditForm mCamScrollPane mCollEditPanel mGeoEditForm mMtxEditForm mMtxPanel mNPCEditForm mPaintForm mPropEditForm mScriptPnl mTextEditor mTileEditForm mTileMapPanel mTilemapScrollPane mTriggerEditForm mWarpEditForm mZonePnl mtxEditMasterPnl navigator openEditors redraw tabs tileEditMasterPnl tools worldToolbar zoneBrowser zoneColumn zoneTabPnl",
-			"ctrmap/humaninterface/TileUndo listeners open redoStack undoStack",
-			"ctrmap/TileDBWriter mSingleton",
+		{"the window", "what the editors have selected and copied: one of each per process. The clipboard is"
+			+ " what the user copied. Not here: the undo history, which is the open zone's (F209), and the main"
+			+ " window's own parts - it is an object since F007, and its 43 fields are its own",
 			"ctrmap/humaninterface/GeoEditForm clipboard",
-			"ctrmap/humaninterface/MatrixSelector hilightRegionX hilightRegionY selRegionX selRegionY selectSubChunks selecting",
+			"ctrmap/humaninterface/MatrixSelector hilightRegionX hilightRegionY selRegionX selRegionY selectSubChunks",
 			"ctrmap/humaninterface/Selector hilightTileX hilightTileY selTileX selTileY selecting",
 		},
 		{"the process", "settings, the holder of the open session, logging, the dialog sink, each thread's"
-			+ " open unit, a pack's warnings (drained by the pack that made them), the update lock and a"
-			+ " said-once flag: one of each per running program, whichever game is open",
+			+ " open unit, a pack's warnings (drained by the pack that made them), the update lock, a"
+			+ " said-once flag and whether OpenGL starts (natives that failed to load cannot load later):"
+			+ " one of each per running program, whichever game is open",
 			"ctrmap/ErrorSink SAYING fileHandler logFile",
 			"ctrmap/formats/garc/GARC packWarnings",
 			"ctrmap/WorkspaceUnit OPEN",
 			"ctrmap/Ui dialogsEnabled parent sink",
 			"ctrmap/Workspace ESPICA_PATH GAMEDIR_PATH TILESET_DEFAULT TILESET_PATH WORKSPACE_PATH current prefs snapshotProblemShown",
 			"ctrmap/humaninterface/BuildingPaletteDialog catalogProblemsSaid",
-			"ctrmap/update/AppVersion current",
+			"ctrmap/humaninterface/GlSupport asked unavailable",
+			"ctrmap/update/AppVersion current unknownBecause",
 			"ctrmap/update/Updater runLock runLockFile",
 		},
 		{"the build's own tables", "read from resources inside this build - the building catalog, the"
@@ -365,7 +430,7 @@ public class GlobalStateTest {
 			+ " opened, so kept for the run; nothing here reads a dump",
 			"ctrmap/formats/h3d/BuildingCatalog entries problems",
 			"ctrmap/formats/tilemap/PaintedMaterials spriteMaterials",
-			"ctrmap/formats/tilemap/TerrainCatalog churnDonor churnLoaded cliffDonor cliffLoaded donors",
+			"ctrmap/formats/tilemap/TerrainCatalog table",
 			"ctrmap/scripts/GfHash HASH_BY_NAME NAME_BY_HASH",
 		},
 		{"answers that depend on nothing but their key", "a pure function's results, kept: the colour a"
@@ -384,7 +449,7 @@ public class GlobalStateTest {
 		{CONSTANT, "built when the class loads and never written after - measured below, not taken on"
 			+ " trust: a write into one anywhere but a static initializer fails this suite",
 			"ctrmap/ModDeployer MODDABLE MODDABLE_IN_PLACE",
-			"ctrmap/WorkspaceSession ARCHIVES PACK_ORDER RELOAD_ORDER REQUIRED SUBDIR WORKSPACE_SUBDIRS",
+			"ctrmap/WorkspaceSession ARCHIVES IN_PLACE PACK_ORDER RELOAD_ORDER REQUIRED SUBDIR WORKSPACE_SUBDIRS",
 			"ctrmap/formats/area/AreaEnv COLOR_CHANNELS TIME_NAMES",
 			"ctrmap/formats/cameradata/CameraData FIELDS",
 			"ctrmap/formats/codepatch/CodeIps EMPTY",
@@ -396,11 +461,11 @@ public class GlobalStateTest {
 			"ctrmap/formats/h3d/MapPrefab PASSENGER_CUES",
 			"ctrmap/formats/h3d/texturing/TextureCodec etc1LUT tileOrder",
 			"ctrmap/formats/pokedata/PokeData CATEGORY_NAMES TYPE_NAMES TYPE_RGB",
-			"ctrmap/formats/scripts/MsgWrapperInjector CLOSURE_SUB_CELLS REWRITE_SITES",
+			"ctrmap/formats/scripts/MsgWrapperInjector CLOSURE_SUB_CELLS REWRITE_SITES SPEC",
 			"ctrmap/formats/scripts/NpcTemplates SIGN_TYPES SIGN_TYPE_LABELS",
-			"ctrmap/formats/scripts/SignWrapperInjector CLOSURE_SUB_CELLS",
+			"ctrmap/formats/scripts/SignWrapperInjector CLOSURE_SUB_CELLS SPEC",
 			"ctrmap/formats/text/GFMessageFile VAR_CODES VAR_NAMES",
-			"ctrmap/formats/tilemap/PaintedRegionBuilder COMP_BYTES DIR_NAMES",
+			"ctrmap/formats/tilemap/PaintedGeometry COMP_BYTES DIR_NAMES",
 			"ctrmap/formats/zone/NpcMoveCodes MOVE1_BASE MOVE1_OA MOVE1_XY MOVE2_BASE MOVE2_BASE_RAW MOVE2_OA MOVE2_OA_RAW MOVE2_XY MOVE2_XY_RAW NO_LABELS NO_RAWS",
 			"ctrmap/formats/zone/WarpTransitions BASE_LABELS BASE_RAWS NO_LABELS NO_RAWS ORAS_LABELS ORAS_RAWS XY_LABELS XY_RAWS",
 			"ctrmap/formats/zone/Zone SUBFILES",
@@ -409,22 +474,18 @@ public class GlobalStateTest {
 			"ctrmap/humaninterface/MaisonClassListDialog TABLES",
 			"ctrmap/humaninterface/MaisonEditDialog NATURES POOLS POOL_NAMES",
 			"ctrmap/humaninterface/MaisonEditDialog$SetModel PAIRED_LISTS",
+			"ctrmap/humaninterface/MatrixEditForm BOUND_FONT LABEL_FONT",
 			"ctrmap/humaninterface/PropEditForm SEARCH_ALIASES",
 			"ctrmap/humaninterface/WorldEditorToolbar TOOLS",
 			"ctrmap/setup/SetupWizard TITLES",
 			"ctrmap/tools/BuildingHarvester HINT_FAMILIES",
 			"ctrmap/tools/TerrainDonorHarvester PROBE_TARGETS",
-			"ctrmap/tools/TerrainHarvester SIZES",
 			"ctrmap/Workspace NO_PERSISTED",
 			"ctrmap/ZoneAppender MADE_PRIVATE",
 			"ctrmap/formats/scripts/PawnInstruction cmdList",
 			"ctrmap/formats/tilemap/TerrainCatalog NOT_BRUSHES",
 			"ctrmap/setup/DumpCheck REQUIRED",
 			"ctrmap/formats/zone/ZoneEntities$GroundHeight NONE",
-		},
-		{"an offline tool's own scratch", "a harvester run from the command line to build this program's"
-			+ " tables, never loaded by the editor",
-			"ctrmap/tools/TerrainHarvester rockMaterial",
 		},
 	};
 
@@ -467,13 +528,15 @@ public class GlobalStateTest {
 			}
 		}
 		//KNOWN ANSWERS FIRST: a scan that read the wrong field table answers "nothing to argue"
-		check(counted.contains("ctrmap/Workspace.current") && counted.contains("ctrmap/humaninterface/TileUndo.undoStack")
+		check(counted.contains("ctrmap/Workspace.current") && counted.contains("ctrmap/formats/garc/GARC.packWarnings")
 				&& counted.contains("ctrmap/formats/pokedata/PokeData.TYPE_NAMES"),
 				"control: a non-final static, a final collection and a final array are each counted");
 		check(constantsSeen.contains("ctrmap/formats/pokedata/PokeData.TABLES")
-				&& constantsSeen.contains("ctrmap/humaninterface/BuildingPaletteDialog.PREFABS"),
+				&& constantsSeen.contains("ctrmap/formats/h3d/BuildingCatalog.PREFABS"),
 				"control: a store key is a constant, so the caches moved onto the game's store are not counted as statics");
-		check(counted.size() >= 150, "the scan read the program's statics (" + counted.size() + " that can change)");
+		//A FLOOR UNDER THE TRUTH, so a scan that read a fraction fails: 174 before F007, 131 measured after
+		//it took the window's 43 into the window object (2026-10-08)
+		check(counted.size() >= 120, "the scan read the program's statics (" + counted.size() + " that can change)");
 
 		List<String> twice = new ArrayList<>();
 		Map<String, String> reasonOf = argued(twice);
@@ -495,7 +558,7 @@ public class GlobalStateTest {
 	/**
 	 * The fields argued as constant tables, held to it: no write into one - an element stored, an
 	 * entry put, added, removed, cleared or sorted - outside a static initializer of its class, and
-	 * none at all from another class. Known answers first: the same finder sees TileUndo's undo stack
+	 * none at all from another class. Known answers first: the same finder sees GARC's pack warnings
 	 * written, nothing written into PokeData's type names, and Workspace's game folder written from
 	 * the classes that set it.
 	 */
@@ -517,12 +580,13 @@ public class GlobalStateTest {
 				written.add(e.getKey() + " at " + where);
 			}
 		}
-		List<String> undo = writes.after("ctrmap/humaninterface/TileUndo.undoStack");
+		//the known written collection was TileUndo's stack until the tile history became the zone's (F209)
+		List<String> undo = writes.after("ctrmap/formats/garc/GARC.packWarnings");
 		List<String> types = writes.after("ctrmap/formats/pokedata/PokeData.TYPE_NAMES");
 		List<String> outside = writes.after("ctrmap/Workspace.GAMEDIR_PATH");
 		check(undo != null && !undo.isEmpty() && types != null && types.isEmpty() && outside != null
 				&& outside.toString().contains(".java:"),
-				"control: the write finder sees TileUndo's stack written " + undo + ", PokeData's type names not "
+				"control: the write finder sees GARC's pack warnings written " + undo + ", PokeData's type names not "
 				+ types + ", and Workspace.GAMEDIR_PATH written from other classes (" + (outside == null ? 0 : outside.size()) + ")");
 		check(read >= 60 && written.isEmpty(), "no constant table is written after its class loads, by its class or any"
 				+ " other (" + read + " read)" + (written.isEmpty() ? "" : " - these are: " + written + ". A table that"

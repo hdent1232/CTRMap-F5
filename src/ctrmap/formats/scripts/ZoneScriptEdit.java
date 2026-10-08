@@ -119,7 +119,7 @@ public final class ZoneScriptEdit {
 		try {
 			measured = NpcTemplates.measuredOn(zone.game());
 		} catch (NpcTemplates.NotMeasured no) {
-			throw new Refused("Could not add " + what + ": " + no.getMessage());
+			throw new Refused("Could not add " + what + ": " + ctrmap.util.Bytes.reason(no));
 		}
 		if (!lines.isEmpty() && msg == null) {
 			//refused before anything moves: text with nowhere to go
@@ -130,26 +130,26 @@ public final class ZoneScriptEdit {
 			work = new GFLPawnScript(zone.s.getScriptBytes());
 			work.decompressThis();
 		} catch (RuntimeException ex) {
-			throw new Refused("Could not copy the zone script:\n" + reason(ex));
+			throw new Refused("Could not copy the zone script:\n" + ctrmap.util.Bytes.reason(ex));
 		}
 		if (msgDonor != null && ZoneScriptAnalyzer.findMsgWrapper(work) == null) {
 			try {
 				MsgWrapperInjector.injectMsgWrapper(measured, work, msgDonor);
 				if (ZoneScriptAnalyzer.findMsgWrapper(work) == null) {
-					throw new MsgWrapperInjector.InjectionException("The injected routine did not verify.");
+					throw new PawnClosure.Refused("The injected routine did not verify.");
 				}
 			} catch (RuntimeException ex) {
-				throw new Refused("Could not inject the message routine:\n" + reason(ex));
+				throw new Refused("Could not inject the message routine:\n" + ctrmap.util.Bytes.reason(ex));
 			}
 		}
 		if (signDonor != null && ZoneScriptAnalyzer.findSignWrapper(work) == null) {
 			try {
 				SignWrapperInjector.injectSignWrapper(measured, work, signDonor);
 				if (ZoneScriptAnalyzer.findSignWrapper(work) == null) {
-					throw new SignWrapperInjector.InjectionException("The injected routine did not verify.");
+					throw new PawnClosure.Refused("The injected routine did not verify.");
 				}
 			} catch (RuntimeException ex) {
-				throw new Refused("Could not transplant the sign routine:\n" + reason(ex));
+				throw new Refused("Could not transplant the sign routine:\n" + ctrmap.util.Bytes.reason(ex));
 			}
 		}
 		int firstNew = firstNewLine();
@@ -157,7 +157,7 @@ public final class ZoneScriptEdit {
 		try {
 			caseId = surgery.addCase(measured, work, firstNew);
 		} catch (RuntimeException ex) {
-			throw new Refused("Could not add " + what + ":\n" + reason(ex));
+			throw new Refused("Could not add " + what + ":\n" + ctrmap.util.Bytes.reason(ex));
 		}
 		if (!lines.isEmpty()) {
 			for (String line : lines) {
@@ -171,14 +171,10 @@ public final class ZoneScriptEdit {
 				for (int i = lines.size() - 1; i >= 0; i--) {
 					msg.removeLine(firstNew + i);
 				}
-				throw new Refused("Could not store story text file " + textID + ":\n" + reason(ex));
+				throw new Refused("Could not store story text file " + textID + ":\n" + ctrmap.util.Bytes.reason(ex));
 			}
 		}
 		zone.s = work; //commit - nothing before this point touched the zone
 		return caseId;
-	}
-
-	private static String reason(Throwable ex) {
-		return ex.getMessage() != null ? ex.getMessage() : ex.toString();
 	}
 }

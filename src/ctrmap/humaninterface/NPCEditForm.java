@@ -1,21 +1,18 @@
 package ctrmap.humaninterface;
 
 import com.jogamp.opengl.GL2;
-import com.jogamp.opengl.glu.gl2.GLUgl2;
-import ctrmap.CtrmapMainframe;
 import ctrmap.LoadedZone;
 import ctrmap.formats.npcreg.NPCRegistry;
+import ctrmap.formats.zone.WorldGrid;
 import ctrmap.formats.zone.ZoneEntities;
 import ctrmap.gamedef.ArchiveType;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import javax.swing.JFormattedTextField;
 import javax.swing.text.NumberFormatter;
-import static ctrmap.CtrmapMainframe.*;
 import ctrmap.Workspace;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.model.H3DModel;
-import ctrmap.formats.h3d.model.H3DVertex;
 import ctrmap.formats.scripts.GFLPawnScript;
 import ctrmap.formats.scripts.MsgWrapperInjector;
 import ctrmap.formats.scripts.NpcTemplates;
@@ -32,18 +29,14 @@ import java.awt.Component;
 import java.awt.Point;
 import java.awt.event.MouseEvent;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
@@ -66,7 +59,8 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	public DefaultComboBoxModel motionModel = new DefaultComboBoxModel();
 	public DefaultComboBoxModel motion2Model = new DefaultComboBoxModel();
 
-	private boolean scrDropdownLoading = false;
+	/** The Script dropdown beside the script number, filled from the open zone; set after initComponents. */
+	private ScriptIdDropdown scriptIds;
 	private GFMessageFile storyFile;
 	private int storyFileTextID = -1;
 
@@ -103,7 +97,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	/** The 3D gizmo, handed in: this form says which record it follows, not how. */
 	private final Navigator navi;
 
-
 	/**
 	 * Where this form puts a pane of its own - the tool column beside the map.
 	 *
@@ -121,7 +114,19 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 */
 	public NPCEditForm(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, Redraw redraw,
 			Navigator navi, ViewportCentre viewportCentre, ZoneSaver zoneSaver, ScriptView scriptView,
-			TileMapPanel map, java.util.function.Consumer<javax.swing.JComponent> toolPane) {
+			TileMapPanel map, java.util.function.Consumer<javax.swing.JComponent> toolPane, UndoHistory history) {
+		if (history == null) {
+			throw new IllegalArgumentException("NPCEditForm must be handed the zone's history the NPC registry is"
+					+ " a document of");
+		}
+		//the NPC registry, while loaded, is a document of the zone's history (F209); the NPCs are the zone's
+		//entities, which the window's history already holds
+		history.watch(() -> reg == null ? java.util.Collections.<UndoHistory.Document<?>>emptyList()
+				: java.util.Collections.<UndoHistory.Document<?>>singletonList(ZoneDocuments.npcRegistry(reg, () -> {
+					//the NPC shown takes its entry again, quietly: an undo is no moment to ask about a missing one
+					regentry = npc == null ? null : reg.entries.get(npc.model);
+					redraw.all();
+				})));
 		if (toolPane == null) {
 			throw new IllegalArgumentException("NPCEditForm must be handed the tool column its registry editor opens in");
 		}
@@ -152,8 +157,20 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		this.zoneSaver = zoneSaver;
 		this.scriptView = scriptView;
 		initComponents();
-		setIntegerValueClass(new JFormattedTextField[]{x, y, areaW, areaH, mot, mp2, u10, u12, areaSX, areaSY, zl2, zl3, hostZone, originZone, linkedZone, linkID});
-		((NumberFormatter) altitude.getFormatter()).setValueClass(Float.class);
+		//all five are unsigned 16-bit in the zone file: -1 was saved as 0xFFFF (F124)
+		for (javax.swing.JSpinner u16 : new javax.swing.JSpinner[]{mdl, evtFlag, scr, facedir, range}) {
+			Forms.bound(u16, 0, 0xFFFF);
+		}
+		Forms.numberClass(Integer.class, new JFormattedTextField[]{x, y, areaW, areaH, mot, mp2, u10, u12, areaSX, areaSY, zl2, zl3, hostZone, originZone, linkedZone, linkID});
+		//WHAT THE RECORD NAMES, THE FORM SAYS (F221): ZL2 and ZL3 are the leash the record calls
+		//leashWidth and leashHeight; U10 and U12 are raw, said to be, and folded away
+		horizonLabel.setText("Movement area, leash and raw fields:");
+		zl2Label.setText("Leash width");
+		zl3Label.setText("Leash height");
+		Forms.unknownField(u10Label, "Unknown 0x10", "Bytes 0x10-0x11 of the NPC record", u10);
+		Forms.unknownField(u12Label, "Unknown 0x12", "Bytes 0x12-0x13 of the NPC record", u12);
+		Forms.numberClass(Float.class, altitude);
+		scriptIds = new ScriptIdDropdown(scrDropdown);
 		motDropdown.setModel(motionModel);
 		mot2Dropdown.setModel(motion2Model);
 	}
@@ -182,7 +199,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			e.renumberNPCs();
 			e.modified = true;
 		}
-		for (int i = 0; i < e.NPCCount; i++) {
+		for (int i = 0; i < e.npcs.size(); i++) {
 			entryBox.addItem(String.valueOf(e.npcs.get(i).uid));
 		}
 		loaded = true;
@@ -208,6 +225,18 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 */
 	public int getMot2Index(int raw) {
 		return NpcMoveCodes.movePerm2Index(raw, Workspace.game());
+	}
+
+	/**
+	 * Points the AI-motion dropdown at movePerm2 code {@code raw}: the row that names it, or no
+	 * row when this game names nothing for it. ONE answer for the entry shown and the code typed
+	 * (F104): the code field compared the raw CODE with the dropdown's ROW COUNT, so every named
+	 * code above it - XY 15 16 20 22 23, ORAS 14 15 16 20 22 23 - left the previous code's name
+	 * beside the new value.
+	 */
+	private void showMot2(int raw) {
+		int row = getMot2Index(raw);
+		mot2Dropdown.setSelectedIndex(row < motion2Model.getSize() ? row : -1);
 	}
 
 	/** The movePerm2 code AI-motion row {@code index} writes, or -1 off the end. */
@@ -238,9 +267,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		entryBox.removeAllItems();
 		storyFile = null;
 		storyFileTextID = -1;
-		scrDropdownLoading = true;
-		scrDropdown.removeAllItems();
-		scrDropdownLoading = false;
+		scriptIds.fill(null);
 		updateDialogueSection();
 	}
 
@@ -270,11 +297,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		mot.setValue(npc.movePerm1);
 		Combos.show(motDropdown, npc.movePerm1);   //the raw value is kept in "mot", which is what is saved
 		mp2.setValue(npc.movePerm2);
-		if (getMot2Index(npc.movePerm2) < motion2Model.getSize()) {
-			mot2Dropdown.setSelectedIndex(getMot2Index(npc.movePerm2));
-		} else {
-			mot2Dropdown.setSelectedIndex(-1);
-		}
+		showMot2(npc.movePerm2);
 		hostZone.setValue(npc.multiZoneLinkHostZone);
 		originZone.setValue(npc.multiZoneLinkOriginZone);
 		linkedZone.setValue(npc.multiZoneLinkTargetZone);
@@ -320,7 +343,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		//there is a panel, nothing (altitude kept) in a guard test without one
 		e.npcs.get(index).standOn(map == null ? null : map::getHeightAtWorldLoc);
 		navi.follow(e.npcs.get(index));
-		syncScrDropdown(npc.script);
+		scriptIds.show(npc.script);
 		updateDialogueSection();
 		loaded = true;
 	}
@@ -493,7 +516,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		newNPC.xTile = tile.x;
 		newNPC.yTile = tile.y;
 		e.npcs.add(newNPC);
-		e.NPCCount++;
 		entryBox.addItem(String.valueOf(newNPC.uid));
 		loaded = true;
 		setNPC(entryBox.getItemCount() - 1);
@@ -619,39 +641,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	}
 
 	private void populateScriptDropdown() {
-		scrDropdownLoading = true;
-		scrDropdown.removeAllItems();
-		Zone zone = getLoadedZone();
-		if (zone != null && zone.s != null) {
-			zone.s.decompressThis();
-			for (String item : TalkerScriptWizard.buildScriptIdItems(zone.s)) {
-				scrDropdown.addItem(item);
-			}
-		}
-		scrDropdown.setSelectedIndex(-1);
-		scrDropdownLoading = false;
-	}
-
-	private void syncScrDropdown(int scriptId) {
-		scrDropdownLoading = true;
-		int match = -1;
-		for (int i = 0; i < scrDropdown.getItemCount(); i++) {
-			if (parseLeadingInt(scrDropdown.getItemAt(i)) == scriptId) {
-				match = i;
-				break;
-			}
-		}
-		scrDropdown.setSelectedIndex(match);
-		scrDropdownLoading = false;
-	}
-
-	private static int parseLeadingInt(String item) {
-		try {
-			int space = item.indexOf(' ');
-			return Integer.parseInt(space == -1 ? item : item.substring(0, space));
-		} catch (NumberFormatException ex) {
-			return Integer.MIN_VALUE;
-		}
+		scriptIds.fill(getLoadedZone());
 	}
 
 	/**
@@ -765,7 +755,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		try {
 			b = msg.write();
 		} catch (RuntimeException ex) {
-			throw new IOException("the text could not be encoded: " + ex.getMessage(), ex);
+			throw new IOException("the text could not be encoded: " + ctrmap.util.Bytes.reason(ex), ex);
 		}
 		File f = Workspace.getWorkspaceFile(ArchiveType.STORYTEXT, textID);
 		if (f == null) {
@@ -787,77 +777,12 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			writeStoryFile(textID, msg);
 			return true;
 		} catch (IOException ex) {
-			ctrmap.Ui.error(this, "Could not store story text file " + textID + ":\n" + ex.getMessage(), "Text save error");
+			ctrmap.Ui.error(this, "Could not store story text file " + textID + ":\n" + ctrmap.util.Bytes.reason(ex), "Text save error");
 			return false;
 		}
 	}
 
-	/**
-	 * Selects a message-routine donor script from the ZoneData archive via
-	 * the workspace-respecting path (a user-modified canonical zone that no
-	 * longer validates is skipped in favour of the first zone that does).
-	 *
-	 * @throws MsgWrapperInjector.InjectionException when no zone validates
-	 */
-	private GFLPawnScript loadWrapperDonor() {
-		final GARC zoneGarc = Workspace.getArchive(ArchiveType.ZONE_DATA);
-		if (zoneGarc == null) {
-			throw new MsgWrapperInjector.InjectionException("The ZoneData archive is not loaded.");
-		}
-		return MsgWrapperInjector.pickDonor(new MsgWrapperInjector.ScriptSource() {
-			@Override
-			public GFLPawnScript get(int zoneIndex) {
-				File f = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
-				if (f == null || !f.exists()) {
-					return null;
-				}
-				try {
-					byte[] b = java.nio.file.Files.readAllBytes(f.toPath());
-					return MsgWrapperInjector.extractZoneScript(b);
-				} catch (IOException ex) {
-					return null;
-				}
-			}
-		}, zoneGarc.length);
-	}
-
-	/**
-	 * Selects a SIGN-routine donor script (mirror of {@link #loadWrapperDonor}
-	 * for the sign transplant).
-	 *
-	 * @throws SignWrapperInjector.InjectionException when no zone validates
-	 */
-	private GFLPawnScript loadSignDonor() {
-		final GARC zoneGarc = Workspace.getArchive(ArchiveType.ZONE_DATA);
-		if (zoneGarc == null) {
-			throw new SignWrapperInjector.InjectionException("The ZoneData archive is not loaded.");
-		}
-		return SignWrapperInjector.pickDonor(new MsgWrapperInjector.ScriptSource() {
-			@Override
-			public GFLPawnScript get(int zoneIndex) {
-				File f = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
-				if (f == null || !f.exists()) {
-					return null;
-				}
-				try {
-					byte[] b = java.nio.file.Files.readAllBytes(f.toPath());
-					return MsgWrapperInjector.extractZoneScript(b);
-				} catch (IOException ex) {
-					return null;
-				}
-			}
-		}, zoneGarc.length);
-	}
-
-	/**
-	 * Multi-line text typed into a dialog uses real newlines; the message
-	 * files store them as the \n escape (same form the TextEditor shows).
-	 */
-	static String escapeTypedText(String text) {
-		return text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n");
-	}
-
-	private void btnEditDialogueActionPerformed(java.awt.event.ActionEvent evt) {
+	private void btnEditDialogueActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnEditDialogueActionPerformed
 		Zone zone = getLoadedZone();
 		if (zone == null || npc == null) {
 			return;
@@ -887,11 +812,10 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				scriptView.showScript(zone.s);
 			}
 			populateScriptDropdown();
-			syncScrDropdown(npc.script);
+			scriptIds.show(npc.script);
 		}
 		updateDialogueSection();
-	}
-
+	}//GEN-LAST:event_btnEditDialogueActionPerformed
 
 	/** What {@link #editDialogue} did. */
 	public enum DialogueEdit {
@@ -920,11 +844,11 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * it; stores the story file, rolling either change back when it cannot.
 	 */
 	public DialogueEdit editDialogue(Zone zone, int scriptId, int msgLine, GFMessageFile msg, String typed) {
-		String text = escapeTypedText(typed);
+		String text = ctrmap.formats.text.GFMessageFile.escapeTyped(typed);
 		try {
 			GFMessageFile.write(java.util.Arrays.asList(text)); //validate the bracket/escape syntax before touching anything
 		} catch (RuntimeException ex) {
-			ctrmap.Ui.error(this, "The text could not be encoded:\n" + ex.getMessage(), "Text encode error");
+			ctrmap.Ui.error(this, "The text could not be encoded:\n" + ctrmap.util.Bytes.reason(ex), "Text encode error");
 			return DialogueEdit.FAILED;
 		}
 		boolean scriptChanged = false;
@@ -969,7 +893,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		return scriptChanged ? DialogueEdit.REPOINTED : DialogueEdit.IN_PLACE;
 	}
 
-	private void btnAddTalkerActionPerformed(java.awt.event.ActionEvent evt) {
+	private void btnAddTalkerActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnAddTalkerActionPerformed
 		Zone zone = getLoadedZone();
 		if (zone == null || zone.s == null || e == null) {
 			ctrmap.Ui.error(this, "No zone is loaded.", "Add talking NPC");
@@ -1015,9 +939,9 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		GFLPawnScript wrapperDonor = null;
 		if (ZoneScriptAnalyzer.findMsgWrapper(zone.s) == null) {
 			try {
-				wrapperDonor = loadWrapperDonor();
+				wrapperDonor = MsgWrapperInjector.donorFrom(Workspace.session());
 			} catch (RuntimeException ex) {
-				ctrmap.Ui.error(this, "This zone's script has no message-display routine and no donor zone could provide one:\n" + ex.getMessage(), "Add talking NPC");
+				ctrmap.Ui.error(this, "This zone's script has no message-display routine and no donor zone could provide one:\n" + ctrmap.util.Bytes.reason(ex), "Add talking NPC");
 				return;
 			}
 			int insCount = MsgWrapperInjector.countInjectedInstructions(zone.s, wrapperDonor);
@@ -1049,8 +973,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			finishNpcAdd(zone, true);
 			repaintFrame();
 		}
-	}
-
+	}//GEN-LAST:event_btnAddTalkerActionPerformed
 
 	/**
 	 * The talking-NPC wizard past its form: refuses a missing model or text
@@ -1064,11 +987,11 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			ctrmap.Ui.error(this, "Select an overworld model first.", "Add talking NPC");
 			return null;
 		}
-		String text = escapeTypedText(typed);
+		String text = ctrmap.formats.text.GFMessageFile.escapeTyped(typed);
 		try {
 			GFMessageFile.write(java.util.Arrays.asList(text)); //validate the bracket/escape syntax before touching anything
 		} catch (RuntimeException ex) {
-			ctrmap.Ui.error(this, "The text could not be encoded:\n" + ex.getMessage(), "Text encode error");
+			ctrmap.Ui.error(this, "The text could not be encoded:\n" + ctrmap.util.Bytes.reason(ex), "Text encode error");
 			return null;
 		}
 		//the whole script edit (injection + talker clone + the new line) lands
@@ -1102,9 +1025,9 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		GFLPawnScript signDonor = null;
 		if (needsWrapper) {
 			try {
-				signDonor = loadSignDonor();
+				signDonor = SignWrapperInjector.donorFrom(Workspace.session());
 			} catch (RuntimeException ex) {
-				ctrmap.Ui.error(this, "This zone's script has no sign-display routine and none could be\ntransplanted: " + ex.getMessage(), "Add sign");
+				ctrmap.Ui.error(this, "This zone's script has no sign-display routine and none could be\ntransplanted: " + ctrmap.util.Bytes.reason(ex), "Add sign");
 				return;
 			}
 			int insCount = SignWrapperInjector.countInjectedInstructions(zone.s, signDonor);
@@ -1148,7 +1071,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 	}
 
-
 	/**
 	 * The sign wizard past its form: refuses text that will not encode
 	 * (saying so), else adds the sign case for the new story-text line -
@@ -1157,11 +1079,11 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * false when nothing was added; the caller saves the script.
 	 */
 	public boolean addSign(Zone zone, GFMessageFile msg, String typed, final int signType, GFLPawnScript signDonor, Point pos) {
-		String text = escapeTypedText(typed);
+		String text = ctrmap.formats.text.GFMessageFile.escapeTyped(typed);
 		try {
 			GFMessageFile.write(java.util.Arrays.asList(text));
 		} catch (RuntimeException ex) {
-			ctrmap.Ui.error(this, "The text could not be encoded:\n" + ex.getMessage(), "Text encode error");
+			ctrmap.Ui.error(this, "The text could not be encoded:\n" + ctrmap.util.Bytes.reason(ex), "Text encode error");
 			return false;
 		}
 		int caseId;
@@ -1177,7 +1099,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			return false;
 		}
 		e.furniture.add(NpcTemplates.makeSignFurniture(NpcTemplates.measuredOn(zone.game()), caseId, pos.x, pos.y));
-		e.furnitureCount = e.furniture.size();
 		e.modified = true;
 		ctrmap.Ui.message(this, "Sign added at tile (" + pos.x + ", " + pos.y + "). Adjust its position with the Prop tool.", "Add sign", JOptionPane.INFORMATION_MESSAGE);
 		return true;
@@ -1200,7 +1121,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			finishNpcAdd(zone, true);
 		}
 	}
-
 
 	/**
 	 * The item-giver wizard past its form: refuses a missing item or model
@@ -1273,9 +1193,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			ctrmap.Ui.error(this, "The streak variable must be a hex number (e.g. 4020).", "Add battle challenge");
 			return null;
 		}
-		String introText = escapeTypedText(in.intro);
-		String winText = escapeTypedText(in.win);
-		String loseText = escapeTypedText(in.lose);
+		Integer streak = chooseStreakVariable(zone, workVar);
+		if (streak == null) {
+			return null;
+		}
+		workVar = streak;
+		String introText = ctrmap.formats.text.GFMessageFile.escapeTyped(in.intro);
+		String winText = ctrmap.formats.text.GFMessageFile.escapeTyped(in.win);
+		String loseText = ctrmap.formats.text.GFMessageFile.escapeTyped(in.lose);
 		boolean needText = !introText.isEmpty() || !winText.isEmpty() || !loseText.isEmpty();
 		java.util.List<String> newLines = new java.util.ArrayList<>();
 		GFMessageFile msg = null;
@@ -1285,7 +1210,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					try {
 						GFMessageFile.write(java.util.Arrays.asList(t)); //validate before touching anything
 					} catch (RuntimeException ex) {
-						ctrmap.Ui.error(this, "A text could not be encoded:\n" + ex.getMessage(), "Text encode error");
+						ctrmap.Ui.error(this, "A text could not be encoded:\n" + ctrmap.util.Bytes.reason(ex), "Text encode error");
 						return null;
 					}
 				}
@@ -1305,9 +1230,9 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		GFLPawnScript wrapperDonor = null;
 		if (needText && ZoneScriptAnalyzer.findMsgWrapper(zone.s) == null) {
 			try {
-				wrapperDonor = loadWrapperDonor();
+				wrapperDonor = MsgWrapperInjector.donorFrom(Workspace.session());
 			} catch (RuntimeException ex) {
-				ctrmap.Ui.error(this, "This zone's script has no message-display routine and no donor zone could provide one:\n" + ex.getMessage(), "Add battle challenge");
+				ctrmap.Ui.error(this, "This zone's script has no message-display routine and no donor zone could provide one:\n" + ctrmap.util.Bytes.reason(ex), "Add battle challenge");
 				return null;
 			}
 			int insCount = MsgWrapperInjector.countInjectedInstructions(zone.s, wrapperDonor);
@@ -1363,6 +1288,59 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	}
 
 	/**
+	 * The streak variable, asked about when a script already uses it (F241). Every challenge
+	 * defaulted to 0x4020 and nothing looked, so the second one built with the defaults read and
+	 * reset the first one's streak: winning at one advanced the other. Every zone's script is
+	 * read - this zone's as it stands in the editor, unsaved edits included - and a variable one
+	 * of them uses is offered a free replacement; sharing it stays possible, but only when chosen.
+	 * A zone whose script could not be read is said, not counted as using nothing. Null when the
+	 * user cancels.
+	 */
+	private Integer chooseStreakVariable(Zone zone, int wanted) {
+		final GARC zoneGarc = Workspace.getArchive(ArchiveType.ZONE_DATA);
+		if (zoneGarc == null) {
+			ctrmap.Ui.error(this, "The ZoneData archive is not loaded, so whether streak variable 0x"
+					+ Integer.toHexString(wanted) + " is already used cannot be checked.", "Add battle challenge");
+			return null;
+		}
+		final int self = loadedZone.index();
+		//the open zone's script as edited here, every other zone's from the game's own files (F248)
+		ctrmap.formats.scripts.GauntletScriptWizard.WorkUsage usage = ctrmap.formats.scripts.GauntletScriptWizard.workUsage(
+				z -> z == self ? zone.s : ctrmap.formats.scripts.PawnClosure.zoneScript(Workspace.session(), z), zoneGarc.length);
+		if (self < 0 && zone.s != null) {
+			for (int w : ctrmap.formats.scripts.GauntletScriptWizard.workVariablesUsed(zone.s)) {
+				usage.zones.computeIfAbsent(w, k -> new java.util.ArrayList<>()).add(self);
+			}
+		}
+		java.util.List<Integer> users = usage.users(wanted);
+		if (users.isEmpty() && usage.unread.isEmpty()) {
+			return wanted;
+		}
+		String hex = "0x" + Integer.toHexString(wanted);
+		String unread = usage.unread.isEmpty() ? "" : "\n\n" + usage.unread.size() + " zone script(s) could not be read ("
+				+ usage.unread.subList(0, Math.min(8, usage.unread.size())) + (usage.unread.size() > 8 ? ", ..." : "")
+				+ "), so it may be used there as well.";
+		if (users.isEmpty()) {
+			return ctrmap.Ui.confirm(this, "No zone script that could be read uses streak variable " + hex + "." + unread
+					+ "\n\nUse " + hex + "?", "Add battle challenge", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE)
+					== JOptionPane.OK_OPTION ? Integer.valueOf(wanted) : null;
+		}
+		int free = usage.nextFree(ctrmap.formats.scripts.GauntletScriptWizard.DEFAULT_STREAK_WORK);
+		String share = "Share " + hex;
+		String[] options = free < 0 ? new String[]{share, "Cancel"}
+				: new String[]{"Use 0x" + Integer.toHexString(free), share, "Cancel"};
+		int pick = ctrmap.Ui.option(this, "Streak variable " + hex + " is already used by zone(s) "
+				+ users.subList(0, Math.min(8, users.size())) + (users.size() > 8 ? ", ..." : "") + (users.contains(self) ? " (this one included)" : "")
+				+ " - another challenge's streak, or a variable the game itself keeps.\n"
+				+ "Two challenges on one variable share one streak: winning at one advances the other." + unread,
+				"Add battle challenge", JOptionPane.DEFAULT_OPTION, JOptionPane.WARNING_MESSAGE, options, options[0]);
+		if (pick < 0 || options[pick].equals("Cancel")) {
+			return null;
+		}
+		return options[pick].equals(share) ? wanted : free;
+	}
+
+	/**
 	 * "Give BP" template: an NPC that, when talked to, adds N Battle Points to
 	 * the player using the engine's own PlayerGetBP/PlayerSetBP natives (the
 	 * exact BP-grant frame the Battle Maison lobby uses). Works in any zone with
@@ -1378,7 +1356,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			finishNpcAdd(zone, true);
 		}
 	}
-
 
 	/**
 	 * The Give-BP wizard past its form: refuses a missing model (saying so),
@@ -1420,7 +1397,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 	}
 
-
 	/**
 	 * The trainer wizard past its form: refuses a missing trainer or model
 	 * (saying so), else places the trainer record at pos - and its
@@ -1445,7 +1421,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				placed++;
 			}
 		} catch (RuntimeException ex) {
-			ctrmap.Ui.error(this, "Could not add the trainer:\n" + ex.getMessage(), "Add trainer");
+			ctrmap.Ui.error(this, "Could not add the trainer:\n" + ctrmap.util.Bytes.reason(ex), "Add trainer");
 		}
 		return placed;
 	}
@@ -1458,7 +1434,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	private void placeNpc(ZoneEntities.NPC newNPC) {
 		loaded = false;
 		e.npcs.add(newNPC);
-		e.NPCCount = e.npcs.size();
 		entryBox.addItem(String.valueOf(newNPC.uid));
 		loaded = true;
 		e.modified = true;
@@ -1513,36 +1488,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	private final java.util.List<CustomH3DPreview> activePreviews = new java.util.ArrayList<>();
 
 	/**
-	 * Wraps a MoveModel-UID spinner with a live 3D preview of the model, so the
-	 * user sees the NPC they are placing and can flip through UIDs. Uses a fresh
-	 * model instance (not the shared registry cache) so the preview cannot
-	 * disturb the main viewport's rendering.
-	 */
-	private JPanel modelWithPreview(final JSpinner modelSpinner) {
-		JPanel wrap = new JPanel(new java.awt.BorderLayout());
-		wrap.setAlignmentX(LEFT_ALIGNMENT);
-		wrap.add(modelSpinner, java.awt.BorderLayout.NORTH);
-		final CustomH3DPreview preview = new CustomH3DPreview();
-		preview.setPreferredSize(new java.awt.Dimension(200, 200));
-		wrap.add(preview, java.awt.BorderLayout.CENTER);
-		final Runnable reload = new Runnable() {
-			@Override
-			public void run() {
-				preview.loadModel(reg == null ? null : reg.loadFreshModel((Integer) modelSpinner.getValue()));
-			}
-		};
-		modelSpinner.addChangeListener(new javax.swing.event.ChangeListener() {
-			@Override
-			public void stateChanged(javax.swing.event.ChangeEvent e) {
-				reload.run();
-			}
-		});
-		reload.run();
-		activePreviews.add(preview);
-		return wrap;
-	}
-
-	/**
 	 * Stops the render loops of any preview widgets from a just-closed dialog.
 	 * Public because a form's model picker starts its preview's animator the
 	 * moment it is built, and that thread is not a daemon: a suite that builds
@@ -1571,14 +1516,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		return rsl == JOptionPane.OK_OPTION;
 	}
 
-	private void scrDropdownActionPerformed(java.awt.event.ActionEvent evt) {
-		if (loaded && !scrDropdownLoading && scrDropdown.getSelectedIndex() != -1) {
-			int id = parseLeadingInt((String) scrDropdown.getSelectedItem());
-			if (id != Integer.MIN_VALUE) {
+	private void scrDropdownActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_scrDropdownActionPerformed
+		if (loaded) {
+			int id = scriptIds.picked();
+			if (id >= 0) {
 				scr.setValue(id);
 			}
 		}
-	}
+	}//GEN-LAST:event_scrDropdownActionPerformed
 
 	public void setNPC(int num) {
 		if (loaded && saveEntry()) { //a refused save keeps the user on the NPC that needs fixing
@@ -1599,20 +1544,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		entryBox.requestFocus();
 	}
 
-	public void setIntegerValueClass(JFormattedTextField[] fields) {
-		for (int i = 0; i < fields.length; i++) {
-			((NumberFormatter) fields[i].getFormatter()).setValueClass(Integer.class);
-		}
-	}
-
 	public void updateH3D(int index) {
 		H3DModel m = modelAt(index);
 		if (m == null) {
 			return;
 		}
 		ZoneEntities.NPC n = e.npcs.get(index);
-		m.worldLocX = n.xTile * 18f + 9f; //720 (chunk size) / 40 (tile width per chunk)
-		m.worldLocZ = n.yTile * 18f + 9f;
+		m.worldLocX = WorldGrid.tileCentre(n.xTile);
+		m.worldLocZ = WorldGrid.tileCentre(n.yTile);
 		m.worldLocY = n.z3DCoordinate;
 		m.rotationY = get3DOrientation(n.faceDirection);
 	}
@@ -1647,8 +1586,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (reg == null || e == null) {
 			return new int[0];
 		}
-		//a count past the end of the list is a corrupt zone, not a reason to throw mid-frame
-		int[] hits = new int[Math.min(e.NPCCount, e.npcs.size())];
+		int[] hits = new int[e.npcs.size()];   //the list IS the count (F249): nothing can run past it
 		int n = 0;
 		for (int i = 0; i < hits.length; i++) {
 			if (modelAt(i) != null) {
@@ -2311,8 +2249,8 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
     }//GEN-LAST:event_mot2DropdownActionPerformed
 
     private void mp2ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_mp2ActionPerformed
-		if (loaded && (Integer) mp2.getValue() < mot2Dropdown.getItemCount()) {
-			mot2Dropdown.setSelectedIndex(getMot2Index((Integer) mp2.getValue()));
+		if (loaded) {
+			showMot2((Integer) mp2.getValue());
 		}
     }//GEN-LAST:event_mp2ActionPerformed
 
@@ -2394,32 +2332,12 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 		double closestDist = Float.MAX_VALUE;
 		int closestIdx = -1;
-		GLUgl2 glu = new GLUgl2();
 		for (int i : modelledNPCs()) {
 			H3DModel m = modelAt(i);
 			ZoneEntities.NPC testNpc = e.npcs.get(i);
-			float[][] box = m.boxVectors;
-			if (ctrmap.humaninterface.Picking.isBoxSelected(box, evt, parent, new Vec3f(testNpc.getX(), testNpc.getY(), testNpc.getZ()), new Vec3f(1f, 1f, 1f), new Vec3f(0f, get3DOrientation(testNpc.faceDirection), 0f), mvMatrix, projMatrix, view)) {
-				boolean allow = false;
-				for (int mesh = 0; mesh < m.meshes.size(); mesh++) {
-					for (int vertex = 0; vertex < m.meshes.get(mesh).vertices.size(); vertex++) {
-						H3DVertex v = m.meshes.get(mesh).vertices.get(vertex);
-						float[] test = new float[3];
-						glu.gluProject(v.position.x + testNpc.getX(), v.position.y + testNpc.getY(), v.position.z + testNpc.getZ(), mvMatrix, 0, projMatrix, 0, view, 0, test, 0);
-						if (test[0] > 0 && test[0] < parent.getWidth() && test[1] > 0 && test[1] < parent.getHeight()) {
-							allow = true;
-							break;
-						}
-					}
-					if (allow) {
-						break;
-					}
-				}
-				if (!allow) {
-					continue;
-				}
+			if (Picking.isPicked(m.boxVectors, m.meshes, evt, parent, new Vec3f(testNpc.getX(), testNpc.getY(), testNpc.getZ()), new Vec3f(1f, 1f, 1f), new Vec3f(0f, get3DOrientation(testNpc.faceDirection), 0f), mvMatrix, projMatrix, view)) {
 				Vec3f dummyCenterVector = new Vec3f(testNpc.getX(), testNpc.getY(), testNpc.getZ());
-				double dist = ctrmap.humaninterface.Picking.getDistanceFromVector(dummyCenterVector, cameraVec);
+				double dist = Picking.cameraDistance(dummyCenterVector, cameraVec);
 				if (Math.abs(dist) < closestDist && i != npcIndex) {
 					closestDist = Math.abs(dist);
 					closestIdx = i;

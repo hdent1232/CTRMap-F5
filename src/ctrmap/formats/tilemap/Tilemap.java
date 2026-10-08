@@ -9,7 +9,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
-import ctrmap.LittleEndianDataOutputStream;
+import ctrmap.util.LittleEndianDataOutputStream;
+import ctrmap.util.LittleEndian;
 
 /**
  * One region's 40x40 movement tiles, and the picture of them the tile editor
@@ -22,6 +23,12 @@ import ctrmap.LittleEndianDataOutputStream;
  * and read the pixels back. {@code ctrmap.tests.HandedGameTest} hands it two.
  */
 public class Tilemap {
+
+	/**
+	 * Bytes in one region's tilemap subfile (F117): a 4-byte header and 40 x 40 tiles of 4 bytes, 6404,
+	 * padded to 0x80 as every retail tilemap is. It was written out as 6528 in four builders.
+	 */
+	public static final int REGION_BYTES = 6528;
 
 	/**
 	 * What the picture wants for each tile: a colour. Declared here, by the
@@ -83,9 +90,10 @@ public class Tilemap {
 
 	private byte[][][] getTileData() {
 		try {
-			InputStream in = new ByteArrayInputStream(mapFile.getFile(0));
-			width = Short.reverseBytes((short) ((in.read() << 8) | in.read()));
-			height = Short.reverseBytes((short) ((in.read() << 8) | in.read()));
+			byte[] file = mapFile.getFile(0);
+			width = (short) LittleEndian.u16(file, 0);
+			height = (short) LittleEndian.u16(file, 2);
+			InputStream in = new ByteArrayInputStream(file, 4, file.length - 4);
 			byte[][][] b = new byte[width][height][4];
 			for (int y = 0; y < height; y++) {
 				for (int x = 0; x < width; x++) {

@@ -2,17 +2,13 @@ package ctrmap.formats.h3d;
 
 import com.jogamp.opengl.GL2;
 import ctrmap.formats.h3d.model.H3DModel;
-import ctrmap.formats.h3d.model.H3DSkeleton;
 import ctrmap.formats.h3d.texturing.H3DMaterial;
 import ctrmap.formats.h3d.texturing.H3DTexture;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import ctrmap.util.LittleEndian;
 
 /**
  * Based on gdkchan's Ohana3DS and Rebirth, mostly a copy-paste
@@ -31,7 +27,7 @@ public class BCHFile {
 	public BCHFile(byte[] src) {
 		try {
 			buf = src.clone();
-			RandomAccessBAIS in = new RandomAccessBAIS(new ByteArrayInputStream(buf));
+			RandomAccessBAIS in = new RandomAccessBAIS(buf);
 			header = new BCHHeader();
 			if (!BchSections.isBch(buf)) {
 				//NOT A BCH IS AN ERROR, NOT AN EMPTY ONE. This returned with errorlevel 0, so every
@@ -47,7 +43,7 @@ public class BCHFile {
 			try {
 				s = BchSections.read(buf);
 			} catch (IllegalArgumentException notWhole) {
-				throw new IOException(notWhole.getMessage(), notWhole);
+				throw new IOException(ctrmap.util.Bytes.reason(notWhole), notWhole);
 			}
 			header.magic = "BCH";
 			header.backwardCompatibility = (byte) s.bc;
@@ -248,37 +244,6 @@ public class BCHFile {
 				}
 				models.add(model);
 			}
-
-			/*System.out.println("Beginning BCH matdump for " + (models.size() > 0 ? models.get(0).name : "null"));
-			if (models.size() > 0) {
-				for (H3DMaterial m : models.get(0).materials) {
-					System.out.println("Material " + m.name);
-					System.out.println("\nMetaData:");
-					for (int i = 0; i < m.userData.size(); i++){
-						System.out.print(m.userData.get(i).name + " = ");
-						switch (m.userData.get(i).type){
-							case integer:
-								for (Object integer : m.userData.get(i).values){
-									System.out.print((Integer)integer + ", ");
-								}
-								break;
-							case single:
-								for (Object single : m.userData.get(i).values){
-									System.out.print((Float)single + ", ");
-								}
-								break;
-							case utf8String:
-							case utf16String:
-								for (Object string : m.userData.get(i).values){
-									System.out.print((String)string + ", ");
-								}
-								break;
-						}
-						System.out.print("\n");
-					}
-				}
-			}*/
-			in.close();
 		} catch (IOException ex) {
 			errorlevel++;
 			Logger.getLogger(BCHFile.class.getName()).log(Level.SEVERE, null, ex);
@@ -292,18 +257,14 @@ public class BCHFile {
 	}
 
 	public static int peek(int offset, byte[] b) {
-		return ByteBuffer.wrap(b, offset, 4).order(ByteOrder.LITTLE_ENDIAN).getInt();
+		return LittleEndian.i32(b, offset);
 	}
 
 	public void relocateOffset(int offsetOfTheOffset, int relocationMod, byte[] b) {
 		try {
-			ByteBuffer buf = ByteBuffer.wrap(b, offsetOfTheOffset, 4);
-			int originalOffset = Integer.reverseBytes(buf.getInt());
-			buf.putInt(0, Integer.reverseBytes(originalOffset + relocationMod));
-			buf.rewind();
-			byte[] ret = new byte[4];
-			buf.get(ret);
-			System.arraycopy(ret, 0, b, offsetOfTheOffset, 4);
+			//NOT a wrapped buffer's putInt(0, ...) (F228): that index is absolute, so the first four
+			//bytes of the whole array - the magic - were overwritten by every relocation
+			LittleEndian.putI32(b, offsetOfTheOffset, LittleEndian.i32(b, offsetOfTheOffset) + relocationMod);
 		} catch (Exception e) {
 			errorlevel++;
 			Logger.getLogger(BCHFile.class.getName()).log(Level.SEVERE, null, e);
@@ -311,11 +272,6 @@ public class BCHFile {
 	}
 
 	public static void changeValueTo(int offset, int newValue, byte[] b) {
-		ByteBuffer buf = ByteBuffer.wrap(b, offset, 4);
-		buf.putInt(0, Integer.reverseBytes(newValue));
-		buf.rewind();
-		byte[] ret = new byte[4];
-		buf.get(ret);
-		System.arraycopy(ret, 0, b, offset, 4);
+		LittleEndian.putI32(b, offset, newValue);
 	}
 }

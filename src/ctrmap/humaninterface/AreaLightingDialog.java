@@ -8,13 +8,11 @@ import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
-import java.awt.Frame;
 import java.awt.GridLayout;
 import java.io.File;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JColorChooser;
-import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -23,9 +21,12 @@ import javax.swing.SpinnerNumberModel;
 
 
 /**
- * Edits a zone's AREA fog + ambient lighting - the per-area environment
- * GameFreak stored in AreaData subfile 4 ({@link AreaEnv}): the fog/sky color,
- * fog near/far draw distance, and an ambient/light color. Routes are a long
+ * Edits a zone's AREA atmosphere - the per-area environment GameFreak stored in
+ * AreaData subfile {@link AD#ENVIRONMENT} ({@link AreaEnv}). It hand-tunes the fog:
+ * colour, strength and near/far draw distance, channels 54-59 of the block's 61. The
+ * lighting - light directions, hemisphere, ranges - is only ever copied whole from a
+ * GameFreak area; there is no ambient control, because the bytes one wrote were the
+ * constant 1.0 group of a fog channel and never a colour (F236). Routes are a long
  * blue haze, caves and rooms a short dim one. This is what makes distance read
  * as sky and gives each area its atmosphere.
  *
@@ -43,10 +44,16 @@ public class AreaLightingDialog {
 	 *        environment picker previews with them, and this dialog is the only
 	 *        thing that opens it.
 	 * @param onClose what to do when the user is finished with it
+	 * @param fogChanged what redraws the 3D view's fog once the area's atmosphere is written - HANDED, not
+	 *        a call up into the window (F007): this pane is built by the window and is told what to ask
 	 * @return the editor, or null when there is nothing to edit (it says why first)
 	 */
 	public static javax.swing.JComponent panel(java.awt.Component parent, LoadedZone loaded,
-			java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> worldTextures, Runnable onClose) {
+			java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> worldTextures, Runnable onClose,
+			Runnable fogChanged) {
+		if (fogChanged == null) {
+			throw new IllegalArgumentException("the fog and lighting editor must be handed what redraws the fog");
+		}
 		if (loaded == null) {
 			throw new IllegalArgumentException("AreaLightingDialog must be handed the LoadedZone");
 		}
@@ -87,10 +94,10 @@ public class AreaLightingDialog {
 		final AreaEnv env;
 		try {
 			ad = new AD(areaFile, Workspace.session());
-			sub4 = ad.getFile(4);
+			sub4 = ad.getFile(AD.ENVIRONMENT);
 			env = AreaEnv.read(sub4);
 		} catch (Exception ex) {
-			ctrmap.Ui.error(parent, "Could not read area " + areaId + " lighting:\n" + ex.getMessage(), "Area fog & lighting");
+			ctrmap.Ui.error(parent, "Could not read area " + areaId + " lighting:\n" + ctrmap.util.Bytes.reason(ex), "Area fog & lighting");
 			return null;
 		}
 
@@ -109,13 +116,13 @@ public class AreaLightingDialog {
 				System.arraycopy(picked, 0, sub4, 0, sub4.length);
 				ad.storeFile(4, sub4);
 				Workspace.addPersist(areaFile);
-				ctrmap.CtrmapMainframe.refreshSceneFog();
+				fogChanged.run();
 				AreaForkPrompt.packIfForked(fork, null);
 				ctrmap.Ui.message(parent,
 						"Atmosphere applied. Deploy to see it in-game - the 3D view already shows it.",
 						"Area fog & lighting", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
-				ctrmap.Ui.error(parent, "Save failed:\n" + ex.getMessage(), "Area fog & lighting");
+				ctrmap.Ui.error(parent, "Save failed:\n" + ctrmap.util.Bytes.reason(ex), "Area fog & lighting");
 			}
 			return null;
 		}
@@ -228,14 +235,14 @@ public class AreaLightingDialog {
 				env.writeInto(sub4);
 				ad.storeFile(4, sub4);
 				Workspace.addPersist(areaFile);
-				ctrmap.CtrmapMainframe.refreshSceneFog();
+				fogChanged.run();
 				AreaForkPrompt.packIfForked(fork, null);
 				onClose.run();
 				ctrmap.Ui.message(parent,
 						"Fog & lighting saved. Deploy to see it in-game - the 3D view already shows it.",
 						"Area fog & lighting", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
-				ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Area fog & lighting");
+				ctrmap.Ui.error(dlg, "Save failed:\n" + ctrmap.util.Bytes.reason(ex), "Area fog & lighting");
 			}
 		});
 		cancel.addActionListener(e -> onClose.run());

@@ -66,7 +66,7 @@ BEFORE_FILE = os.path.join(".githooks", "gate-before")
 STAMPS = "gate-stamps"
 JUDGED = "gate-judged.json"
 
-#: Adapted per project: see ADAPT.md.
+#: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("BEFORE_FILE",)
 
 GIT_TIMEOUT = 60
@@ -86,20 +86,11 @@ _READS = frozenset(("log", "show", "status", "diff", "reflog", "rev-parse", "rev
                     "stash", "restore", "checkout", "switch", "fetch", "blame", "grep"))
 
 
-def _root():
-    """The repository this copy sits in: the nearest ancestor holding `.git`. Never counted in
-    `dirname`s - a project that installs this under `tools/audit/` would find `tools/`."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    while True:
-        if os.path.exists(os.path.join(here, ".git")):
-            return here
-        parent = os.path.dirname(here)
-        if parent == here:
-            return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        here = parent
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
 
 
-ROOT = _root()
+ROOT = _tree_root.require(__file__)
 
 
 def _git(root, args, given=None):
@@ -460,7 +451,7 @@ _PYTHON = re.compile(r"py|pythonw?[0-9.]*")
 #: Modules run with `-m` that READ the files they are handed and run none of them. A module not
 #: named here keeps every argument a possible program - unknown is not data.
 _READ_ONLY_MODULES = ("ruff", "pyflakes", "pycodestyle", "flake8", "py_compile", "compileall",
-                      "tabnanny")
+                      "tabnanny", "json.tool")
 _READ_LIMIT = 4 * 1024 * 1024
 
 
@@ -584,8 +575,17 @@ def forges(command, root=ROOT):
                 return ("`%s` names %s, which could not be read - whether it writes a gate stamp "
                         "is UNKNOWN, and unknown is not no" % (segment.strip()[:60], word))
             if any(store in body for store in STORE) or STAMP_CALL.search(body):
+                #A TEST FILE IS TOLD ITS ROUTE (F181): the files that must name the store are the
+                #ones that test it, and a refusal with no way forward is one somebody removes
+                base = os.path.basename(path)
+                route = ""
+                if base.startswith("test_") and base.endswith(".py"):
+                    dotted = os.path.relpath(path, root)[:-3].replace(os.sep, ".").replace("/", ".")
+                    route = (" - a test file runs by its NAME, `python -m unittest %s`, as the "
+                             "battery runs it" % dotted)
                 return ("`%s` runs %s, whose text reaches the gate's stamp store - the stamps are "
-                        "written by `commit-msg` and by nothing else" % (segment.strip()[:60], word))
+                        "written by `commit-msg` and by nothing else%s"
+                        % (segment.strip()[:60], word, route))
             break                         # the program is read, and nothing it is handed
     return ""
 

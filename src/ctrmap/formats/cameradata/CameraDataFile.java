@@ -3,8 +3,8 @@ package ctrmap.formats.cameradata;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 
-import ctrmap.LittleEndianDataInputStream;
-import ctrmap.LittleEndianDataOutputStream;
+import ctrmap.util.LittleEndianDataInputStream;
+import ctrmap.util.LittleEndianDataOutputStream;
 import ctrmap.formats.containers.AD;
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;

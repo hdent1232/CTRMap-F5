@@ -76,7 +76,7 @@ public abstract class GameProfile {
 		H3D_MAPS("Viewing maps and editing their geometry"),
 		/** The tile painter (terrain brushes, elevation, ramps, edge strips). */
 		TILE_PAINTER("The Map Builder's tile painter"),
-		/** Area fog/ambient editing + the GameFreak atmosphere picker. */
+		/** Area fog editing + the GameFreak atmosphere picker (which copies a whole block, lighting and all). */
 		AREA_ENV("Area fog, light and atmosphere"),
 		/** The water-scroll animation splice (WorldAnim). */
 		WATER_SPLICE("Animated water"),
@@ -343,6 +343,39 @@ public abstract class GameProfile {
 	}
 
 	/**
+	 * Where a zone header's flag word keeps each flag the Zone tab names, or null for a game whose
+	 * layout nobody has recorded (F207). The header read and wrote these as "X/Y, or else ORAS",
+	 * so a loose zone opened with no game, and any game not measured, was handed ORAS's bits on
+	 * read AND on write. Null makes the header decode none of them and refuse a write that sets
+	 * one, while the word itself is carried as read.
+	 */
+	public ZoneFlagLayout zoneFlagLayout() {
+		return null;
+	}
+
+	/** Bit positions in a zone header's flag word; -1 where the game has no such flag. */
+	public static final class ZoneFlagLayout {
+
+		public final int ghosting;
+		public final int breathFx;
+		public final int dowsing;
+		public final int stereo3d;
+		/** SET means the special walking animation is OFF: the bit is the inverse of the flag. */
+		public final int specialWalkingOff;
+		public final int flashableDarkness;
+
+		public ZoneFlagLayout(int ghosting, int breathFx, int dowsing, int stereo3d, int specialWalkingOff,
+				int flashableDarkness) {
+			this.ghosting = ghosting;
+			this.breathFx = breathFx;
+			this.dowsing = dowsing;
+			this.stereo3d = stereo3d;
+			this.specialWalkingOff = specialWalkingOff;
+			this.flashableDarkness = flashableDarkness;
+		}
+	}
+
+	/**
 	 * True when setting a zone header's CYCLING flag is safe on this game.
 	 *
 	 * <p>False is both "this game hangs when you do" and "nobody has tried it
@@ -391,6 +424,32 @@ public abstract class GameProfile {
 	private static final GameProfile[] ALL = {
 		new OrasProfile(), new XyProfile(), new SmProfile(), new UsumProfile()
 	};
+
+	/**
+	 * The one game that supports {@code f}: for code written against that game's measurements,
+	 * behind {@code f}'s gate, that needs one of its numbers outside a call that is handed the
+	 * loaded game (F207). It named {@code GameType.ORAS} instead, which held only while ORAS was
+	 * the one game with the feature and said so nowhere. Refuses when no game or more than one
+	 * supports it: a second game gaining the feature is when such code must take the loaded game's
+	 * answer, and this is where it finds out.
+	 */
+	public static GameProfile onlyGameWith(Feature f) {
+		GameProfile only = null;
+		for (GameProfile p : ALL) {
+			if (p.supports(f)) {
+				if (only != null) {
+					throw new IllegalStateException(f + " is supported by " + only.displayName() + " and by "
+							+ p.displayName() + ": code that reads one game's measurement through onlyGameWith("
+							+ f + ") must take the loaded game's answer now");
+				}
+				only = p;
+			}
+		}
+		if (only == null) {
+			throw new IllegalStateException("no game supports " + f);
+		}
+		return only;
+	}
 
 	public static GameProfile of(GameType g) {
 		for (GameProfile p : ALL) {

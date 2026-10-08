@@ -24,7 +24,9 @@ import sys
 import tempfile
 import unittest
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+HERE = _tree_root.require(__file__)
 TOOLS = os.path.join(HERE, "tools")
 sys.path.insert(0, TOOLS)
 import bundle_hooks          # noqa: E402  - where this project keeps the bundle's hooks
@@ -267,7 +269,7 @@ class AHeldPlantIsDrivenAgainWhenItsFileChanges(unittest.TestCase):
                 {"id": "p2", "file": "src/B.java", "suite": "BTest"}]
 
     def test_a_projects_OWN_plant_is_selected_by_its_file_or_its_suite(self):
-        """CTRMap proves its Java tests in its own ledger - 221 plants - and each names the file
+        """CTRMap proves its Java tests in its own ledger - 221 plants on 2026-09-25 - and each names the file
         it plants into and the suite that must notice."""
         self.assertEqual(self.gate.held_own_plant_keys(["src/A.java"], self.OWN, self.OWN_HELD),
                          ["p1"], "a change to an own plant's file drove nothing")
@@ -347,8 +349,129 @@ class EveryPlantTheGateDrivesIsCountedAloud(unittest.TestCase):
         self.assertIn("--all", said, "the refusal did not say how to drive the whole ledger")
 
 
+    def test_an_unclassified_record_can_be_classified_by_the_command_its_refusal_names(self):
+        """F200: whole_tree refused an unclassified record with 'Record it as covers or exempts'
+        and no command recorded a kind - the remedy was a hand edit."""
+        import whole_tree
+        root = tempfile.mkdtemp(prefix="wt-classify-")
+        self.addCleanup(shutil.rmtree, root, True)
+        package = os.path.join(root, whole_tree.PACKAGE)
+        os.makedirs(package)
+        names = ["m%d" % i for i in range(whole_tree.ENOUGH_KEYS + 2)]
+        for name in names:
+            with io.open(os.path.join(package, name + whole_tree.SOURCE), "w", encoding="utf-8") as handle:
+                handle.write("x" + LF)
+        record = {"%s/%s%s" % (whole_tree.PACKAGE, name, whole_tree.SOURCE): 1 for name in names[:-1]}
+        os.makedirs(os.path.join(root, whole_tree.RECORDS), exist_ok=True)
+        with io.open(os.path.join(root, whole_tree.RECORDS, "scores.json"), "w", encoding="utf-8") as handle:
+            json.dump(record, handle)
+        found = sorted(whole_tree.gaps(root))
+        self.assertTrue(found, "control: the scratch record is found as module-keyed")
+        label = found[0]
+        problems = whole_tree.regressions(root)
+        self.assertTrue(any("classify" in p for p in problems),
+                        "the unclassified refusal does not name the command: %r" % problems)
+        self.assertEqual(whole_tree.classify(label, "sideways", root)[0], 2, "an unknown kind was taken")
+        self.assertEqual(whole_tree.classify("no-such-record", "covers", root)[0], 2,
+                         "a label that is no record was taken")
+        self.assertEqual(whole_tree.classify(label, "covers", root)[0], 0,
+                         "the command the refusal names did not classify the record")
+        self.assertEqual(whole_tree.held(root).get("kind"), {label: "covers"})
+        self.assertEqual(whole_tree.classify(label, "exempts", root)[0], 2,
+                         "a record's kind was switched, which moves its ceiling by hand")
+
+    def test_the_programs_proofs_are_not_modules_a_record_must_cover(self):
+        """F191: the module walk counted the tests, so the mutation record read 'missing 385 of 418' -
+        a little of everything - when it scored 33 of 265 production modules, seven eighths of the
+        program unscored."""
+        import whole_tree
+        root = tempfile.mkdtemp(prefix="wt-proofs-")
+        self.addCleanup(shutil.rmtree, root, True)
+        for rel in ("app/Main", "app/%s/MainTest" % whole_tree.PROOFS, "app/%s_kit/Helper" % whole_tree.PROOFS):
+            path = os.path.join(root, whole_tree.PACKAGE, rel + whole_tree.SOURCE)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with io.open(path, "w", encoding="utf-8") as handle:
+                handle.write("x" + LF)
+        found = whole_tree.modules(root)
+        self.assertIn("%s/app/Main%s" % (whole_tree.PACKAGE, whole_tree.SOURCE), found,
+                      "control: the program's own module is walked")
+        self.assertNotIn("%s/app/%s/MainTest%s" % (whole_tree.PACKAGE, whole_tree.PROOFS, whole_tree.SOURCE), found,
+                         "a test under the proofs directory was counted as a module of the program")
+        self.assertIn("%s/app/%s_kit/Helper%s" % (whole_tree.PACKAGE, whole_tree.PROOFS, whole_tree.SOURCE), found,
+                      "a directory whose name only begins with the proofs' name was left out")
+        self.assertEqual(len(found), 2, "the walk found %r" % sorted(found))
+
+    def test_one_verdict_and_a_child_that_never_ran_is_not_a_kill(self):
+        """F196: the verdict was written twice and only the Python copy refused a child that never
+        ran to a verdict - a declared runner's JVM dying before any test was a KILL."""
+        import prove_plants
+        verdict = prove_plants.verdict
+        self.assertFalse(verdict(1, "java.lang.OutOfMemoryError" + LF)[0],
+                         "a child that died before any test, with no ran marker and no must_say, was a kill")
+        self.assertTrue(verdict(1, "  FAIL: add is wrong" + LF, "add is wrong")[0],
+                        "control: a test that printed the plant's own words is a kill")
+        self.assertTrue(verdict(1, "1 failed" + LF, None, "failed")[0],
+                        "and so is one whose declared ran marker shows it ran")
+        self.assertFalse(verdict(1, "Traceback: os._exit" + LF, None, "Ran 1 test")[0],
+                         "a unittest child that never printed its summary is not a kill")
+        self.assertFalse(verdict(None, "", None, "Ran 1 test")[0], "a hang is never a kill")
+        self.assertFalse(verdict(1, "Ran 1 test" + LF, None, "Ran 1 test", True)[0],
+                         "an unresolved test is never a kill")
+        run = prove_plants.run_declared({"run": [sys.executable, "-c", "import sys; sys.exit(1)"]},
+                                        root=HERE)
+        self.assertFalse(run("tests/x.py::X")[0],
+                         "the declared runner scored a child that ran nothing as a kill")
+
+    def test_a_flag_given_no_value_is_refused_in_words(self):
+        """F197: --merge-from and --only read the next argument bare, so given last they crashed with
+        IndexError while --add, --reanchor and --retire refused in words, and `--merge-from --only x`
+        took a flag for a folder. A crash here reads as not refused."""
+        import prove_plants
+        from unittest import mock
+        driven = []
+        with mock.patch.object(prove_plants, "drive_plant",
+                               lambda key, entry, *a, **k: driven.append(key) or (True, "red")):
+            for argv in (["--add"], ["--reanchor"], ["--retire"], ["--merge-from"], ["--only"],
+                         ["--merge-from", "--only", "x"]):
+                code = [None]
+
+                def call():
+                    try:
+                        code[0] = prove_plants.main(["prove_plants.py"] + argv)
+                    except Exception as crash:  # noqa: BLE001 - a crash is the defect under test
+                        print("CRASHED: %r" % crash)
+                said = self.said(call)
+                self.assertTrue(code[0] not in (0, None) and "REFUSING" in said,
+                                "%s was not refused in words: %r" % (argv, said))
+        self.assertEqual(driven, [], "a refused invocation drove plants")
+
+
 class EveryGateSubprocessIsBOUNDED(unittest.TestCase):
     """README section 16: thirteen and a half hours on 0.14 seconds of CPU."""
+
+    def test_every_way_to_start_a_child_and_wait_is_seen(self):
+        """F199: the checker keyed on the module NAME `subprocess`, so an alias, a from-import, a
+        Popen(...).wait(), os.system and os.popen each blocked forever and passed it."""
+        import timeouts
+        source = LF.join([
+            "import os",
+            "import subprocess as sp",
+            "from subprocess import run, check_output",
+            "from os import system as shell",
+            "sp.run(['a'])",
+            "run(['b'])",
+            "check_output(['c'])",
+            "sp.Popen(['d']).wait()",
+            "os.system('e')",
+            "os.popen('f').read()",
+            "shell('g')",
+            "sp.run(['h'], timeout=5)",
+            "run(['i'], timeout=5)",
+            "sp.Popen(['j']).wait(timeout=5)",
+            "sp.Popen(['k']).wait(5)",
+        ]) + LF
+        self.assertEqual(timeouts.unbounded(source), [5, 6, 7, 8, 9, 10, 11],
+                         "the unbounded children were not all seen, or a bounded one was taken for one")
 
     def test_the_checker_finds_an_unbounded_call_and_passes_a_bounded_one(self):
         import timeouts
@@ -822,10 +945,12 @@ class ACommitTheGateNeverSawIsFoundAndRefused(unittest.TestCase):
                          newline=LF) as handle:
                 handle.write(text + LF)
         write("names_it.py", "STORE = '.git/gate-stamps'")
+        write("names_it.json", '{"store": ".git/gate-stamps"}')
         write("forger.py", "open('.git/gate-stamps', 'a').write('tree digest')")
         for command in ("python -m ruff check names_it.py",
                         "python -B -m py_compile names_it.py",
-                        "py -3 -mpyflakes names_it.py"):
+                        "py -3 -mpyflakes names_it.py",
+                        "python -m json.tool names_it.json"):
             with self.subTest(command):
                 self.assertEqual(self.gs.forges(command, self.root), "",
                                  "a linter reading a file was read as running it")
@@ -839,6 +964,11 @@ class ACommitTheGateNeverSawIsFoundAndRefused(unittest.TestCase):
         write("ruff.py", "open('.git/gate-stamps', 'a').write('tree digest')")
         self.assertTrue(self.gs.forges("python -m ruff check names_it.py", self.root),
                         "a local ruff.py shadowing the linter was read as the linter")
+        #F181: a test file that names the store is refused when RUN - and told how it is run
+        write("test_names_it.py", "STORE = '.git/gate-stamps'")
+        said = self.gs.forges("python -B test_names_it.py", self.root)
+        self.assertTrue(said and "python -m unittest test_names_it" in said,
+                        "the refusal of a test file does not name the route that runs it: %r" % said)
 
     def _files(self):
         """A reader and a forger in each language, and files that name the store."""
@@ -1246,3 +1376,60 @@ class TheBundlesHooksAreFoundNotSpelled(unittest.TestCase):
         self.assertEqual(sorted(r for r in below if r.startswith(".claude/")),
                          [bundle_hooks.DEFAULT + "/guard_mine.py"],
                          "a dispatcher was credited with guards in a folder it does not discover")
+
+
+class EveryRootIsAnchoredNeverCounted(unittest.TestCase):
+    """`tools/counted_roots.py`, and the ONE definition it holds the tree to, `_tree_root.py`.
+
+    Measured 2026-10-08 (F216): 72 counted climbs in one project's Python and 31 in the bundle's,
+    each right only at the depth it was written for - and eight anchored walks with four anchor
+    sets, three of which answered a counted guess when they found none."""
+
+    def setUp(self):
+        import counted_roots
+        self.check = counted_roots
+
+    def test_the_checker_still_sees_every_spelling_it_refuses(self):
+        self.assertEqual(self.check.controls(), "", "a known answer did not hold")
+
+    def test_no_file_here_counts_its_root_walks_its_own_or_holds_a_drifted_copy(self):
+        files = self.check.python_files(HERE)
+        self.assertIsNotNone(files, "git could not list this tree - UNKNOWN, not clean")
+        self.assertIn("tools/_tree_root.py", files, "control: the walk does not reach the definition")
+        found = self.check.offenders(HERE)
+        self.assertEqual(found, [], "a root is counted, walked twice, or a copy drifted: %s" % found)
+
+    def test_a_copy_that_drifts_is_refused_and_the_definition_is_held_to_nothing(self):
+        with io.open(self.check.CANONICAL, encoding="utf-8", newline="") as handle:
+            text = handle.read()
+        self.assertEqual(self.check.findings_in("tests/_tree_root.py", text), [],
+                         "an exact copy was refused")
+        self.assertTrue(self.check.findings_in("tests/_tree_root.py", text + "#" + LF),
+                        "a copy that drifted was not refused")
+        self.assertEqual(self.check.findings_in(self.check._canonical_rel(), text + "#" + LF), [],
+                         "the definition was held to its own copies, so it could never change")
+
+    def test_the_root_is_the_nearest_anchor_and_no_anchor_is_refused_in_words(self):
+        """Asked of a filesystem this test owns outright: under a home folder that holds a `.git`,
+        a real temporary folder would be answered by it, and this would fail for a reason that is
+        not the code's."""
+        import types
+        from unittest import mock
+        import _tree_root
+        anchors = set()
+        view = types.SimpleNamespace(path=types.SimpleNamespace(
+            exists=lambda path: path in anchors, isfile=lambda path: path in anchors,
+            join=os.path.join, dirname=os.path.dirname, abspath=os.path.abspath))
+        top = os.path.abspath(os.sep)
+        start = os.path.join(top, "p", "a", "b", "x.py")
+        with mock.patch.object(_tree_root, "os", view):
+            self.assertIsNone(_tree_root.repo_root(start), "a file in no project was given a root")
+            with self.assertRaises(LookupError) as refused:
+                _tree_root.require(start)
+            self.assertIn("sits in no project", str(refused.exception))
+            anchors.add(os.path.join(top, "p", ".git"))
+            self.assertEqual(_tree_root.repo_root(start), os.path.join(top, "p"),
+                             "the repository above was not found")
+            anchors.add(os.path.join(top, "p", "a", "CLAUDE.md"))
+            self.assertEqual(_tree_root.repo_root(start), os.path.join(top, "p", "a"),
+                             "the nearest anchor is not the root")

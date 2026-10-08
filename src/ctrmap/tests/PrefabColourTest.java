@@ -7,8 +7,6 @@ import ctrmap.formats.h3d.MapPrefab;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameType;
 import java.io.File;
-import java.io.FileOutputStream;
-import java.util.Arrays;
 import java.util.List;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
 

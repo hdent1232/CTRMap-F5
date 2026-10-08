@@ -3,7 +3,6 @@ package ctrmap.formats.h3d.model;
 import com.jogamp.opengl.math.Matrix4;
 import ctrmap.formats.h3d.RandomAccessBAIS;
 import ctrmap.formats.h3d.StringUtils;
-import ctrmap.formats.h3d.texturing.H3DMaterial;
 import ctrmap.formats.vectors.Vec3f;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -19,7 +18,6 @@ public class H3DSkeleton {
 			H3DBone bone = new H3DBone();
 
 			int boneFlags = in.readInt();
-			bone.billboardMode = H3DBone.BillboardMode.values()[(boneFlags >> 16) & 0xf];
 			bone.isSegmentScaleCompensate = (boneFlags & 0x00400000) > 0;
 			bone.parentId = in.readShort();
 			int boneSpacer = in.readUnsignedShort();
@@ -47,14 +45,7 @@ public class H3DSkeleton {
 			bone.invTransform = boneMatrix;
 
 			bone.name = StringUtils.readString(in.readInt(), buf);
-
-			int metaDataPointerOffset = in.readInt();
-			if (metaDataPointerOffset != 0) {
-				int position = in.position;
-				in.seek(metaDataPointerOffset);
-				bone.userData = H3DMaterial.getMetaData(in, buf);
-				in.seek(position);
-			}
+			in.readInt(); //the bone's user metadata, which nothing here reads (F079)
 
 			bones.add(bone);
 		}
@@ -109,20 +100,6 @@ public class H3DSkeleton {
 		public short parentId;
 		public String name = null;
 
-		public BillboardMode billboardMode;
 		public boolean isSegmentScaleCompensate;
-
-		public List<H3DMaterial.MatMetaData> userData;
-
-		public enum BillboardMode {
-			off,
-			dummy,
-			world,
-			worldViewpoint,
-			screen,
-			screenViewpoint,
-			yAxial,
-			yAxialViewpoint
-		}
 	}
 }

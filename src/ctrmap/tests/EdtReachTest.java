@@ -9,7 +9,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -76,7 +75,7 @@ public class EdtReachTest {
 		//application's dialogs on, and with the refusal planted out it put a real modal dialog on
 		//the display and the run waited for nobody (2026-10-07, a prove that hung). Headless, the
 		//same break is a HeadlessException and a FAIL.
-		System.setProperty("java.awt.headless", "true");
+		Headless.require();
 		File src = new File(args.length > 0 ? args[0] : "src");
 		File root = new File(args.length > 1 ? args[1] : "build/classes");
 		if (!theClassesAreTheSources(src, root)) {
@@ -88,7 +87,7 @@ public class EdtReachTest {
 		swingStateIsAskedOfTheRealClass();
 		List<Entry> entries = entries();
 		theEntriesAreTheOnesTheSourceHas(entries, src);
-		nothingOffTheEventThreadReachesSwing(entries);
+		noPlainFieldCrossesTheThread(nothingOffTheEventThreadReachesSwing(entries));
 		theSeamsRefuseOffTheEventThread(src);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -575,6 +574,11 @@ public class EdtReachTest {
 						bound(x.lambda, m, line);
 					}
 					return;
+				case Bytecode.GETFIELD:
+				case Bytecode.PUTFIELD:
+				case Bytecode.MONITORENTER:
+				case Bytecode.MONITOREXIT:
+					return; //read by noPlainFieldCrossesTheThread, never followed
 				default:
 					break;
 			}
@@ -839,15 +843,17 @@ public class EdtReachTest {
 		return false;
 	}
 
-	static void nothingOffTheEventThreadReachesSwing(List<Entry> entries) {
+	static List<Walk> nothingOffTheEventThreadReachesSwing(List<Entry> entries) {
 		System.out.println("--- nothing that runs off the event thread reaches Swing (F220)");
 		LAMBDAS = lambdaBodies();
 		Map<String, String> all = new TreeMap<>();
 		int reaching = 0, reached = 0;
 		StringBuilder report = new StringBuilder();
+		List<Walk> walks = new ArrayList<>();
 		for (Entry e : entries) {
 			Walk w = new Walk(e);
 			w.run();
+			walks.add(w);
 			reached += w.seen.size();
 			if (!w.touches.isEmpty()) {
 				reaching++;
@@ -879,6 +885,246 @@ public class EdtReachTest {
 				+ UNRESOLVED + ")" + (proxies.isEmpty() ? "" : " - but it does, at " + proxies + ", so those calls are UNKNOWN"));
 		check(all.isEmpty(), "no thread but the event thread reaches Swing: " + all.size() + " site(s) from " + reaching
 				+ " of " + entries.size() + " entries" + report);
+		return walks;
+	}
+
+	static final int ACC_FINAL = 0x0010, ACC_VOLATILE = 0x0040, ACC_SYNCHRONIZED = 0x0020;
+
+	/** The class that declares field {@code name} as seen from {@code owner}, through superclasses; null outside the program. */
+	static Bytecode.Cls declaring(String owner, String name) {
+		for (String x = owner; x != null && classes.containsKey(x); x = classes.get(x).superName) {
+			if (classes.get(x).fields.containsKey(name)) {
+				return classes.get(x);
+			}
+		}
+		return null;
+	}
+
+	/** One field instruction: the method it is in, whether it writes, and whether a lock is held there. */
+	static final class Access {
+
+		final Bytecode.Method in;
+		final Bytecode.Insn at;
+		final boolean put;
+		final boolean locked;
+
+		Access(Bytecode.Method in, Bytecode.Insn at, boolean put, boolean locked) {
+			this.in = in;
+			this.at = at;
+			this.put = put;
+			this.locked = locked;
+		}
+	}
+
+	/**
+	 * Every program-field instruction in {@code m}, with whether a lock is held at it: the method
+	 * is synchronized, or the instruction sits inside a {@code synchronized} block's body as the
+	 * class file's handler table marks it ({@link Bytecode.Method#lockedAt}).
+	 */
+	static List<Access> accesses(Bytecode.Method m) {
+		List<Access> out = new ArrayList<>();
+		for (Bytecode.Insn x : m.code) {
+			if ((x.op == Bytecode.PUTFIELD || x.op == Bytecode.PUTSTATIC || x.op == Bytecode.GETFIELD
+					|| x.op == Bytecode.GETSTATIC) && isApp(x.owner) && declaring(x.owner, x.name) != null) {
+				out.add(new Access(m, x, x.op == Bytecode.PUTFIELD || x.op == Bytecode.PUTSTATIC, m.lockedAt(x.pc)));
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * The first of {@code as} the walk does not reach, other than the declaring class's own
+	 * initialisers; null for none. A lock excuses a pair only when BOTH sides hold one: a
+	 * synchronized writer and an unlocked reader race exactly as two unlocked ones do. (Two locks
+	 * are taken as the same lock - the bytecode does not say which object each is on.)
+	 */
+	static Access outside(List<Access> as, Walk w, Bytecode.Cls d, boolean hereLocked) {
+		for (Access o : as == null ? java.util.Collections.<Access>emptyList() : as) {
+			boolean init = o.in.cls == d && (o.in.name.equals("<init>") || o.in.name.equals("<clinit>"));
+			if (!w.seen.containsKey(o.in) && !init && !(hereLocked && o.locked)) {
+				return o;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * The plain fields one thread writes and another reads (F016). What it reads: every field
+	 * instruction in every method an off-event-thread walk reaches, against every field instruction
+	 * in the methods it does not.
+	 */
+	static Map<String, String> sharedPlainFields(List<Walk> walks) {
+		Map<String, List<Access>> readers = new HashMap<>(), writers = new HashMap<>();
+		for (Bytecode.Cls c : classes.values()) {
+			if (!isApp(c.name)) {
+				continue;
+			}
+			for (Bytecode.Method m : c.methods.values()) {
+				for (Access a : accesses(m)) {
+					String key = declaring(a.at.owner, a.at.name).name + "." + a.at.name;
+					(a.put ? writers : readers).computeIfAbsent(key, k -> new ArrayList<>()).add(a);
+				}
+			}
+		}
+		Map<String, String> out = new TreeMap<>();
+		for (Walk w : walks) {
+			if (w.entry.kind.equals("the main thread")) {
+				continue;
+			}
+			Set<String> madeTypes = new HashSet<>();
+			for (Bytecode.Method m : w.seen.keySet()) {
+				for (Bytecode.Insn x : m.code) {
+					if (x.op == Bytecode.NEW && isApp(x.owner)) {
+						madeTypes.addAll(programSupertypes(x.owner));
+					}
+				}
+			}
+			for (Bytecode.Method m : w.seen.keySet()) {
+				for (Access a : accesses(m)) {
+					Bytecode.Cls d = declaring(a.at.owner, a.at.name);
+					int acc = d.fields.get(a.at.name);
+					boolean isStatic = a.at.op == Bytecode.GETSTATIC || a.at.op == Bytecode.PUTSTATIC;
+					if ((acc & ACC_FINAL) != 0 || (!isStatic && madeTypes.contains(d.name))) {
+						continue;
+					}
+					boolean plain = (acc & ACC_VOLATILE) == 0;
+					String key = d.name + "." + a.at.name;
+					//TWO WRITERS, volatile or not: volatile makes a write seen, not "x -= dx" whole, so
+					//a drag and a walk each writing the camera lose one or the other
+					Access other = a.put ? outside(writers.get(key), w, d, a.locked) : null;
+					String said = "written by " + w.entry + " and written outside it";
+					if (other == null && plain) {
+						other = outside((a.put ? readers : writers).get(key), w, d, a.locked);
+						said = (a.put ? "written by " : "read by ") + w.entry + ", " + (a.put ? "read" : "written") + " outside it";
+					}
+					if (other != null && !out.containsKey(key)) {
+						out.put(key, said + " - here at " + m.cls.file() + ":" + m.line(a.at.pc) + ", there in "
+								+ simple(other.in.cls.name) + "." + other.in.name);
+					}
+				}
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * Fields one thread writes and another touches with no lock, measured 2026-10-08 once F016's
+	 * own were fixed - the loaded-zone table read by the zone-open worker while the event thread
+	 * swapped it, and the camera walker writing the camera the mouse handlers write. What is left
+	 * is, as far as was read, written before the worker starts (its execute() orders that) or
+	 * while a modal progress dialog keeps the user from writing it; the bytecode cannot see either,
+	 * so each stays counted. HELD EQUAL to the count: it may only fall, and a fix that lowers the
+	 * count lowers this with it, so a new shared field cannot land in the room an old one left.
+	 * TIGHTENED 40 -> 39 on 2026-10-08, measured by this suite: RandomAccessBAIS.position, read by the
+	 * model-loading worker, is the cursor's own private index now (F228).
+	 */
+	static final int SHARED_CEILING = 39;
+
+	static void noPlainFieldCrossesTheThread(List<Walk> walks) {
+		System.out.println("--- no plain field is written on one thread and read on another (F016)");
+		theFieldCheckFindsWhatItShould();
+		Map<String, String> shared = sharedPlainFields(walks);
+		StringBuilder listed = new StringBuilder();
+		for (Map.Entry<String, String> e : shared.entrySet()) {
+			listed.append("\n    ").append(e.getKey()).append(": ").append(e.getValue());
+		}
+		check(shared.size() <= SHARED_CEILING, "fields one thread writes and another touches with no lock: " + shared.size()
+				+ ", at or under the ceiling " + SHARED_CEILING + " - one immutable state behind a volatile reference, or"
+				+ " every write on the event thread, not a plain field" + (shared.size() > SHARED_CEILING ? listed : ""));
+		check(Ratchet.tight(shared.size(), SHARED_CEILING), Ratchet.said("shared-field", shared.size(), SHARED_CEILING));
+		System.out.println("  counted:" + listed);
+	}
+
+	/**
+	 * KNOWN ANSWERS for the field check, on a fixture whose answers are stated here and not read
+	 * off the program: a thread writes one plain field the event thread reads, reads one the event
+	 * thread writes, and writes one volatile field the event thread also writes - three found; a
+	 * volatile field it alone writes, a final field, and a field of an object it made itself - none.
+	 * A second thread, holding a lock, reads a field the event thread writes holding one - passed -
+	 * and one the event thread writes holding none - found: a lock on one side is no lock.
+	 */
+	static void theFieldCheckFindsWhatItShould() {
+		String shared = "ctrmap/fixture/Shared", mine = "ctrmap/fixture/Mine";
+		Bytecode.Cls s = new Bytecode.Cls(shared), own = new Bytecode.Cls(mine), t = new Bytecode.Cls("ctrmap/fixture/T"),
+				edt = new Bytecode.Cls("ctrmap/fixture/Edt");
+		s.fields.put("plain", 0);
+		s.fields.put("plainRead", 0);
+		s.fields.put("twoWriters", ACC_VOLATILE);
+		s.fields.put("vol", ACC_VOLATILE);
+		s.fields.put("fin", ACC_FINAL);
+		s.fields.put("bothLocked", 0);
+		s.fields.put("oneLocked", 0);
+		own.fields.put("x", 0);
+		Bytecode.Method run = fixtureMethod(t, "run", 0,
+				new Object[]{Bytecode.PUTFIELD, shared, "plain"}, new Object[]{Bytecode.GETFIELD, shared, "plainRead"},
+				new Object[]{Bytecode.PUTFIELD, shared, "twoWriters"}, new Object[]{Bytecode.PUTFIELD, shared, "vol"},
+				new Object[]{Bytecode.GETFIELD, shared, "fin"}, new Object[]{Bytecode.NEW, mine, null},
+				new Object[]{Bytecode.PUTFIELD, mine, "x"});
+		Bytecode.Method runLocked = fixtureMethod(t, "runLocked", ACC_SYNCHRONIZED,
+				new Object[]{Bytecode.GETFIELD, shared, "bothLocked"}, new Object[]{Bytecode.GETFIELD, shared, "oneLocked"});
+		fixtureMethod(edt, "paint", 0,
+				new Object[]{Bytecode.GETFIELD, shared, "plain"}, new Object[]{Bytecode.PUTFIELD, shared, "plainRead"},
+				new Object[]{Bytecode.PUTFIELD, shared, "twoWriters"}, new Object[]{Bytecode.GETFIELD, shared, "vol"},
+				new Object[]{Bytecode.GETFIELD, shared, "fin"}, new Object[]{Bytecode.GETFIELD, mine, "x"},
+				new Object[]{Bytecode.PUTFIELD, shared, "oneLocked"});
+		fixtureMethod(edt, "set", ACC_SYNCHRONIZED, new Object[]{Bytecode.PUTFIELD, shared, "bothLocked"});
+		for (Bytecode.Cls c : new Bytecode.Cls[]{s, own, t, edt}) {
+			classes.put(c.name, c);
+		}
+		Set<String> found;
+		try {
+			Walk w = new Walk(new Entry(run, "fixture thread"));
+			w.run();
+			Walk locked = new Walk(new Entry(runLocked, "fixture thread holding a lock"));
+			locked.run();
+			found = sharedPlainFields(java.util.Arrays.asList(w, locked)).keySet();
+		} finally {
+			for (Bytecode.Cls c : new Bytecode.Cls[]{s, own, t, edt}) {
+				classes.remove(c.name);
+				SUPERTYPES.remove(c.name);
+			}
+		}
+		Set<String> expected = new TreeSet<>(java.util.Arrays.asList(shared + ".plain", shared + ".plainRead",
+				shared + ".twoWriters", shared + ".oneLocked"));
+		check(new TreeSet<>(found).equals(expected), "control: the field check finds a plain write read elsewhere, a plain"
+				+ " read written elsewhere, two writers of a volatile field and a lock held on one side only, and passes a"
+				+ " lone volatile writer, a final field, the thread's own object and a lock held on both - "
+				+ new TreeSet<>(found));
+		//GameCache.get holds its lock in two blocks with the read between them, and returns early from
+		//inside each: every read of drops is locked, the read itself is not - counting monitor enters
+		//and exits in code order called "began = drops" unlocked, because the early return exits first
+		Bytecode.Cls gc = classes.get("ctrmap/formats/GameCache");
+		Bytecode.Method get = gc == null ? null : gc.methods.get(
+				"get(Lctrmap/formats/GameCache$Key;Lctrmap/formats/GameCache$Read;)Ljava/lang/Object;");
+		int dropsRead = 0, dropsLocked = 0;
+		Boolean readLocked = null;
+		for (Bytecode.Insn x : get == null ? java.util.Collections.<Bytecode.Insn>emptyList() : get.code) {
+			if (x.op == Bytecode.GETFIELD && "drops".equals(x.name)) {
+				dropsRead++;
+				dropsLocked += get.lockedAt(x.pc) ? 1 : 0;
+			} else if (x.isInvoke() && x.name.equals("read")) {
+				readLocked = get.lockedAt(x.pc);
+			}
+		}
+		check(dropsRead == 2 && dropsLocked == 2 && Boolean.FALSE.equals(readLocked), "control: the reader sees a"
+				+ " synchronized block's body by its handler - GameCache.get reads drops twice, both locked (" + dropsLocked
+				+ " of " + dropsRead + "), and calls the read between its blocks unlocked (" + readLocked + ")");
+		Bytecode.Cls lz = classes.get("ctrmap/LoadedZone");
+		Integer flags = lz == null ? null : lz.fields.get("state");
+		check(flags != null && (flags & ACC_VOLATILE) != 0, "control: the reader reads a field's flags off the class -"
+				+ " LoadedZone.state is volatile (" + flags + ")");
+	}
+
+	/** A fixture method with these access flags whose code is the given {op, owner, member} instructions, in order. */
+	static Bytecode.Method fixtureMethod(Bytecode.Cls c, String name, int access, Object[]... code) {
+		Bytecode.Method m = new Bytecode.Method(c, name, "()V", access);
+		m.hasCode = true;
+		int pc = 0;
+		for (Object[] i : code) {
+			m.code.add(new Bytecode.Insn(pc++, (Integer) i[0], (String) i[1], (String) i[2], i[2] == null ? null : "I", -1));
+		}
+		c.methods.put(m.key(), m);
+		return m;
 	}
 
 	/**

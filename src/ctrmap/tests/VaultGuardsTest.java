@@ -394,7 +394,7 @@ public class VaultGuardsTest {
 
 		String mf = new String(java.nio.file.Files.readAllBytes(new File("src/ctrmap/CtrmapMainframe.java").toPath()),
 				java.nio.charset.StandardCharsets.UTF_8);
-		String open = CollisionReadTest.body(SourceSeamTest.stripComments(mf), "public static int onWorkspaceOpened(");
+		String open = CollisionReadTest.body(SourceSeamTest.stripComments(mf), "public int onWorkspaceOpened(");
 		check(open != null && open.contains("VaultUi.checkOnOpen("), "and the window checks it whenever a game opens");
 	}
 
@@ -506,7 +506,7 @@ public class VaultGuardsTest {
 
 			String mf = new String(java.nio.file.Files.readAllBytes(new File("src/ctrmap/CtrmapMainframe.java").toPath()),
 					java.nio.charset.StandardCharsets.UTF_8);
-			String action = CollisionReadTest.body(SourceSeamTest.stripComments(mf), "private static void restoreFromVaultAction(");
+			String action = CollisionReadTest.body(SourceSeamTest.stripComments(mf), "private void restoreFromVaultAction(");
 			check(action != null && action.contains("VaultUi.restoreOne(frame, entry, String.valueOf(rel).trim(), dump, Workspace.session())")
 					&& action.contains("VaultUi.restoreEverything(frame, entry, dump, Workspace.session())"),
 					"and the window hands both restores the session open over that folder");

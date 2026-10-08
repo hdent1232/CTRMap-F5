@@ -2,7 +2,10 @@
 
 CTRMap-F5's long-term goal is one shared editor for the 3DS Pokémon games:
 **X/Y** and **ORAS** (Gen 6), **Sun/Moon** and **USUM** (Gen 7). Today ORAS is
-the reference game (everything is built and corpus-verified against it); this
+the reference game (everything is built and corpus-verified against it), and
+Sun/Moon and USUM cannot be opened at all: their profiles are placeholders whose
+every answer is unmeasured, so detection never returns them, and a Gen 7 archive
+is read but not written back (F054). This
 document defines the layering that keeps the shared engine game-agnostic so
 the other games can be added without untangling anything.
 
@@ -10,7 +13,7 @@ the other games can be added without untangling anything.
 
 ```
 src/ctrmap/          the program            build.ps1   compile (never a bare javac)
-  gamedef/           per-game profiles      test.ps1    the 124-suite battery
+  gamedef/           per-game profiles      test.ps1    the battery
   formats/           readers and writers    stamp.ps1   "these classes came from these sources"
   humaninterface/    the Swing UI           package.ps1 cut a release
     tools/           the ten editing tools
@@ -143,6 +146,16 @@ Four properties follow, each with a rule that keeps it true:
 * **The format layer reaches the global nowhere** - 0 classes, 0 edges, by
   equality rather than as a ceiling, and no class under `ctrmap.formats` may
   name the UI package, the window, the dialog seam or the global at all.
+* **No format package is in a dependency cycle with the program above it** -
+  measured from the bytecode over every production package, not listed. Until
+  F214, 32 of the 37 packages were one cycle, because the byte streams lived
+  in the root package beside the window, `MapObject` beside the widgets, and
+  the texture pack asked the application's master-table reader; the streams
+  are in `ctrmap.util`, `MapObject` in `ctrmap.formats`, and the texture pack
+  asks the `GameFiles` it is handed (`zonesNamingArea`). The largest cycle left
+  is the application's own eight packages, recorded and only allowed to fall
+  (`PackageCycleTest`). Nine format classes still draw with OpenGL; that list
+  only shrinks.
 * **The workspace facade does not know the window** - 0 references. It answers
   with the session it opened and the caller tells the window, which is why a
   clean now runs headless where the suite recorded it could not.
@@ -237,22 +250,42 @@ None of them is a coupling problem, which is why none was taken here.
 
 CTRMap keeps a lot in `public static` fields. Measured from the compiled
 classes (`ctrmap.tests.GlobalStateTest`, which counts fields rather than
-grepping lines), there are **36 public static mutable fields outside
-`ctrmap.tests`**, and they are not scattered - they sit in four classes:
+grepping lines), there are **15 public static mutable fields outside
+`ctrmap.tests`**, and they are not scattered - they sit in three classes.
+`GlobalStateTest` reads this paragraph and this table and fails when either
+number is not the one it measured (F135), so they are measurements, not prose:
 
 | where | count | what it is |
 |---|---|---|
-| `CtrmapMainframe` | 20 | The world toolbar, two scroll panes and seventeen panels and editor forms other classes reach (tilemap, tile, camera, prop, NPC, warp, trigger, geometry, collision, matrix, zone list, script, text, builder, 3D debug). Each panel is assigned once while the window is built. The frame is PRIVATE (nothing below the window needs it: the dialog seam holds the window a dialog belongs to, and "draw it again" is a capability the forms and tools are handed) and the held tool is an owner of its own (`ToolSelection`), which is why this is 20 and not 22. The 38 menu items, the tool-row buttons and the split-pane and tab plumbing that used to sit here are locals of their builders or private, and `MainframeShapeTest` ratchets this class on its own. |
 | `Workspace` | 5 | The settings: the four paths and the tileset flag kept in `java.util.prefs`, written by the settings dialog and the setup wizard. The open game itself - paths, `GameType`, archive `File`s, `GARC` handles, the edited-file list - is a `WorkspaceSession` instance (below), not a static. |
-| `Selector`, `MatrixSelector` | 11 | The 2D cursor: selected/highlighted tile and region coordinates, rewritten on every mouse move. Genuinely per-interaction mutable state, confined to the two panels that own it. |
+| `Selector`, `MatrixSelector` | 10 | The 2D cursor: selected/highlighted tile and region coordinates, rewritten on every mouse move. Genuinely per-interaction mutable state, confined to the two panels that own it. |
+
+The main window is not in this table: it held 18 of these, and 25 private ones besides, until it
+became an object (F007). The program makes one, in `main`; its panels are its fields, and
+`MainframeEdgesTest` refuses any static on it but a compile-time constant.
 
 The three per-operation smells the 2026-09-06 sweep listed here are gone:
 `AreaForkPrompt.lastForked` (a return value smuggled through a static) is
 returned as a `ForkResult`; `PawnInstruction.nativeResolver` (per-script
 assembler context in a class field) rides on the `PawnAssembly`; and
 `LocationNames.textfile` (a lazy table dereferenced with no null check) is
-private behind an accessor that loads it and refuses in words when there is
-no workspace to load from.
+gone: the names are kept in the open game's own store, below.
+
+**What is read from a game is kept by that game (F218).** The public statics
+above were a seventh of it. State read from the open game - the prop database,
+the move-model names, the Pokemon reference tables, the location names, the
+building palette's cut prefabs and donor textures, the terrain catalog's
+measurements - was kept in statics with seven different rules for when it went,
+two of them never: after repointing to another game the palette stamped the
+first game's geometry into the second. All of it now lives in
+`GameFiles.cache()`, a `GameCache` the session owns: another game is another
+store, and the one door every archive rewrite passes (`reloadGARC` - a pack,
+the builder, a zone removal, a restore from the backup) empties it.
+`GlobalStateTest` names every static of the program that can change, under the
+reason it may be one - the window, the process, the build's own tables,
+constant tables (measured unwritten, by their class or any other) - and fails
+on one it was not told about. There is no reason for "read from the open
+game".
 
 **The open game is a `WorkspaceSession`, and `Workspace` is being strangled
 around it.** `Workspace` used to hold the open game in 36 public statics that
@@ -274,8 +307,8 @@ production files that still reach a `Workspace` static (62 on the day the
 state moved; every one of them) and fails when the recorded number is not the
 measured one, so the boundary is always written down. `GlobalStateTest`
 still fails if a `Workspace` static is added and left out of `reset()`, if a
-public static field is added that nothing assigns, or if the count of 38
-rises.
+public static field is added that nothing assigns, or if the count of public
+statics is not the one recorded - higher or lower.
 
 Fixed on the way: `validate()`'s failure path used to keep the previous
 game's `GameType` and all of its `GARC` handles live, with `valid` false and

@@ -20,31 +20,22 @@ public final class TrainerForm {
 
 	public final JPanel panel = Forms.stackedForm();
 	private final IdChooser trainer;
-	/** The registry the model picker lists, and the previews it registers - the editor's, handed in. */
-	private final NPCRegistry reg;
-	private final List<CustomH3DPreview> livePreviews;
 
 	private final ModelPicker model;
 	private final JSpinner sight = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, 8, 1));
 	private final javax.swing.JComboBox<String> facing = new javax.swing.JComboBox<>(new String[]{"Down", "Up", "Left", "Right"});
 	private final javax.swing.JCheckBox pair = new javax.swing.JCheckBox("Add double-battle partner (script 5000 + ID) beside it");
 
-	/** The open game the model picker browses; handed in, never fetched. */
-	private final ctrmap.formats.GameFiles game;
-
 	public TrainerForm(ctrmap.formats.GameFiles game, NPCRegistry reg, List<CustomH3DPreview> livePreviews, List<String> trainerNames) {
-		this.game = game;
 		this.trainer = new IdChooser(trainerNames, NpcTemplates.TRAINER_ID_MAX, 1);
-		this.reg = reg;
-		this.livePreviews = livePreviews;
 		this.model = new ModelPicker(reg, livePreviews, game, -1);
-		Forms.addLabeled(panel, "Trainer (type to search; edit party/class in pk3DS):", trainer);
+		Forms.addLabeled(panel, "Trainer (type to search; its party and class are Game Data > Edit trainer):", trainer);
 		Forms.addLabeled(panel, "NPC model (type to search; preview below):", model);
 		Forms.addLabeled(panel, "Sight range (0 = battle on talk only):", sight);
 		Forms.addLabeled(panel, "Facing:", facing);
 		pair.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
 		panel.add(pair);
-		panel.add(Forms.hint("<html>Places the overworld trainer NPC only. The battle exists only if<br>trainer data slot ID is valid (set it in pk3DS).</html>"));
+		panel.add(Forms.hint("<html>Places the overworld trainer NPC only. The battle exists only if<br>its trainer slot holds a team (Game Data &gt; Edit trainer).</html>"));
 	}
 
 	public int trainer() {

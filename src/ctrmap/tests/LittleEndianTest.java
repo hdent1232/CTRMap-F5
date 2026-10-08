@@ -1,6 +1,6 @@
 package ctrmap.tests;
 
-import ctrmap.formats.LittleEndian;
+import ctrmap.util.LittleEndian;
 import java.util.Arrays;
 
 /**

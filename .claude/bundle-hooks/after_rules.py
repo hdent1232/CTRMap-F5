@@ -45,7 +45,7 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 #: Where the last answer is kept, inside the rules cache that ignores itself.
 STATE = "after-state.json"
 
-#: Adapted per project: see ADAPT.md.
+#: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("STATE",)
 
 

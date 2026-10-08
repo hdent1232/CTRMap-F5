@@ -115,6 +115,13 @@ public class PlantLedgerTest {
 		String said = python(repo, "--selftest");
 		boolean passed = said.contains("ALL PASS");
 		check(passed, "the ledger's self-test passes");
+		//A CEILING THAT WENT UP is a decision somebody signed; it is shown every run, not only when
+		//something else failed
+		for (String line : said.split("\n")) {
+			if (line.contains("RAISED:")) {
+				System.out.println("      " + line.trim());
+			}
+		}
 		if (!passed) {
 			for (String line : said.split("\n")) {
 				if (line.contains("FAIL")) {

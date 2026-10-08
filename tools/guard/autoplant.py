@@ -37,10 +37,13 @@ import re
 import subprocess
 import sys
 import time
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import replant  # noqa: E402  - the ledger's own definitions: what a crash looks like (F188)
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console window for a captured child (F184)
 
+import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(os.path.dirname(HERE))
+ROOT = _tree_root.require(__file__)
 LEDGER = os.path.join(HERE, "plants.json")
 LIBS = "build/classes;lib/jogl-all.jar;lib/gluegen-rt.jar"
 NL = chr(10)
@@ -203,6 +206,11 @@ def fail_line(out):
         elif said.startswith("FAIL "):
             body = said[5:].strip()
         else:
+            continue
+        #A CRASH IS NOT THE SUITE SPEAKING (F188): "Index 0 out of bounds for length 0" says the
+        #mutation broke the code the suite runs, not that the suite noticed the defect - and it pins a
+        #game-data size. Ten plants were recorded this way; the next one records a sentence or nothing.
+        if replant.CRASHED.search(body):
             continue
         body = body.split(" (")[0].strip()
         #a message that names a path names THIS machine, and plants.json is a

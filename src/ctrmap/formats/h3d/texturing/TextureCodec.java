@@ -2,8 +2,7 @@ package ctrmap.formats.h3d.texturing;
 
 import ctrmap.formats.h3d.PICACommandReader;
 import java.awt.Color;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
+import ctrmap.util.LittleEndian;
 
 
 /**
@@ -81,7 +80,7 @@ public class TextureCodec {
 	/** Converts the stored texel at {@code data[d..]} to RGBA at {@code out[o..o+3]}. */
 	private interface Texel {
 
-		void read(byte[] data, int d, byte[] out, int o);
+		void decode(byte[] data, int d, byte[] out, int o);
 	}
 
 	/**
@@ -92,7 +91,7 @@ public class TextureCodec {
 	private static void untile(byte[] data, int bytesPerTexel, int width, int height, byte[] output, Texel texel) {
 		int dataOffset = 0;
 		for (int p = 0, n = tiledTexels(width, height); p < n; p++) {
-			texel.read(data, dataOffset, output, tiledOffset(p, width));
+			texel.decode(data, dataOffset, output, tiledOffset(p, width));
 			dataOffset += bytesPerTexel;
 		}
 	}
@@ -160,13 +159,9 @@ public class TextureCodec {
 		out[o + 3] = (byte) 0xff;
 	}
 
-	private static int le16(byte[] data, int d) {
-		return (data[d] & 0xFF) | ((data[d + 1] & 0xFF) << 8);
-	}
-
 	/** a in bit 0, then 5 bits each of r, g, b; the top 3 bits repeat into the low 3. */
 	private static void rgba5551(byte[] data, int d, byte[] out, int o) {
-		int pixelData = le16(data, d);
+		int pixelData = LittleEndian.u16(data, d);
 		int r = ((pixelData >> 1) & 0x1f) << 3;
 		int g = ((pixelData >> 6) & 0x1f) << 3;
 		int b = ((pixelData >> 11) & 0x1f) << 3;
@@ -178,7 +173,7 @@ public class TextureCodec {
 	}
 
 	private static void rgb565(byte[] data, int d, byte[] out, int o) {
-		int pixelData = le16(data, d);
+		int pixelData = LittleEndian.u16(data, d);
 		int r = (pixelData & 0x1f) << 3;
 		int g = ((pixelData >> 5) & 0x3f) << 2;
 		int b = ((pixelData >> 11) & 0x1f) << 3;
@@ -189,7 +184,7 @@ public class TextureCodec {
 	}
 
 	private static void rgba4(byte[] data, int d, byte[] out, int o) {
-		int pixelData = le16(data, d);
+		int pixelData = LittleEndian.u16(data, d);
 		int r = (pixelData >> 4) & 0xf;
 		int g = (pixelData >> 8) & 0xf;
 		int b = (pixelData >> 12) & 0xf;
@@ -223,17 +218,20 @@ public class TextureCodec {
 	}
 
 	/**
-	 * High nibble luminance, low nibble alpha - and neither is replicated into
-	 * 8 bits, and the luminance shift is arithmetic on a signed byte, so a
-	 * high nibble of 8..F comes out 0xF8..0xFF rather than 0x88..0xFF. That
-	 * is what the port has always done; it is recorded here, not endorsed,
-	 * and no retail area texture uses the format.
+	 * High nibble luminance, low nibble alpha, each widened to 8 bits by
+	 * repeating it (0x7 is 0x77) - as {@link #l4} and {@link #a4} already were.
+	 * Until F163 neither was widened and the shift was arithmetic on a signed
+	 * byte: luminance 7 decoded as 0x07, near black, alpha 0xC as 0x0C, near
+	 * transparent, and a high nibble of 8..F came out 0xF8..0xFF. No retail
+	 * area texture uses the format, so only an imported one drew dark and
+	 * see-through.
 	 */
 	private static void la4(byte[] data, int d, byte[] out, int o) {
-		out[o] = (byte) (data[d] >> 4);
-		out[o + 1] = (byte) (data[d] >> 4);
-		out[o + 2] = (byte) (data[d] >> 4);
-		out[o + 3] = (byte) (data[d] & 0xf);
+		int l = ((data[d] & 0xff) >> 4) * 0x11;
+		out[o] = (byte) l;
+		out[o + 1] = (byte) l;
+		out[o + 2] = (byte) l;
+		out[o + 3] = (byte) ((data[d] & 0xf) * 0x11);
 	}
 
 	/** ETC1 decodes to 4x4 blocks in a scrambled order; put each block where it belongs. */
@@ -301,12 +299,6 @@ public class TextureCodec {
 					}
 					offset += 8;
 				}
-				/*System.out.print("[");
-                     for (int h = 0; h < colorBlock.length; h++)
-                    {
-                        System.out.print((colorBlock[h] & 0xFF) + ", ");
-                    }
-                    System.out.print("]\n");*/
 				colorBlock = etc1DecodeBlock(colorBlock);
 
 				boolean toggle = false;
@@ -329,8 +321,8 @@ public class TextureCodec {
 	}
 
 	private static byte[] etc1DecodeBlock(byte[] data) {
-		long blockTop = Integer.toUnsignedLong(ByteBuffer.wrap(data, 0, 4).order(ByteOrder.LITTLE_ENDIAN).getInt());
-		long blockBottom = Integer.toUnsignedLong(ByteBuffer.wrap(data, 4, 4).order(ByteOrder.LITTLE_ENDIAN).getInt());
+		long blockTop = LittleEndian.u32(data, 0);
+		long blockBottom = LittleEndian.u32(data, 4);
 		
 		
 		boolean flip = (blockTop & 0x1000000) > 0;

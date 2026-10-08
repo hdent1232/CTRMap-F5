@@ -1,6 +1,5 @@
 package ctrmap.humaninterface;
 
-import static ctrmap.CtrmapMainframe.*;
 import ctrmap.Workspace;
 import ctrmap.formats.tilemap.EditorTileset;
 import ctrmap.formats.tilemap.TileTemplate;
@@ -8,14 +7,11 @@ import ctrmap.formats.tilemap.Tilemap;
 import ctrmap.humaninterface.tools.EditTool;
 import ctrmap.humaninterface.tools.FillTool;
 import ctrmap.humaninterface.tools.SetTool;
-import java.text.ParseException;
 import javax.swing.DefaultListModel;
-import javax.swing.JFormattedTextField;
 import javax.swing.JSpinner;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import javax.swing.event.ListSelectionEvent;
-import javax.swing.text.DefaultFormatterFactory;
 
 /**
  * CM2D tile editor database accessor.
@@ -27,24 +23,6 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 	private DefaultListModel<String> currentListModel = new DefaultListModel<>();
 	private DefaultListModel<String>[] models = new DefaultListModel[13];
 	public EditorTileset tileset;
-
-	/** Which tool the editor is holding, handed in: this class only asks. */
-	private final ctrmap.humaninterface.tools.ToolSelection tools;
-
-	/**
-	 * Asks the tool row to pick the Set tool.
-	 *
-	 * <p>A RUNNABLE AND NOT THE TOOLBAR, and this is a real construction cycle
-	 * rather than a shortcut: the tool row is built from the mouse router, which
-	 * is built from the tool box, which is built over THIS form. No order hands
-	 * one to the other.
-	 *
-	 * <p>And it cannot be replaced by the tool selection this form already has.
-	 * selectSetTool() is tool("set").doClick(), which also moves the radio
-	 * group's visual state; switching the tool alone would leave the row showing
-	 * a different tool than the one that is up.
-	 */
-	private final Runnable pickSetTool;
 
 	/**
 	 * The map view, handed in AS ITSELF.
@@ -60,6 +38,15 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 
 	/**
 	 * Creates new form TileEditForm
+	 *
+	 * @param tools which tool the editor is holding, handed in: this class only asks. Its listeners keep
+	 *              this and {@code pickSetTool}; nothing else here does, so neither is a field (F204)
+	 * @param pickSetTool asks the tool row to pick the Set tool. A RUNNABLE AND NOT THE TOOLBAR, and this is
+	 *              a real construction cycle rather than a shortcut: the tool row is built from the mouse
+	 *              router, which is built from the tool box, which is built over THIS form. No order hands
+	 *              one to the other. And it cannot be replaced by {@code tools}: selectSetTool() is
+	 *              tool("set").doClick(), which also moves the radio group's visual state; switching the
+	 *              tool alone would leave the row showing a different tool than the one that is up.
 	 */
 	public TileEditForm(ctrmap.humaninterface.tools.ToolSelection tools, Runnable pickSetTool,
 			TileMapPanel map) {
@@ -67,9 +54,10 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 		if (pickSetTool == null) {
 			throw new IllegalArgumentException("the tile inspector must be handed a way to pick the Set tool");
 		}
-		this.pickSetTool = pickSetTool;
-		this.tools = tools;
 		initComponents();
+		for (JSpinner b : new JSpinner[]{byte0, byte1, byte2, byte3}) {
+			Forms.bound(b, 0, 0xFF);
+		}
 		byte0.setName("0");
 		byte1.setName("1");
 		byte2.setName("2");
@@ -139,13 +127,13 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 		}
 
 		JSpinner.DefaultEditor edt = (JSpinner.DefaultEditor) byte0.getEditor();
-		edt.getTextField().setFormatterFactory(new HexFormatterFactory());
+		edt.getTextField().setFormatterFactory(new Forms.HexFormatterFactory(0, 0xFF));
 		edt = (JSpinner.DefaultEditor) byte1.getEditor();
-		edt.getTextField().setFormatterFactory(new HexFormatterFactory());
+		edt.getTextField().setFormatterFactory(new Forms.HexFormatterFactory(0, 0xFF));
 		edt = (JSpinner.DefaultEditor) byte2.getEditor();
-		edt.getTextField().setFormatterFactory(new HexFormatterFactory());
+		edt.getTextField().setFormatterFactory(new Forms.HexFormatterFactory(0, 0xFF));
 		edt = (JSpinner.DefaultEditor) byte3.getEditor();
-		edt.getTextField().setFormatterFactory(new HexFormatterFactory());
+		edt.getTextField().setFormatterFactory(new Forms.HexFormatterFactory(0, 0xFF));
 
 		ChangeListener rawDataChangeListener = new ChangeListener() {
 			@Override
@@ -158,11 +146,10 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 							return;
 						}
 						JSpinner src = (JSpinner) e.getSource();
-						byte[] before = region.getTileData(Selector.selTileX % 40, Selector.selTileY % 40).clone();
+						//NOTHING TO RECORD (F209): the zone's history reads the region's tiles around the
+						//gesture that changed them. This called a static tile history by hand.
 						region.rawTileData[Selector.selTileX % 40][Selector.selTileY % 40][src.getName().charAt(0) - '0'] = ((Integer) src.getValue()).byteValue();
 						region.modified = true;
-						TileUndo.record(region, Selector.selTileX % 40, Selector.selTileY % 40, before,
-								region.getTileData(Selector.selTileX % 40, Selector.selTileY % 40));
 						region.updateImage();
 						map.scaleImage(map.tilemapScale);
 						showTile(Selector.selTileX, Selector.selTileY, true);
@@ -181,18 +168,15 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 					}
 					int width = Math.abs(t.lastX - t.originX);
 					int height = Math.abs(t.lastY - t.originY);
-					TileUndo.begin(); // the whole fill = one undo step
+					//the whole fill is one gesture, so one undo step - read, not recorded (F209)
 					for (int x = 0; x < width + 1; x++) {
 						for (int y = 0; y < height + 1; y++) {
 							Tilemap reg = map.getRegionForTile(startX + x, startY + y);
 							if (reg != null){
-								byte[] before = reg.getTileData((startX + x) % 40, (startY + y) % 40).clone();
 								reg.setTileData((startX + x) % 40, (startY + y) % 40, t.actTileData);
-								TileUndo.record(reg, (startX + x) % 40, (startY + y) % 40, before, t.actTileData);
 							}
 						}
 					}
-					TileUndo.end();
 					//could have affected multiple regions, update them all
 					map.updateAll();
 				}
@@ -408,32 +392,6 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 	@Override
 	public void lockTile(boolean state) {
 		isLocked = state;
-	}
-
-	private static class HexFormatterFactory extends DefaultFormatterFactory {
-
-		private static final long serialVersionUID = 6795960205384589732L;
-
-		@Override
-		public JFormattedTextField.AbstractFormatter getDefaultFormatter() {
-			return new JFormattedTextField.AbstractFormatter() {
-				private static final long serialVersionUID = 6795960205384589733L;
-
-				@Override
-				public Object stringToValue(String text) throws ParseException {
-					try {
-						return Integer.valueOf(text, 16);
-					} catch (NumberFormatException nfe) {
-						throw new ParseException(text, 0);
-					}
-				}
-
-				@Override
-				public String valueToString(Object value) throws ParseException {
-					return Integer.toHexString((Integer) value).toUpperCase();
-				}
-			};
-		}
 	}
 
 	/**

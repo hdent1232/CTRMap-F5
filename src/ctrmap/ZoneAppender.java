@@ -1,17 +1,11 @@
 package ctrmap;
 
 import ctrmap.formats.garc.GARC;
-import ctrmap.formats.garc.LZ11;
 import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-import static ctrmap.formats.LittleEndian.i32;
-import static ctrmap.formats.LittleEndian.putI32;
 import java.nio.file.Files;
-import ctrmap.formats.containers.ContainerBytes;
 
 /**
  * EXPERIMENTAL: appends a brand-new zone slot to the end of the ZoneData GARC
@@ -46,23 +40,6 @@ import ctrmap.formats.containers.ContainerBytes;
  * callers MUST surface the experimental warning before invoking this.
  */
 public class ZoneAppender {
-
-	/**
-	 * The three rebuilt ZoneData payloads of an append, keyed to workspace
-	 * file names: compressedZo -> "newIndex", master -> "newIndex + 1",
-	 * en -> "newIndex + 2".
-	 */
-	public static class AppendPayloads {
-
-		/** The new ZO, LZ11-compressed for verbatim storage in the shifted slot. */
-		public byte[] compressedZo;
-		/** The new ZO decompressed (OAZoneNumber patched) - for verification. */
-		public byte[] newZo;
-		/** Master table grown by one row (row newIndex = copy of row srcIndex, OAZoneNumber patched). */
-		public byte[] master;
-		/** EN pack grown by one empty blob (count + 1, all offsets shifted by 4). */
-		public byte[] en;
-	}
 
 	// NOTE: the legacy single-zone appendZone(int) was REMOVED (2026-08-30): it
 	// predates auto-forking and produced zones that silently SHARED their donor's
@@ -241,7 +218,7 @@ public class ZoneAppender {
 		try {
 			m = ctrmap.formats.codepatch.ZoneLimitPatch.masterIndexFrom(oldCount, newRealZones);
 		} catch (IllegalArgumentException cannot) {
-			throw new IOException("Cannot add " + newRealZones + " zone(s) here: " + cannot.getMessage() + ".", cannot);
+			throw new IOException("Cannot add " + newRealZones + " zone(s) here: " + ctrmap.util.Bytes.reason(cannot) + ".", cannot);
 		}
 		int addCount = m - oldCount;
 		if (srcIndex < 0 || srcIndex >= oldCount) {
@@ -270,7 +247,7 @@ public class ZoneAppender {
 		if (Workspace.isPendingArtifact(enWs)) {
 			try {
 				byte[] cand = Files.readAllBytes(enWs.toPath());
-				validateEN(cand, oldCount);
+				ctrmap.formats.encounters.EnPack.parse(cand, oldCount);
 				enBytes = cand;
 			} catch (RuntimeException stale) {
 				//fall through to the GARC
@@ -288,7 +265,7 @@ public class ZoneAppender {
 		// workspace. The spares that pad the count out to a multiple of 4 are forked
 		// too and then BLANKED: a slot nobody asked for opens empty rather than as a
 		// second copy of the donor. Up to 1.0.1 they kept the donor map instead, which
-		// is what CtrmapMainframe.repairSharedPaddingZones exists to undo.
+		// is what PaddingZoneRepair.repairOnOpen exists to undo.
 		//the grown table as the forkers repoint it: the same bytes, asked and set through the one class
 		MasterTable grown = MasterTable.detached(p.master, p.newCount);
 		GeometryForker.forkAppendedZones(p.newZos, grown, oldCount, newRealZones);
@@ -347,165 +324,6 @@ public class ZoneAppender {
 	}
 
 	/**
-	 * Core byte transform (headless-testable, no filesystem access). Builds
-	 * the three payloads of an append from the CURRENT source ZO, master
-	 * table and EN pack. Validates everything - and self-checks the EN
-	 * rebuild round-trip - BEFORE constructing anything, so a failure here
-	 * leaves no partial state for the caller to clean up.
-	 */
-	public static AppendPayloads buildAppendPayloads(byte[] srcZo, byte[] master, byte[] en, int srcIndex, int newIndex) {
-		if (srcIndex < 0 || srcIndex >= newIndex) {
-			throw new IllegalArgumentException("Source zone " + srcIndex + " out of range (0.." + (newIndex - 1) + ").");
-		}
-		if (master.length != newIndex * ZoneCloner.ZONE_HEADER_SIZE) {
-			throw new IllegalArgumentException("Master table is " + master.length + " bytes, expected " + newIndex + " x 0x38.");
-		}
-		validateEN(en, newIndex);
-		//sanity self-check: rebuilding with the count unchanged must reproduce the input bit-for-bit
-		if (!Arrays.equals(rebuildEN(en, newIndex, false), en)) {
-			throw new IllegalArgumentException("EN pack rebuild round-trip self-check failed - refusing to touch the archive.");
-		}
-		AppendPayloads p = new AppendPayloads();
-		p.newZo = ZoneCloner.cloneZoneBytes(srcZo, newIndex, true);
-		p.compressedZo = LZ11.compress(p.newZo);
-		p.master = new byte[master.length + ZoneCloner.ZONE_HEADER_SIZE];
-		System.arraycopy(master, 0, p.master, 0, master.length);
-		ZoneCloner.patchMasterRow(p.master, srcIndex, newIndex, true);
-		p.en = rebuildEN(en, newIndex, true);
-		return p;
-	}
-
-	/**
-	 * Structural validation of an EN pack against the expected zone count.
-	 * Layout: u16 magic "EN", u16 count, u32 absolute offsets[count + 1]
-	 * (monotonic non-decreasing, first == end of the offset table, last ==
-	 * file length), then the blob data.
-	 */
-	public static void validateEN(byte[] en, int expectedCount) {
-		if (en == null || en.length < 8) {
-			throw new IllegalArgumentException("EN pack too short (" + (en == null ? 0 : en.length) + " bytes).");
-		}
-		if (en[0] != 'E' || en[1] != 'N') {
-			throw new IllegalArgumentException("EN pack has wrong magic (0x" + Integer.toHexString(en[0] & 0xFF) + Integer.toHexString(en[1] & 0xFF) + ").");
-		}
-		int count = ContainerBytes.count(en);
-		if (count != expectedCount) {
-			throw new IllegalArgumentException("EN pack count " + count + " != zone count " + expectedCount + ".");
-		}
-		int tableEnd = 4 + (count + 1) * 4;
-		if (en.length < tableEnd) {
-			throw new IllegalArgumentException("EN pack too short for its offset table (" + en.length + " < " + tableEnd + ").");
-		}
-		int prev = -1;
-		for (int i = 0; i <= count; i++) {
-			int off = i32(en, 4 + i * 4);
-			if (i == 0 && off != tableEnd) {
-				throw new IllegalArgumentException("EN pack first offset 0x" + Integer.toHexString(off) + " != table end 0x" + Integer.toHexString(tableEnd) + ".");
-			}
-			if (off < prev) {
-				throw new IllegalArgumentException("EN pack offsets not monotonic at index " + i + ".");
-			}
-			prev = off;
-		}
-		if (prev != en.length) {
-			throw new IllegalArgumentException("EN pack end sentinel 0x" + Integer.toHexString(prev) + " != file length 0x" + Integer.toHexString(en.length) + ".");
-		}
-	}
-
-	/**
-	 * Rebuilds an EN pack from its own offset table and blobs; optionally
-	 * appends one EMPTY blob for a new zone ("no wild data" - game-legal, 386
-	 * retail zones have it). With appendEmpty the result is exactly 4 bytes
-	 * longer (one more offset), every original offset is shifted by +4 and
-	 * the two last offsets both equal the new file length; without it the
-	 * result is byte-identical to a well-formed input.
-	 */
-	public static byte[] rebuildEN(byte[] en, int expectedCount, boolean appendEmpty) {
-		return rebuildENMulti(en, expectedCount, appendEmpty ? 1 : 0);
-	}
-
-	/**
-	 * The EN pack with only its first {@code keepCount} blobs - the mirror of
-	 * {@link #rebuildENMulti}, and the half that was missing.
-	 *
-	 * <p>WHY IT HAD TO EXIST. Removing the added zones truncates the master
-	 * zone-header table back to its stock rows and preserved the EN pack
-	 * BYTE FOR BYTE - which its own comment said out loud, as if that were the
-	 * safe choice. It is not: the EN pack carries its own count, and the append
-	 * grew it. So a revert left a 536-row table beside a 540-entry EN pack, and
-	 * the next append refused with "EN pack count 540 != zone count 536" -
-	 * leaving the user unable to add zones again, and unable to see why, since
-	 * nothing in the revert had said it was leaving the tail behind.
-	 *
-	 * <p>The dropped blobs are the removed zones' wild-encounter data, which is
-	 * what removing those zones means. The blobs that stay are copied verbatim,
-	 * so a zone the user kept comes back byte-identical.
-	 */
-	public static byte[] truncateEN(byte[] en, int expectedCount, int keepCount) {
-		if (keepCount < 0 || keepCount > expectedCount) {
-			throw new IllegalArgumentException("keepCount " + keepCount + " out of range (0.."
-				+ expectedCount + ")");
-		}
-		validateEN(en, expectedCount);
-		int count = ContainerBytes.count(en);
-		int[] offs = new int[count + 1];
-		for (int i = 0; i <= count; i++) {
-			offs[i] = i32(en, 4 + i * 4);
-		}
-		int tableEnd = 4 + (keepCount + 1) * 4;
-		int dataLen = offs[keepCount] - offs[0];
-		byte[] out = new byte[tableEnd + dataLen];
-		out[0] = 'E';
-		out[1] = 'N';
-		out[2] = (byte) keepCount;
-		out[3] = (byte) (keepCount >> 8);
-		int shift = tableEnd - offs[0];
-		for (int i = 0; i <= keepCount; i++) {
-			putI32(out, 4 + i * 4, offs[i] + shift);
-		}
-		System.arraycopy(en, offs[0], out, tableEnd, dataLen);
-		//the same self-check the append makes before it touches an archive: what
-		//came out must be a structurally valid pack of exactly the count claimed
-		validateEN(out, keepCount);
-		return out;
-	}
-
-	/**
-	 * Like {@link #rebuildEN} but appends {@code appendCount} empty ("no wild
-	 * data") blobs at once - used when adding several zones in one shot. Every
-	 * appended offset equals the (unchanged) data end, so the new blobs are
-	 * zero-length. appendCount 0 reproduces the input byte-for-byte.
-	 */
-	public static byte[] rebuildENMulti(byte[] en, int expectedCount, int appendCount) {
-		if (appendCount < 0) {
-			throw new IllegalArgumentException("appendCount must be >= 0");
-		}
-		validateEN(en, expectedCount);
-		int count = ContainerBytes.count(en);
-		int[] offs = new int[count + 1];
-		for (int i = 0; i <= count; i++) {
-			offs[i] = i32(en, 4 + i * 4);
-		}
-		int newCount = count + appendCount;
-		int tableEnd = 4 + (newCount + 1) * 4;
-		int dataLen = offs[count] - offs[0];
-		byte[] out = new byte[tableEnd + dataLen]; //appended blobs are empty - contribute 0 bytes
-		out[0] = 'E';
-		out[1] = 'N';
-		out[2] = (byte) newCount;
-		out[3] = (byte) (newCount >> 8);
-		int shift = tableEnd - offs[0];
-		for (int i = 0; i <= count; i++) {
-			putI32(out, 4 + i * 4, offs[i] + shift);
-		}
-		for (int j = 1; j <= appendCount; j++) {
-			putI32(out, 4 + (count + j) * 4, offs[count] + shift); //empty blob -> points at data end
-		}
-		System.arraycopy(en, offs[0], out, tableEnd, dataLen);
-		return out;
-	}
-
-	/**
 	 * Payloads for a MULTI-zone append (the block-of-N layout that
 	 * {@link ctrmap.formats.codepatch.ZoneLimitPatch} expects): {@code addCount}
 	 * new ZO containers, the master table grown to {@code oldCount + addCount}
@@ -519,8 +337,6 @@ public class ZoneAppender {
 		public byte[] master;
 		/** EN pack grown by addCount empty blobs. */
 		public byte[] en;
-		public int oldCount;
-		public int addCount;
 		public int newCount;
 	}
 
@@ -542,13 +358,11 @@ public class ZoneAppender {
 		if (master.length != oldCount * ZoneCloner.ZONE_HEADER_SIZE) {
 			throw new IllegalArgumentException("Master table is " + master.length + " bytes, expected " + oldCount + " x 0x38.");
 		}
-		validateEN(en, oldCount);
-		if (!Arrays.equals(rebuildENMulti(en, oldCount, 0), en)) {
+		ctrmap.formats.encounters.EnPack pack = ctrmap.formats.encounters.EnPack.parse(en, oldCount);
+		if (!Arrays.equals(pack.bytes(), en)) {
 			throw new IllegalArgumentException("EN pack rebuild round-trip self-check failed - refusing to touch the archive.");
 		}
 		MultiAppendPayloads p = new MultiAppendPayloads();
-		p.oldCount = oldCount;
-		p.addCount = addCount;
 		p.newCount = oldCount + addCount;
 		p.newZos = new byte[addCount][];
 		for (int i = 0; i < addCount; i++) {
@@ -559,7 +373,7 @@ public class ZoneAppender {
 		for (int i = 0; i < addCount; i++) {
 			ZoneCloner.patchMasterRow(p.master, srcIndex, oldCount + i, true);
 		}
-		p.en = rebuildENMulti(en, oldCount, addCount);
+		p.en = pack.grownBy(addCount).bytes();
 		return p;
 	}
 

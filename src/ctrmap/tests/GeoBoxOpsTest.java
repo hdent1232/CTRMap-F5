@@ -13,7 +13,10 @@ import static ctrmap.formats.containers.ContainerBytes.subfile;
  *     vertex outside is byte-untouched, and the model re-validates clean;
  * (2) DUPLICATE +100X: query(fullFaces) faces appear as clones, original
  *     geometry untouched, re-validates clean;
- * (3) DELETE: the full-faces disappear, no other face lost, re-validates clean.
+ * (3) DELETE: the full-faces disappear, no other face lost, re-validates clean;
+ * (4) ONE REBUILD (F068): the duplicate's and the delete's edits, written in one rebuild,
+ *     are the bytes one rebuild per touched mesh writes - on regions where two or more
+ *     meshes are touched, which is where they could differ.
  *
  * Usage: java ctrmap.tests.GeoBoxOpsTest <path-to-a039-garc> [sampleStep]
  */
@@ -24,7 +27,7 @@ public class GeoBoxOpsTest {
 				: "../RomFS_original_garcs/a/0/3/9");
 		int step = args.length > 1 ? Integer.parseInt(args[1]) : 20;
 		GARC garc = new GARC(garcFile);
-		int tested = 0, moveOk = 0, dupOk = 0, delOk = 0, failures = 0, emptySel = 0;
+		int tested = 0, moveOk = 0, dupOk = 0, delOk = 0, failures = 0, emptySel = 0, batched = 0;
 		for (int i = 0; i < garc.length; i += step) {
 			byte[] model = subfile(garc.getDecompressedEntry(i), 1);
 			if (model == null || !BchMapModel.isMapModel(model)) {
@@ -80,8 +83,28 @@ public class GeoBoxOpsTest {
 					throw new IllegalStateException("dup: expected +" + sel.fullFaces + " faces, got +" + (trisAfter - trisBefore));
 				}
 
-				// the clones must sit exactly +100 X from originals
+				// the clones must sit exactly +100 X from originals - ASSERTED (F250): the box was
+				// built here and never looked at, so a duplicate placed anywhere, or on top of the
+				// original, passed on its face count alone
 				GeoBoxOps.Box shiftedBox = new GeoBoxOps.Box(box.minX + 100f, box.minZ, box.maxX + 100f, box.maxZ);
+				int clones = 0;
+				for (BchMapModel.MeshGeom g : bmm.geometry()) {
+					if (!g.posOk) {
+						continue;
+					}
+					float[][] before = bmm.getVertexPositions(g.meshIndex);
+					float[][] after = dm.getVertexPositions(g.meshIndex);
+					for (int v = 0; v < after.length; v++) {
+						if (v < before.length ? !java.util.Arrays.equals(before[v], after[v]) : !shiftedBox.contains(after[v])) {
+							throw new IllegalStateException("dup: mesh " + g.meshIndex + " v" + v + (v < before.length
+									? " - an original vertex moved" : " - a clone outside the box +100 X"));
+						}
+						clones += v < before.length ? 0 : 1;
+					}
+				}
+				if (sel.fullFaces > 0 && clones == 0) {
+					throw new IllegalStateException("dup: " + sel.fullFaces + " faces selected and no clone vertex appended");
+				}
 				dupOk++;
 
 				// (3) DELETE
@@ -97,6 +120,25 @@ public class GeoBoxOpsTest {
 					throw new IllegalStateException("del: expected " + expected + " faces, got " + trisDel);
 				}
 				delOk++;
+
+				// (4) ONE REBUILD WRITES WHAT ONE REBUILD PER MESH WRITES (F068)
+				for (java.util.Map<Integer, BchMapModel.MeshEdit> edits : java.util.Arrays.asList(
+						GeoBoxOps.duplicateEdits(bmm, box, 100f, 0, 0), GeoBoxOps.deleteEdits(bmm, box))) {
+					if (edits.size() < 2) {
+						continue;
+					}
+					byte[] once = bmm.setMeshGeometries(edits);
+					byte[] stepwise = model;
+					for (java.util.Map.Entry<Integer, BchMapModel.MeshEdit> e : edits.entrySet()) {
+						stepwise = new BchMapModel(stepwise).setMeshGeometry(e.getKey(), e.getValue().vertices,
+								e.getValue().indices);
+					}
+					if (!java.util.Arrays.equals(once, stepwise)) {
+						throw new IllegalStateException("one rebuild of " + edits.size() + " meshes is not what one rebuild"
+								+ " per mesh writes");
+					}
+					batched++;
+				}
 			} catch (RuntimeException ex) {
 				failures++;
 				System.out.println("FAIL region " + i + ": " + ex.getMessage());
@@ -106,7 +148,12 @@ public class GeoBoxOpsTest {
 			}
 		}
 		System.out.println("\nGeoBoxOps: tested=" + tested + " (emptySel=" + emptySel + ")  move=" + moveOk
-				+ "  dup=" + dupOk + "  del=" + delOk + "  failures=" + failures);
+				+ "  dup=" + dupOk + "  del=" + delOk + "  one-rebuild=" + batched + "  failures=" + failures);
+		if (batched == 0) {
+			//A CONFIDENT ZERO: no region touched two meshes, so the one-rebuild check compared nothing
+			failures++;
+			System.out.println("FAIL: no sampled region touched two or more meshes - the one-rebuild check (F068) asked nothing");
+		}
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT");
 		if (failures > 0) {
 			System.exit(1);

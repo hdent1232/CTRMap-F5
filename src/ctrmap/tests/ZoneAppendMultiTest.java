@@ -7,7 +7,7 @@ import ctrmap.formats.codepatch.ZoneLimitPatch;
 import ctrmap.formats.garc.GARC;
 import java.io.File;
 import java.util.Arrays;
-import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.i32;
 
 /**
  * Validates the multi-zone append (block-of-N layout) against the real ORAS
@@ -53,13 +53,13 @@ public class ZoneAppendMultiTest {
 			check(Arrays.equals(Arrays.copyOf(p.master, master.length), master), "N=" + n + ": original master rows preserved");
 
 			// EN pack: M blobs, validates, round-trips, appended blobs empty
-			ZoneAppender.validateEN(p.en, m);
+			ctrmap.formats.encounters.EnPack.parse(p.en, m);
 			check(((p.en[2] & 0xFF) | ((p.en[3] & 0xFF) << 8)) == m, "N=" + n + ": EN count == " + m);
-			check(Arrays.equals(ZoneAppender.rebuildENMulti(p.en, m, 0), p.en), "N=" + n + ": EN round-trips");
-			int enEnd = i32(p.en, 4 + m * 4);
+			check(Arrays.equals(ctrmap.formats.encounters.EnPack.parse(p.en, m).bytes(), p.en), "N=" + n + ": EN round-trips");
+			int enEnd = ctrmap.formats.containers.ContainerBytes.offsets(p.en)[m];
 			check(enEnd == p.en.length, "N=" + n + ": EN end sentinel == length");
 			for (int i = oldCount; i <= m; i++) {                 // appended offsets all == data end (empty)
-				check(i32(p.en, 4 + i * 4) == p.en.length, "N=" + n + ": appended EN blob " + i + " empty");
+				check(ctrmap.formats.containers.ContainerBytes.offsets(p.en)[i] == p.en.length, "N=" + n + ": appended EN blob " + i + " empty");
 			}
 
 			// new ZOs: addCount of them, each a valid ZO with its own OAZoneNumber

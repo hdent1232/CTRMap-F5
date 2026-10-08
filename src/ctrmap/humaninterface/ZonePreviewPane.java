@@ -315,17 +315,21 @@ public final class ZonePreviewPane extends JPanel {
 			//"what is the user holding", and this pane only reads it.
 			ctrmap.humaninterface.tools.ToolSelection tools = this.tools;
 			final java.util.List<CM3DRenderable> drawnBy = new java.util.ArrayList<>();
-			final H3DRenderingPanel panel = new H3DRenderingPanel(drawnBy, tools);
+			//NULL WHEN OPENGL CANNOT START (F077): the scene draws on nothing, the caption still
+			//says which zone and which cells, and the middle says why there is no picture
+			final H3DRenderingPanel panel = GlSupport.available() ? new H3DRenderingPanel(drawnBy, tools) : null;
 			TileMapPanel built = new TileMapPanel(owner, tools,
 					new PanelScene3D(() -> panel, drawnBy), new javax.swing.JScrollPane(),
-					new CollEditPanel(tools), null);
+					new CollEditPanel(tools, new UndoHistory(java.util.Collections::emptyList,
+							java.util.Collections::emptyList)), null);   //a preview edits nothing: its history is never shown
 			drawnBy.add(built);
 			map = built;
 			view = panel;
+			final java.awt.Component shown = panel != null ? panel : GlSupport.placeholder("The zone preview");
 			SwingUtilities.invokeLater(new Runnable() {
 				@Override
 				public void run() {
-					middle.add(panel, BorderLayout.CENTER);
+					middle.add(shown, BorderLayout.CENTER);
 					middle.revalidate();
 				}
 			});

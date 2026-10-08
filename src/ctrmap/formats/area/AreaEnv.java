@@ -1,7 +1,7 @@
 package ctrmap.formats.area;
 
-import static ctrmap.formats.LittleEndian.f32;
-import static ctrmap.formats.LittleEndian.putF32;
+import static ctrmap.util.LittleEndian.f32;
+import static ctrmap.util.LittleEndian.putF32;
 
 /**
  * The per-area environment GameFreak stores in AreaData subfile 4: 2944 bytes
@@ -210,9 +210,12 @@ public class AreaEnv {
 	}
 
 	/**
-	 * The colour a static view should paint, at the given time of day, already
-	 * mixed by that time's strength: fog at strength 0 is no fog, and the old
-	 * code painted the sky with a colour the area did not use at all.
+	 * The fog colour a static view should paint at the given time of day, as the
+	 * block stores it - NOT mixed by strength (F236: this said it was, and the body
+	 * never did). Strength only gates it: fog at strength 0 is no fog, and the old
+	 * code painted the sky with a colour the area did not use at all. The game
+	 * hands strength to the fog unit as a density; the editor's view draws linear
+	 * fog between near and far, so a thin fog there reads heavier than in game.
 	 *
 	 * @return {@code {r, g, b}}, or null when this area draws no fog then
 	 */

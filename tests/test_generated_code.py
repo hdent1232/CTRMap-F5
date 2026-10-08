@@ -4,8 +4,9 @@ The owner's rule: never hand-edit a NetBeans initComponents block. `.claude/hook
 guard_generated_code.py` read only an Edit's or a Write's text, so `sed -i` over a form, a script
 handed the file and an `edits[]` batch all passed. `tools/guard/generated_code.py` now declares
 the rule AT_WRITE_CHANGE, and `bundle_rules.ask_changes` - the one door the write channel and the
-held-writes channel both ask - judges the file before and after. Asked here with the real
-AboutDialog.java form, through that door:
+held-writes channel both ask - judges the file before and after. Asked here with a real form of this
+tree, FOUND by walking src/ (it was AboutDialog.java, named by hand, and deleting that form took the
+whole suite down in setUpClass), through that door:
 
   instance   a change inside initComponents is a finding of `generated_code`
   elsewhere  so is a block that would be gone, and the hook refuses an edits[] batch inside it
@@ -16,11 +17,37 @@ import importlib.util
 import io
 import json
 import os
+import re
 import sys
 import unittest
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FORM = "src/ctrmap/humaninterface/AboutDialog.java"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+HERE = _tree_root.require(__file__)
+
+
+def a_form():
+    """(path, line): the first NetBeans form under src/, in sorted order, whose generated block makes
+    a JLabel - and that line. Derived from the tree, never named: a named fixture is one deletion
+    from a suite that cannot start."""
+    for folder, dirs, files in os.walk(os.path.join(HERE, "src")):
+        dirs.sort()
+        for name in sorted(files):
+            if not name.endswith(".java"):
+                continue
+            path = os.path.join(folder, name)
+            with io.open(path, encoding="utf-8", newline="") as handle:
+                text = handle.read()
+            start, end = text.find("//GEN-BEGIN:initComponents"), text.find("//GEN-END:initComponents")
+            if start < 0 or end < start:
+                continue
+            made = re.search(r"^\s*(\w+ = new javax\.swing\.JLabel\(\);)", text[start:end], re.M)
+            if made:
+                return os.path.relpath(path, HERE).replace(os.sep, "/"), made.group(1)
+    return None, None
+
+
+FORM, LABEL = a_form()
 
 
 def load(name, rel):
@@ -39,6 +66,7 @@ class AGeneratedBlockIsJudgedByWhatChanged(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.rules = load("ctrmap_bundle_rules", ".claude/bundle-hooks/bundle_rules.py")
+        assert FORM is not None, "control: this tree holds a form whose generated block makes a JLabel"
         with io.open(os.path.join(HERE, FORM), encoding="utf-8", newline="") as handle:
             cls.before = handle.read()
         assert "//GEN-BEGIN:initComponents" in cls.before, "control: the form has its block"
@@ -48,8 +76,7 @@ class AGeneratedBlockIsJudgedByWhatChanged(unittest.TestCase):
         return [line for name, (_w, _n, found) in worse.items() if name == "generated_code" for line in found]
 
     def test_a_change_inside_the_block_is_refused_whatever_wrote_it(self):
-        inside = self.before.replace("versionLabel = new javax.swing.JLabel();",
-                                     "versionLabel = new javax.swing.JLabel(\"x\");", 1)
+        inside = self.before.replace(LABEL, LABEL.replace("();", "(\"x\");"), 1)
         self.assertNotEqual(inside, self.before, "control: the probe changed the block")
         said = self.said(inside)
         self.assertTrue(said and "initComponents block would change" in said[0],
@@ -64,7 +91,7 @@ class AGeneratedBlockIsJudgedByWhatChanged(unittest.TestCase):
     def test_the_hook_refuses_an_edits_batch_inside_the_block(self):
         hook = load("ctrmap_guard_generated_code", ".claude/hooks/guard_generated_code.py")
         deny, why = hook.decide({"cwd": HERE, "tool_input": {"file_path": FORM, "edits": [
-            {"old_string": "versionLabel = new javax.swing.JLabel();", "new_string": "x();"}]}})
+            {"old_string": LABEL, "new_string": "x();"}]}})
         self.assertTrue(deny, "an edits[] batch inside initComponents, its path relative to the "
                               "call's cwd, was allowed")
 

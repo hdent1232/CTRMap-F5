@@ -1,6 +1,5 @@
 package ctrmap.tests;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.humaninterface.Selector;
 import ctrmap.humaninterface.TilemapPanelInputManager;
 import ctrmap.humaninterface.tools.AbstractTool;

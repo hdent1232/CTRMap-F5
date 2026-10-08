@@ -29,24 +29,14 @@ LF = chr(10)
 #: The project-side declarations file, relative to the repository root.
 DECLARATIONS_NAME = os.path.join(".claude", "bundle-install.json")
 
-#: Adapted per project: see ADAPT.md.
+#: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("DECLARATIONS_NAME",)
 
 
-def _root():
-    """The repository root: the nearest ancestor holding the declarations file, or `.git`."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    while True:
-        if os.path.isfile(os.path.join(here, DECLARATIONS_NAME)) or os.path.exists(
-                os.path.join(here, ".git")):
-            return here
-        parent = os.path.dirname(here)
-        if parent == here:
-            return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        here = parent
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
 
-
-ROOT = _root()
+ROOT = _tree_root.require(__file__)
 DECLARATIONS = os.path.join(ROOT, DECLARATIONS_NAME)
 
 

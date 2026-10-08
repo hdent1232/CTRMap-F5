@@ -12,8 +12,8 @@ package ctrmap.gamedef;
 public enum GameType {
 	XY,
 	ORAS,
-	/** Sun/Moon (Gen 7) - detected/served via gamedef profiles; not yet supported. */
+	/** Sun/Moon (Gen 7) - a placeholder profile: never detected, every answer unmeasured (F136). */
 	SM,
-	/** Ultra Sun/Ultra Moon (Gen 7) - not yet supported. */
+	/** Ultra Sun/Ultra Moon (Gen 7) - a placeholder profile: never detected, every answer unmeasured (F136). */
 	USUM
 }

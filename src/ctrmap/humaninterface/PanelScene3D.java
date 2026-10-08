@@ -60,9 +60,10 @@ public final class PanelScene3D implements Scene3D {
 		//matrix load came up square. Framing a map means a known view of it, and the
 		//pitch one line up was already being reset either way, so the camera was
 		//never the user's to keep. Zeroed here because that is what the sibling
-		//below - the everyday path - already does. The FOURTH line is the one real
-		//difference left: translateX 0 against the formula's -360f for one cell
-		//across. REPORTED and left alone; changing it moves every loose GR's view.
+		//below - the everyday path - already does. translateX 0 against the
+		//formula's -360f for one cell across is NOT a slip (F159): a loose region's
+		//model is drawn where it stands, centred on 0, while a matrix's cells are
+		//placed at cell * 720 + 360, so each framing centres what it frames.
 		panel.rotateY = 0f;
 	}
 

@@ -83,7 +83,7 @@ def runs_it(segment, tool):
 #: The one that manages the lock itself, and whose refusal is more useful than this one.
 EXEMPT_TOOL = "mutate.py"
 
-#: Adapted per project: see ADAPT.md.
+#: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("LOCK", "AUDIT_TOOL", "EXEMPT_TOOL")
 
 

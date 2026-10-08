@@ -1,8 +1,8 @@
 package ctrmap.formats.containers;
 
 import java.util.Arrays;
-import static ctrmap.formats.LittleEndian.i32;
-import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.u16;
 
 /**
  * Reads a GameFreak mini-pack (AD, GR, ZO, MM, BM...) that is already in
@@ -48,6 +48,27 @@ public final class ContainerBytes {
 			return 0;
 		}
 		return u16(container, 2);
+	}
+
+	/**
+	 * The whole offset table - {@code count + 1} entries, the last the end - when the buffer holds
+	 * all of it; null otherwise. The values are as stored: a reader that needs them ordered or
+	 * inside the buffer checks that itself, in its own words (F215: four readers wrote this loop
+	 * out, and three of them read past a table cut short).
+	 */
+	public static int[] offsets(byte[] container) {
+		if (container == null || container.length < HEADER) {
+			return null;
+		}
+		int count = count(container);
+		if (HEADER + (count + 1) * 4 > container.length) {
+			return null;
+		}
+		int[] out = new int[count + 1];
+		for (int i = 0; i <= count; i++) {
+			out[i] = i32(container, HEADER + i * 4);
+		}
+		return out;
 	}
 
 	/**

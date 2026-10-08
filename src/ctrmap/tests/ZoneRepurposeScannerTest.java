@@ -279,7 +279,7 @@ public class ZoneRepurposeScannerTest {
 		if (i >= cnt) {
 			return null;
 		}
-		int o0 = u32(c, 4 + i * 4), o1 = u32(c, 4 + (i + 1) * 4);
+		int o0 = ctrmap.formats.containers.ContainerBytes.offsets(c)[i], o1 = ctrmap.formats.containers.ContainerBytes.offsets(c)[(i + 1)];
 		if (o0 < 0 || o1 > c.length || o1 < o0) {
 			return null;
 		}

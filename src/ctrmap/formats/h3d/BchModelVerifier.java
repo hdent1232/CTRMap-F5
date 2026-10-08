@@ -1,6 +1,8 @@
 package ctrmap.formats.h3d;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import ctrmap.util.LittleEndian;
 
 /**
  * Strict structural verifier for ORAS map-model BCH files: every layout
@@ -21,7 +23,6 @@ public class BchModelVerifier {
     private BchModelVerifier() {
     }
 
-    private int le32(int o){return (raw[o]&0xFF)|((raw[o+1]&0xFF)<<8)|((raw[o+2]&0xFF)<<16)|((raw[o+3]&0xFF)<<24);}
     private void chk(boolean c,String w){ if(!c) fails.add(w); }
 
     public static List<String> verify(byte[] bch){
@@ -32,6 +33,12 @@ public class BchModelVerifier {
         fails=new ArrayList<>();
         raw=bch; m=new BchMapModel(bch);
         fails.addAll(m.validate());
+        if (m.meshCount==0){
+            //A MODEL WITH NOTHING TO DRAW IS REPORTED, NOT THROWN ON (F063): the checks below read
+            //the first mesh, command stream and buffer, and an empty model ended in IndexOutOfBounds
+            fails.add("no meshes");
+            return fails;
+        }
         int C=m.contentsAddr;
         // sections
         chk(m.stringsAddr==C+m.contentsLen,"stringsAddr");
@@ -48,15 +55,15 @@ public class BchModelVerifier {
         chk(d0t==C+0xB4,"d0t"); chk(d0v==d0t+0x18,"d0v"); chk(d1t==d0v+4,"d1t"); chk(d1v==d1t+0xC*(N+1),"d1v");
         int p=d1v+4*N;
         for (int d=2;d<15;d++){
-            int tp=m.ptr(C+d*12+8), cnt=le32(C+d*12+4);
+            int tp=m.ptr(C+d*12+8), cnt=LittleEndian.i32(raw, C+d*12+4);
             chk(tp==p,"dict"+d+" tree");
             p=tp+0xC*(cnt+1);
             if (cnt>0){ int vp=m.ptr(C+d*12); chk(vp==p,"aux"+d+" vals"); p=vp+4*cnt; }
         }
         chk(m.modelPtr==p,"modelPtr");
         // model region
-        int vis=m.ptr(m.modelPtr+0x7C), visCnt=le32(m.modelPtr+0x80);
-        int mnt=m.ptr(m.modelPtr+0x8C), mnc=le32(m.modelPtr+0x88);
+        int vis=m.ptr(m.modelPtr+0x7C), visCnt=LittleEndian.i32(raw, m.modelPtr+0x80);
+        int mnt=m.ptr(m.modelPtr+0x8C), mnc=LittleEndian.i32(raw, m.modelPtr+0x88);
         int mt=m.ptr(m.modelPtr+0x3C);
         chk(vis==m.modelPtr+0x98,"vis pos");
         int visSize=4*((visCnt+31)/32);
@@ -67,7 +74,7 @@ public class BchModelVerifier {
         chk(m.meshesPtr==m.matValuesPtr+0x2C*N,"meshArr pos");
         int arrEnd=m.meshesPtr+0x38*M;
         // bones: tree at arrEnd (root stub when 0 bones), bones array 0x64 each, then modelMeta
-        int bonesArr=m.ptr(m.modelPtr+0x70), nB=le32(m.modelPtr+0x74);
+        int bonesArr=m.ptr(m.modelPtr+0x70), nB=LittleEndian.i32(raw, m.modelPtr+0x74);
         int bonesTree=m.ptr(m.modelPtr+0x78);
         chk(bonesTree==arrEnd,"bonesTree pos");
         chk(bonesArr==arrEnd+0xC*(nB+1),"bonesArr pos");
@@ -79,7 +86,7 @@ public class BchModelVerifier {
         chk(b0==m.meshesPtr&&e0==b1&&e1==b2&&e2==b3&&e3==arrEnd,"layer chain");
         for (int j=0;j<M;j++){
             int h=m.meshes.get(j)[0];
-            int lam=le32(h+4)>>>24;
+            int lam=LittleEndian.i32(raw, h+4)>>>24;
             int lo=lam==0?b0:lam==1?b1:lam==2?b2:b3;
             int hi=lam==0?e0:lam==1?e1:lam==2?e2:e3;
             chk(h>=lo&&h<hi,"mesh"+j+" in layer segment "+lam);
@@ -88,7 +95,7 @@ public class BchModelVerifier {
         int mmv=0, mmc=0;
         int cur;
         if (m.modelMetaPtr!=0){
-            mmv=m.ptr(m.modelMetaPtr); mmc=le32(m.modelMetaPtr+4);
+            mmv=m.ptr(m.modelMetaPtr); mmc=LittleEndian.i32(raw, m.modelMetaPtr+4);
             int mmt=m.ptr(m.modelMetaPtr+8);
             chk(mmt==m.modelMetaPtr+0xC&&mmv==mmt+0xC*(mmc+1),"modelMeta dict");
             cur=mmv+0xC*mmc;
@@ -101,13 +108,11 @@ public class BchModelVerifier {
             chk(m.ptr(h+0x18)==pp+0x110,"mat"+i+" objA");
             int meta=m.ptr(pp+0x10C);
             chk(meta==pp+0x140,"mat"+i+" meta pos");
-            int v=m.ptr(meta), c2=le32(meta+4), t2=m.ptr(meta+8);
+            int v=m.ptr(meta), c2=LittleEndian.i32(raw, meta+4), t2=m.ptr(meta+8);
             chk(t2==meta+0xC&&v==t2+0xC*(c2+1),"mat"+i+" meta dict");
             int end=v+0xC*c2;
             for (int k=0;k<c2;k++){ int dp=m.ptr(v+k*0xC+8); if (dp!=0) end=Math.max(end,dp); }
             // cannot know payload sizes; next object bound check:
-            cur=pp; // replaced below by next-start logic
-            cur=pp; // placeholder
             int next=(i+1<N)?m.materialParamOffsets.get(i+1):minSub();
             chk(end<next,"mat"+i+" extent");
             cur=next;
@@ -124,7 +129,7 @@ public class BchModelVerifier {
             int next=(k+1<subs.size())?subs.get(k+1)[0]:tail;
             int meta=m.ptr(m.meshes.get(j)[0]+0x34);
             chk(meta==sp+0x34,"mesh"+j+" meta pos");
-            int v=m.ptr(meta), c2=le32(meta+4), t2=m.ptr(meta+8);
+            int v=m.ptr(meta), c2=LittleEndian.i32(raw, meta+4), t2=m.ptr(meta+8);
             chk(t2==meta+0xC&&v==t2+0xC*(c2+1),"mesh"+j+" meta dict");
             for (int q=0;q<c2;q++){ int dp=m.ptr(v+q*0xC+8); chk(dp==0||(dp>=sp&&dp<next),"mesh"+j+" payload local"); }
         }
@@ -135,15 +140,15 @@ public class BchModelVerifier {
             int frag=m.ptr(pp+0xC8);
             int h=m.matValuesPtr+i*0x2C;
             int tex=m.ptr(h+0x10);
-            chk(le32(pp+0xD0)==frag-m.commandsAddr,"mat"+i+" f03==frag");
-            streams.add(new int[]{frag, tex+4*le32(h+0x14)-frag});
+            chk(LittleEndian.i32(raw, pp+0xD0)==frag-m.commandsAddr,"mat"+i+" f03==frag");
+            streams.add(new int[]{frag, tex+4*LittleEndian.i32(raw, h+0x14)-frag});
         }
         for (int j=0;j<M;j++){
             int[] me=m.meshes.get(j);
             int sub=m.ptr(me[3]+0x2C), dis=m.ptr(me[0]+0x18);
             chk(sub==me[1]+4*me[2],"mesh"+j+" sub follows enable");
-            chk(dis==sub+4*le32(me[3]+0x30),"mesh"+j+" dis follows sub");
-            streams.add(new int[]{me[1], dis+4*le32(me[0]+0x1C)-me[1]});
+            chk(dis==sub+4*LittleEndian.i32(raw, me[3]+0x30),"mesh"+j+" dis follows sub");
+            streams.add(new int[]{me[1], dis+4*LittleEndian.i32(raw, me[0]+0x1C)-me[1]});
         }
         streams.sort((a,b)->Integer.compare(a[0],b[0]));
         // aux(LUT) regions carry LUT data at the start of commands; require contiguity from the first stream on

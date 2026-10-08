@@ -96,7 +96,7 @@ public class ForkGuardsTest {
 		zo[4] = 8;                                    //the header subfile starts at 8
 		byte[] table = new byte[231 * AreaForker.AREA_ROW];
 		for (int area : new int[]{229, AreaForker.AD_GLOBAL_TABLE}) {
-			zo[8 + AreaForker.HDR_AREA_OFF] = (byte) area;
+			zo[8 + ctrmap.ZoneResource.AREA.headerOffset] = (byte) area;
 			String refused = null;
 			AreaForker.ForkPlan p = null;
 			try {

@@ -5,7 +5,6 @@ import ctrmap.formats.scripts.GFLPawnScript;
 import ctrmap.formats.scripts.ZoneScriptAnalyzer;
 import ctrmap.scripts.GfHash;
 import java.io.File;
-import java.util.Arrays;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**

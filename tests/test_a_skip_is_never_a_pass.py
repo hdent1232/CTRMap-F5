@@ -18,7 +18,9 @@ import sys
 import types
 import unittest
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+HERE = _tree_root.require(__file__)
 TESTS = os.path.join(HERE, "src", "ctrmap", "tests")
 
 #: A print whose message reads as "I did not run this": a `skip` opening it, or the phrasings the

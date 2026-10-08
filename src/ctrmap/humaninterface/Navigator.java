@@ -1,5 +1,7 @@
 package ctrmap.humaninterface;
 
+import ctrmap.formats.MapObject;
+
 /**
  * The 3D navigator gizmo: which record it stands over, and when to re-read it.
  *

@@ -157,21 +157,15 @@ def script_width(tool_input):
     return None, "no declared width, no fan-out list and no agent() call found"
 
 
-#: WHAT A FAN-OUT LOOKS LIKE, rather than what it is called. This compared `tool_name` to the
-#: two literals "Workflow" and "Agent". The seven guards beside this one compared it to the
-#: literal "Bash", and the session's `PowerShell` tool ran the same shell past every one of
-#: them without anybody bypassing anything. A cap that 791 agents have already walked through
-#: is the last one that should depend on a spelling, so a call is a fan-out when its NAME says
-#: so or when its INPUT carries the things only a spawn carries.
-FANOUT_NAMES = ("workflow", "agent", "task", "fleet", "swarm", "subagent")
-FANOUT_KEYS = ("subagent_type", "agents", "resumeFromRunId", "scriptPath")
-
-
-#: Tools that MANAGE work already running rather than start any. `TaskStop` carries "task" and
-#: was classified as a fan-out of unreadable width, so the hook refused the command that STOPS
-#: a run - it cost ten minutes and would have cost two hours of a replant that had to be
-#: restarted anyway. A guard that refuses the brakes is one that gets switched off.
-NOT_A_SPAWN = ("stop", "kill", "cancel", "abort", "output", "list", "status", "read", "wait")
+#: WHAT A FAN-OUT CARRIES, rather than what it is called. This compared `tool_name` to the
+#: two literals "Workflow" and "Agent"; then to a list of words, which called the harness's to-do
+#: tools - TaskCreate, TaskUpdate, TaskGet - launches of unreadable width because their names hold
+#: "task", and kept a second list (stop, kill, list, read...) to undo the first after TaskStop, the
+#: brake, was refused (F193). A launch is decided by its INPUT: a script, or a prompt handed what
+#: only a launch is handed - the bundle's own shape (bundle_shell.LAUNCH_KEYS).
+SCRIPT_KEYS = ("script", "scriptPath", "resumeFromRunId", "agents")
+LAUNCH_KEYS = ("subagent_type", "description", "environment_id", "source_url", "cron_expression",
+               "run_once_at", "create_new_session_on_fire", "persistent_session_id")
 
 
 #: WHAT ACTUALLY FAILED, measured in DT Engine's own documents on 2026-09-20 rather than
@@ -222,21 +216,23 @@ def parallel_edit(script, width):
 
 
 def spawns_workers(tool, tool_input):
-    """(is a fan-out, is it workflow-shaped). A spawn nobody can classify counts as one."""
-    name = (tool or "").lower()
-    if any(word in name for word in NOT_A_SPAWN):
+    """(is a fan-out, is it workflow-shaped), by what the input CARRIES (F193).
+
+    A script - inline, by path, a run resumed, a list of agents - is a workflow, which spawns a
+    whole script's worth. A prompt handed an agent type, a task description, an environment or a
+    schedule is one agent. ONE NAME IS KEPT, and it is not a list: a saved workflow launched by its
+    name carries no script and no prompt, so a tool whose name says workflow and is handed a `name`
+    is a launch of unreadable width - without it, launching by name is the cheapest way past.
+    """
+    if not isinstance(tool_input, dict):
         return False, False
-    by_name = any(word in name for word in FANOUT_NAMES)
-    by_shape = isinstance(tool_input, dict) and any(k in tool_input for k in FANOUT_KEYS)
-    if not (by_name or by_shape):
-        return False, False
-    #: a workflow spawns a whole script's worth; an agent spawns one. When it is not clear
-    #: which, treat it as the workflow - the wider cap is the one that was breached.
-    single = "agent" in name or (isinstance(tool_input, dict)
-                                 and "subagent_type" in tool_input
-                                 and "script" not in tool_input
-                                 and "scriptPath" not in tool_input)
-    return True, not single
+    if any(key in tool_input for key in SCRIPT_KEYS):
+        return True, True
+    if "workflow" in (tool or "").lower() and "name" in tool_input:
+        return True, True
+    if isinstance(tool_input.get("prompt"), str) and any(key in tool_input for key in LAUNCH_KEYS):
+        return True, False
+    return False, False
 
 
 class Refuse(Exception):

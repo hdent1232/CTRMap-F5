@@ -214,7 +214,7 @@ public class WorkspaceRepointTest {
 
 		List<String> said = Ui.record();
 		try {
-			WorkspaceSettings.repointGameDir(null, gameField, own, restOfTheSave);
+			WorkspaceSettings.repointGameDir(null, gameField, own, restOfTheSave, () -> { });
 		} finally {
 			Ui.stopRecording();
 		}
@@ -226,7 +226,7 @@ public class WorkspaceRepointTest {
 		saved[0] = false;
 		said = Ui.record();
 		try {
-			WorkspaceSettings.repointGameDir(null, gameField, own, restOfTheSave);
+			WorkspaceSettings.repointGameDir(null, gameField, own, restOfTheSave, () -> { });
 		} finally {
 			Ui.stopRecording();
 		}
@@ -247,7 +247,7 @@ public class WorkspaceRepointTest {
 		saved[0] = false;
 		said = Ui.record(JOptionPane.NO_OPTION, JOptionPane.CANCEL_OPTION);
 		try {
-			WorkspaceSettings.repointGameDir(null, gameField, own, restOfTheSave);
+			WorkspaceSettings.repointGameDir(null, gameField, own, restOfTheSave, () -> { });
 		} finally {
 			Ui.stopRecording();
 		}
@@ -264,7 +264,7 @@ public class WorkspaceRepointTest {
 		saved[0] = false;
 		said = Ui.record(JOptionPane.YES_OPTION);
 		try {
-			WorkspaceSettings.repointGameDir(null, gameField, own, restOfTheSave);
+			WorkspaceSettings.repointGameDir(null, gameField, own, restOfTheSave, () -> { });
 		} finally {
 			Ui.stopRecording();
 		}
@@ -360,7 +360,7 @@ public class WorkspaceRepointTest {
 		}
 		freshBackupOf(own);
 		Workspace.GAMEDIR_PATH = own;
-		WorkspaceSettings form = new WorkspaceSettings(null, () -> { });
+		WorkspaceSettings form = new WorkspaceSettings(null, () -> { }, opened -> 0, () -> { });
 		try {
 			JTextField gameField = field(form, "gameField");
 			gameField.setText(other);

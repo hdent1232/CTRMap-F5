@@ -1,6 +1,5 @@
 package ctrmap.humaninterface;
 
-import static ctrmap.CtrmapMainframe.*;
 import ctrmap.formats.tilemap.Tilemap;
 
 /**

@@ -56,7 +56,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import bundle_hooks      # noqa: E402  - where the bundle's hooks are, found rather than spelled
-sys.path.insert(0, bundle_hooks.path(os.path.dirname(HERE)))
+import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
+sys.path.insert(0, bundle_hooks.path(_tree_root.require(__file__)))
 import bundle_rules      # noqa: E402  - what a file declares, and whether that act is asked
 
 #: Where guards live, relative to the project root, beside every hook folder `hook_dirs` finds.
@@ -80,6 +81,10 @@ NOT_GUARDS = {
     "require_build": "A LIBRARY, not a gate: its refusal runs inside `require_build(root)`, which "
                      "a project's harness calls immediately before it measures - the point of "
                      "action by construction, wherever it is called.",
+    "_tree_root": "A LIBRARY, not a gate: the one definition of the project root, copied byte "
+                  "for byte into every folder that needs one. Its one refusal - a file sitting in "
+                  "no project - is about where it was asked from, not about the tree; the check "
+                  "holding every copy to it, counted_roots.py, declares AT_WRITE.",
     "arm_checkout": "Arms a checkout at SessionStart - sets core.hooksPath to .githooks, reads it "
                     "back, fetches the bundle beside it when nothing declared resolves, and "
                     "imports the owner's notes onto a machine without them. It refuses nothing and "
@@ -132,12 +137,12 @@ def machinery_in(root, folder):
     return machinery(imported(read(root, os.path.join(folder, name))) for name in names
                      if name.startswith("guard_") and name.endswith(".py"))
 
-#: Adapted per project: see ADAPT.md.
+#: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("GUARD_DIRS", "NOT_GUARDS")
 
 
 def _root():
-    return bundle_rules.repo_root(__file__) or os.path.dirname(HERE)
+    return _tree_root.require(__file__)
 
 
 def hook_dirs(root):

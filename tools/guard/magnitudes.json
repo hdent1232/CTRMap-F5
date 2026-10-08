@@ -6,12 +6,12 @@
  },
  "ledger.no_cost": {
   "previous": 64,
-  "value": 64,
+  "value": 66,
   "why": null
  },
  "ledger.owed": {
   "previous": 53,
-  "value": 53,
+  "value": 40,
   "why": null
  },
  "ledger.owed_generalisation": {
@@ -21,7 +21,7 @@
  },
  "ledger.owed_real_defect": {
   "previous": 48,
-  "value": 48,
+  "value": 42,
   "why": null
  },
  "ledger.plants": {

@@ -63,6 +63,14 @@ public interface GameFiles {
 	boolean isEdit(File f);
 
 	/**
+	 * The staged copy of one entry when it holds an edit not yet packed; null when the entry is as the
+	 * archive holds it. NEVER extracts: a reader that overlays a whole archive's edits asks this once
+	 * per entry (the item table, F082), and {@link #staged} would write every entry into the workspace
+	 * to answer. No default, for the reason {@link #isEdit} has none.
+	 */
+	File editedEntry(ArchiveType type, int entry);
+
+	/**
 	 * {@code f} is about to be rewritten - called BEFORE its first byte changes, so a
 	 * change that writes several files can put this one back if a later one fails
 	 * (the workspace's unit of work, F227). Nothing by default.
@@ -148,4 +156,17 @@ public interface GameFiles {
 	 * call would keep nothing while looking as though it did.
 	 */
 	GameCache cache();
+
+	/**
+	 * Every zone but {@code except} whose row in this game's master zone-header table names area
+	 * {@code area}: the shared-area question every write into an area refuses on (F214). The
+	 * table's reader and its policy - which copy wins, what a short table means - belong to the
+	 * program that stages the table, so the format layer asks the game it was handed. The texture
+	 * pack used to call that reader directly, and that one call was the edge that put every format
+	 * package in one dependency cycle with the window.
+	 *
+	 * @throws java.io.IOException when the table cannot be read - never an empty answer for a table
+	 *         nobody read, because "nobody uses it" is the answer that grows a shared area
+	 */
+	java.util.List<Integer> zonesNamingArea(int area, int except) throws java.io.IOException;
 }

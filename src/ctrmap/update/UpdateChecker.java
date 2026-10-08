@@ -26,6 +26,8 @@ public class UpdateChecker {
 	private static final String API = "https://api.github.com/repos/" + REPO + "/releases/latest";
 	/** Where the user is sent when there is no downloadable asset. */
 	public static final String RELEASES_PAGE = "https://github.com/" + REPO + "/releases";
+	/** Where a user reports a problem: this project's tracker, named from the same repository (F005). */
+	public static final String ISSUES_PAGE = "https://github.com/" + REPO + "/issues";
 
 	private static final String PREF_NODE = "ctrmap.update";
 	private static final String PREF_ENABLED = "CHECK_ON_STARTUP";

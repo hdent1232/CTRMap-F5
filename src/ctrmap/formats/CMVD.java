@@ -5,10 +5,8 @@ import ctrmap.formats.h3d.model.OhanaMeshUtils;
 import ctrmap.formats.vectors.Vec3f;
 import java.awt.Color;
 import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -40,31 +38,16 @@ public class CMVD {
 		faces = new ArrayList<>();
 	}
 
-	public void write(OutputStream out) throws IOException {
-		DataOutputStream dos = new DataOutputStream(out);
-		dos.writeInt(CMVD_MAGIC);
-		dos.writeShort(vertices.size());
-		dos.writeShort(faces.size());
-		for (int vertex = 0; vertex < vertices.size(); vertex++) {
-			vertices.get(vertex).write(dos);
-		}
-		for (int face = 0; face < faces.size(); face++) {
-			int[] f = faces.get(face);
-			dos.writeShort(f[0]);
-			dos.writeShort(f[1]);
-			dos.writeShort(f[2]);
-		}
-		dos.close();
-	}
-
 	public CMVD(InputStream in) throws IOException {
 		vertices = new ArrayList<>();
 		faces = new ArrayList<>();
 		DataInputStream dis = new DataInputStream(in);
 		int magic = dis.readInt();
 		if (magic != CMVD_MAGIC) {
-			System.err.println("CMVD magic invalid.");
-			return;
+			//REFUSED, NOT EMPTY (F130): this printed to a console the build does not have and answered
+			//a mesh with nothing in it - three invisible move arrows, with nothing said
+			throw new IOException("not a CMVD mesh: it starts 0x" + Integer.toHexString(magic) + ", not 0x"
+					+ Integer.toHexString(CMVD_MAGIC));
 		}
 		int verticesCount = dis.readUnsignedShort();
 		int facesCount = dis.readUnsignedShort();
@@ -137,11 +120,5 @@ public class CMVD {
 			col = new Color(dis.readInt());
 		}
 
-		public void write(DataOutputStream dos) throws IOException {
-			dos.writeFloat(x);
-			dos.writeFloat(y);
-			dos.writeFloat(z);
-			dos.writeInt(col.getRGB());
-		}
 	}
 }

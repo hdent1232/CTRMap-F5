@@ -1,6 +1,6 @@
 package ctrmap.formats.pokedata;
 
-import ctrmap.formats.LittleEndian;
+import ctrmap.util.LittleEndian;
 
 /**
  * One item's 36-byte record, as Gen 6 and Gen 7 store it.
@@ -82,10 +82,6 @@ public final class ItemData {
 		return LittleEndian.u16(b, off);
 	}
 
-	private void u16(int off, int v) {
-		LittleEndian.putU16(b, off, v);
-	}
-
 	// ---- the fields --------------------------------------------------------
 
 	/** Raw stored price. The shop pays {@link #buyPrice()}; see there. */
@@ -93,18 +89,9 @@ public final class ItemData {
 		return u16(0x00);
 	}
 
-	public void setPriceRaw(int v) {
-		u16(0x00, v);
-	}
-
 	/** What the mart charges: the stored value times ten. */
 	public int buyPrice() {
 		return priceRaw() * 10;
-	}
-
-	/** What the mart pays: the stored value times five, so it is never simply half of buy. */
-	public int sellPrice() {
-		return priceRaw() * 5;
 	}
 
 	/** One of the 183 shared behaviours, 0..182. See the class note before changing it. */
@@ -112,17 +99,9 @@ public final class ItemData {
 		return u8(0x02);
 	}
 
-	public void setHeldEffect(int v) {
-		u8(0x02, v);
-	}
-
 	/** The magnitude the held effect uses - Life Orb is 30. Mirrored into healing for healers. */
 	public int heldArgument() {
 		return u8(0x03);
-	}
-
-	public void setHeldArgument(int v) {
-		u8(0x03, v);
 	}
 
 	public int naturalGiftEffect() {
@@ -146,10 +125,6 @@ public final class ItemData {
 		return u16(0x08);
 	}
 
-	public void setPacked(int v) {
-		u16(0x08, v);
-	}
-
 	public int naturalGiftType() {
 		return packed() & 0x1F;
 	}
@@ -167,17 +142,9 @@ public final class ItemData {
 		return u8(0x0A);
 	}
 
-	public void setFieldRoutine(int v) {
-		u8(0x0A, v);
-	}
-
 	/** Routine called when used in battle; 0 means unusable there. */
 	public int battleRoutine() {
 		return u8(0x0B);
-	}
-
-	public void setBattleRoutine(int v) {
-		u8(0x0B, v);
 	}
 
 	/** 0-3 battle, 4 balls, 5 mail. */
@@ -192,10 +159,6 @@ public final class ItemData {
 
 	public int sortIndex() {
 		return u8(0x0F);
-	}
-
-	public void setSortIndex(int v) {
-		u8(0x0F, v);
 	}
 
 	/**
@@ -266,23 +229,8 @@ public final class ItemData {
 		return b[0x17 + i];               // signed on purpose
 	}
 
-	public void setEv(int i, int v) {
-		if (i < 0 || i > 5) {
-			throw new IllegalArgumentException("there are six EV stats, not index " + i);
-		}
-		if (v < -128 || v > 127) {
-			throw new IllegalArgumentException("an EV delta is one signed byte; " + v
-					+ " would wrap and silently mean something else");
-		}
-		b[0x17 + i] = (byte) v;
-	}
-
 	public int healAmount() {
 		return u8(0x1D);
-	}
-
-	public void setHealAmount(int v) {
-		u8(0x1D, v);
 	}
 
 	public int ppGain() {

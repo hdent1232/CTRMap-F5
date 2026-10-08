@@ -52,6 +52,7 @@ public class ModDeployerTest {
 		//needs no dump: the game is two archives written by hand
 		anArchiveBackToRetailIsTakenOutOfTheMod();
 		whereTheModGoes();
+		aHeldFileLeavesOneWholeMod();
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
 			Skip.section("no dump at " + dump.getAbsolutePath());
@@ -465,21 +466,94 @@ public class ModDeployerTest {
 	}
 
 	/**
+	 * The switch's copy-then-remove fallback meets a file the emulator holds (F022): the move is
+	 * refused naming it, and ONE complete mod is left - the original, every file in it - with no
+	 * second copy for the next toggle to refuse. Its deletes were unchecked: the toggle said it
+	 * worked, both folders were left, and deploy and both toggles refused "already exists" after.
+	 */
+	private static void aHeldFileLeavesOneWholeMod() throws IOException {
+		System.out.println("--- a file held open leaves one whole mod, and says which (F022)");
+		String[] names = {"romfs/a.bin", "romfs/b/held.bin", "romfs/b/c.bin", "code.ips"};
+		File base = Scratch.dir("ctrmap_held_move");
+		File src = new File(base, "mods" + File.separator + "000400000011C400");
+		File dst = new File(base, "mods_disabled" + File.separator + "000400000011C400");
+		write(src, names);
+		IOException refused = null;
+		try {
+			ModDeployer.copyThenRemove(src, dst, path -> {
+				if (path.getFileName().toString().equals("held.bin")) {
+					throw new java.nio.file.AccessDeniedException(path.toString(), null, "held by the emulator");
+				}
+				Files.delete(path);
+			});
+		} catch (IOException e) {
+			refused = e;
+		}
+		check(refused != null && refused.getMessage().contains("held.bin") && refused.getMessage().contains("held open"),
+				"a held file refuses the move, naming it: " + (refused == null ? "no refusal" : refused.getMessage()));
+		check(whole(src, names) == names.length, "and the original is whole - " + whole(src, names)
+				+ " of " + names.length + " files, each its own bytes");
+		check(!dst.exists(), "and there is no second copy for the next toggle to refuse: " + dst);
+
+		File moved = new File(base, "moved");
+		ModDeployer.copyThenRemove(src, moved, Files::delete);
+		check(!src.exists() && whole(moved, names) == names.length,
+				"with nothing held the same move moves: every file at the new place, none at the old");
+	}
+
+	private static void write(File root, String[] names) throws IOException {
+		for (String n : names) {
+			File f = new File(root, n);
+			f.getParentFile().mkdirs();
+			Files.write(f.toPath(), n.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+		}
+	}
+
+	/** How many of {@code names} are under {@code root} holding the bytes {@link #write} gave them. */
+	private static int whole(File root, String[] names) throws IOException {
+		int n = 0;
+		for (String name : names) {
+			File f = new File(root, name);
+			if (f.isFile() && new String(Files.readAllBytes(f.toPath()), java.nio.charset.StandardCharsets.UTF_8).equals(name)) {
+				n++;
+			}
+		}
+		return n;
+	}
+
+	/**
 	 * The folder a mod is deployed into, and the title it is named for: the one the dump says, or a
 	 * question - never the version pair's first, which sent an Alpha Sapphire or Y mod into Omega
 	 * Ruby's or X's folder, where it never loads (F238). Needs no dump: the folders are made here.
 	 */
 	private static void whereTheModGoes() throws IOException {
 		System.out.println("--- the title a mod is named for is the dump's own (F238)");
-		String appdata = System.getenv("APPDATA");
-		if (appdata == null) {
-			Skip.section("no APPDATA on this machine, so the Azahar path cannot be checked");
-		} else {
-			File root = ModDeployer.azaharModRoot("0004000000123456");
-			check(root != null && root.equals(new File(appdata + File.separator + "Azahar"
-					+ File.separator + "load" + File.separator + "mods" + File.separator + "0004000000123456")),
-					"the Azahar mod folder for a title is " + root);
-		}
+		//EVERY PLATFORM, ON EVERY MACHINE (F023): only Windows' folder was known, and this check skipped
+		//wherever APPDATA was unset - so the platforms that had no folder were the ones never checked
+		String id = "0004000000123456";
+		java.util.Map<String, String> env = new java.util.HashMap<>();
+		env.put("APPDATA", "C:" + File.separator + "Users" + File.separator + "u" + File.separator + "AppData");
+		String home = File.separator + "home" + File.separator + "u";
+		File win = ModDeployer.azaharModRoot(id, "Windows 11", env, home);
+		File mac = ModDeployer.azaharModRoot(id, "Mac OS X", env, home);
+		File linux = ModDeployer.azaharModRoot(id, "Linux", env, home);
+		check(new File(new File(new File(new File(env.get("APPDATA"), "Azahar"), "load"), "mods"), id).equals(win),
+				"Windows: under %APPDATA%\\Azahar - " + win);
+		check(new File(home + File.separator + "Library" + File.separator + "Application Support" + File.separator + "Azahar"
+				+ File.separator + "load" + File.separator + "mods" + File.separator + id).equals(mac),
+				"macOS: under ~/Library/Application Support/Azahar - " + mac);
+		check(new File(home + File.separator + ".local" + File.separator + "share" + File.separator + "azahar-emu"
+				+ File.separator + "load" + File.separator + "mods" + File.separator + id).equals(linux),
+				"Linux: under ~/.local/share/azahar-emu - " + linux);
+		env.put("XDG_DATA_HOME", File.separator + "data");
+		File xdg = ModDeployer.azaharModRoot(id, "Linux", env, home);
+		check(new File(File.separator + "data" + File.separator + "azahar-emu" + File.separator + "load" + File.separator
+				+ "mods" + File.separator + id).equals(xdg), "and under $XDG_DATA_HOME when it is set - " + xdg);
+		check(ModDeployer.azaharModRoot(id, "Windows 10", new java.util.HashMap<>(), home) == null
+				&& ModDeployer.azaharModRoot(id, "Mac OS X", env, null) == null,
+				"a platform whose folder cannot be named answers none, not a guess");
+		check(ModDeployer.azaharModRoot("0004000000123456") != null || System.getProperty("user.home") == null,
+				"and this machine's own platform names one");
 
 		String heldPath = Workspace.GAMEDIR_PATH;
 		WorkspaceSession heldSession = Workspace.session();

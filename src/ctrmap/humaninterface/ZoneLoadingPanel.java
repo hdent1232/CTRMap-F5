@@ -1,15 +1,11 @@
 package ctrmap.humaninterface;
 
-import static ctrmap.CtrmapMainframe.*;
 import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.ZoneAppender;
 import ctrmap.ZoneCloner;
 import ctrmap.ZoneTables;
 import ctrmap.formats.containers.ZO;
-import ctrmap.formats.cameradata.CameraDataFile;
-import ctrmap.formats.mapmatrix.MapMatrix;
-import ctrmap.formats.propdata.ADPropRegistry;
 import ctrmap.formats.text.LocationNames;
 import ctrmap.formats.zone.Zone;
 import ctrmap.gamedef.ArchiveType;
@@ -54,8 +50,26 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 	/** The 3D gizmo, handed in: a zone switch lets go of whatever it was over. */
 	private final Navigator navi;
 
+	/**
+	 * What shows the map a zone load has just opened, and what redraws the 3D view in the zone's own
+	 * atmosphere. HANDED, not calls up into the window (F007): the window builds this tab and says what
+	 * to ask; a suite hands nothing-doers.
+	 */
+	private final Runnable showMap;
+	private final Runnable showAtmosphere;
+
 	/** Creates the form over the zone owner it is handed. */
-	public ZoneLoadingPanel(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, OpenEditors openEditors, ZoneEditors zoneEditors, Navigator navi) {
+	public ZoneLoadingPanel(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, OpenEditors openEditors, ZoneEditors zoneEditors, Navigator navi,
+			Runnable showMap, Runnable showAtmosphere, UndoHistory history) {
+		if (history == null) {
+			throw new IllegalArgumentException("the Zone tab must be handed the zone's history its properties are"
+					+ " a document of");
+		}
+		//the header boxes, while a zone is shown, are one of the zone's documents (F209): watched, not recorded
+		history.watch(() -> loaded && loadedZone.isOpen()
+				? java.util.Collections.<UndoHistory.Document<?>>singletonList(
+						new WidgetDocument(loadedZone.open(), "the zone's properties", headerWidgets()))
+				: java.util.Collections.<UndoHistory.Document<?>>emptyList());
 		if (navi == null) {
 			throw new IllegalArgumentException("the Zone tab must be handed a Navigator - it lets the gizmo go");
 		}
@@ -71,12 +85,30 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 			throw new IllegalArgumentException("ZoneLoadingPanel must be handed a LoadedZone");
 		}
 		this.loadedZone = loadedZone;
+		if (showMap == null || showAtmosphere == null) {
+			throw new IllegalArgumentException("the Zone tab must be handed what shows a loaded map and its"
+				+ " atmosphere - showMap=" + showMap + ", showAtmosphere=" + showAtmosphere);
+		}
+		this.showMap = showMap;
+		this.showAtmosphere = showAtmosphere;
 		initComponents();
 		zoneList.setToolTipText(LOAD_HINT);
 		btnCloneZone.setToolTipText("Copy the currently loaded zone over another existing zone slot.");
 		btnAddZone.setToolTipText("Add new zones and lift ORAS's " + ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES + "-zone limit; also generates the required code.ips patch. ORAS only - test in Azahar first.");
-		setIntValueClass(new JFormattedTextField[]{cam1, cam2, camFlags, unknownFlags, battleBG, ad, bgmSpring,
+		Forms.numberClass(Integer.class, new JFormattedTextField[]{cam1, cam2, camFlags, unknownFlags, battleBG, ad, bgmSpring,
 			matrix, textFile, script, move, parentMap, x1, y1, z1, x2, y2, z2});
+		//RAW BYTES ARE SAID TO BE RAW, AND FOLDED AWAY (F221): the flag word's number and bit 15 of 0x20
+		//sat among the named fields under pk3DS's names for them, with nothing to say what they were
+		unknownTitleLabel.setText("More header fields (from pk3DS):");
+		unknownFlag.setText("Unnamed bit 15 of 0x20");
+		Forms.unknownField(uFlabel, "Raw flag bits", "The flag word at 0x28 as one number - its named bits are the"
+				+ " ghosting, breath, dowsing, 3D, special-walking and flash boxes, written from them; the rest are"
+				+ " unnamed - and bit 15 of the word at 0x20", unknownFlags, unknownFlag);
+		String music = "<html>The header holds four music slots, one per season: Spring, Summer, Autumn and Winter."
+				+ "<br>This box shows Spring's. A change is written to every slot that held the same track,"
+				+ "<br>and a slot set to a different one is left as it is.</html>";
+		BGMTitleLabel.setToolTipText(music);
+		bgmSpring.setToolTipText(music);
 	}
 
 	public void loadZone(Zone z) {
@@ -143,8 +175,14 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 
 		specWalk.setSelected(h.enableSpecialWalking);
 		flash.setSelected(h.enableFlashableDarkness);
-		flash.setEnabled(Workspace.game() == GameType.ORAS);
-		specWalk.setEnabled(Workspace.game() == GameType.XY);
+		//WHICH FLAGS THIS GAME HAS is its profile's answer (F207), not "is it ORAS"
+		ctrmap.gamedef.GameProfile.ZoneFlagLayout l = h.flagLayout();
+		coldbreath.setEnabled(l != null);
+		ghosting.setEnabled(l != null);
+		dowsing.setEnabled(l != null);
+		enable3d.setEnabled(l != null);
+		flash.setEnabled(l != null && l.flashableDarkness >= 0);
+		specWalk.setEnabled(l != null && l.specialWalkingOff >= 0);
 	}
 
 	/** Programmatically opens a zone, as if picked from the dropdown. */
@@ -348,6 +386,15 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		return store(askFirst);
 	}
 
+	/**
+	 * Every box store() writes into the header, in the order it reads them: what the zone's properties
+	 * are while unsaved (F209). ZoneHeaderTest holds this list to store()'s body, so a box added there
+	 * and not here fails by name rather than going without undo.
+	 */
+	javax.swing.JComponent[] headerWidgets() {
+		return new javax.swing.JComponent[]{type, move, ad, matrix, textFile, script, tmg, mapTransition, parentMap, isParentMap, weather, battleBG, bgmSpring, bgmCyclingEnable, run, skate, cycling, escrope, fly, dowsing, coldbreath, ghosting, specWalk, flash, enable3d, skybox, cam1, cam2, camFlags, unknownFlags, unknownFlag, x1, y1, z1, x2, y2, z2};
+	}
+
 	public boolean store(boolean dialog) {
 		Zone zone = loadedZone.open();
 		if (zone == null) {
@@ -410,7 +457,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 			zone.header.weather = getWeatherRaw(weather.getSelectedIndex());
 		}
 		zone.header.battleBG = (Integer) battleBG.getValue();
-		zone.header.BGMSpring = (Integer) bgmSpring.getValue();
+		zone.header.setMusic((Integer) bgmSpring.getValue());
 		zone.header.enableCyclingBGM = bgmCyclingEnable.isSelected();
 
 		zone.header.enableRunning = run.isSelected();
@@ -424,6 +471,8 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		zone.header.enableBreathFX = coldbreath.isSelected();
 		zone.header.enableGhosting = ghosting.isSelected();
 		zone.header.enableSpecialWalking = specWalk.isSelected();
+		//shown, and editable on ORAS, and never written back: the edit was dropped (F207)
+		zone.header.enableFlashableDarkness = flash.isSelected();
 		zone.header.enable3D = enable3d.isSelected();
 
 		zone.header.enableSkybox = skybox.isSelected();
@@ -433,7 +482,6 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		zone.header.cameraFlags = (Integer) camFlags.getValue();
 		zone.header.unknownFlags = (Integer) unknownFlags.getValue();
 		zone.header.unknownFlag = unknownFlag.isSelected();
-		zone.header.unknownFlags = (Integer) unknownFlags.getValue();
 		zone.header.calculateFlags();
 
 		zone.header.X = (Integer) x1.getValue();
@@ -457,7 +505,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 			//a record that refuses to serialise - a warp with no destination -
 			//used to leave here as an uncaught exception on stderr, and the
 			//caller carried on as if the zone had been saved
-			ctrmap.Ui.error(this, "Zone " + zoneIndex + " was not saved.\n" + ex.getMessage(), "Save zone");
+			ctrmap.Ui.error(this, "Zone " + zoneIndex + " was not saved.\n" + ctrmap.util.Bytes.reason(ex), "Save zone");
 			return false;
 		}
 		if (stored) {
@@ -570,12 +618,6 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 	/** What each box showed when the zone loaded: a field is written back only when its box moved from it (F115). */
 	private int shownType = -1, shownWeather = -1, shownTransition = -1, shownTownMap = -1;
 	private boolean shownParent;
-
-	public void setIntValueClass(JFormattedTextField[] fields) {
-		for (int i = 0; i < fields.length; i++) {
-			((NumberFormatter) fields[i].getFormatter()).setValueClass(Integer.class);
-		}
-	}
 
 	public int getWeatherRaw(int index) {
 		if (Workspace.game() == GameType.ORAS) {
@@ -1317,7 +1359,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 							return;
 						}
 						//show the map that was just loaded instead of leaving the user on the property form
-						ctrmap.CtrmapMainframe.showWorldEditor();
+						showMap.run();
 						//forking is the safe default: a shared map means edits here
 						//would silently change other zones too
 						offerForkIfShared();
@@ -1327,7 +1369,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 						//them care
 						tools.zoneChanged();
 						//show this zone's own atmosphere in the 3D view
-						ctrmap.CtrmapMainframe.refreshSceneFog();
+						showAtmosphere.run();
 					}
 
 					@Override
@@ -1584,47 +1626,50 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		return browser;
 	}
 
-	private java.util.Set<Integer> forkDeclined = null;
-	private String forkDeclinedWs = null;
-
-	/** Declined fork offers, remembered PER WORKSPACE across sessions (asking
-	 *  again on every zone load reads as nagging). Reloads when the active
-	 *  workspace changes so one workspace's declines never leak into another. */
+	/**
+	 * Declined fork offers, remembered across sessions (asking again on every zone load reads as
+	 * nagging) - IN THE WORKSPACE FOLDER, per game folder, through {@link ctrmap.ForkDeclines}
+	 * (F253). They were machine-wide Preferences under the hash of the workspace path, so pointing
+	 * the workspace at another game silenced the offer on that game's zones at the same indices.
+	 * Read on every ask, never cached: a repoint, a clean or another workspace cannot leave a stale
+	 * set behind.
+	 */
 	private java.util.Set<Integer> forkDeclined() {
-		if (forkDeclined == null || !java.util.Objects.equals(forkDeclinedWs, Workspace.WORKSPACE_PATH)) {
-			forkDeclined = new java.util.HashSet<>();
-			forkDeclinedWs = Workspace.WORKSPACE_PATH;
-			//NO CATCH-ALL (F211): one swallowed everything, so a single bad token dropped every decline
-			//after it. Only saveForkDeclined writes this list; a token that is not a zone number was
-			//edited by hand, and skipping it costs one fork offer asked again - the safe direction
-			if (forkDeclinedWs != null) {
-				String csv = java.util.prefs.Preferences.userRoot().node("ctrmap.ZoneLoadingPanel")
-						.get("FORK_DECLINED_" + forkDeclinedWs.hashCode(), "");
-				for (String tok : csv.split(",")) {
-					if (tok.trim().matches("\\d{1,9}")) {
-						forkDeclined.add(Integer.parseInt(tok.trim()));
-					}
-				}
+		try {
+			return ctrmap.ForkDeclines.read(Workspace.WORKSPACE_PATH == null ? null : new java.io.File(Workspace.WORKSPACE_PATH),
+					Workspace.GAMEDIR_PATH);
+		} catch (java.io.IOException ex) {
+			//COULD NOT READ IS NOT NONE DECLINED: the offer is asked again - the safe direction, one
+			//question the user can answer - and the reason is said once per panel, like a refused save
+			if (!forkDeclineReadReported) {
+				forkDeclineReadReported = true;
+				ctrmap.Ui.error(this, "The zones you declined a private map for could not be read:\n" + ctrmap.Ui.reason(ex)
+						+ "\n\nThose offers will be asked again. Nothing in the game or in the workspace is affected.",
+						"Shared map");
 			}
+			return new java.util.TreeSet<>();
 		}
-		return forkDeclined;
 	}
+
+	/** Set once this panel has said its declines could not be read. */
+	private boolean forkDeclineReadReported = false;
 
 	/** Forgets a remembered decline - call whenever a slot's OCCUPANT changes
 	 *  (clone-into-slot, facility setup): the new zone deserves a fresh offer. */
 	@Override
 	public void clearForkDecline(int zoneIndex) {
-		if (forkDeclined().remove(zoneIndex)) {
-			saveForkDeclined();
+		java.util.Set<Integer> declined = forkDeclined();
+		if (declined.remove(zoneIndex)) {
+			saveForkDeclined(declined);
 		}
 	}
 
 	/** Forgets remembered declines for every zone at or above the index (the
 	 *  added-zone removal path). */
 	public void clearForkDeclinesFrom(int minIndex) {
-		boolean changed = forkDeclined().removeIf(z -> z >= minIndex);
-		if (changed) {
-			saveForkDeclined();
+		java.util.Set<Integer> declined = forkDeclined();
+		if (declined.removeIf(z -> z >= minIndex)) {
+			saveForkDeclined(declined);
 		}
 	}
 
@@ -1633,35 +1678,16 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 	 *  turning one nag into another. */
 	private boolean forkDeclineSaveReported = false;
 
-	private void saveForkDeclined() {
+	private void saveForkDeclined(java.util.Set<Integer> declined) {
 		try {
-			StringBuilder sb = new StringBuilder();
-			for (int z : forkDeclined()) {
-				if (sb.length() > 0) {
-					sb.append(',');
-				}
-				sb.append(z);
-			}
-			java.util.prefs.Preferences.userRoot().node("ctrmap.ZoneLoadingPanel")
-					.put("FORK_DECLINED_" + Workspace.WORKSPACE_PATH.hashCode(), sb.toString());
-		} catch (Exception ex) {
-			//REMEMBERING THE DECLINE IS THE WHOLE FEATURE, so a write that failed
-			//costs exactly what the memory exists to prevent: the offer comes
-			//back on every zone load, forever, with nothing anywhere to say why.
-			//This used to end "catch (Exception ignore) {}".
-			//
-			//What can refuse it is the PREFERENCES SUBSYSTEM - no backing store,
-			//a factory that will not start, a node removed underneath us. NOT the
-			//8192-character cap on a value: the whole decline list is one CSV
-			//value, but ZoneLimitPatch tops this game out at 0xFF * 4 zones, so
-			//every zone declined at once is under 4000 characters. The cap is
-			//unreachable here; it is only how ZoneLoadingStateTest makes the real
-			//store refuse a real write, which is the only way to drive this path.
-			//
-			//Said ONCE per panel, and only here. A report on every decline would
-			//be the nagging again, and the READ side above is left swallowing on
-			//purpose: it runs on every zone load, it rebuilds from prefs on the
-			//next call, and the worst it costs is one offer the user can answer.
+			ctrmap.ForkDeclines.write(Workspace.WORKSPACE_PATH == null ? null : new java.io.File(Workspace.WORKSPACE_PATH),
+					Workspace.GAMEDIR_PATH, declined);
+		} catch (java.io.IOException ex) {
+			//REMEMBERING THE DECLINE IS THE WHOLE FEATURE, so a write that failed costs exactly
+			//what the memory exists to prevent: the offer comes back on every zone load, with
+			//nothing anywhere to say why. What refuses it now is the workspace folder - not
+			//writable, gone, its file unreadable. Said ONCE per panel: a report on every decline
+			//would be the nagging again. The READ side says its own failure once too (forkDeclined).
 			if (!forkDeclineSaveReported) {
 				forkDeclineSaveReported = true;
 				ctrmap.Ui.error(this,
@@ -1717,7 +1743,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		//more. There was one for a while: the spares an append rounds the count up
 		//with kept the donor's map until 1.0.1, so opening one asked this question
 		//about a zone the editor had created itself, and the note explained why.
-		//CtrmapMainframe.repairSharedPaddingZones now gives those spares their own map
+		//PaddingZoneRepair.repairOnOpen now gives those spares their own map
 		//before the zone list is even built, so by the time anyone can open one there
 		//is nothing to explain. What reaches this question is what always should
 		//have: a retail zone that genuinely shares its map with its story copies or
@@ -1730,8 +1756,9 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 				+ "Pure data - packs the workspace when done.)",
 				"Shared map", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
 		if (rsl != JOptionPane.YES_OPTION) {
-			forkDeclined().add(zoneIndex);
-			saveForkDeclined();
+			java.util.Set<Integer> declined = forkDeclined();
+			declined.add(zoneIndex);
+			saveForkDeclined(declined);
 			return;
 		}
 		final int idx = zoneIndex;
@@ -1758,7 +1785,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 				}
 			});
 		} catch (Exception ex) {
-			ctrmap.Ui.error(this, "Fork failed:\n" + ex.getMessage(), "Shared map");
+			ctrmap.Ui.error(this, "Fork failed:\n" + ctrmap.util.Bytes.reason(ex), "Shared map");
 		}
 	}
 
@@ -1766,7 +1793,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 	 * "Clone zone into existing slot" - safe variant, both slots must already
 	 * exist (no GARC appending). See ZoneCloner for the byte-level contract.
 	 */
-	private void btnCloneZoneActionPerformed(java.awt.event.ActionEvent evt) {
+	private void btnCloneZoneActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnCloneZoneActionPerformed
 		Zone zone = loadedZone.open();
 		int zoneIndex = loadedZone.index();
 		if (loadedZone.count() == 0 || zone == null || zoneIndex == -1) {
@@ -1831,7 +1858,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 			}
 		} catch (Exception ex) {
 			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
-			ctrmap.Ui.error(this, "Could not clone the zone:\n" + ex.getMessage(), "Clone zone");
+			ctrmap.Ui.error(this, "Could not clone the zone:\n" + ctrmap.util.Bytes.reason(ex), "Clone zone");
 			return;
 		}
 		final int dst = dstIndex;
@@ -1855,7 +1882,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 			loadEverything(); //modal - blocks until the worker is done
 			zoneList.setSelectedIndex(dstIndex);
 		}
-	}
+	}//GEN-LAST:event_btnCloneZoneActionPerformed
 
 	/**
 	 * EXPERIMENTAL "append a brand-new zone slot" - ORAS only. See
@@ -1864,7 +1891,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 	 * immediately afterwards (GARC.length is constructor-only and one append
 	 * is allowed per pack cycle).
 	 */
-	private void btnAddZoneActionPerformed(java.awt.event.ActionEvent evt) {
+	private void btnAddZoneActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnAddZoneActionPerformed
 		if (!Workspace.isValid()) {
 			ctrmap.Ui.error(this, "Load a workspace first (Options > Workspace settings).", "Add new zones");
 			return;
@@ -1987,7 +2014,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 			res = ctrmap.ZoneAppender.appendZones(realZones, srcIndex, true);
 		} catch (Exception ex) {
 			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
-			ctrmap.Ui.error(this, "Could not add the zones:\n" + ex.getMessage(), "Add new zones");
+			ctrmap.Ui.error(this, "Could not add the zones:\n" + ctrmap.util.Bytes.reason(ex), "Add new zones");
 			return;
 		}
 		//generate + save the paired code patch (same N drives both sides)
@@ -2005,7 +2032,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 			}
 		} catch (Exception ex) {
 			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
-			ctrmap.Ui.message(this, "The zones were staged, but the code.ips could not be saved:\n" + ex.getMessage()
+			ctrmap.Ui.message(this, "The zones were staged, but the code.ips could not be saved:\n" + ctrmap.util.Bytes.reason(ex)
 					+ "\n\nThe game will not boot without it - regenerate it before testing.", "Add new zones", JOptionPane.WARNING_MESSAGE);
 		}
 		//the append changed the GARC layout. packWorkspace and loadEverything are
@@ -2037,7 +2064,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 				});
 			}
 		});
-	}
+	}//GEN-LAST:event_btnAddZoneActionPerformed
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JLabel BGMTitleLabel;

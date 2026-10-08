@@ -1,7 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.formats.Triangle;
-import ctrmap.formats.WavefrontOBJ;
+import ctrmap.formats.h3d.MapModelObj;
 import ctrmap.formats.gfcollision.GRCollisionMesh;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -16,6 +16,8 @@ import java.util.List;
  * indices and faces of more than four corners were dropped silently; and an OBJ with no usable face
  * replaced the zone's collision with sixteen empty meshes, because the refusal for that case could
  * never be reached.
+ *
+ * <p>Read by MapModelObj, the one OBJ reader (F070), and made collision by MapModelObj.collision.
  *
  * <p>ORDER: needs no dump and no display.
  *
@@ -42,16 +44,21 @@ public class WavefrontOBJTest {
 	/** How many triangles an OBJ reads as, or -1 when it is refused - so a check says FAIL rather than ending the suite. */
 	static int count(String text) {
 		try {
-			return tris(WavefrontOBJ.parse(text)).size();
+			return tris(text).size();
 		} catch (IOException refused) {
 			System.out.println("    (refused: " + refused.getMessage() + ")");
 			return -1;
 		}
 	}
 
-	static List<Triangle> tris(WavefrontOBJ obj) {
+	/** What Map > OBJ to collisions makes of an OBJ's text: MapModelObj reads it, collision() deals it out. */
+	static GRCollisionMesh[] collision(String text) throws IOException {
+		return MapModelObj.collision(MapModelObj.parse(new java.io.BufferedReader(new java.io.StringReader(text))));
+	}
+
+	static List<Triangle> tris(String text) throws IOException {
 		List<Triangle> out = new ArrayList<>();
-		for (GRCollisionMesh m : obj.getGfCollision()) {
+		for (GRCollisionMesh m : collision(text)) {
 			out.addAll(m.tris);
 		}
 		return out;
@@ -64,7 +71,7 @@ public class WavefrontOBJTest {
 
 	static void aQuadIsTwoWholeTriangles() throws Exception {
 		System.out.println("--- a quad is two whole triangles, not one and a sliver");
-		List<Triangle> t = tris(WavefrontOBJ.parse("o floor\n" + SQUARE + "f 1 2 3 4\n"));
+		List<Triangle> t = tris("o floor\n" + SQUARE + "f 1 2 3 4\n");
 		check(t.size() == 2, "a quad face reads as 2 triangles (" + t.size() + ")");
 		float covered = 0;
 		boolean noSliver = true;
@@ -81,7 +88,7 @@ public class WavefrontOBJTest {
 	static void facesWithNoObjectLineAreRead() throws Exception {
 		System.out.println("--- faces before any object or group line are read, not a crash");
 		try {
-			check(tris(WavefrontOBJ.parse(SQUARE + "f 1 2 3\n")).size() == 1, "a face with no 'o' before it is read");
+			check(tris(SQUARE + "f 1 2 3\n").size() == 1, "a face with no 'o' before it is read");
 		} catch (RuntimeException crash) {
 			check(false, "a face with no 'o' before it is read (it threw " + crash + ")");
 		}
@@ -91,13 +98,18 @@ public class WavefrontOBJTest {
 		System.out.println("--- relative indices and faces of more than four corners are read");
 		check(count("o a\n" + SQUARE + "f -4 -3 -2 -1\n") == 2,
 				"a face written with relative indices is read");
-		check(count("o a\nv 0 0 0\nv 2 0 0\nv 3 0 1\nv 1 0 2\nv -1 0 1\nf 1/1/1 2/2/2 3/3/3 4/4/4 5/5/5\n") == 3,
-				"a pentagon with texture and normal indices reads as 3 triangles");
+		//the texture and normal lines its corners name, as every exporter writes them
+		String uvs = "vt 0 0\nvt 1 0\nvt 1 1\nvt 0 1\nvt 0.5 0.5\nvn 0 1 0\nvn 0 1 0\nvn 0 1 0\nvn 0 1 0\nvn 0 1 0\n";
+		check(count("o a\nv 0 0 0\nv 2 0 0\nv 3 0 1\nv 1 0 2\nv -1 0 1\n" + uvs
+				+ "f 1/1/1 2/2/2 3/3/3 4/4/4 5/5/5\n") == 3, "a pentagon with texture and normal indices reads as 3 triangles");
+		check(said("o a\n" + SQUARE + "f 1/1 2/2 3/3\n").contains("texture coordinate 1 does not exist"),
+				"and a corner naming a texture coordinate the file never wrote is refused, naming it: "
+				+ said("o a\n" + SQUARE + "f 1/1 2/2 3/3\n"));
 	}
 
 	static void wallsAreLeftOut() throws Exception {
 		System.out.println("--- a wall, with no area on the ground, is left out");
-		check(tris(WavefrontOBJ.parse("o w\nv 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n")).isEmpty(),
+		check(tris("o w\nv 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n").isEmpty(),
 				"a vertical quad gives no collision triangle");
 	}
 
@@ -112,15 +124,15 @@ public class WavefrontOBJTest {
 
 	static void anObjWithNoFloorGivesNothingToReplaceCollisionWith() throws Exception {
 		System.out.println("--- an OBJ with no floor gives nothing to replace the collision with");
-		check(WavefrontOBJ.parse("o w\nv 0 0 0\nv 1 0 0\nv 1 1 0\nf 1 2 3\n").getGfCollision().length == 0,
+		check(collision("o w\nv 0 0 0\nv 1 0 0\nv 1 1 0\nf 1 2 3\n").length == 0,
 				"no meshes at all - sixteen empty ones would wipe the zone's collision");
-		check(WavefrontOBJ.parse("o a\n" + SQUARE + "f 1 2 3\n").getGfCollision().length == 16,
+		check(collision("o a\n" + SQUARE + "f 1 2 3\n").length == 16,
 				"while an OBJ with a floor fills the sixteen slots");
 	}
 
 	static String said(String obj) {
 		try {
-			WavefrontOBJ.parse(obj);
+			collision(obj);
 			return "(it was read)";
 		} catch (IOException refused) {
 			return refused.getMessage();

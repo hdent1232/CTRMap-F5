@@ -1,9 +1,9 @@
 package ctrmap.formats.zone;
 
 import ctrmap.formats.scripts.GFLPawnScript;
-import ctrmap.LittleEndianDataInputStream;
-import ctrmap.LittleEndianDataOutputStream;
-import ctrmap.humaninterface.MapObject;
+import ctrmap.util.LittleEndianDataInputStream;
+import ctrmap.util.LittleEndianDataOutputStream;
+import ctrmap.formats.MapObject;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -42,11 +42,9 @@ public class ZoneEntities {
 	}
 
 	public int totalLength;
-	public int furnitureCount;
-	public int NPCCount;
-	public int warpCount;
-	public int trigger1Count;
-	public int trigger2Count;
+	//NO COUNT BESIDE A LIST (F249): each kind's count was a field of its own, read from the header,
+	//stepped by hand in four forms and set right only when the block was written - two answers to
+	//one question. The count IS the list's size, computed where the block is read and written.
 
 	public ArrayList<Prop> furniture = new ArrayList<>();
 	public ArrayList<NPC> npcs = new ArrayList<>();
@@ -69,11 +67,11 @@ public class ZoneEntities {
 		try {
 			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new ByteArrayInputStream(data));
 			totalLength = dis.readInt();
-			furnitureCount = dis.read();
-			NPCCount = dis.read();
-			warpCount = dis.read();
-			trigger1Count = dis.read();
-			trigger2Count = dis.read();
+			int furnitureCount = dis.read();
+			int NPCCount = dis.read();
+			int warpCount = dis.read();
+			int trigger1Count = dis.read();
+			int trigger2Count = dis.read();
 			dis.skip(3);
 			for (int i = 0; i < furnitureCount; i++) {
 				furniture.add(new Prop(dis));
@@ -104,11 +102,11 @@ public class ZoneEntities {
 		try {
 			ByteArrayOutputStream baos = new ByteArrayOutputStream();
 			LittleEndianDataOutputStream dos = new LittleEndianDataOutputStream(baos);
-			furnitureCount = furniture.size();
-			NPCCount = npcs.size();
-			warpCount = warps.size();
-			trigger1Count = triggers1.size();
-			trigger2Count = triggers2.size();
+			int furnitureCount = furniture.size();
+			int NPCCount = npcs.size();
+			int warpCount = warps.size();
+			int trigger1Count = triggers1.size();
+			int trigger2Count = triggers2.size();
 			refuseAbove(furnitureCount, "props");
 			refuseAbove(NPCCount, "NPCs");
 			refuseAbove(warpCount, "warps");
@@ -155,7 +153,7 @@ public class ZoneEntities {
 			//deliberate refusals from a record that will not serialise; making
 			//them loud is strictly safer than writing nothing and saying nothing.
 			Logger.getLogger(ZoneEntities.class.getName()).log(Level.SEVERE, null, ex);
-			throw new IllegalStateException("Zone entities could not be saved: " + ex.getMessage(), ex);
+			throw new IllegalStateException("Zone entities could not be saved: " + ctrmap.util.Bytes.reason(ex), ex);
 		}
 	}
 
@@ -181,7 +179,6 @@ public class ZoneEntities {
 		for (int i = 0; i < npcs.size(); i++) {
 			npcs.get(i).uid = i;
 		}
-		NPCCount = npcs.size();
 	}
 
 	/**
@@ -243,7 +240,10 @@ public class ZoneEntities {
 		public int uid = 0; //all unsigned shorts
 		public int model = 0;
 		public int movePerm1 = 0;
-		public int movePerm2 = 0; //4 on items and 10 on double battle paired NPCs
+		//The AI-motion event. Its codes and names are NpcMoveCodes' table; the retail double-battle
+		//pairs carry NpcTemplates.TRAINER_PAIR_MOVE_EVENT (all 21 measured) - this said "10", a
+		//code no retail NPC uses (F104), so it names the measurements rather than restating one.
+		public int movePerm2 = 0;
 		public int spawnFlag = 0;
 		public int script = 0;
 		public int faceDirection = 0;
@@ -498,7 +498,7 @@ public class ZoneEntities {
 					}
 				}
 			}
-			setYFromColl(xTile * 18f + 9f, yTile * 18f + 9f);
+			setYFromColl(WorldGrid.tileCentre(xTile), WorldGrid.tileCentre(yTile));
 		}
 	}
 

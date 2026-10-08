@@ -14,7 +14,6 @@ import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
-import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
@@ -180,7 +179,7 @@ public class TextEditor extends javax.swing.JPanel {
 				b = GFMessageFile.write(lines);
 			}
 		} catch (RuntimeException ex) {
-			ctrmap.Ui.error(this, "Could not encode text file " + loadedIdx + ":\n" + ex.getMessage(), "Text encode error");
+			ctrmap.Ui.error(this, "Could not encode text file " + loadedIdx + ":\n" + ctrmap.util.Bytes.reason(ex), "Text encode error");
 			return false;
 		}
 		File f = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT, loadedIdx);

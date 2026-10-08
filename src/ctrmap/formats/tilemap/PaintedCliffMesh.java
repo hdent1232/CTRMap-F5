@@ -1,39 +1,35 @@
 package ctrmap.formats.tilemap;
 
-import ctrmap.formats.GameFiles;
-import ctrmap.formats.gfcollision.GfColl;
 import ctrmap.formats.h3d.BchMapModel;
-import ctrmap.formats.h3d.MapModelObj;
 import ctrmap.formats.h3d.MapModelObjImporter;
-import ctrmap.formats.h3d.RegionFactory;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import static ctrmap.formats.LittleEndian.f32;
-import static ctrmap.formats.tilemap.PaintedRegionBuilder.*;
-import static ctrmap.formats.tilemap.PaintedCollision.*;
-import static ctrmap.formats.tilemap.PaintedFloorMesh.*;
-import static ctrmap.formats.tilemap.PaintedHeights.*;
-import static ctrmap.formats.tilemap.PaintedMaterials.*;
-import static ctrmap.formats.tilemap.PaintedTiles.*;
+import static ctrmap.formats.tilemap.PaintedGeometry.CLIFF_PULL;
+import static ctrmap.formats.tilemap.PaintedGeometry.CliffEdge;
+import static ctrmap.formats.tilemap.PaintedGeometry.ORIGIN;
+import static ctrmap.formats.tilemap.PaintedGeometry.Quad;
+import static ctrmap.formats.tilemap.PaintedGeometry.STEP;
+import static ctrmap.formats.tilemap.PaintedGeometry.TILE;
+import static ctrmap.formats.tilemap.PaintedGeometry.fixWindingTowards;
+import static ctrmap.formats.tilemap.PaintedGeometry.roundOutline;
+import static ctrmap.formats.tilemap.PaintedGeometry.swapCorners12;
 
 /**
- * The painter's the vertical walls where a tile is higher than its neighbour, and the chains they form.
+ * The painter's stage for the vertical walls where a tile is higher than its neighbour, and the chains they form.
  *
  * <p>One stage of {@link PaintedRegionBuilder}, which was 3750 lines and 106
- * methods in one file. Every method here is exactly the one that was there,
- * moved and not rewritten: the split is about which file you open to read a
- * stage, not about what the pipeline does. The constants and the other stages
- * are imported statically for the same reason - a body that called a helper
- * still calls the same helper.
- *
- * <p>What this is NOT is decoupling. PaintedRegionBuilder was never a god
- * object by coupling: it is pure, it holds no state, and it has six callers.
- * It was simply too long to read.
+ * methods in one file. The split first moved every method unchanged and left
+ * each stage importing the builder and every other stage whole, one class
+ * cycle however many files it was in. It is a split now (F090): what the
+ * stages share - the frame, the constants, the quad and edge types, flipping a
+ * quad and rounding an outline - is {@link PaintedGeometry}, which needs no
+ * stage; no stage needs the builder that calls it; and each file imports by
+ * name exactly the members it uses, so its imports are its edges.
+ * PackageCycleTest refuses a class cycle it has not recorded, and
+ * SourceDebrisTest a wildcard import.
  */
 public final class PaintedCliffMesh {
 
@@ -89,19 +85,12 @@ public final class PaintedCliffMesh {
 	 * the chain. Neighbouring segments then share their corner vertices and the
 	 * seams disappear.
 	 */
-	static void emitCliffStrips(List<CliffEdge> edges, Map<Integer, List<Quad>> quadsByMesh,
-			int cliffMesh, int lipMesh) {
-		//group by the step they belong to, so a 1-level and a 2-level drop that
-		//touch do not get welded into one strip
-		Map<String, List<CliffEdge>> byLevel = new LinkedHashMap<>();
-		for (CliffEdge e : edges) {
-			byLevel.computeIfAbsent(e.levelKey(), k -> new ArrayList<>()).add(e);
-		}
-
+	static void emitCliffStrips(List<CliffEdge> edges, Map<Integer, List<Quad>> quadsByMesh, int cliffMesh) {
 		//The outward direction at a corner has to be agreed on by EVERY wall
-		//meeting there, not just by the ones inside a single strip. Strips are
-		//split by the step they belong to, so where a one-level drop meets a
-		//two-level drop the corner is shared by two different strips - and each
+		//meeting there, not just by the ones inside a single strip. A strip stops
+		//where the next wall turns or steps too far to join it, so where a
+		//one-level drop meets a two-level drop the corner can be shared by two
+		//different strips - and each
 		//used to mitre it alone, sending its foot straight out along its own
 		//normal. At a right angle those two directions are perpendicular, so
 		//the feet ended up a whole face-width apart and left a wedge of sky
@@ -206,8 +195,7 @@ public final class PaintedCliffMesh {
 				}
 				cur = best;
 			}
-			emitChain(chain, out, corner, caps,
-					lipMesh < 0 ? null : quadsByMesh.computeIfAbsent(lipMesh, k -> new ArrayList<>()));
+			emitChain(chain, out, corner, caps);
 		}
 
 		//Fill the lens between end profiles that share a corner. Sorted by top
@@ -273,12 +261,7 @@ public final class PaintedCliffMesh {
 			q.ao[c] = c < 2 ? 0.78f : 0.60f;
 		}
 		if (flip) {
-			float[] t = q.pos[1];
-			q.pos[1] = q.pos[2];
-			q.pos[2] = t;
-			float[] tu = q.uv[1];
-			q.uv[1] = q.uv[2];
-			q.uv[2] = tu;
+			swapCorners12(q);
 		}
 		return q;
 	}
@@ -308,7 +291,7 @@ public final class PaintedCliffMesh {
 	 * <li><b>Polyline.</b> The chain's n edges give n+1 vertices. A chain whose
 	 *     last edge ends where the first began is a closed LOOP, and loops are
 	 *     treated differently at every step below, because they have no ends.</li>
-	 * <li><b>Round the outline</b> ({@link #roundOutline}: three smoothing
+	 * <li><b>Round the outline</b> ({@link PaintedGeometry#roundOutline}: three smoothing
 	 *     passes, then a cap on how far any vertex may travel). Elevation is
 	 *     quantised to whole tiles, so the raw contour is a staircase of right
 	 *     angles; smoothing is what makes it read as a hillside. The travel cap
@@ -337,18 +320,16 @@ public final class PaintedCliffMesh {
 	 *     restarts every step; u runs along the contour by arc length.</li>
 	 * </ol>
 	 *
-	 * @param chain  the edges, head-to-tail, all of the same step
+	 * @param chain  the edges, head-to-tail; the drop may change by one level at a join
 	 * @param out    receives the quads (collar and face alike)
 	 * @param corner per-vertex accumulated outward normals and deepest drop,
 	 *               shared across strips so corners between them close; may be null
 	 * @param caps   receives this strip's end profiles, keyed by vertex, so a
 	 *               genuine corner between two separate walls can be capped;
 	 *               null, or skipped entirely, for a loop, which has no ends
-	 * @param lip    currently unused; the clifftop lip is emitted into
-	 *               {@code out} as part of the collar (see the note there)
 	 */
 	static void emitChain(List<CliffEdge> chain, List<Quad> out,
-			Map<String, float[]> corner, Map<String, List<float[][]>> caps, List<Quad> lip) {
+			Map<String, float[]> corner, Map<String, List<float[][]>> caps) {
 		if (chain.isEmpty()) {
 			return;
 		}
@@ -364,7 +345,7 @@ public final class PaintedCliffMesh {
 		px[n] = chain.get(n - 1).bx;
 		pz[n] = chain.get(n - 1).bz;
 
-		float[][] rounded = roundOutline(px, pz, loop);
+		float[][] rounded = roundOutline(px, pz, loop, CLIFF_PULL);
 		float[] smoothX = rounded[0], smoothZ = rounded[1];
 		float[][] mitre = mitres(chain, loop, corner);
 		float[] mx = mitre[0], mz = mitre[1];
@@ -446,11 +427,6 @@ public final class PaintedCliffMesh {
 			//the floor stopped short of the cliff; the collar covers that span
 			//whichever way it went, a hair below the floor so the two do not
 			//fight over the same pixels.
-			//The collar goes in the GROUND mesh, not the cliff's. This rock
-			//texture is stone edge to edge with no grass strip baked into it,
-			//so drawing the rim in cliff rock left the clifftop a hard grey
-			//line; every Pokemon cliff has a green lip where the lawn rolls
-			//over the edge. Same geometry, grass material.
 			//A vanilla cliff carries an up-facing lip band about 7.5 units wide
 			//along its top edge before the terrace floor starts; that is what
 			//makes the edge read as rolled-over rock rather than a paper-thin
@@ -560,74 +536,6 @@ public final class PaintedCliffMesh {
 	static String vertexKey(List<CliffEdge> chain, int i) {
 		int n = chain.size();
 		return i < n ? chain.get(i).startKey() : chain.get(n - 1).endKey();
-	}
-
-	/**
-	 * Rounds the outline. Elevation is quantised to tiles, so the contour
-	 * steps a tile at a time and a chain of right angles reads as a
-	 * staircase however well the faces are joined - which is the single
-	 * thing that has made these cliffs look built out of blocks.
-	 * One pass of corner cutting was all the top row could take, because the
-	 * top is where the floor above ends: move it and triangular holes open
-	 * straight through the map. That constraint is real, but it is not a
-	 * reason to leave the silhouette square - it only means the smoothed
-	 * outline has to be BRIDGED back to the tile boundary rather than left
-	 * floating. The collar emitted by {@link #emitChain} does that, so the
-	 * whole cliff can now be rounded properly, top row included.
-	 *
-	 * <p>Three passes of {@code 0.25 / 0.5 / 0.25} averaging, then a cap on
-	 * how far any vertex may travel. The ends of an open chain are pinned.
-	 * Public so a suite can hand it a polyline on its own: the three
-	 * invariants below (pinned ends, a closed loop stays closed, the travel
-	 * cap) are what the whole map-sealing argument rests on.
-	 *
-	 * @param px   vertex x, in world units
-	 * @param pz   vertex z
-	 * @param loop the polyline is closed (first vertex equals last)
-	 * @return {x, z} of the rounded vertices; the inputs are not touched
-	 */
-	public static float[][] roundOutline(float[] px, float[] pz, boolean loop) {
-		int vc = px.length;
-		final int SMOOTH_PASSES = 3;
-		float[] smoothX = px.clone(), smoothZ = pz.clone();
-		for (int pass = 0; pass < SMOOTH_PASSES; pass++) {
-			float[] nx2 = smoothX.clone(), nz2 = smoothZ.clone();
-			for (int i = 0; i < vc; i++) {
-				//Pin the ends of an open chain. Chains are split by the pair of
-				//heights they join, so a raised path is bounded by several
-				//short chains that meet end to end - and each is smoothed on
-				//its own. Move the shared endpoints and they no longer meet:
-				//the wall opens at every junction and you see sky under the
-				//path, because there is no floor beneath a raised tile to catch
-				//the eye. Pinning costs a little rounding exactly at the joins
-				//and keeps the wall closed.
-				if (!loop && (i == 0 || i == vc - 1)) {
-					continue;
-				}
-				int prev = i == 0 ? (loop ? vc - 2 : 0) : i - 1;
-				int next = i == vc - 1 ? (loop ? 1 : vc - 1) : i + 1;
-				nx2[i] = smoothX[i] * 0.5f + smoothX[prev] * 0.25f + smoothX[next] * 0.25f;
-				nz2[i] = smoothZ[i] * 0.5f + smoothZ[prev] * 0.25f + smoothZ[next] * 0.25f;
-			}
-			smoothX = nx2;
-			smoothZ = nz2;
-		}
-		//Smoothing shrinks, and three passes shrink enough to eat a narrow
-		//feature alive: a one-tile-wide raised path has its two edges pulled
-		//toward each other from both sides at once and collapses into a row of
-		//stilts. Long runs need the full rounding, short ones cannot afford it,
-		//and the difference is not the chain's length but how far any single
-		//vertex ends up from where the tile grid actually put it. So cap that.
-		final float MAX_PULL = TILE * 0.3f;
-		for (int i = 0; i < vc; i++) {
-			float dx = smoothX[i] - px[i], dz = smoothZ[i] - pz[i];
-			float d = (float) Math.hypot(dx, dz);
-			if (d > MAX_PULL) {
-				smoothX[i] = px[i] + dx * (MAX_PULL / d);
-				smoothZ[i] = pz[i] + dz * (MAX_PULL / d);
-			}
-		}
-		return new float[][]{smoothX, smoothZ};
 	}
 
 	/**
@@ -803,13 +711,14 @@ public final class PaintedCliffMesh {
 	}
 
 	/**
-	 * A horizontal quad whose two ends may sit at different heights, textured by
-	 * world position exactly as the floor is.
+	 * A horizontal quad whose two ends may sit at different heights, textured over
+	 * the U and V range it is handed and wound to face up.
 	 *
-	 * <p>This draws the lip band along a clifftop, and it is GROUND: it has to
-	 * continue the terrace it belongs to. Giving it the cliff's V bands instead
-	 * made it sample some unrelated stripe of the floor texture, which is where
-	 * the thick brown borders round every platform came from.
+	 * <p>The clifftop collar is drawn with it, in the CLIFF mesh, over the V range of
+	 * the cliff texture's own lip band (see the collar note in emitChain): sending
+	 * the collar to the ground mesh put it in whatever the donor's default ground
+	 * happened to be, which is where the thick brown borders round every platform
+	 * came from.
 	 */
 	static Quad flatQuadV(float ax, float az, float bx, float bz,
 			float cx, float cz, float dx, float dz, float yA, float yB,
@@ -828,239 +737,6 @@ public final class PaintedCliffMesh {
 			q.ao[c] = ao;
 		}
 		fixWindingTowards(q, 0f, 1f, 0f);
-		return q;
-	}
-
-	/**
-	 * A horizontal quad, wound to face upward.
-	 *
-	 * <p>Used for the collar that joins the cliff's rounded top edge back to
-	 * the tile boundary where the floor ends. {@link #stripMixed} cannot do
-	 * this job: it derives its facing from the rise and run of a slope, and on
-	 * a level quad both are zero, so which way it decides to face comes down
-	 * to rounding.
-	 */
-	static Quad flatQuad(float ax, float az, float bx, float bz,
-			float cx, float cz, float dx, float dz, float y,
-			float u0, float u1, float v0, float v1, float ao) {
-		Quad q = new Quad();
-		q.pos[0] = new float[]{ax, y, az};
-		q.pos[1] = new float[]{bx, y, bz};
-		q.pos[2] = new float[]{cx, y, cz};
-		q.pos[3] = new float[]{dx, y, dz};
-		q.uv[0] = new float[]{u0, v0};
-		q.uv[1] = new float[]{u1, v0};
-		q.uv[2] = new float[]{u0, v1};
-		q.uv[3] = new float[]{u1, v1};
-		for (int c = 0; c < 4; c++) {
-			q.nrm[c] = new float[]{0f, 1f, 0f};
-			q.ao[c] = ao;
-		}
-		fixWindingTowards(q, 0f, 1f, 0f);
-		return q;
-	}
-
-	/**
-	 * A band whose top and bottom edges run along DIFFERENT polylines.
-	 *
-	 * <p>{@link #stripVar} sweeps one line, offsetting top and bottom outward
-	 * from the same two points; that is right for a cliff, whose top and bottom
-	 * follow the same contour. A shore's do not - the waterline and the bank
-	 * behind it are two separate curves - so this takes a top pair
-	 * ({@code tx0,tz0} and {@code tx1,tz1}) and a bottom pair
-	 * ({@code bx0,bz0} and {@code bx1,bz1}) and joins them.
-	 *
-	 * <p>{@code m0}/{@code m1} are the mitres, {@code outTop}/{@code outBot} how
-	 * far along them each edge sits, and {@code edgeNx,edgeNz} the segment's own
-	 * outward normal, used only to orient the winding.
-	 */
-	static Quad stripMixed(float tx0, float tz0, float bx0, float bz0, float m0x, float m0z,
-			float tx1, float tz1, float bx1, float bz1, float m1x, float m1z,
-			float edgeNx, float edgeNz,
-			float yTop, float yBot, float outTop, float outBot,
-			float u0, float u1, float vTop, float vBot, float aoTop, float aoBot) {
-		Quad q = new Quad();
-		q.pos[0] = new float[]{tx0 + m0x * outTop, yTop, tz0 + m0z * outTop};
-		q.pos[1] = new float[]{tx1 + m1x * outTop, yTop, tz1 + m1z * outTop};
-		q.pos[2] = new float[]{bx0 + m0x * outBot, yBot, bz0 + m0z * outBot};
-		q.pos[3] = new float[]{bx1 + m1x * outBot, yBot, bz1 + m1z * outBot};
-		q.uv[0] = new float[]{u0, vTop};
-		q.uv[1] = new float[]{u1, vTop};
-		q.uv[2] = new float[]{u0, vBot};
-		q.uv[3] = new float[]{u1, vBot};
-		q.ao[0] = aoTop;
-		q.ao[1] = aoTop;
-		q.ao[2] = aoBot;
-		q.ao[3] = aoBot;
-		//face normal from the mitre and the lean, so lighting follows the slope
-		float run = outBot - outTop, rise = yTop - yBot;
-		float hyp = (float) Math.hypot(run, rise);
-		float upward = hyp < 1e-4f ? 0f : run / hyp;
-		float horiz = hyp < 1e-4f ? 1f : rise / hyp;
-		float ax = (m0x + m1x) * 0.5f, az = (m0z + m1z) * 0.5f;
-		float al = (float) Math.hypot(ax, az);
-		if (al > 1e-4f) {
-			ax /= al;
-			az /= al;
-		}
-		for (int c = 0; c < 4; c++) {
-			q.nrm[c] = new float[]{ax * horiz, upward, az * horiz};
-		}
-		//Wind against the SEGMENT'S OWN outward direction, never the averaged
-		//mitre. At a corner the two mitres are perpendicular, so their average
-		//points diagonally - and on the shallow shoulder, whose face is nearly
-		//horizontal anyway, its horizontal part is small enough that the sign
-		//comes down to rounding. Those faces wound inward, and a cliff face
-		//wound inward is back-face culled: it vanishes and the background shows
-		//straight through, which looks exactly like a missing texture. The edge
-		//knows unambiguously which way is downhill; use it.
-		fixWindingTowards(q, edgeNx * horiz, upward, edgeNz * horiz);
-		return q;
-	}
-
-	/**
-	 * A cliff face for ONE tile edge on its own, as a shoulder quad and a lower
-	 * face quad leaning out over the tile below.
-	 *
-	 * <p>The per-tile fallback, for edges that never made it into a chain.
-	 * {@link #emitCliffStrips} handles everything it can reach, and its output
-	 * is better in every way - mitred, rounded, stepped - so this is what a
-	 * lone edge gets, not what a cliff is normally built from.
-	 *
-	 * <p>Two quads rather than one because a single 45-degree slab reads as a
-	 * ramp; splitting the fall 30/70 across a wide shoulder and a steep face is
-	 * what makes it read as rock. The split is measured, not taste: over the
-	 * retail cliff meshes - the face angles of {@code d112r0103_gake1},
-	 * {@code d112r0103_gake2}, {@code gake_basic} and {@code chip_rock_b} - a
-	 * cliff averages 42-46 degrees, mean rise almost exactly equal to mean run,
-	 * with a large share of its area (44%, 62%) at only 20-30 degrees: the
-	 * shoulder, where the ground rolls over before the face steepens. (Moved here
-	 * from PaintedRegionBuilder, where the split left it above another class.) The foot is buried below the lower floor and
-	 * the top left exactly on the tile edge - both to keep any two surfaces from
-	 * ending up coplanar, which z-fights and shows as dark streaks down the
-	 * cliff. Returns empty for a drop of nothing.
-	 */
-	static List<Quad> cliffQuads(int tx, int ty, int dir, float yb, float yt) {
-		List<Quad> out = new ArrayList<>();
-		float drop = yt - yb;
-		if (drop <= 0.01f) {
-			return out;
-		}
-		//shoulder: 30% of the fall, leaning out ~0.64 of the total drop
-		//lower face: the remaining 70%, leaning out ~0.25 - together ~0.89,
-		//i.e. run ~= rise, the measured 45 degrees
-		//Centre the slope ON the tile boundary and bury its foot.
-		//
-		//Leaning the whole face outward put its foot flat on the lower tile's
-		//floor - two coplanar surfaces, which z-fight, and the fighting reads as
-		//dark streaks running down the cliff. Measuring the UVs ruled out tiling
-		//as the cause: 0.24 repeats per tile against retail's 0.32.
-		//
-		//So half the run goes back into the high tile and half comes forward
-		//over the low one, and the foot sinks below the lower floor rather than
-		//resting on it. Nothing is coplanar with anything.
-		float yMid = yb + drop * 0.70f;
-		float runShoulder = drop * 0.64f;
-		float runFace = drop * 0.25f;
-		float total = runShoulder + runFace;
-		//The top stays ON the tile edge. Pulling it back into the high tile put
-		//the shoulder underneath that tile's own floor quad, which covers the
-		//whole tile - so the top half of every cliff was hidden and all that
-		//showed was a thin dark strip of the lower face. Burying the foot is
-		//enough on its own to stop the coplanar z-fighting with the low floor.
-		float back = 0f;
-		float bury = 2.0f;              //how far the foot sinks under the low floor
-		//v runs along the SURFACE, not down the drop. A sloped face is longer
-		//than it is tall - the shoulder especially, which falls 30% of the drop
-		//over 64% of it horizontally - so measuring v by height squeezed the
-		//texture into a fraction of the space it covers, and squeezed the two
-		//bands by different amounts, leaving a visible seam where they meet.
-		float lenShoulder = (float) Math.hypot(drop * 0.30f, runShoulder);
-		float lenFace = (float) Math.hypot(drop * 0.70f, runFace);
-		out.add(slopedQuad(tx, ty, dir, yt, yMid, -back, runShoulder - back, 0f, lenShoulder));
-		out.add(slopedQuad(tx, ty, dir, yMid, yb - bury, runShoulder - back, total - back,
-				lenShoulder, lenShoulder + lenFace));
-		return out;
-	}
-
-	/**
-	 * One band of a cliff face: from {@code yTop} out at {@code outTop} to
-	 * {@code yBot} out at {@code outBot}, where "out" is horizontal distance
-	 * past the tile edge in the descent direction.
-	 */
-	static Quad slopedQuad(int tx, int ty, int dir, float yTop, float yBot,
-			float outTop, float outBot, float vTop, float vBot) {
-		Quad q = cliffQuad(tx, ty, dir, yBot, yTop);
-		float nx = q.nrm[0][0], nz = q.nrm[0][2];
-		//Offset by each vertex's own HEIGHT, never by its slot. cliffQuad ends
-		//with a winding fix that swaps slots 1 and 2, so after it returns a
-		//top-edge vertex may be sitting in a slot the naive "0,1 are the top"
-		//reading calls bottom. Doing it by slot moved one top and one bottom
-		//vertex the wrong way each, the two cancelled, and the face came out
-		//perfectly vertical - measured flatness 0.0000 over 1164 triangles,
-		//exactly the box shape this was meant to remove.
-		float mid = (yTop + yBot) * 0.5f;
-		for (int c = 0; c < 4; c++) {
-			boolean isTop = q.pos[c][1] >= mid;
-			float out = isTop ? outTop : outBot;
-			q.pos[c][0] += nx * out;
-			q.pos[c][2] += nz * out;
-			//v measured along the slope, keyed off the vertex's own height for
-			//the same reason the offset is: cliffQuad may have swapped slots
-			q.uv[c][1] = isTop ? vTop : vBot;
-		}
-		//the face is no longer vertical, so its normal is not the edge normal
-		float run = outBot - outTop, rise = yTop - yBot;
-		float len = (float) Math.sqrt(run * run + rise * rise);
-		float wantX = nx, wantY = 0f, wantZ = nz;
-		if (len > 1e-4f) {
-			float upward = run / len, horiz = rise / len;
-			wantX = nx * horiz;
-			wantY = upward;
-			wantZ = nz * horiz;
-			for (int c = 0; c < 4; c++) {
-				q.nrm[c] = new float[]{wantX, wantY, wantZ};
-			}
-		}
-		//Wind against the FULL 3D normal, not the horizontal edge direction. The
-		//shoulder band is only ~25 degrees off horizontal, so its face normal is
-		//mostly +Y and its horizontal component is nearly zero - testing the sign
-		//of that component decides the winding on rounding noise, which left 8 of
-		//384 faces inside out.
-		fixWindingTowards(q, wantX, wantY, wantZ);
-		return q;
-	}
-
-	/** Vertical cliff quad on tile edge {@code dir}, spanning world Y yb..yt. */
-	static Quad cliffQuad(int tx, int ty, int dir, float yb, float yt) {
-		float x0 = tx * TILE + ORIGIN, x1 = x0 + TILE;
-		float z0 = ty * TILE + ORIGIN, z1 = z0 + TILE;
-		// endpoints of the shared edge (a..b) + outward normal
-		float ax, az, bx, bz, nx, nz;
-		switch (dir) {
-			case 0: ax = x1; az = z0; bx = x1; bz = z1; nx = 1; nz = 0; break;   // east
-			case 1: ax = x0; az = z1; bx = x0; bz = z0; nx = -1; nz = 0; break;  // west
-			case 2: ax = x1; az = z1; bx = x0; bz = z1; nx = 0; nz = 1; break;   // south
-			default: ax = x0; az = z0; bx = x1; bz = z0; nx = 0; nz = -1; break; // north
-		}
-		Quad q = new Quad();
-		// TL=top-a, TR=top-b, BL=bottom-a, BR=bottom-b (horizontal u along edge, v = height)
-		float[][] p = {{ax, yt, az}, {bx, yt, bz}, {ax, yb, az}, {bx, yb, bz}};
-		float lenA = 0f, lenB = dist(ax, az, bx, bz);
-		float[] uPos = {0, lenB, 0, lenB};
-		float[] vPos = {yt, yt, yb, yb};
-		float[] aoTop = {0.9f, 0.9f, 0.55f, 0.55f}; // cliffs darker toward the base
-		for (int c = 0; c < 4; c++) {
-			q.pos[c] = p[c];
-			q.uv[c] = new float[]{uPos[c], vPos[c]};
-			q.nrm[c] = new float[]{nx, 0f, nz};
-			q.ao[c] = aoTop[c];
-		}
-		//The corner order above winds every one of the four directions inward,
-		//so painted elevation shipped with no rim walls at all: most cliff
-		//materials cull back faces, leaving the plateau top drawn and its sides
-		//invisible. The top looked right, which is why it went unreported.
-		fixWindingOut(q, nx, nz);
 		return q;
 	}
 
@@ -1089,37 +765,5 @@ public final class PaintedCliffMesh {
 				}
 			}
 		}
-	}
-
-	/** AO at a grid point for a tile at {@code myHeight}: darker next to walls or taller ground. */
-	static float cornerAO(TilePalette[][] grid, int[][] height, int gx, int gy, int myHeight) {
-		int occ = 0, total = 0;
-		for (int dy = -1; dy <= 0; dy++) {
-			for (int dx = -1; dx <= 0; dx++) {
-				int x = gx + dx, y = gy + dy;
-				if (x < 0 || y < 0 || x >= DIM || y >= DIM) {
-					continue;
-				}
-				total++;
-				TilePalette t = grid[y][x];
-				if (t == null || !t.walkable || height[y][x] > myHeight) {
-					occ++;
-				}
-			}
-		}
-		return total == 0 ? 1f : 1f - (float) occ / total;
-	}
-
-	static int neighbourHeight(TilePalette[][] grid, int[][] height, int tx, int ty, int dir) {
-		int nx = tx + (dir == 0 ? 1 : dir == 1 ? -1 : 0);
-		int ny = ty + (dir == 2 ? 1 : dir == 3 ? -1 : 0);
-		if (nx < 0 || ny < 0 || nx >= DIM || ny >= DIM) {
-			return 0; // map edge = drop to base
-		}
-		TilePalette t = grid[ny][nx];
-		if (t == null || t == TilePalette.VOID) {
-			return 0; // void = drop to base (so raised ground gets a wall)
-		}
-		return height[ny][nx];
 	}
 }

@@ -7,15 +7,8 @@ import ctrmap.Workspace;
 import ctrmap.formats.containers.ZO;
 import ctrmap.formats.zone.Zone;
 import ctrmap.gamedef.ArchiveType;
-import ctrmap.humaninterface.ExtrasPanel;
-import ctrmap.humaninterface.GeoEditForm;
-import ctrmap.humaninterface.MatrixEditForm;
-import ctrmap.humaninterface.NPCEditForm;
-import ctrmap.humaninterface.PaintForm;
 import ctrmap.humaninterface.PropEditForm;
 import ctrmap.humaninterface.TileMapPanel;
-import ctrmap.humaninterface.TriggerEditForm;
-import ctrmap.humaninterface.WarpEditForm;
 import ctrmap.humaninterface.ZoneLoadingPanel;
 import java.io.File;
 import java.lang.reflect.Constructor;
@@ -120,7 +113,7 @@ public class LoadedZoneTest {
 		"ctrmap.humaninterface.AreaLightingDialog",
 		"ctrmap.humaninterface.EncounterEditDialog",
 		"ctrmap.humaninterface.GfEnvPicker",
-		"ctrmap.humaninterface.TilePainterForm"
+		"ctrmap.MapPainter"
 	};
 
 	/**
@@ -133,8 +126,9 @@ public class LoadedZoneTest {
 	 * handed the operation rather than the panel. {@code NPCEditForm} and
 	 * {@code ScriptEditor} called {@code store(false)} and now hold a
 	 * {@link ctrmap.humaninterface.ZoneSaver}. {@code TilePainterForm} called
-	 * {@code loadEverything}/{@code selectZone}/{@code clearForkDecline} and now
-	 * holds a {@link ctrmap.humaninterface.ZoneList}. {@code SetupWizard} wanted
+	 * {@code loadEverything}/{@code selectZone}/{@code clearForkDecline} and held
+	 * a {@link ctrmap.humaninterface.ZoneList}; as {@code ctrmap.MapPainter}
+	 * it asks its Host, and the editor's PaintForm.Prompts holds the list (F248). {@code SetupWizard} wanted
 	 * one number - how many zones the game it just set up has - and is handed
 	 * the number.
 	 *
@@ -159,8 +153,10 @@ public class LoadedZoneTest {
 	 * over the whole set rather than a count.
 	 */
 	private static final String[] ZONE_KEEPERS = {
-		"ctrmap/LoadedZone private Zone[] table",
-		"ctrmap/LoadedZone private Zone open",
+		//the owner's two, in its one immutable state behind a volatile reference (F016): replaced
+		//whole, so a reader on another thread sees one table and one open zone, never a mixture
+		"ctrmap/LoadedZone$State final Zone[] table",
+		"ctrmap/LoadedZone$State final Zone open",
 		"ctrmap/formats/scripts/ZoneScriptEdit private final Zone zone",
 		"ctrmap/humaninterface/ZoneLoadingPanel$Listed final Zone[] zones",
 		//the preview's worker hands its read zone to the event thread in one of these, which frees it
@@ -436,6 +432,8 @@ public class LoadedZoneTest {
 			return;
 		}
 		Set<String> keepers = new TreeSet<>();
+		//A CLASS THAT COULD NOT BE LOADED IS NOT ONE THAT HOLDS NO ZONE (F250): it was skipped uncounted
+		List<String> unloadable = new ArrayList<>();
 		for (ClassFileScanner.ClassFile cf : ClassFileScanner.application(classes)) {
 			Class<?> c;
 			try {
@@ -443,6 +441,7 @@ public class LoadedZoneTest {
 				//classes start GL contexts and animator threads when they run
 				c = Class.forName(cf.name.replace('/', '.'), false, LoadedZoneTest.class.getClassLoader());
 			} catch (Throwable notLoadable) {
+				unloadable.add(cf.name + " (" + notLoadable + ")");
 				continue;
 			}
 			for (Field f : c.getDeclaredFields()) {
@@ -454,6 +453,8 @@ public class LoadedZoneTest {
 			}
 		}
 		System.out.println("  fields holding a zone: " + keepers);
+		check(unloadable.isEmpty(), "every application class could be looked at" + (unloadable.isEmpty() ? ""
+				: " - these could not, so whether they keep a zone is unknown: " + unloadable));
 		check(keepers.equals(new TreeSet<>(Arrays.asList(ZONE_KEEPERS))),
 				"exactly the owner's two and the script edit's subject hold a zone (measured " + keepers
 				+ ", recorded " + Arrays.toString(ZONE_KEEPERS) + ")");
@@ -474,8 +475,8 @@ public class LoadedZoneTest {
 		try {
 			LoadedZone a = new LoadedZone();
 			LoadedZone b = new LoadedZone();
-			ZoneLoadingPanel panelA = new ZoneLoadingPanel(a, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
-			ZoneLoadingPanel panelB = new ZoneLoadingPanel(b, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
+			ZoneLoadingPanel panelA = new ZoneLoadingPanel(a, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+			ZoneLoadingPanel panelB = new ZoneLoadingPanel(b, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
 
 			//the offer walks the whole table, so give both owners a table of the same
 			//first forty zones - reading all 536 would cost the suite a minute and prove
@@ -547,13 +548,13 @@ public class LoadedZoneTest {
 						ArchiveType.MAP_MATRIX, z.header.mapmatrixID).toPath()));
 		check(expected >= 0, "zone " + PRIVATE_ZONE + "'s own map has region " + expected);
 
-		CtrmapMainframe.bindLoadedZone(withZone);
+		TestWindow.bindLoadedZone(withZone);
 		check(defaultRegion() == expected,
 				"bound to the owner holding that zone, the OBJ default is its region (" + defaultRegion() + ")");
-		CtrmapMainframe.bindLoadedZone(empty);
+		TestWindow.bindLoadedZone(empty);
 		check(defaultRegion() == -1,
 				"bound to an owner holding nothing, it is -1 rather than the last answer (" + defaultRegion() + ")");
-		CtrmapMainframe.bindLoadedZone(null);
+		TestWindow.bindLoadedZone(null);
 		check(defaultRegion() == -1, "and bound to no owner at all it is still -1, not a throw");
 	}
 
@@ -685,7 +686,7 @@ public class LoadedZoneTest {
 			} else if (types[i] == javax.swing.JScrollPane.class) {
 				args[i] = new javax.swing.JScrollPane();
 			} else if (types[i] == ctrmap.humaninterface.CollEditPanel.class) {
-				args[i] = new ctrmap.humaninterface.CollEditPanel(new ctrmap.humaninterface.tools.ToolSelection());
+				args[i] = new ctrmap.humaninterface.CollEditPanel(new ctrmap.humaninterface.tools.ToolSelection(), UndoHistoryTest.overOneNumber(new int[]{0}));
 			} else {
 				throw new IllegalStateException(ctor.getDeclaringClass().getName()
 						+ " is handed a " + types[i].getName()
@@ -724,7 +725,7 @@ public class LoadedZoneTest {
 	static int defaultRegion() throws Exception {
 		Method m = CtrmapMainframe.class.getDeclaredMethod("defaultRegionForLoadedZone");
 		m.setAccessible(true);
-		return (Integer) m.invoke(null);
+		return (Integer) m.invoke(TestWindow.W);
 	}
 
 	/** A zone read from the smallest ZO the readers take: no game data, so a suite's table has no hole. */

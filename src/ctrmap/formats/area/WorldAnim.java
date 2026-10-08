@@ -7,8 +7,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import static ctrmap.formats.LittleEndian.putI32;
-import ctrmap.formats.LittleEndian;
+import static ctrmap.util.LittleEndian.putI32;
+import static ctrmap.util.LittleEndian.putU16;
+import static ctrmap.util.LittleEndian.i32;
+import ctrmap.util.LittleEndian;
 
 /**
  * The AreaData subfile-2 "world animations" BCH - the file that makes water
@@ -390,10 +392,8 @@ public class WorldAnim {
 		for (int i = 0; i < nodes.size(); i++) {
 			PNode n = nodes.get(i);
 			putI32(out, i * 12, (int) n.refBit);
-			out[i * 12 + 4] = (byte) n.left;
-			out[i * 12 + 5] = (byte) (n.left >> 8);
-			out[i * 12 + 6] = (byte) n.right;
-			out[i * 12 + 7] = (byte) (n.right >> 8);
+			putU16(out, i * 12 + 4, n.left);
+			putU16(out, i * 12 + 6, n.right);
 			putI32(out, i * 12 + 8, n.nameOff);
 		}
 		return out;
@@ -528,8 +528,7 @@ public class WorldAnim {
 		}
 
 		void patchU16(int contLoc, int v) {
-			contPatch[contLoc] = (byte) v;
-			contPatch[contLoc + 1] = (byte) (v >> 8);
+			putU16(contPatch, contLoc, v);
 		}
 
 		int addString(String s) {
@@ -668,7 +667,7 @@ public class WorldAnim {
 		offs.add(nameStr);
 		byte[] tree = treeBytes(buildTree(names, offs));
 		for (int p = 0; p < tree.length; p += 4) {
-			sp.word((tree[p] & 0xFF) | ((tree[p + 1] & 0xFF) << 8) | ((tree[p + 2] & 0xFF) << 16) | ((tree[p + 3] & 0xFF) << 24));
+			sp.word(i32(tree, p));
 		}
 		for (int i = 1; i < count + 2; i++) {
 			sp.reloc1(treeOff + i * 12 + 8); // node namePtrs (root's stays 0/uncovered)

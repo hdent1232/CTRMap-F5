@@ -54,6 +54,8 @@ public class CameraFormTest {
 			theRecordComparesWhatItWrites();
 			keepTakesEveryMovedFieldAndNothingElse();
 			theFormWritesWhatItWasMovedTo();
+			aCameraReadInPiecesIsTheSameCamera();
+			theCamerasAreADocumentOfTheZonesHistory();
 			everyRetailCameraSurvivesBeingShown(dump);
 		} finally {
 			ctrmap.Ui.stopRecording();
@@ -64,6 +66,31 @@ public class CameraFormTest {
 	}
 
 	// ------------------------------------------------------------ the record
+
+	/**
+	 * A camera is read whole however its bytes arrive (F221). Its first sixteen bytes were read with
+	 * read(byte[]), which may hand over fewer than asked while more remain, and the count was dropped -
+	 * every field after them was then read from the wrong place, and nothing said so.
+	 */
+	static void aCameraReadInPiecesIsTheSameCamera() throws Exception {
+		System.out.println("--- a camera is read whole however its bytes arrive (F221)");
+		CameraData made = new CameraData();
+		made.unknownBytes[0] = 5;
+		made.unknownBytes[15] = 6;
+		made.coords1.FOV = 41f;
+		byte[] b = made.bytes();
+		CameraData whole = new CameraData(new ctrmap.util.LittleEndianDataInputStream(new java.io.ByteArrayInputStream(b)));
+		check(whole.equals(made), "control: read from the whole array, the camera is the one written");
+		java.io.InputStream trickle = new java.io.FilterInputStream(new java.io.ByteArrayInputStream(b)) {
+			@Override
+			public int read(byte[] buf, int off, int len) throws java.io.IOException {
+				return super.read(buf, off, Math.min(len, 1));
+			}
+		};
+		CameraData pieces = new CameraData(new ctrmap.util.LittleEndianDataInputStream(trickle));
+		check(pieces.equals(made), "and read through a stream that hands over one byte at a time, it is the same camera");
+	}
+
 
 	static void theRecordComparesWhatItWrites() {
 		System.out.println("--- a camera compares the bytes it writes (F123, F210)");
@@ -234,7 +261,7 @@ public class CameraFormTest {
 	/** The same, in the game handed: an ORAS one unless said otherwise. */
 	static AD area(FakeGameFiles fake, CameraData... cams) throws Exception {
 		ByteArrayOutputStream table = new ByteArrayOutputStream();
-		ctrmap.LittleEndianDataOutputStream into = new ctrmap.LittleEndianDataOutputStream(table);
+		ctrmap.util.LittleEndianDataOutputStream into = new ctrmap.util.LittleEndianDataOutputStream(table);
 		into.writeInt(cams.length);
 		for (CameraData c : cams) {
 			c.write(into);
@@ -260,11 +287,58 @@ public class CameraFormTest {
 		return c;
 	}
 
+	/**
+	 * The camera table is a document of the zone's history (F209): a camera added, removed or moved is
+	 * taken back by the same Undo as everything else, and the form shows the table again as it was put.
+	 * The camera editor had no undo at all.
+	 */
+	static void theCamerasAreADocumentOfTheZonesHistory() throws Exception {
+		System.out.println("--- the camera table is a document of the zone's history (F209)");
+		MapResizeTest.game("camundo");
+		int[] npc = {0};
+		ctrmap.humaninterface.UndoHistory zone = UndoHistoryTest.overOneNumber(npc);
+		String said = "(nothing was thrown)";
+		try {
+			new CameraEditForm(DataSafetyGuardsTest.REDRAW, null);
+		} catch (RuntimeException refused) {
+			said = refused.getClass().getSimpleName() + ": " + refused.getMessage();
+		}
+		check(said.startsWith("IllegalArgumentException") && said.contains("must be handed the zone's history"),
+				"a camera form built without the zone's history is refused: " + said);
+		CameraEditForm form = new CameraEditForm(DataSafetyGuardsTest.REDRAW, zone);
+		JComboBox<?> entries = (JComboBox<?>) MatrixEditFormGuardsTest.field(form, "entryBox");
+		form.loadFrom(area(oddCamera(), new CameraData()));
+		zone.settle();
+		check(!zone.canUndo() && form.f.camData.size() == 2, "control: a table loaded is noted, not an edit");
+		((javax.swing.JButton) MatrixEditFormGuardsTest.field(form, "btnAdd")).doClick();
+		check(zone.settle() && "the zone's cameras".equals(zone.undoName()) && form.f.camData.size() == 3,
+				"a camera added is an edit of the zone's history: " + zone.undoName());
+		byte[] first = form.f.camData.get(0).bytes();
+		form.f.modified = false;   //saved: the undo must mark it changed again
+		check(zone.undo() && form.f.camData.size() == 2 && entries.getItemCount() == 2,
+				"Undo takes it away again, and the form lists two cameras (" + entries.getItemCount() + ")");
+		check(Arrays.equals(form.f.camData.get(0).bytes(), first) && form.f.modified,
+				"the cameras left are the ones there were, and the table is marked changed from what was saved");
+		check(zone.redo() && form.f.camData.size() == 3 && entries.getItemCount() == 3, "Redo adds it again");
+		form.f.camData.get(1).boundX1 = 77;   //a camera moved, as saveCamera writes it
+		check(zone.settle() && zone.undo() && form.f.camData.get(1).boundX1 != 77,
+				"a camera moved is an edit, and Undo puts it back where it was");
+		form.unload();
+		String refused = "(nothing was thrown)";
+		try {
+			zone.undo();
+		} catch (IllegalStateException notOpen) {
+			refused = notOpen.getMessage();
+		}
+		check(refused.contains("no longer open") && refused.contains("the zone's cameras"),
+				"after the table is unloaded, an Undo reaching it is refused, naming it: " + refused);
+	}
+
 	static void theFormWritesWhatItWasMovedTo() throws Exception {
 		System.out.println("--- the camera form writes what it was moved to and nothing else (F123, F127, F097, F210)");
 		MapResizeTest.game("camform");
 		List<String> said = ctrmap.Ui.record();
-		CameraEditForm form = new CameraEditForm(DataSafetyGuardsTest.REDRAW);
+		CameraEditForm form = new CameraEditForm(DataSafetyGuardsTest.REDRAW, UndoHistoryTest.overOneNumber(new int[]{0}));
 		JComboBox<?> entries = (JComboBox<?>) MatrixEditFormGuardsTest.field(form, "entryBox");
 		CameraData odd = oddCamera();
 		byte[] oddBytes = odd.bytes();
@@ -371,7 +445,7 @@ public class CameraFormTest {
 		MapResizeTest.game("camdump");
 		ctrmap.Ui.record();
 		GARC garc = new GARC(garcFile);
-		CameraEditForm form = new CameraEditForm(DataSafetyGuardsTest.REDRAW);
+		CameraEditForm form = new CameraEditForm(DataSafetyGuardsTest.REDRAW, UndoHistoryTest.overOneNumber(new int[]{0}));
 		JComboBox<?> entries = (JComboBox<?>) MatrixEditFormGuardsTest.field(form, "entryBox");
 		int areas = 0;
 		int cameras = 0;

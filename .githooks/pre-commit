@@ -9,6 +9,8 @@
 #   timeouts         every subprocess a gate starts is bounded (section 16)
 #   format_strings   every constant `%` / `.format` string can print - a refusal that throws
 #                    while building its message is an allow (section 16)
+#   counted_roots    every project root is anchored on .git or CLAUDE.md, never counted in
+#                    dirnames from __file__, and every copy of its one definition is the same
 #   prove_plants     no guard class without a plant, none proven only at its own site, and the
 #                    must_say debt under its ceiling (section 2) - ratchets only; driving every
 #                    plant is `python -B tools/prove_plants.py --all`, and the commit-msg gate
@@ -27,4 +29,5 @@ command -v python >/dev/null 2>&1 || PY=python3
 "$PY" -B tools/tiers.py || exit 1
 "$PY" -B tools/timeouts.py || exit 1
 "$PY" -B tools/format_strings.py || exit 1
+"$PY" -B tools/counted_roots.py || exit 1
 exec "$PY" -B tools/prove_plants.py --owed

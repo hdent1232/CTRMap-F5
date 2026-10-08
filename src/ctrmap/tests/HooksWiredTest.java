@@ -149,38 +149,31 @@ public class HooksWiredTest {
 	}
 
 	/**
-	 * A hook edited where it runs, rather than where it is reviewed, is refused.
+	 * A hook git does not track is refused, and a folder git cannot answer for is not clean.
 	 *
-	 * <p>{@code .claude/hooks} is outside version control. A guard hollowed out there leaves no
-	 * diff, no history and no review, and goes on looking installed and wired - and a suite
-	 * that read the installed copy would simply agree with whatever it now said. The
-	 * repository copy in {@code tools/hooks} is what {@link HookRefusalsTest} drives and what
-	 * the plant ledger can break, so the two have to be the same file; otherwise the suite
-	 * pins a copy that does not run.
+	 * <p>{@code .claude/hooks} is tracked, so a guard edited there leaves a diff. What leaves no
+	 * diff, no history and no review is a hook git never saw. This compared the hooks with a
+	 * second copy in {@code tools/hooks}, kept for when the folder was untracked; the two drifted,
+	 * one fix in each, and the live check could not see it because {@link #ask} overwrote the
+	 * second copy with the first before asking (F187).
 	 */
 	static void aHookEditedInPlaceIsRefused(File checker) throws Exception {
-		System.out.println("--- a hook edited where it runs rather than where it is reviewed");
+		System.out.println("--- a hook git never saw, and a folder git cannot answer for");
 		File root = install("edited", "\"*\"", "guard_all.py",
 				new String[]{"guard_all.py", "guard_one.py"}, false);
 		write(new File(root, ".claude/hooks/guard_all.py"), DISPATCHER);
 		write(new File(root, ".claude/hooks/guard_one.py"), STUB);
-		//the repository's copy of the same two hooks
-		write(new File(root, "tools/hooks/guard_all.py"), DISPATCHER);
-		write(new File(root, "tools/hooks/guard_one.py"), STUB);
 		String said = askAsIs(checker, root);
+		check(said.contains("UNKNOWN"), "a hooks folder git cannot answer for is UNKNOWN, not clean: "
+				+ firstReason(said));
+		said = ask(checker, root);
 		check(said.contains("reachable for every tool"),
-				"two copies that agree pass: " + firstReason(said));
+				"hooks git tracks pass: " + firstReason(said));
 
-		write(new File(root, ".claude/hooks/guard_one.py"), STUB + "#edited in place\n");
+		write(new File(root, ".claude/hooks/guard_new.py"), STUB);
 		said = askAsIs(checker, root);
-		check(said.contains("guard_one.py") && said.contains("differs from"),
-				"a hook edited in place is named: " + firstReason(said));
-
-		write(new File(root, ".claude/hooks/guard_one.py"), STUB);
-		write(new File(root, "tools/hooks/guard_orphan.py"), STUB);
-		said = askAsIs(checker, root);
-		check(said.contains("guard_orphan.py") && said.contains("only on paper"),
-				"and a versioned hook that is not installed is named: " + firstReason(said));
+		check(said.contains("guard_new.py") && said.contains("git does not track"),
+				"and a hook git never saw is named: " + firstReason(said));
 	}
 
 	/**
@@ -209,7 +202,7 @@ public class HooksWiredTest {
 	 */
 	static void theThreeAdoptedRefusalsCatchTheirDefects(File repo) throws Exception {
 		System.out.println("--- the three refusals adopted from the bootstrap");
-		File live = new File(repo, "tools/hooks");
+		File live = new File(repo, ".claude/hooks");
 		String[] every = live.list((d, n) -> n.endsWith(".py"));
 		check(every != null && every.length > 0, "there are hooks to ask about");
 
@@ -352,10 +345,8 @@ public class HooksWiredTest {
 		check(said.contains("reachable for every tool"),
 				"one universal entry over a dispatcher that finds its own guards passes: "
 				+ firstReason(said));
-		//...and stays sound with the cache running the hooks leaves in BOTH copies: this suite's
-		//own mirroring threw on it, so the second battery on any machine died before asking
+		//...and stays sound with the cache running the hooks leaves beside them
 		write(new File(root, ".claude/hooks/__pycache__/guard_one.cpython-313.pyc"), "x");
-		write(new File(root, "tools/hooks/__pycache__/guard_two.cpython-313.pyc"), "y");
 		said = ask(checker, root);
 		check(said.contains("reachable for every tool"),
 				"and a __pycache__ folder beside both copies is not a hook: " + firstReason(said));
@@ -366,7 +357,8 @@ public class HooksWiredTest {
 	 */
 	static void theLiveInstallationIsSound(File checker, File repo) throws Exception {
 		System.out.println("--- the installation this repository actually runs under");
-		String said = ask(checker, repo);
+		//AS IT STANDS: the live repository is read, never written (F187)
+		String said = askAsIs(checker, repo);
 		if (said.contains("INSTALLED NOWHERE")) {
 			System.out.println("  note: no .claude above " + repo.getAbsolutePath()
 					+ " - this clone has no hooks to reach, which is NOT the same as a clean "
@@ -412,32 +404,30 @@ public class HooksWiredTest {
 	}
 
 	/**
-	 * Runs the checker against a root whose two copies of each hook agree.
+	 * Runs the checker against a SCRATCH root whose hooks git tracks: the root is made a repository
+	 * and everything in it added, so the sections are each about the one thing they assert.
 	 *
-	 * <p>The checker also refuses an installed hook that differs from its version-controlled
-	 * copy, so every scratch installation needs both. Mirroring here rather than in each
-	 * section keeps the sections about the one thing each is asserting - and a section that
-	 * forgot would fail for a reason that has nothing to do with what it is testing, which is
-	 * the shape that gets a red suite explained away.
+	 * <p>NEVER THE LIVE REPOSITORY. This copied {@code .claude/hooks} over the repository's
+	 * {@code tools/hooks} before asking, and the live check called it: the drift check overwrote
+	 * its own subject and could not fail, and a battery run on a checkout rewrote tracked files in
+	 * it (F187). The live check is {@link #askAsIs}.
 	 */
 	static String ask(File checker, File root) throws Exception {
-		File hooks = new File(root, ".claude/hooks");
-		File versioned = new File(root, "tools/hooks");
-		File[] beside = hooks.listFiles();
-		if (beside != null) {
-			versioned.mkdirs();
-			for (File one : beside) {
-				//FILES ONLY. Running the hooks leaves a __pycache__ folder in both copies, and
-				//copying a folder over a non-empty one throws: the second battery on any machine
-				//died here, after a run of the refusal suite had imported the versioned copies
-				if (!one.isFile()) {
-					continue;
-				}
-				Files.copy(one.toPath(), new File(versioned, one.getName()).toPath(),
-						java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-			}
-		}
+		git(root, "init", "-q");
+		git(root, "add", "-A");
 		return askAsIs(checker, root);
+	}
+
+	/** Runs git in a scratch root, its output discarded - a failure shows in what the checker says. */
+	static void git(File root, String... args) throws Exception {
+		String[] command = new String[args.length + 1];
+		command[0] = "git";
+		System.arraycopy(args, 0, command, 1, args.length);
+		ProcessBuilder pb = new ProcessBuilder(command).directory(root);
+		pb.redirectErrorStream(true);
+		Process p = pb.start();
+		CommitGuardTest.drain(p);
+		p.waitFor();
 	}
 
 	/** Runs the checker against a root exactly as it stands, mirroring nothing. */

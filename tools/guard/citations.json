@@ -14,10 +14,6 @@
       "src/ctrmap/tests/CommitGuardTest.java"
     ]
   },
-  "wt/_state/mutation.json": {
-    "status": "outside",
-    "why": "Output of tools/mutate.py - one sweep's per-mutant verdicts, 232 KB, rewritten by re-running the sweep. It is a measurement taken against one frozen tree rather than a fact about the repository, and a stale copy carried in a clone would be worse than no copy at all."
-  },
   "wt/_state/mutation_semantic.json": {
     "status": "outside",
     "why": "Output of tools/mutate2.py, the same shape as mutation.json and outside for the same reason: rewritten by the sweep that produces it, and meaningless against any tree but the one it was taken on."

@@ -97,9 +97,28 @@ public final class ItemEditSession {
 	}
 
 	/**
+	 * Reads the records, the names and the descriptions again from what the game holds now, staged
+	 * edits included - after a unit of work put a failed save's files back (F082).
+	 */
+	public void reread() throws IOException {
+		table.reload();
+		names.clear();
+		names.addAll(ItemText.read(game, ItemText.Which.NAMES));
+		descs.clear();
+		descs.addAll(ItemText.read(game, ItemText.Which.DESCRIPTIONS));
+		free.clear();
+		free.addAll(table.freeSlots(names));
+	}
+
+	/**
 	 * Writes what differs from what is stored, and nothing else, and says
 	 * which parts those were. The record goes first; if it is refused, no
 	 * text is written.
+	 *
+	 * <p>ONE EDIT, STAGED (F082). Record and text are both staged in the
+	 * workspace now, so a caller runs this in a unit of work: a text write
+	 * that fails after the record puts the record back too, and {@link
+	 * #reread} brings this session's lists back to what the unit restored.
 	 *
 	 * @return the parts written; empty when nothing differed
 	 */

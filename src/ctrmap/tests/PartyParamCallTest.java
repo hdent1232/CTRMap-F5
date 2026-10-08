@@ -203,6 +203,12 @@ public class PartyParamCallTest {
 		check(shown[1].equals(shown[0]), "on the selector's push, the same: " + shown[1]);
 		check(shown[2].trim().isEmpty(), "and on another native's call, nothing: '" + shown[2] + "'");
 		check(area.getText().equals(text), "and the script's text is what it was - nothing was written into it");
+
+		ed.unload();
+		check(ed.script == null && area.getText().isEmpty() && !area.isEditable(), "a zone that closes takes its script"
+				+ " out of the editor: no script, no text, nothing to type into (F222)");
+		ed.loadScript(s);
+		check(ed.script == s && area.isEditable(), "and the next zone's script is editable again");
 	}
 
 	static void check(boolean ok, String what) {

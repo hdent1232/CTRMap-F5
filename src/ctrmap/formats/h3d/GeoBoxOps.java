@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import static ctrmap.formats.LittleEndian.putF32;
+import static ctrmap.util.LittleEndian.putF32;
 
 /**
  * Box-selection geometry operations on a map model - the engine of the in-app
@@ -66,11 +66,14 @@ public class GeoBoxOps {
 		public int vertices;
 		public int fullFaces;      // faces with all 3 corners inside
 		public int touchedMeshes;
+		/** Meshes in the model whose positions did not decode: no edit moves them (F239). */
+		public int undecodedMeshes;
 	}
 
 	/** Counts what the box covers (cheap - no writes). */
 	public static Selection query(BchMapModel model, Box box) {
 		Selection s = new Selection();
+		s.undecodedMeshes = model.undecodedMeshes().size();
 		for (BchMapModel.MeshGeom g : model.geometry()) {
 			if (!g.posOk) {
 				continue;
@@ -100,8 +103,8 @@ public class GeoBoxOps {
 
 	/** Translates every vertex inside the box by (dx,dy,dz). Offset-preserving. */
 	public static byte[] move(byte[] modelBytes, Box box, float dx, float dy, float dz) {
-		byte[] current = modelBytes;
-		BchMapModel model = new BchMapModel(current);
+		BchMapModel model = new BchMapModel(modelBytes);
+		Map<Integer, float[][]> moved = new LinkedHashMap<>();
 		for (BchMapModel.MeshGeom g : model.geometry()) {
 			if (!g.posOk) {
 				continue;
@@ -117,11 +120,11 @@ public class GeoBoxOps {
 				}
 			}
 			if (touched) {
-				current = model.setVertexPositions(g.meshIndex, pos);
-				model = new BchMapModel(current);
+				moved.put(g.meshIndex, pos);
 			}
 		}
-		return current;
+		//ONE WRITE, NOT ONE RE-PARSE PER MESH (F068): the move is offset-preserving
+		return moved.isEmpty() ? modelBytes : model.setVertexPositions(moved);
 	}
 
 	/**
@@ -130,9 +133,16 @@ public class GeoBoxOps {
 	 * textures stay correct). Returns the input unchanged if nothing is inside.
 	 */
 	public static byte[] duplicate(byte[] modelBytes, Box box, float dx, float dy, float dz) {
-		byte[] current = modelBytes;
-		BchMapModel model = new BchMapModel(current);
+		BchMapModel model = new BchMapModel(modelBytes);
+		Map<Integer, BchMapModel.MeshEdit> edits = duplicateEdits(model, box, dx, dy, dz);
+		//ONE REBUILD, NOT ONE REBUILD AND RE-PARSE PER MESH (F068)
+		return edits.isEmpty() ? modelBytes : model.setMeshGeometries(edits);
+	}
+
+	/** Each touched mesh's edit for {@link #duplicate}: its own buffers, then the clones. */
+	public static Map<Integer, BchMapModel.MeshEdit> duplicateEdits(BchMapModel model, Box box, float dx, float dy, float dz) {
 		int meshCount = model.meshes.size();
+		Map<Integer, BchMapModel.MeshEdit> edits = new LinkedHashMap<>();
 		for (int mi = 0; mi < meshCount; mi++) {
 			BchMapModel.MeshGeom g = model.geometry().get(mi);
 			if (!g.posOk) {
@@ -176,10 +186,9 @@ public class GeoBoxOps {
 			for (int i = 0; i < extraI.length; i++) {
 				extraI[i] = base + newTris.get(i);
 			}
-			current = model.appendGeometry(mi, extraV, extraI);
-			model = new BchMapModel(current);
+			edits.put(mi, model.grown(mi, extraV, extraI));
 		}
-		return current;
+		return edits;
 	}
 
 	/**
@@ -188,9 +197,16 @@ public class GeoBoxOps {
 	 * and the model structurally valid.
 	 */
 	public static byte[] delete(byte[] modelBytes, Box box) {
-		byte[] current = modelBytes;
-		BchMapModel model = new BchMapModel(current);
+		BchMapModel model = new BchMapModel(modelBytes);
+		Map<Integer, BchMapModel.MeshEdit> edits = deleteEdits(model, box);
+		//ONE REBUILD, NOT ONE REBUILD AND RE-PARSE PER MESH (F068)
+		return edits.isEmpty() ? modelBytes : model.setMeshGeometries(edits);
+	}
+
+	/** Each touched mesh's edit for {@link #delete}: its kept faces over the vertices they use. */
+	public static Map<Integer, BchMapModel.MeshEdit> deleteEdits(BchMapModel model, Box box) {
 		int meshCount = model.meshes.size();
+		Map<Integer, BchMapModel.MeshEdit> edits = new LinkedHashMap<>();
 		for (int mi = 0; mi < meshCount; mi++) {
 			BchMapModel.MeshGeom g = model.geometry().get(mi);
 			if (!g.posOk) {
@@ -236,9 +252,8 @@ public class GeoBoxOps {
 			for (Map.Entry<Integer, Integer> e : remap.entrySet()) {
 				System.arraycopy(model.raw, g.vtxAbs + e.getKey() * g.stride, newV, e.getValue() * g.stride, g.stride);
 			}
-			current = model.setMeshGeometry(mi, newV, newTris);
-			model = new BchMapModel(current);
+			edits.put(mi, new BchMapModel.MeshEdit(newV, newTris));
 		}
-		return current;
+		return edits;
 	}
 }

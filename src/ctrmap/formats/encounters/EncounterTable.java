@@ -1,11 +1,7 @@
 package ctrmap.formats.encounters;
 
-import java.util.ArrayList;
-import java.util.List;
-import static ctrmap.formats.LittleEndian.i32;
-import static ctrmap.formats.LittleEndian.u16;
-import static ctrmap.formats.LittleEndian.putI32;
-import ctrmap.formats.containers.ContainerBytes;
+import static ctrmap.util.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.putU16;
 
 /**
  * One zone's wild-encounter table - the 260-byte record inside the ORAS "EN"
@@ -109,8 +105,7 @@ public class EncounterTable {
 						throw new IllegalArgumentException("invalid species/form " + slot.species + "/" + slot.form);
 					}
 					int raw = slot.species | (slot.form << 11);
-					out[off] = (byte) raw;
-					out[off + 1] = (byte) (raw >> 8);
+					putU16(out, off, raw);
 					out[off + 2] = (byte) Math.max(1, Math.min(100, slot.minLevel));
 					out[off + 3] = (byte) Math.max(1, Math.min(100, slot.maxLevel));
 					bankUsed[b] = true;
@@ -144,61 +139,23 @@ public class EncounterTable {
 
 	// ---- EN pack integration ---------------------------------------------
 
-	/** The zone's table from an EN pack, or null when the zone has no wild data. */
+	/**
+	 * The zone's table from an EN pack, or null when the zone has no wild data. The pack is read
+	 * strictly ({@link EnPack#parse}): it was read as any bytes, and a bad pair of offsets was a
+	 * NegativeArraySizeException in the middle of an edit (F053).
+	 */
 	public static EncounterTable read(byte[] enPack, int zone) {
-		int count = ContainerBytes.count(enPack);
-		if (zone < 0 || zone >= count) {
-			throw new IllegalArgumentException("zone " + zone + " out of range (EN count " + count + ")");
-		}
-		int o0 = i32(enPack, 4 + zone * 4), o1 = i32(enPack, 4 + (zone + 1) * 4);
-		if (o1 - o0 == 0) {
-			return null;
-		}
-		byte[] blob = new byte[o1 - o0];
-		System.arraycopy(enPack, o0, blob, 0, blob.length);
-		return fromBlob(blob);
+		byte[] blob = EnPack.parse(enPack).blob(zone);
+		return blob.length == 0 ? null : fromBlob(blob);
 	}
 
 	/**
 	 * Returns a new EN pack with the zone's table replaced ({@code table} null
 	 * or empty removes the zone's wild data). Every other zone's bytes are
-	 * carried verbatim; the offset table is rebuilt.
+	 * carried verbatim; the pack is written by {@link EnPack}, its one writer.
 	 */
 	public static byte[] write(byte[] enPack, int zone, EncounterTable table) {
-		int count = ContainerBytes.count(enPack);
-		if (zone < 0 || zone >= count) {
-			throw new IllegalArgumentException("zone " + zone + " out of range (EN count " + count + ")");
-		}
 		byte[] blob = (table == null || table.isEmpty()) ? new byte[0] : table.toBlob();
-		List<byte[]> blobs = new ArrayList<>();
-		for (int z = 0; z < count; z++) {
-			if (z == zone) {
-				blobs.add(blob);
-			} else {
-				int o0 = i32(enPack, 4 + z * 4), o1 = i32(enPack, 4 + (z + 1) * 4);
-				byte[] bz = new byte[o1 - o0];
-				System.arraycopy(enPack, o0, bz, 0, bz.length);
-				blobs.add(bz);
-			}
-		}
-		int tableEnd = 4 + (count + 1) * 4;
-		int total = tableEnd;
-		for (byte[] bz : blobs) {
-			total += bz.length;
-		}
-		byte[] out = new byte[total];
-		out[0] = 'E';
-		out[1] = 'N';
-		out[2] = (byte) count;
-		out[3] = (byte) (count >> 8);
-		int off = tableEnd;
-		for (int z = 0; z < count; z++) {
-			putI32(out, 4 + z * 4, off);
-			byte[] bz = blobs.get(z);
-			System.arraycopy(bz, 0, out, off, bz.length);
-			off += bz.length;
-		}
-		putI32(out, 4 + count * 4, off);
-		return out;
+		return EnPack.parse(enPack).withBlob(zone, blob).bytes();
 	}
 }

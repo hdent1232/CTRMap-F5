@@ -24,26 +24,37 @@ public class AppVersion {
 
 	private static String current;
 
+	/** Why the version is {@link #UNKNOWN}, or null when this build recorded one. */
+	private static String unknownBecause;
+
 	/** The running build's version, e.g. {@code "1.2.0"}. Never null. */
 	public static synchronized String current() {
 		if (current != null) {
 			return current;
 		}
 		current = UNKNOWN;
-		try (InputStream in = AppVersion.class.getClassLoader()
-				.getResourceAsStream("ctrmap/resources/version.properties")) {
-			if (in != null) {
-				Properties p = new Properties();
-				p.load(in);
-				String v = p.getProperty("version");
-				if (v != null && !v.trim().isEmpty()) {
-					current = v.trim();
-				}
+		//UNKNOWN stays the answer for comparing - the updater then offers any release, which is right
+		//for a build that cannot say what it is - but the reason is kept and said (F130): a missing
+		//or unreadable version file read the same as a build that had never been stamped
+		try (InputStream in = ctrmap.resources.ResourceAccess.getStream("version.properties")) {
+			Properties p = new Properties();
+			p.load(in);
+			String v = p.getProperty("version");
+			if (v != null && !v.trim().isEmpty()) {
+				current = v.trim();
+			} else {
+				unknownBecause = "version.properties names no version";
 			}
-		} catch (Exception ex) {
-			//keep UNKNOWN; the updater treats that as "offer any release"
+		} catch (java.io.IOException | IllegalStateException ex) {
+			unknownBecause = ctrmap.util.Bytes.reason(ex);
 		}
 		return current;
+	}
+
+	/** The version as the user is shown it: with the reason when this build does not know it. */
+	public static synchronized String described() {
+		String v = current();
+		return unknownBecause == null ? v : v + " (this build does not know its version: " + unknownBecause + ")";
 	}
 
 	/**

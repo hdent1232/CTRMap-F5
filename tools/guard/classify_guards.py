@@ -11,7 +11,7 @@ measurement that settles it takes two minutes.
 So `commit_guard.py` rule 7 refuses a blanket claim about what a commit did not open unless the
 message cites a measurement, and this is the measurement it cites:
 
-    Reviewed: 130/130 suites by tools/guard/classify_guards.py
+    Reviewed: <n>/<n> suites by tools/guard/classify_guards.py
 
 WHAT IT CANNOT TELL YOU. A suite always notices after the fact - that is what a suite is. This
 does not grade whether a defect class has a refusal at its point of action in production; it
@@ -27,7 +27,9 @@ import os
 import re
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+ROOT = _tree_root.require(__file__)
 TESTS = os.path.join(ROOT, "src", "ctrmap", "tests")
 LF = chr(10)
 

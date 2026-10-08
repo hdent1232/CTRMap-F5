@@ -1,6 +1,6 @@
 package ctrmap.formats.propdata;
 
-import ctrmap.LittleEndianDataInputStream;
+import ctrmap.util.LittleEndianDataInputStream;
 import ctrmap.formats.GameFiles;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.BCHFile;
@@ -101,7 +101,7 @@ public final class PropRegistration {
 	public static Registered register(GameFiles files, PropDatabase db, PropDatabase.PropModel pm, Area area, Voice voice)
 			throws IOException {
 		GARC models = files.archive(ArchiveType.BUILDING_MODELS);
-		byte[] model = models == null ? null : PropDatabase.getSubfile(models.getDecompressedEntry(pm.modelIndex), 0);
+		byte[] model = models == null ? null : ctrmap.formats.containers.ContainerBytes.subfile(models.getDecompressedEntry(pm.modelIndex), 0);
 		if (model == null) {
 			throw new IllegalStateException("BuildingModels entry " + pm.modelIndex + " cannot be read, so the textures it"
 					+ " draws with cannot be checked");
@@ -238,6 +238,6 @@ public final class PropRegistration {
 	/** An area's prop texture pack as the workspace holds it, or null when it cannot be read. */
 	static byte[] packOf(GameFiles files, int area) throws IOException {
 		File f = files.staged(ArchiveType.AREA_DATA, area);
-		return f == null || !f.isFile() ? null : PropDatabase.getSubfile(Files.readAllBytes(f.toPath()), 1);
+		return f == null || !f.isFile() ? null : ctrmap.formats.containers.ContainerBytes.subfile(Files.readAllBytes(f.toPath()), 1);
 	}
 }

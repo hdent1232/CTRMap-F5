@@ -1,6 +1,5 @@
 package ctrmap.humaninterface;
 
-import ctrmap.CtrmapMainframe;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionListener;
 import java.awt.event.MouseWheelEvent;
@@ -9,6 +8,8 @@ import java.awt.event.MouseWheelListener;
 import javax.swing.SwingUtilities;
 import javax.swing.event.MouseInputListener;
 
+import java.awt.event.FocusEvent;
+import java.awt.event.FocusListener;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.util.ArrayList;
@@ -16,7 +17,8 @@ import java.util.ArrayList;
 /**
  * Listens to user input interfaces and forwards any interaction to CM3D.
  */
-public class CM3DInputManager implements MouseWheelListener, MouseMotionListener, MouseInputListener, KeyListener {
+public class CM3DInputManager implements MouseWheelListener, MouseMotionListener, MouseInputListener, KeyListener,
+		FocusListener {
 
 	private int originMouseX;
 	private int originMouseY;
@@ -24,9 +26,8 @@ public class CM3DInputManager implements MouseWheelListener, MouseMotionListener
 	private float originScaleY;
 	private float originRotateX;
 	private float originRotateY;
-	private float originRotateZ;
 	private float speed = 10f;
-	private ArrayList<Integer> keycodes = new ArrayList<>();
+	private final ArrayList<Integer> keycodes = new ArrayList<>();
 	private boolean navi = false;
 	
 	private H3DRenderingPanel m3DDebugPanel;
@@ -42,6 +43,7 @@ public class CM3DInputManager implements MouseWheelListener, MouseMotionListener
 		parent.addMouseMotionListener(this);
 		parent.addMouseListener(this);
 		parent.addKeyListener(this);
+		parent.addFocusListener(this);
 	}
 	
 	@Override
@@ -75,7 +77,6 @@ public class CM3DInputManager implements MouseWheelListener, MouseMotionListener
 		originScaleY = m3DDebugPanel.translateY;
 		originRotateX = m3DDebugPanel.rotateX;
 		originRotateY = m3DDebugPanel.rotateY;
-		originRotateZ = m3DDebugPanel.rotateZ;
 	}
 
 	@Override
@@ -118,12 +119,15 @@ public class CM3DInputManager implements MouseWheelListener, MouseMotionListener
 	/**
 	 * Starts the camera walking while a movement key is held.
 	 *
-	 * <p>ONE THREAD, A DAEMON, AND IT STOPS. There were four - one per key, each an
-	 * anonymous Thread looping on "is my key still in the set", each swallowing the
-	 * InterruptedException that exists to stop it, and none of them daemons. A key press
-	 * whose release never arrives - a focus change, a modal dialog, the window closing -
-	 * left one running for ever, writing into the 3D panel and holding it alive, and the
-	 * process with it. Four copies of the same loop also meant the four directions had
+	 * <p>A TIMER ON THE EVENT THREAD, NOT A THREAD (F016). There were four threads - one per
+	 * key, each swallowing the InterruptedException that existed to stop it, none of them
+	 * daemons, so a key whose release never arrived walked the camera for the life of the
+	 * process - and then one daemon thread, which still wrote the panel's camera fields while
+	 * the mouse handlers wrote the same fields on the event thread and read a held-key list the
+	 * event thread was changing, with no lock: a drag during a walk lost one or the other,
+	 * and the walker had no guarantee it ever saw a key let go. The tick runs on the event
+	 * thread now, where every other camera write is, and a lost focus lets go of every key, so
+	 * a release that never arrives cannot keep it walking. Four copies of the loop had also
 	 * drifted: two of them moved the camera vertically and two did not.
 	 */
 	public void keyPressed(KeyEvent e) {
@@ -143,29 +147,20 @@ public class CM3DInputManager implements MouseWheelListener, MouseMotionListener
 		}
 	}
 
-	/** The one walker, or nothing when it is already walking. */
-	private synchronized void startWalking() {
-		if (walker != null && walker.isAlive()) {
-			return;
+	/** The one walker, started when it is not already walking. */
+	private void startWalking() {
+		if (!walker.isRunning()) {
+			walker.start();
 		}
-		walker = new Thread(new Runnable() {
-			@Override
-			public void run() {
-				try {
-					while (walking()) {
-						step();
-						Thread.sleep(10); //better than being tied to the framerate
-					}
-				} catch (InterruptedException stopped) {
-					//ASKED TO STOP, SO STOP. Swallowing this is what let a thread whose key
-					//release was lost keep walking the camera for the life of the process.
-					Thread.currentThread().interrupt();
-				}
-			}
-		}, "camera-walk");
-		//A DAEMON: the window closing ends it, whatever the keyboard last said.
-		walker.setDaemon(true);
-		walker.start();
+	}
+
+	/** One tick of the walk while a movement key is held; the last key let go stops it. */
+	private void tick() {
+		if (walking()) {
+			step();
+		} else {
+			walker.stop();
+		}
 	}
 
 	/** Whether any movement key is still held. */
@@ -207,14 +202,25 @@ public class CM3DInputManager implements MouseWheelListener, MouseMotionListener
 		}
 	}
 
-	/** The walking thread, or null. One at a time. */
-	private Thread walker;
+	/** The walk's tick, every 10 ms on the event thread - better than being tied to the framerate. */
+	private final javax.swing.Timer walker = new javax.swing.Timer(10, e -> tick());
 
 	@Override
 	public void keyReleased(KeyEvent e) {
 		while (keycodes.contains(e.getKeyCode())) {
 			keycodes.remove((Integer) e.getKeyCode());
 		}
+	}
+
+	@Override
+	public void focusGained(FocusEvent e) {
+	}
+
+	/** A key held when the panel lost focus is never seen let go: every key is let go now. */
+	@Override
+	public void focusLost(FocusEvent e) {
+		keycodes.clear();
+		walker.stop();
 	}
 
 }

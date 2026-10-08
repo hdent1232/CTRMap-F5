@@ -3,7 +3,6 @@ package ctrmap.tests;
 import ctrmap.Workspace;
 import ctrmap.ZoneAppender;
 import ctrmap.gamedef.ArchiveType;
-import ctrmap.formats.garc.GARC;
 import java.io.File;
 import java.util.List;
 
@@ -379,10 +378,11 @@ public class WorkflowGuardsTest {
 		//real one, so it starts with an edit.
 		ctrmap.MapResizer.resize(Workspace.session(), DONOR, 3, 3);
 		pack();
-		check(true, "a map was grown, so there is something to ship");
-		
+
 		ctrmap.ModDeployer.Result first = ctrmap.ModDeployer.deploy(modRoot, null);
-		check(first != null, "the first deploy answers");
+		//NOT check(true) (F250): that a map was grown is what the deploy ships, so it is asked of it
+		check(first != null && !first.deployed.isEmpty(), "the first deploy answers, and ships what growing the map"
+			+ " changed (" + (first == null ? "no answer" : first.deployed) + ")");
 		check(ctrmap.ModDeployer.isDeployed(modRoot),
 			"and the mod folder is live afterwards (" + first.deployed.size() + " archive(s) written, "
 			+ first.unchanged + " unchanged)");
@@ -419,7 +419,7 @@ public class WorkflowGuardsTest {
 		//after someone deleted the catch.
 		java.util.List<String> told = ctrmap.Ui.record();
 		try {
-			ctrmap.CtrmapMainframe.deployAfterPack(modRoot, null);
+			TestWindow.deployAfterPack(modRoot, null);
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
@@ -792,7 +792,9 @@ public class WorkflowGuardsTest {
 			}
 		}
 		if (shared.isEmpty()) {
-			check(true, "every resource is made private, so there is nothing to refuse");
+			//NOT check(true) (F250): "none shared" over an empty table would read the same
+			check(ctrmap.ZoneResource.values().length >= 4, "every one of the " + ctrmap.ZoneResource.values().length
+				+ " resources a zone header points at is made private, so there is nothing to refuse");
 		} else {
 			check(!refused.isEmpty(),
 				"an append that cannot make its zones independent is REFUSED, not warned about");
@@ -1122,7 +1124,9 @@ public class WorkflowGuardsTest {
 			ctrmap.humaninterface.EncounterEditDialog.readEncounters(Workspace.session(), mine);
 		check(before != null, "a zone's encounters can be read without opening a dialog");
 		byte[] neighbourBefore = encountersBytes(neighbour);
-		
+		check(neighbourBefore.length > 0, "control: the zone next door's table was read before the edit ("
+			+ neighbourBefore.length + " bytes of slots)");
+
 		//FIRST EDIT: put a species nobody could mistake for retail into slot 0
 		before.banks[0][0].species = 151;
 		before.banks[0][0].minLevel = 7;
@@ -1182,7 +1186,9 @@ public class WorkflowGuardsTest {
 			}
 			return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
 		} catch (Exception ex) {
-			return new byte[0];
+			//NOT new byte[0] (F250): an unreadable neighbour then compared equal to itself, before
+			//and after, and "untouched" was said of a table nobody had read
+			throw new IllegalStateException("zone " + zoneIndex + "'s encounters could not be read", ex);
 		}
 	}
 	/**

@@ -6,17 +6,14 @@ import ctrmap.Workspace.PackProgress;
 import ctrmap.formats.GameFiles;
 import ctrmap.formats.garc.GARC;
 import ctrmap.gamedef.GameProfile;
-import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.FileWriter;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
@@ -77,7 +74,6 @@ public final class WorkspaceSession implements GameFiles {
 		}
 	}
 
-
 	/** Every problem {@link #open} found, in the words the user is shown. */
 	public static final class OpenFailed extends Exception {
 
@@ -103,32 +99,38 @@ public final class WorkspaceSession implements GameFiles {
 	 *
 	 * <p>Columns: the archive; its extraction folder; the name it is reported missing under, when
 	 * every game must have it (null when optional); whether its entries are sniffed for compression
-	 * (false: always raw, and may legitimately start with 0x11); whether a pack writes it back.
+	 * (false: always raw, and may legitimately start with 0x11); whether a pack writes it back; whether
+	 * the pack writes it IN PLACE - fixed-size records over their own bytes, nothing repacked (F082).
 	 *
 	 * <p>The ORDER is the reload order, and the required archives come first, in the order a missing
 	 * one has always been reported. {@link #reloadGARC} reloads the archive asked for and every one
 	 * after it, so the trainer and Maison archives - which nothing asks for by name - stay last.
 	 */
 	private static final Object[][] ARCHIVES = {
-		{ArchiveType.AREA_DATA, "areadata", "AreaData", true, true},
-		{ArchiveType.FIELD_DATA, "fielddata", "FieldData", true, true},
-		{ArchiveType.MAP_MATRIX, "mapmatrix", "MapMatrix", true, true},
-		{ArchiveType.GAMETEXT, "gametext", "GameText", true, true},
-		{ArchiveType.ZONE_DATA, "zonedata", "ZoneData", true, true},
-		{ArchiveType.BUILDING_MODELS, "buildingmodels", "BuildingModels", true, true},
-		{ArchiveType.NPC_REGISTRIES, "npcregistries", "NPCRegistries", true, true},
-		{ArchiveType.MOVE_MODELS, "movemodels", "MoveModels", true, false},
+		{ArchiveType.AREA_DATA, "areadata", "AreaData", true, true, false},
+		{ArchiveType.FIELD_DATA, "fielddata", "FieldData", true, true, false},
+		{ArchiveType.MAP_MATRIX, "mapmatrix", "MapMatrix", true, true, false},
+		{ArchiveType.GAMETEXT, "gametext", "GameText", true, true, false},
+		{ArchiveType.ZONE_DATA, "zonedata", "ZoneData", true, true, false},
+		{ArchiveType.BUILDING_MODELS, "buildingmodels", "BuildingModels", true, true, false},
+		{ArchiveType.NPC_REGISTRIES, "npcregistries", "NPCRegistries", true, true, false},
+		{ArchiveType.MOVE_MODELS, "movemodels", "MoveModels", true, false, false},
 		//lazy-loaded on demand and huge: never required, opened only when asked for
-		{ArchiveType.STORYTEXT, "storytext", null, true, true},
+		{ArchiveType.STORYTEXT, "storytext", null, true, true, false},
 		//ORAS-only and optional - older partial dumps lack them
-		{ArchiveType.TRAINER_DATA, "trdata", null, false, true},
-		{ArchiveType.TRAINER_CLASS, "trclass", null, false, false},
-		{ArchiveType.TRAINER_POKE, "trpoke", null, false, true},
-		{ArchiveType.MAISON_SET_POOL_A, "maison_setA", null, false, true},
-		{ArchiveType.MAISON_CLASS_LIST_A, "maison_listA", null, false, true},
-		{ArchiveType.MAISON_SET_POOL_B, "maison_setB", null, false, true},
-		{ArchiveType.MAISON_CLASS_LIST_B, "maison_listB", null, false, true},
-		{ArchiveType.MAISON_SET_POOL_C, "maison_setC", null, false, true}
+		{ArchiveType.TRAINER_DATA, "trdata", null, false, true, false},
+		{ArchiveType.TRAINER_CLASS, "trclass", null, false, false, false},
+		{ArchiveType.TRAINER_POKE, "trpoke", null, false, true, false},
+		{ArchiveType.MAISON_SET_POOL_A, "maison_setA", null, false, true, false},
+		{ArchiveType.MAISON_CLASS_LIST_A, "maison_listA", null, false, true, false},
+		{ArchiveType.MAISON_SET_POOL_B, "maison_setB", null, false, true, false},
+		{ArchiveType.MAISON_CLASS_LIST_B, "maison_listB", null, false, true, false},
+		{ArchiveType.MAISON_SET_POOL_C, "maison_setC", null, false, true, false},
+		//STAGED LIKE EVERY OTHER (F082): an item record was poked straight into the game folder, so a
+		//clean reverted its name and kept the record, and a failed save could not be put back. Its
+		//records are fixed-size and uncompressed, so the pack writes them over themselves - no table
+		//rebuilt - and may begin with 0x11, so nothing sniffs them
+		{ArchiveType.ITEM_DATA, "itemdata", null, false, true, true}
 	};
 
 	/** Derived from {@link #ARCHIVES}: each archive's extraction folder. */
@@ -139,6 +141,8 @@ public final class WorkspaceSession implements GameFiles {
 	private static final ArchiveType[] RELOAD_ORDER = new ArchiveType[ARCHIVES.length];
 	/** Derived from {@link #ARCHIVES}: the archives a pack may write, in its order. */
 	private static final List<ArchiveType> PACK_ORDER = new ArrayList<>();
+	/** Derived from {@link #ARCHIVES}: the archives a pack writes in place rather than repacking. */
+	private static final java.util.Set<ArchiveType> IN_PLACE = EnumSet.noneOf(ArchiveType.class);
 
 	/**
 	 * Every per-archive extraction directory, derived from {@link #ARCHIVES}, and the workspace's
@@ -160,6 +164,9 @@ public final class WorkspaceSession implements GameFiles {
 			RELOAD_ORDER[i] = t;
 			if ((Boolean) ARCHIVES[i][4]) {
 				PACK_ORDER.add(t);
+			}
+			if ((Boolean) ARCHIVES[i][5]) {
+				IN_PLACE.add(t);
 			}
 		}
 		dirs.add("temp");
@@ -589,7 +596,12 @@ public final class WorkspaceSession implements GameFiles {
 	}
 
 	/**
-	 * Re-reads an archive's entry table from disk - and every archive after it in {@link #RELOAD_ORDER}.
+	 * Re-reads one archive's entry table from disk - that archive and no other (F037).
+	 *
+	 * <p>It reloaded every archive after the named one in {@link #RELOAD_ORDER} too - the original
+	 * switch's missing breaks, kept on purpose - so "reload X" secretly meant "reload X and whatever
+	 * is listed after it", which no caller could see, and the pack's seven calls opened up to 105
+	 * handles where 17 would do. A caller that rewrote several archives asks {@link #reloadAll}.
 	 *
 	 * <p>Asked for because an archive was rewritten - by a pack, the map builder, a zone removal -
 	 * so everything this session kept from its archives goes with the old handles (F218). One
@@ -598,21 +610,21 @@ public final class WorkspaceSession implements GameFiles {
 	 */
 	public void reloadGARC(ArchiveType arc) {
 		cache.drop();
-		int start = -1;
-		for (int i = 0; i < RELOAD_ORDER.length; i++) {
-			if (RELOAD_ORDER[i] == arc) {
-				start = i;
-			}
+		reopen(arc);
+	}
+
+	/** Re-reads every open archive's entry table, each once, and drops what was kept from them. */
+	public void reloadAll() {
+		cache.drop();
+		for (ArchiveType t : RELOAD_ORDER) {
+			reopen(t);
 		}
-		if (start < 0) {
-			return;
-		}
-		for (int i = start; i < RELOAD_ORDER.length; i++) {
-			ArchiveType t = RELOAD_ORDER[i];
-			GARC g = archives.get(t);
-			if (g != null) {
-				archives.put(t, sniffs(t) ? new GARC(g.file) : new GARC(g.file, false));
-			}
+	}
+
+	private void reopen(ArchiveType t) {
+		GARC g = archives.get(t);
+		if (g != null) {
+			archives.put(t, sniffs(t) ? new GARC(g.file) : new GARC(g.file, false));
 		}
 	}
 
@@ -621,7 +633,7 @@ public final class WorkspaceSession implements GameFiles {
 	 * back into the game folder: every handle is re-read, and everything kept from them goes.
 	 */
 	public void archivesRewritten() {
-		reloadGARC(RELOAD_ORDER[0]);
+		reloadAll();
 	}
 
 	private static boolean sniffs(ArchiveType t) {
@@ -787,6 +799,16 @@ public final class WorkspaceSession implements GameFiles {
 		addPersist(f);
 	}
 
+	@Override
+	public File editedEntry(ArchiveType type, int entry) {
+		File dir = getExtractionDirectory(type);
+		if (dir == null) {
+			return null;
+		}
+		File f = new File(dir.getAbsolutePath() + "/" + entry);
+		return isPendingArtifact(f) ? f : null;
+	}
+
 	/** The open {@link WorkspaceUnit}, if there is one, copies the file before it changes. */
 	@Override
 	public boolean isEdit(File f) {
@@ -806,6 +828,11 @@ public final class WorkspaceSession implements GameFiles {
 	@Override
 	public ctrmap.formats.GameCache cache() {
 		return cache;
+	}
+
+	@Override
+	public List<Integer> zonesNamingArea(int area, int except) throws IOException {
+		return MasterTable.read(this).using(ZoneResource.AREA, area, except);
 	}
 
 	@Override
@@ -1094,10 +1121,6 @@ public final class WorkspaceSession implements GameFiles {
 		return snapshotIsForeign(workspaceDir, gameDir.getPath());
 	}
 
-	public void discardSnapshot() {
-		discardSnapshot(workspaceDir);
-	}
-
 	/**
 	 * Archives the snapshot is supposed to hold but does not.
 	 *
@@ -1284,7 +1307,15 @@ public final class WorkspaceSession implements GameFiles {
 					consumed.put(t, overrides);
 				}
 				File next = new File(workspaceDir, "pack_" + t.name() + ".garc");
-				g.prepareRepack(dir, this::isPersisted, overrides, next);
+				if (IN_PLACE.contains(t)) {
+					if (overrides != null) {
+						throw new IOException(t + " is written in place, which neither adds an entry nor changes"
+								+ " how one is stored, and a compression override is waiting for it: " + overrides);
+					}
+					g.prepareInPlace(dir, this::isPersisted, next);
+				} else {
+					g.prepareRepack(dir, this::isPersisted, overrides, next);
+				}
 				packed.add(t);
 				prepared.add(next);
 			}
@@ -1311,18 +1342,15 @@ public final class WorkspaceSession implements GameFiles {
 					prepared.get(j).delete();
 				}
 				throw new IOException("The pack moved " + packed.subList(0, i) + " into the game and then could not"
-						+ " move " + t + ": " + moveFailed.getMessage() + " Those already moved are in the game; the"
+						+ " move " + t + ": " + ctrmap.util.Bytes.reason(moveFailed) + " Those already moved are in the game; the"
 						+ " rest stay staged, so packing again carries them.", moveFailed);
 			}
 		}
-		if (packed.contains(ArchiveType.STORYTEXT)) {
-			reloadGARC(ArchiveType.STORYTEXT);
-		}
 		progress.at(100, "Done, updating GARCs");
-		//the GARC indices may have changed and as such we need to reload them
-		//the first archive of the reload order reloads every one after it - all of them -
-		//and the reload empties what was kept from the old ones (the prop database among them)
-		reloadGARC(RELOAD_ORDER[0]);
+		//the GARC indices may have changed and as such we need to reload them: every archive once,
+		//the story text included, and the reload empties what was kept from the old ones (the prop
+		//database among them)
+		reloadAll();
 		//The archives now on disk are what the game will load. Cross-
 		//archive references are by bare index and nothing else checks
 		//them, so an operation that grew one archive and not another

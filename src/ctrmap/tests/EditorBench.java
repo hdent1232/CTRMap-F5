@@ -116,6 +116,8 @@ final class EditorBench {
 
 	static BenchMap map;
 	static BenchPaintForm paint;
+	/** The bench zone's history: the painter's canvas is a document of it, and the tool row's buttons use it. */
+	static ctrmap.humaninterface.UndoHistory history;
 	static BenchPropForm prop;
 	static BenchCamForm cam;
 	static TileEditForm tiles;
@@ -166,12 +168,12 @@ final class EditorBench {
 		//the tools all guard on m3DDebugPanel being null (AbstractTool's own
 		//constructor does), and a GLJPanel needs JOGL natives the battery's
 		//classpath does not carry
-		CtrmapMainframe.m3DDebugPanel = null;
+		TestWindow.m3DDebugPanel(null);
 
 		//before the map panel exists, and before anything can resize it: the
 		//panel's own resize listener reads this scroll pane's viewport, on the
 		//event thread, where a NullPointerException has nothing to catch it
-		CtrmapMainframe.mTilemapScrollPane = new JScrollPane();
+		TestWindow.mTilemapScrollPane(new JScrollPane());
 
 		//one 40x40 region drawn at 400x400, so one tile is exactly ten pixels
 		//and a screen coordinate is a map coordinate
@@ -182,7 +184,7 @@ final class EditorBench {
 		map.tilemapScale = 1.0d;
 		map.tilemapScaledImage = new BufferedImage(400, 400, BufferedImage.TYPE_INT_RGB);
 		map.loaded = true;
-		CtrmapMainframe.mTileMapPanel = map;
+		TestWindow.mTileMapPanel(map);
 
 		//THE MAP VIEW IS BUILT FIRST NOW, because the forms below are HANDED it.
 		//It used to be built after them, which was fine while they reached for the
@@ -191,20 +193,24 @@ final class EditorBench {
 		//same construction-order mistake the window itself made, reproduced in the
 		//fixture, and the suites caught it the same way.
 
-		CtrmapMainframe.mTileEditForm = tiles = new TileEditForm(TOOLS, () -> { }, CtrmapMainframe.mTileMapPanel);
-		CtrmapMainframe.mPaintForm = paint = new BenchPaintForm();
-		CtrmapMainframe.mCamEditForm = cam = new BenchCamForm();
-		CtrmapMainframe.mCamScrollPane = new JScrollPane(CtrmapMainframe.mCamEditForm);
-		CtrmapMainframe.mPropEditForm = prop = new BenchPropForm();
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, CtrmapMainframe.mTileMapPanel, pane -> { });
-		CtrmapMainframe.mWarpEditForm = warps = new WarpEditForm(LOADED, REDRAW, CENTRE);
-		CtrmapMainframe.mTriggerEditForm = triggers = new TriggerEditForm(LOADED, REDRAW, CENTRE);
-		CtrmapMainframe.mGeoEditForm = geo = new GeoEditForm(LOADED, CtrmapMainframe.mTileMapPanel);
-		CtrmapMainframe.mCollEditPanel = new CollEditPanel(TOOLS);
-		CtrmapMainframe.mMtxEditForm = new MatrixEditForm(LOADED, CANVAS);
+		TestWindow.mTileEditForm(tiles = new TileEditForm(TOOLS, () -> { }, TestWindow.mTileMapPanel()));
+		history = new ctrmap.humaninterface.UndoHistory(ctrmap.humaninterface.ZoneDocuments.scope(LOADED, () -> map),
+				UndoHistoryTest.zone(LOADED, () -> map, () -> {
+				}, () -> {
+				}));
+		TestWindow.mPaintForm(paint = new BenchPaintForm());
+		TestWindow.mCamEditForm(cam = new BenchCamForm());
+		TestWindow.mCamScrollPane(new JScrollPane(TestWindow.mCamEditForm()));
+		TestWindow.mPropEditForm(prop = new BenchPropForm());
+		TestWindow.mNPCEditForm(new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, TestWindow.mTileMapPanel(), pane -> { }, history));
+		TestWindow.mWarpEditForm(warps = new WarpEditForm(LOADED, REDRAW, CENTRE));
+		TestWindow.mTriggerEditForm(triggers = new TriggerEditForm(LOADED, REDRAW, CENTRE));
+		TestWindow.mGeoEditForm(geo = new GeoEditForm(LOADED, TestWindow.mTileMapPanel(), history));
+		TestWindow.mCollEditPanel(new CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})));
+		TestWindow.mMtxEditForm(new MatrixEditForm(LOADED, CANVAS, history));
 		//the "Current tool" label is this row's, not the window's, and the row
 		//is what TileEditForm asks for the Set tool
-		CtrmapMainframe.worldToolbar = toolbar = new WorldEditorToolbar(
+		TestWindow.worldToolbar(toolbar = new WorldEditorToolbar(
 				e -> {
 					if (toolSwitch != null) {
 						toolSwitch.actionPerformed(e);
@@ -212,7 +218,7 @@ final class EditorBench {
 				},
 				() -> {
 				}, () -> {
-				}, INSPECTOR, null);
+				}, history));
 
 
 		//the tileset the region's picture is painted with lives on the tile
@@ -230,8 +236,8 @@ final class EditorBench {
 		collMaster.setSize(1400, 900);
 		mtxMaster.setSize(1400, 900);
 		JSplitPane worldSplit = split(new JPanel(), new JPanel());
-		JSplitPane collSplit = split(new JPanel(), CtrmapMainframe.mCollEditPanel);
-		JSplitPane mtxSplit = split(new JPanel(), CtrmapMainframe.mMtxEditForm);
+		JSplitPane collSplit = split(new JPanel(), TestWindow.mCollEditPanel());
+		JSplitPane mtxSplit = split(new JPanel(), TestWindow.mMtxEditForm());
 		tileMaster.add(worldSplit, BorderLayout.CENTER);
 		collMaster.add(collSplit);
 		mtxMaster.add(mtxSplit);
@@ -255,8 +261,8 @@ final class EditorBench {
 		//read it keep reading it; without one, the record is the whole answer
 		HOST.alsoReally = frameOk;
 		BOX = new ctrmap.humaninterface.tools.ToolBox(HOST, tiles, geo,
-				(ctrmap.humaninterface.NPCEditForm) CtrmapMainframe.mNPCEditForm, prop, warps, triggers,
-				paint, cam, CtrmapMainframe.mCamScrollPane);
+				(ctrmap.humaninterface.NPCEditForm) TestWindow.mNPCEditForm(), prop, warps, triggers,
+				paint, cam, TestWindow.mCamScrollPane());
 	}
 
 	private static JSplitPane split(java.awt.Component left, java.awt.Component right) {
@@ -286,24 +292,12 @@ final class EditorBench {
 	 * says nothing about the bench.
 	 */
 	static void mainframeField(String name, Object value) {
-		try {
-			Field f = CtrmapMainframe.class.getDeclaredField(name);
-			f.setAccessible(true);
-			f.set(null, value);
-		} catch (ReflectiveOperationException ex) {
-			throw new IllegalStateException("EditorBench cannot install CtrmapMainframe." + name, ex);
-		}
+		TestWindow.field(name, value);
 	}
 
 	/** One of those statics, read back. */
 	static Object mainframeField(String name) {
-		try {
-			Field f = CtrmapMainframe.class.getDeclaredField(name);
-			f.setAccessible(true);
-			return f.get(null);
-		} catch (ReflectiveOperationException ex) {
-			throw new IllegalStateException("EditorBench cannot read CtrmapMainframe." + name, ex);
-		}
+		return TestWindow.field(name);
 	}
 
 	/** The World Editor's split: the map view on the left, the tool's form on the right. */
@@ -501,7 +495,7 @@ final class EditorBench {
 		private static final long serialVersionUID = 1L;
 
 		BenchMap() {
-			super(LOADED, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+			super(LOADED, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null);
 		}
 		int renders = 0;
 		int repaints = 0;
@@ -552,7 +546,7 @@ final class EditorBench {
 		private static final long serialVersionUID = 1L;
 
 		BenchPaintForm() {
-			super(LOADED, EDITORS, ZONES, CtrmapMainframe.mTileMapPanel);
+			super(LOADED, EDITORS, ZONES, TestWindow.mTileMapPanel(), history);
 		}
 		final List<String> calls = new ArrayList<String>();
 
@@ -603,7 +597,7 @@ final class EditorBench {
 		private static final long serialVersionUID = 1L;
 
 		BenchPropForm() {
-			super(LOADED, TOOLS, REDRAW, NAVI, CtrmapMainframe.mTileMapPanel, pane -> { });
+			super(LOADED, TOOLS, REDRAW, NAVI, TestWindow.mTileMapPanel(), pane -> { }, history);
 		}
 		final List<String> calls = new ArrayList<String>();
 
@@ -636,7 +630,7 @@ final class EditorBench {
 		private static final long serialVersionUID = 1L;
 
 		BenchCamForm() {
-			super(REDRAW);
+			super(REDRAW, history);
 		}
 		final List<String> calls = new ArrayList<String>();
 

@@ -2,20 +2,16 @@ package ctrmap.humaninterface;
 
 import ctrmap.LoadedZone;
 import ctrmap.Workspace;
-import ctrmap.ZoneAppender;
 import ctrmap.formats.encounters.EncounterTable;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.text.GFMessageFile;
 import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
-import java.awt.Frame;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.nio.file.Files;
 import java.util.List;
 import javax.swing.JButton;
-import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -199,7 +195,7 @@ public class EncounterEditDialog {
 				copyInto(other, table);
 				model.fireTableDataChanged();
 			} catch (RuntimeException ex) {
-				ctrmap.Ui.error(dlg, "Could not copy: " + ex.getMessage(), "Copy");
+				ctrmap.Ui.error(dlg, "Could not copy: " + ctrmap.util.Bytes.reason(ex), "Copy");
 			}
 		});
 		clear.addActionListener(e -> {
@@ -224,7 +220,7 @@ public class EncounterEditDialog {
 				onClose.run();
 				ctrmap.Ui.message(parent, said, "Wild encounters", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
-				ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Wild encounters");
+				ctrmap.Ui.error(dlg, "Save failed:\n" + ctrmap.util.Bytes.reason(ex), "Wild encounters");
 			}
 		});
 		cancel.addActionListener(e -> onClose.run());
@@ -251,7 +247,7 @@ public class EncounterEditDialog {
 			if (Workspace.isPendingArtifact(enFile)) {
 				byte[] cand = Files.readAllBytes(enFile.toPath());
 				try {
-					ZoneAppender.validateEN(cand, zoneCount);
+					ctrmap.formats.encounters.EnPack.parse(cand, zoneCount);
 					return cand;
 				} catch (RuntimeException stale) {
 					//fall through

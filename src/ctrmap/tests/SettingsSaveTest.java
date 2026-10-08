@@ -52,7 +52,7 @@ public class SettingsSaveTest {
 		Workspace.WORKSPACE_PATH = new File(root, "old-workspace").getPath();
 		Workspace.GAMEDIR_PATH = new File(root, "old-game").getPath();
 		Workspace.ESPICA_PATH = "old-espica";
-		WorkspaceSettings pane = new WorkspaceSettings(null, () -> { });
+		WorkspaceSettings pane = new WorkspaceSettings(null, () -> { }, opened -> 0, () -> { });
 		text(pane, "wsPathField").setText(new File(root, "new-workspace").getPath());
 		text(pane, "gameField").setText(new File(root, "new-game").getPath());
 		text(pane, "spicaField").setText("new-espica");

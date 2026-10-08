@@ -5,7 +5,6 @@ import ctrmap.formats.h3d.model.H3DModel;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 
@@ -41,8 +40,6 @@ public final class ModelPicker extends JPanel {
 
 	/** The registry whose models this picker lists; handed in, because it is the editor's. */
 	private final NPCRegistry reg;
-	/** Where a live preview registers itself, so the form that built it can stop them all. */
-	private final List<CustomH3DPreview> livePreviews;
 
 	/** The open game, for the model pool this browses; handed in like everything else here. */
 	private final ctrmap.formats.GameFiles game;
@@ -50,7 +47,6 @@ public final class ModelPicker extends JPanel {
 	public ModelPicker(NPCRegistry reg, List<CustomH3DPreview> livePreviews, ctrmap.formats.GameFiles game, int defaultUid) {
 		this.game = game;
 		this.reg = reg;
-		this.livePreviews = livePreviews;
 		setLayout(new java.awt.BorderLayout());
 		if (reg != null) {
 			List<Integer> keys = new ArrayList<>(reg.entries.keySet());

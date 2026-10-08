@@ -2,13 +2,11 @@ package ctrmap.tests;
 
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.BchMapModel;
-import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainCatalog;
 import ctrmap.formats.tilemap.TilePalette;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameType;
 import java.io.File;
-import java.util.Arrays;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
 import ctrmap.formats.tilemap.PaintedMaterials;
 

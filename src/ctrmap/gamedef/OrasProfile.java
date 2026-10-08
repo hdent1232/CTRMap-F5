@@ -219,6 +219,16 @@ public class OrasProfile extends GameProfile {
 	}
 
 	/**
+	 * Ghosting at bit 0, flashable darkness at 1, cold breath at 12, the Dowsing Machine at 13 and
+	 * stereoscopic 3D at 16 - X/Y's breath, dowsing and 3D bits one higher; no special-walking bit.
+	 * As upstream CTRMap read and wrote them, moved here from the header's ORAS else-branch (F207).
+	 */
+	@Override
+	public ZoneFlagLayout zoneFlagLayout() {
+		return new ZoneFlagLayout(0, 12, 13, 16, -1, 1);
+	}
+
+	/**
 	 * 1, as the camera form's author recorded ORAS's neutral cameras (X/Y's are 2). Not
 	 * re-read in this tree, which holds no game data: CameraFormTest's dump half reads every
 	 * area's table and refuses any other value.

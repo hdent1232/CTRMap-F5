@@ -3,7 +3,7 @@ package ctrmap.formats.dressup;
 import ctrmap.formats.garc.GARC;
 import java.util.ArrayList;
 import java.util.List;
-import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.i32;
 
 /**
  * Finds the dress-up index sets inside a player-parts GARC and resolves the

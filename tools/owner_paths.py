@@ -19,7 +19,7 @@ All of it DERIVED at the moment of asking from where this checkout sits, so the 
 on another machine it refuses that machine's paths, and a clone whose home is `/root` and whose
 project sits outside it has nothing to refuse.
 
-WHAT IT LEAVES ALONE, on purpose. Somebody ELSE's home - a generic `C:/Users/someone` in a test,
+WHAT IT LEAVES ALONE, on purpose. Somebody ELSE's home - a generic `C:/Users/<someone>` in a test,
 an upstream author's IDE file - is not this machine, and refusing it would refuse every test that
 proves a path check works. A folder that is an ordinary word ("Desktop", "sessions") alone is
 prose, not an address.
@@ -41,7 +41,10 @@ if __name__ == "__main__":
 
 LF = chr(10)
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
+ROOT = _tree_root.require(__file__)
 
 AT_WRITE = "findings"
 AT_COMMIT = "message_findings"

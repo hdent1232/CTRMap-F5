@@ -1,7 +1,7 @@
 package ctrmap.formats.scripts;
 
-import ctrmap.LittleEndianDataInputStream;
-import ctrmap.LittleEndianDataOutputStream;
+import ctrmap.util.LittleEndianDataInputStream;
+import ctrmap.util.LittleEndianDataOutputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -23,7 +23,6 @@ public class GFLPawnScript {
 	public List<PawnPrefixEntry> publicVars = new ArrayList<>();
 	public List<PawnPrefixEntry> tags = new ArrayList<>();
 	public List<PawnPrefixEntry> names = new ArrayList<>();
-	public List<PawnPrefixEntry> unknowns = new ArrayList<>();
 
 	public List<PawnInstruction> instructions = new ArrayList<>();
 	public List<PawnInstruction> data = new ArrayList<>();
@@ -117,7 +116,6 @@ public class GFLPawnScript {
 			readEntries(publicVars, PawnPrefixEntry.Type.PUBLIC_VAR, defsize, in, (tagsOffset - publicVarsOffset) / defsize);
 			readEntries(tags, PawnPrefixEntry.Type.TAG, defsize, in, (namesOffset - tagsOffset) / defsize);
 			readEntries(names, PawnPrefixEntry.Type.NAME, defsize, in, (overlaysOffset - namesOffset) / defsize);
-			//readEntries(unknowns, PawnPrefixEntry.Type.UNKNOWN, defsize, in, (instructionStart - unknownOffset) / defsize);
 
 			compCodeLen = len - instructionStart;
 			rest = new byte[instructionStart - overlaysOffset];
@@ -210,7 +208,6 @@ public class GFLPawnScript {
 		writeEntries(publicVars, dos);
 		writeEntries(tags, dos);
 		writeEntries(names, dos);
-		//writeEntries(unknowns, dos);
 
 		dos.write(rest);
 		dos.write(instructionsToWrite);
@@ -288,8 +285,9 @@ public class GFLPawnScript {
 	 * writes at {@code dataStart - instructionStart}, which this method moves,
 	 * so injecting after an append can land on top of the appended sub - and
 	 * the injector's own self-check still passes, because a wrapper is findable
-	 * at the address it predicted. {@code TilePainterForm.wireSigns} already
-	 * does it in that order.
+	 * at the address it predicted. The injectors refuse that order now
+	 * ({@link PawnClosure#requireCodeEndsAtDataBoundary}, F146) - it was a rule
+	 * every caller had to keep, and nothing held it.
 	 */
 	public void updateRaw() {
 		int[] codeIns = PawnDisassembler.getRawInstructions(instructions);
@@ -299,14 +297,6 @@ public class GFLPawnScript {
 		decInstructions = new int[codeIns.length + dataIns.length];
 		System.arraycopy(codeIns, 0, decInstructions, 0, codeIns.length);
 		System.arraycopy(dataIns, 0, decInstructions, codeIns.length, dataIns.length);
-	}
-
-	public void replaceInstructions(int[] newIns) {
-		int[] compiledMovement = PawnDisassembler.getRawInstructions(data);
-		int[] target = new int[newIns.length + compiledMovement.length];
-		System.arraycopy(newIns, 0, target, 0, newIns.length);
-		System.arraycopy(compiledMovement, 0, target, newIns.length, compiledMovement.length);
-		decInstructions = target;
 	}
 
 	/**

@@ -1,6 +1,5 @@
 package ctrmap.humaninterface;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.formats.cameradata.CameraData;
 import ctrmap.formats.cameradata.CameraDataFile;
 import java.awt.Component;
@@ -26,11 +25,18 @@ public class CameraEditForm extends javax.swing.JPanel {
 	/**
 	 * Creates new form CameraEditForm
 	 */
-	public CameraEditForm(Redraw redraw) {
+	public CameraEditForm(Redraw redraw, UndoHistory history) {
 		this.redraw = redraw;
+		if (history == null) {
+			throw new IllegalArgumentException("CameraEditForm must be handed the zone's history its cameras"
+					+ " are a document of");
+		}
+		//the camera table is one of the zone's documents while one is loaded: watched, not recorded by hand
+		history.watch(() -> f == null ? java.util.Collections.<UndoHistory.Document<?>>emptyList()
+				: java.util.Collections.<UndoHistory.Document<?>>singletonList(cameras()));
 		initComponents();
-		setFloatValueClass(new JFormattedTextField[]{pitchShift1, pitchShift2, yawShift1, yawShift2, plrDist1, plrDist2, pitch1, pitch2, yaw1, yaw2, roll1, roll2});
-		((NumberFormatter) transTime.getFormatter()).setValueClass(Integer.class);
+		Forms.numberClass(Float.class, new JFormattedTextField[]{pitchShift1, pitchShift2, yawShift1, yawShift2, plrDist1, plrDist2, pitch1, pitch2, yaw1, yaw2, roll1, roll2});
+		Forms.numberClass(Integer.class, transTime);
 		//AN ANGLE OF VIEW IS BETWEEN 0 AND 180 (F123): the generated sliders offered -180..180.
 		//A stored value outside is shown at the nearest end and written back as read, unless
 		//the slider is moved. The labels stay on the 45s rather than following the minimum.
@@ -40,12 +46,6 @@ public class CameraEditForm extends javax.swing.JPanel {
 			fov.setLabelTable(fov.createStandardLabels(45, 45));
 		}
 		btnAdd.setEnabled(false);
-	}
-
-	public void setFloatValueClass(JFormattedTextField[] fields) {
-		for (int i = 0; i < fields.length; i++) {
-			((NumberFormatter) fields[i].getFormatter()).setValueClass(Float.class);
-		}
 	}
 
 	public void unload() {
@@ -102,6 +102,56 @@ public class CameraEditForm extends javax.swing.JPanel {
 		if (cdf.numEntries > 0) {
 			entryBox.setSelectedIndex(0);
 		}
+	}
+
+	/**
+	 * The loaded camera table as a document of the zone's history (F209): each record copied by its bytes,
+	 * compared by them, and put back whole - after which the form shows the table again at the camera it
+	 * was on, without writing its widgets over what was just put back.
+	 */
+	private UndoHistory.Document<java.util.List<CameraData>> cameras() {
+		final CameraDataFile file = f;
+		return new UndoHistory.Document<java.util.List<CameraData>>() {
+			@Override
+			public Object subject() {
+				return file;
+			}
+
+			@Override
+			public java.util.List<CameraData> take() {
+				java.util.List<CameraData> out = new java.util.ArrayList<>(file.camData.size());
+				for (CameraData c : file.camData) {
+					out.add(c.copy());
+				}
+				return out;
+			}
+
+			@Override
+			public void put(java.util.List<CameraData> state) {
+				int on = camIndex;
+				file.camData.clear();
+				for (CameraData c : state) {
+					file.camData.add(c.copy());
+				}
+				file.modified = true;
+				if (f == file) {
+					loadDataFile(file);   //forgets the widgets' camera first, so nothing is saved over this
+					if (on >= 0 && on < file.camData.size()) {
+						entryBox.setSelectedIndex(on);
+					}
+				}
+			}
+
+			@Override
+			public boolean same(java.util.List<CameraData> a, java.util.List<CameraData> b) {
+				return a.equals(b);
+			}
+
+			@Override
+			public String what() {
+				return "the zone's cameras";
+			}
+		};
 	}
 
 	public void showCamera(int entryNum) {

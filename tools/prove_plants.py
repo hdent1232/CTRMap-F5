@@ -58,7 +58,9 @@ if __name__ == "__main__":
     sys.dont_write_bytecode = True     # run from its folder, a tool leaves no bytecode there
 import time
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+HERE = _tree_root.require(__file__)
 LEDGER = os.path.join(HERE, "tests", "plants.json")
 LF = chr(10)
 sys.path.insert(0, os.path.join(HERE, "tools"))
@@ -168,6 +170,46 @@ TEST_TIMEOUT = 300
 _UNRESOLVED = re.compile(r"^(?:FAIL|ERROR): \S+ \(unittest\.loader\._FailedTest\.", re.M)
 
 
+#: What a hang is, said once.
+HUNG = ("HUNG after %ds - a hang is never a kill; it is a defect in the suite, not evidence about the "
+        "guard" % TEST_TIMEOUT)
+
+
+def verdict(code, said, must_say=None, ran=None, unresolved=False):
+    """(reddened?, what it said) for ONE driven test - THE verdict, asked by every runner (F196).
+
+    It was written twice, in `named_test_fails` and `run_declared`, and the copies drifted: only the
+    Python one refused a child that never ran to a verdict, so a declared runner's JVM dying in
+    static init, or out of memory, was scored a KILL for any plant without must_say.
+
+    `code` None is a hang. `unresolved` is the runner's own answer to "does this test exist". `ran`
+    is text only a run that reached a verdict prints (unittest's "Ran 1 test", a declared runner's
+    `ran`); when a runner declares none, the plant's must_say - the test's own words - is the only
+    evidence a test ran, and a plant with neither is refused, never a kill.
+    """
+    if code is None:
+        return False, HUNG
+    if unresolved:
+        return False, "the test does not resolve: " + (said.strip()[-200:] or "no output at all")
+    if ran:
+        reached = ran in said
+    else:
+        reached = bool(must_say) and must_say in said
+    if not reached:
+        return False, ("it never ran to a verdict - %s: %s" % (
+            ("%r is not in what it said" % ran) if ran else
+            "the runner declares no `ran` marker and the plant no must_say it printed, so nothing "
+            "shows a test ran", said.strip()[-200:] or "no output at all"))
+    last = said.strip().splitlines()[-1][:160] if said.strip() else ""
+    if code == 0:
+        return False, last
+    if must_say and must_say not in said:
+        return False, ("it reddened, and its failure does not say %r - so it reddened through "
+                       "some OTHER check, and the guard this plant claims to prove is unproven"
+                       % must_say)
+    return True, last
+
+
 def named_test_fails(test_id, must_say=None, folder=None):
     """(reddened?, what it said) for ONE test, run in its own process.
 
@@ -189,8 +231,7 @@ def named_test_fails(test_id, must_say=None, folder=None):
                               text=True, timeout=TEST_TIMEOUT, creationflags=NO_WINDOW,
                               env=sandboxed_env(sandbox))
     except subprocess.TimeoutExpired:
-        return False, ("HUNG after %ds - a hang is never a kill; it is a defect in the suite, "
-                       "not evidence about the guard" % TEST_TIMEOUT)
+        return verdict(None, "", must_say, "Ran 1 test")
     finally:
         shutil.rmtree(sandbox, ignore_errors=True)
     said = (done.stdout or "") + (done.stderr or "")
@@ -203,22 +244,10 @@ def named_test_fails(test_id, must_say=None, folder=None):
     # shape one word over: the project this came from refused a real kill the same afternoon
     # because the test's failure message printed a list holding that id as DATA. The marker is
     # unittest's report LINE - `ERROR: name (unittest.loader._FailedTest.name)`.
-    if _UNRESOLVED.search(said):
-        return False, "the test id does not resolve: " + said.strip().splitlines()[-1][:160]
     # A VERDICT NEEDS A RUN. A child that dies before unittest's summary - `os._exit`, a crash, an
-    # interpreter that never started - exits non-zero with no test having failed anything.
-    # The project this came from requires the same line and always has.
-    if "Ran 1 test" not in said:
-        return False, ("the test id does not resolve, or it never ran to a verdict: "
-                       + (said.strip()[-200:] or "no output at all"))
-    last = said.strip().splitlines()[-1][:160] if said.strip() else ""
-    if done.returncode == 0:
-        return False, last
-    if must_say and must_say not in said:
-        return False, ("it reddened, and its failure does not say %r - so it reddened through "
-                       "some OTHER check, and the guard this plant claims to prove is unproven"
-                       % must_say)
-    return True, last
+    # interpreter that never started - exits non-zero with no test having failed anything: the
+    # "Ran 1 test" line is unittest's `ran` marker, asked by the one verdict every runner shares.
+    return verdict(done.returncode, said, must_say, "Ran 1 test", bool(_UNRESOLVED.search(said)))
 
 
 def still_builds(path, planted):
@@ -399,7 +428,9 @@ def apply_and_run(entry, test_id, root=None, run=None, rebuild=None):
 #                "run":   ["java", "-cp", "build/classes", "{name}"],   ONE test; exit != 0 is red
 #                "build": ["powershell", "-File", "build.ps1"],         optional; after the plant
 #                                                                       AND after the restore
-#                "unresolved": "Could not find or load main class"}    text meaning "no such test"
+#                "unresolved": "Could not find or load main class",    text meaning "no such test"
+#                "ran":   "ALL PASS"}           optional: text only a run to a verdict prints. Without
+#                                               it a plant needs a must_say, or it is never a kill
 #
 # `{name}` is the package-qualified class, `{class}` the bare class, `{file}` the path. Each file
 # `find` matches is one guard class, keyed `<file>::<Class>`, and is planted, driven and ratcheted
@@ -506,20 +537,9 @@ def run_declared(config, root=None):
     """A `run(key, must_say)` over the project's declared runner - the same verdicts as Python's."""
     def run(key, must_say=None):
         code, said = _declared_child(declared_command(key, config, root), root)
-        if code is None:
-            return False, ("HUNG after %ds - a hang is never a kill; it is a defect in the suite, "
-                           "not evidence about the guard" % TEST_TIMEOUT)
         unresolved = config.get("unresolved")
-        if code == 127 or (unresolved and unresolved in said):
-            return False, "the test does not resolve: " + said.strip()[-200:]
-        last = said.strip().splitlines()[-1][:160] if said.strip() else ""
-        if code == 0:
-            return False, last
-        if must_say and must_say not in said:
-            return False, ("it reddened, and its failure does not say %r - so it reddened "
-                           "through some OTHER check, and the guard this plant claims to prove "
-                           "is unproven" % must_say)
-        return True, last
+        return verdict(code, said, must_say, config.get("ran"),
+                       code == 127 or bool(unresolved and unresolved in said))
     return run
 
 
@@ -1057,6 +1077,16 @@ FLAGS = ("--add", "--reanchor", "--retire", "--merge-from", "--recount", "--only
          "--adopt", "--all")
 
 
+def value_of(argv, flag):
+    """The value FLAG was given, or None when it has none: it is the last argument, or another flag
+    stands in its place. `--merge-from` and `--only` read argv[i + 1] bare, so given last they crashed
+    with IndexError, and `--merge-from --only x` took a flag for a folder (F197)."""
+    at = argv.index(flag)
+    if at + 1 >= len(argv) or argv[at + 1].startswith("--"):
+        return None
+    return argv[at + 1]
+
+
 def committed_ledger():
     """The ledger's text at HEAD, '' when HEAD has none, None when git could not say."""
     rel = os.path.relpath(LEDGER, HERE).replace(os.sep, "/")
@@ -1085,8 +1115,11 @@ def main(argv):
     for flag in ("--add", "--reanchor"):
         if flag in argv:
             try:
-                entries = read_json(argv[argv.index(flag) + 1])
-            except (IndexError, OSError, ValueError) as bad:
+                given = value_of(argv, flag)
+                if given is None:
+                    raise ValueError("no file was given")
+                entries = read_json(given)
+            except (OSError, ValueError) as bad:
                 print("REFUSING: %s takes a JSON file of {key: plant} (%s)" % (flag, bad))
                 return 1
             code, lines = add(entries, replace=(flag == "--reanchor"))
@@ -1094,15 +1127,22 @@ def main(argv):
             return code
     if "--retire" in argv:
         try:
-            reasons = read_json(argv[argv.index("--retire") + 1])
-        except (IndexError, OSError, ValueError) as bad:
+            given = value_of(argv, "--retire")
+            if given is None:
+                raise ValueError("no file was given")
+            reasons = read_json(given)
+        except (OSError, ValueError) as bad:
             print("REFUSING: --retire takes a JSON file of {key: reason} (%s)" % bad)
             return 1
         code, lines = retire(reasons)
         print(LF.join(lines))
         return code
     if "--merge-from" in argv:
-        code, lines = merge_from(argv[argv.index("--merge-from") + 1])
+        given = value_of(argv, "--merge-from")
+        if given is None:
+            print("REFUSING: --merge-from takes the folder of another project's ledger, and none was given")
+            return 1
+        code, lines = merge_from(given)
         print(LF.join(lines))
         return code
     ledger = load()
@@ -1128,7 +1168,13 @@ def main(argv):
         write(ledger)
         print("ceilings written from the counts")
         return 0
-    only = argv[argv.index("--only") + 1] if "--only" in argv else None
+    only = None
+    if "--only" in argv:
+        only = value_of(argv, "--only")
+        if only is None:
+            print("REFUSING: --only takes part of a test id, and none was given - without one this "
+                  "would drive every plant")
+            return 1
     # `--owed`: THE RATCHETS ONLY, no plant driven - milliseconds, so a commit can afford it every
     # time. Driving every plant is the expensive half and belongs where time is budgeted; the
     # commit gate drives each NEW plant itself (`tools/commit_gate.py`).

@@ -15,10 +15,15 @@ import java.util.regex.Pattern;
  * The game-seam and privacy guard: fails when game-specific knowledge leaks
  * outside its one allowed home, or when anything in the repository names a
  * real person's machine. Comments are stripped from Java before scanning, so
- * only live string literals count; other text files are scanned whole.
+ * only live string literals count; every other file git would ship is read
+ * whole when its bytes are text (F141: it was a suffix list that skipped
+ * nbproject by name).
  * <ul>
  * <li>RomFS GARC paths ("a/0/3/9"-shaped literals) anywhere outside
- *     ctrmap.gamedef - per-game paths belong in a GameProfile;</li>
+ *     ctrmap.gamedef and the suites - per-game paths belong in a GameProfile.
+ *     The suites are exempt (see below) and their literals are COUNTED under
+ *     a ceiling that may only fall (F154): every one is a suite that can be
+ *     pointed only at an ORAS dump;</li>
  * <li>the pristine-dump folder name in NON-test sources - a shared tool must
  *     never hardcode where one person keeps their dump;</li>
  * <li>an absolute path into somebody's home directory ("C:\Users\someone",
@@ -65,11 +70,6 @@ public class SourceSeamTest {
 			"(?i)[a-z]:[\\\\/]+users[\\\\/]+[^\"\\\\/\\s*<>]+|/home/[^\"/\\s*<>]+/|/Users/[^\"/\\s*<>]+/");
 	/** The JVM's diagnostic channel being pointed at a widget. */
 	private static final Pattern STREAM_HIJACK = Pattern.compile("System\\.set(Out|Err)\\(");
-	/** Text files worth scanning for home paths outside the source tree. */
-	private static final String[] TEXT_EXT = {
-		".md", ".txt", ".ps1", ".bat", ".cmd", ".sh", ".tsv", ".json", ".xml", ".properties", ".gitignore"
-	};
-	private static final String[] SKIP_DIRS = {".git", "build", "dist", "lib", "out", "target", "nbproject"};
 
 	public static void main(String[] args) throws Exception {
 		File root = new File(args.length > 0 ? args[0] : "src");
@@ -94,15 +94,59 @@ public class SourceSeamTest {
 			violations.add("the SEAM-OK control: " + markLeaks);
 		}
 		redirectsSeen = 0;
+		suitePathLines = 0;
 		int scanned = scan(new File(root, "ctrmap"), violations);
+		if (suitePathLines != SUITE_PATH_CEILING) {
+			violations.add("the suites hold " + suitePathLines + " line(s) with an archive-path literal; the recorded"
+					+ " ceiling is " + SUITE_PATH_CEILING + (suitePathLines > SUITE_PATH_CEILING ? " - route the new one"
+					+ " through GameProfile.archivePath" : " - lower the ceiling to the measured count"));
+		}
+		//THE TEXT SCAN, KNOWN-ANSWER (F141): a scratch repository with a home path in a file with no
+		//suffix, under nbproject/private, in a .py, in an ignored file, in a binary, on a SEAM-OK line and
+		//in a Java source - the first three found, the rest not. The scan read a suffix list and skipped
+		//nbproject by name, and the leak it was written for sat in nbproject.
+		File known = Scratch.dir("ctrmap_seamtext");
+		Map<String, byte[]> plant = new LinkedHashMap<>();
+		plant.put("hook", ("cd " + home + "x\n").getBytes(StandardCharsets.UTF_8));
+		plant.put("nbproject/private/private.xml", ("<file>" + home + "x</file>\n").getBytes(StandardCharsets.UTF_8));
+		plant.put("tool.py", ("BASE = \"" + home + "x\"\n").getBytes(StandardCharsets.UTF_8));
+		plant.put(".gitignore", "ignored.txt\n".getBytes(StandardCharsets.UTF_8));
+		plant.put("ignored.txt", (home + "x\n").getBytes(StandardCharsets.UTF_8));
+		plant.put("blob.bin", ("\0" + home + "x\n").getBytes(StandardCharsets.UTF_8));
+		plant.put("marked.md", (home + "x - SEAM-OK\n").getBytes(StandardCharsets.UTF_8));
+		plant.put("src/ctrmap/A.java", ("class A { String a = \"" + home + "x\"; }\n").getBytes(StandardCharsets.UTF_8));
+		for (Map.Entry<String, byte[]> e : plant.entrySet()) {
+			File f = new File(known, e.getKey());
+			f.getParentFile().mkdirs();
+			Files.write(f.toPath(), e.getValue());
+		}
+		HooksWiredTest.git(known, "init", "-q");
+		List<String> textLeaks = new ArrayList<>();
+		int textsKnown = scanText(known, new File(known, "src/ctrmap"), textLeaks);
+		textLeaks.sort(null);
+		//and a folder git cannot list - its .git names nowhere - is said, never read as a clean one
+		File unlisted = Scratch.dir("ctrmap_seamunlisted");
+		Files.write(new File(unlisted, ".git").toPath(), "gitdir: nowhere\n".getBytes(StandardCharsets.UTF_8));
+		List<String> unread = new ArrayList<>();
+		scanText(unlisted, new File(unlisted, "src/ctrmap"), unread);
+		boolean textScanReads = textLeaks.size() == 3 && textLeaks.get(0).startsWith("hook:1 ")
+				&& textLeaks.get(1).startsWith("nbproject/private/private.xml:1 ") && textLeaks.get(2).startsWith("tool.py:1 ")
+				&& unread.size() == 1 && unread.get(0).contains("could not list");
+		System.out.println((textScanReads ? "  ok: " : "  FAIL: ") + "the text scan reads every file git would ship, by its"
+				+ " bytes - " + textsKnown + " read, found in exactly the suffixless hook, nbproject/private and the .py: "
+				+ textLeaks + "; and a folder git cannot list is said: " + unread);
+		if (!textScanReads) {
+			violations.add("the text-scan control: " + textLeaks);
+		}
 		File repo = root.getAbsoluteFile().getParentFile();
-		int texts = scanText(repo, violations);
+		int texts = scanText(repo, new File(root, "ctrmap"), violations);
 		for (String v : violations) {
 			System.out.println("  LEAK: " + v);
 		}
-		if (ALLOWED_REDIRECTS.length > ALLOWED_REDIRECTS_CEILING || redirectsSeen != ALLOWED_REDIRECTS.length) {
-			violations.add("the allowed redirects are " + ALLOWED_REDIRECTS.length + " against a ceiling of "
-					+ ALLOWED_REDIRECTS_CEILING + ", and " + redirectsSeen + " of them are still in the source");
+		if (!Ratchet.tight(ALLOWED_REDIRECTS.length, ALLOWED_REDIRECTS_CEILING)
+				|| redirectsSeen != ALLOWED_REDIRECTS.length) {
+			violations.add(Ratchet.said("allowed-redirect", ALLOWED_REDIRECTS.length, ALLOWED_REDIRECTS_CEILING)
+					+ ", and " + redirectsSeen + " of the allowed redirects are still in the source");
 			System.out.println("  LEAK: " + violations.get(violations.size() - 1));
 		}
 		System.out.println("seam guard: " + scanned + " sources + " + texts + " text files scanned, "
@@ -113,12 +157,114 @@ public class SourceSeamTest {
 		int facade = theFacadeDoesNotKnowTheWindow(classes);
 		int toolReach = theToolsDoNotKnowTheWindow(classes);
 		int retyped = noProfileCountIsRetyped(root);
+		int oneString = noCommandIsRunAsOneString(classes);
+		int byIndex = noEnumIsReadByIndex(root);
 
-		boolean ok = violations.isEmpty() && asking == 0 && above == 0 && facade == 0 && toolReach == 0 && retyped == 0;
+		boolean ok = violations.isEmpty() && asking == 0 && above == 0 && facade == 0 && toolReach == 0 && retyped == 0
+				&& oneString == 0 && byIndex == 0;
 		System.out.println(ok ? "ALL PASS" : "FAILURES PRESENT");
 		if (!ok) {
 			System.exit(1);
 		}
+	}
+
+	// ---------------------------------------------------- the enum-by-number rule
+
+	private static final Pattern BY_INDEX = Pattern.compile("\\.values\\(\\)\\s*\\[");
+
+	/**
+	 * No program file turns a number into an enum member by indexing {@code values()} (F079): the
+	 * Ohana port did it in 49 places with raw bits read from a BCH, so a value it did not list threw
+	 * and the whole file failed to open, over fields nothing drew. {@link ctrmap.util.Bytes#enumOf}
+	 * is the one way, and its caller says what an unlisted number reads as, or that it is refused.
+	 * Read from the source with comments removed; the helper is asked its three answers first.
+	 */
+	static int noEnumIsReadByIndex(File root) throws Exception {
+		System.out.println("--- no number becomes an enum member by indexing values()");
+		int bad = 0;
+		Thread.State[] states = Thread.State.values();
+		boolean listed = ctrmap.util.Bytes.enumOf(states, 1, null) == states[1];
+		boolean standIn = ctrmap.util.Bytes.enumOf(states, 99, Thread.State.NEW) == Thread.State.NEW
+				&& ctrmap.util.Bytes.enumOf(states, -1, Thread.State.NEW) == Thread.State.NEW;
+		String refusal;
+		try {
+			refusal = "answered " + ctrmap.util.Bytes.enumOf(states, 99, null);
+		} catch (IllegalArgumentException ex) {
+			refusal = ex.getMessage();
+		}
+		boolean refused = refusal.contains("99") && refusal.contains("State");
+		System.out.println(((listed && standIn && refused) ? "  ok: " : "  FAIL: ") + "control: enumOf answers a listed"
+				+ " number with its member, an unlisted one with the stand-in it was given, and refuses one with none,"
+				+ " naming the enum (" + refusal + ")");
+		bad += listed && standIn && refused ? 0 : 1;
+		boolean reads = BY_INDEX.matcher(stripComments("x = Mode.values()[raw];")).find()
+				&& !BY_INDEX.matcher(stripComments("// Mode.values()[raw]\nx = Bytes.enumOf(Mode.values(), raw, null);")).find();
+		System.out.println((reads ? "  ok: " : "  FAIL: ") + "control: an index into values() is seen, one in a comment"
+				+ " and the helper's call are not");
+		bad += reads ? 0 : 1;
+		int files = 0;
+		for (File f : DialogSeamTest.javaSources(new File(root, "ctrmap"))) {
+			if (f.getPath().replace('\\', '/').contains("/ctrmap/tests/")) {
+				continue;
+			}
+			files++;
+			String src = stripComments(DialogSeamTest.read(f));
+			java.util.regex.Matcher m = BY_INDEX.matcher(src);
+			while (m.find()) {
+				System.out.println("  FAIL: " + f.getName() + ":" + (src.substring(0, m.start()).split("\n", -1).length)
+						+ " indexes values() - use ctrmap.util.Bytes.enumOf and say what an unlisted number reads as");
+				bad++;
+			}
+		}
+		System.out.println("enum-by-number rule: " + files + " program files read");
+		return bad;
+	}
+
+	// ---------------------------------------------------- the command-line rule
+
+	/**
+	 * No program class starts a process through {@code Runtime.exec} (F245): ESPICA was started with
+	 * {@code exec(path + " -i " + input ...)}, one string that exec splits on whitespace, so every
+	 * path under a folder with a space in its name - a Windows user folder, most of them - reached
+	 * the converter in pieces. A command is built as a list and started by {@code ProcessBuilder};
+	 * exec's array form is the same list with nothing to show for it, so exec is refused whole.
+	 * Read from the bytecode, and the converter's own command is asked to keep a spaced path whole.
+	 */
+	static int noCommandIsRunAsOneString(File classesRoot) throws Exception {
+		List<String> execs = new ArrayList<>();
+		boolean builder = false;
+		for (ClassFileScanner.ClassFile cf : ClassFileScanner.application(classesRoot)) {
+			for (ClassFileScanner.Ref r : cf.refs) {
+				if (r.method && r.owner.equals("java/lang/Runtime") && r.name.equals("exec")) {
+					execs.add(cf.topLevel() + " " + r.descriptor);
+				}
+				builder |= r.method && r.owner.equals("java/lang/ProcessBuilder")
+						&& cf.topLevel().equals("ctrmap/humaninterface/ESPICAControl");
+			}
+		}
+		int bad = 0;
+		if (!builder) {
+			System.out.println("  EXEC: control failed - the converter's ProcessBuilder call is not seen in"
+					+ " ctrmap/humaninterface/ESPICAControl, so an empty list here would mean nothing");
+			bad++;
+		}
+		for (String e : execs) {
+			System.out.println("  EXEC: " + e + " starts a process through Runtime.exec - build the command as a"
+					+ " list and start it with ProcessBuilder, so a path with a space stays one argument");
+			bad++;
+		}
+		File spaced = new File("My Maps", "map.obj");
+		java.util.List<String> argv = new ctrmap.humaninterface.ESPICAControl.ESPICAProcess(
+				ctrmap.humaninterface.ESPICAControl.ESPICAFunctionMode.MODEL_CONVERT,
+				spaced, new File("My Maps", "donor.bch"), null,
+				new String[0]).command("C:\\Program Files\\ESPICA\\ESPICA.exe");
+		if (!argv.contains(spaced.getAbsolutePath()) || !argv.get(0).equals("C:\\Program Files\\ESPICA\\ESPICA.exe")) {
+			System.out.println("  EXEC: the converter's command does not keep a spaced path whole: " + argv);
+			bad++;
+		}
+		System.out.println("command-line rule: " + execs.size() + " Runtime.exec call(s); the converter's command is "
+				+ argv.size() + " arguments, its spaced paths whole");
+		return bad;
 	}
 
 	// ---------------------------------------------------- the measured-count rule
@@ -225,7 +371,10 @@ public class SourceSeamTest {
 		boolean capped = COINCIDENT_COUNTS.length <= COINCIDENT_COUNTS_CEILING;
 		System.out.println((capped ? "  ok: " : "  FAIL: ") + "the argued coincidences are " + COINCIDENT_COUNTS.length
 				+ " against a ceiling of " + COINCIDENT_COUNTS_CEILING);
-		return fails + retyped.size() + stale.size() + (capped ? 0 : 1);
+		boolean coincidencesTight = Ratchet.tight(COINCIDENT_COUNTS.length, COINCIDENT_COUNTS_CEILING);
+		System.out.println((coincidencesTight ? "  ok: " : "  FAIL: ")
+				+ Ratchet.said("argued-coincidence", COINCIDENT_COUNTS.length, COINCIDENT_COUNTS_CEILING));
+		return fails + retyped.size() + stale.size() + (capped ? 0 : 1) + (coincidencesTight ? 0 : 1);
 	}
 
 	/** Records a profile's answer - and, for a maximum, the entry count one past it - when it gave one. */
@@ -283,6 +432,47 @@ public class SourceSeamTest {
 
 	/** Mirrors ALLOWED_ASKERS.length. Raising it is the decision this makes visible. */
 	private static final int ALLOWED_ASKERS_CEILING = 1;
+
+	/**
+	 * The classes that may name a particular game without asking which one is loaded, as {internal
+	 * name, why} (F207). A class handed a GameType that then compares it decides on the game as
+	 * surely as one that fetched it: ZoneHeader read and wrote every game but X/Y with ORAS's flag
+	 * bits. Each entry here is either a per-game table with no else - an unlisted game answers
+	 * nothing - or a tool that opens one game's dump by design.
+	 */
+	private static final String[][] ALLOWED_NAMERS = {
+		{"ctrmap/formats/zone/NpcMoveCodes",
+			"per-game movement-code tables keyed by the game they were read from, each switch ending in an"
+			+ " explicit default of NO_LABELS / NO_RAWS: an unlisted game answers no codes, never another"
+			+ " game's - the shape ZoneHeader's flags lacked"},
+		{"ctrmap/formats/zone/WarpTransitions",
+			"per-game warp-transition label and raw tables, the same switch-with-no-else shape as"
+			+ " NpcMoveCodes: extLabels/extRaws answer NO_LABELS / NO_RAWS for any game not listed"},
+		{"ctrmap/tools/BuildingHarvester",
+			"a developer tool that opens an Omega Ruby / Alpha Sapphire dump by design to build the"
+			+ " shipped building catalogue; it names the game it opens, it does not branch on a loaded one"},
+		{"ctrmap/tools/TerrainDonorHarvester",
+			"a developer tool that opens an ORAS dump by design to find terrain donors; it names the game"
+			+ " it opens, it does not branch on a loaded one"},
+		{"ctrmap/tools/GroundMaterialAudit",
+			"a developer tool that opens an ORAS dump by design to audit ground materials; it names the"
+			+ " game it opens, it does not branch on a loaded one"},
+	};
+
+	/**
+	 * Mirrors ALLOWED_NAMERS.length. TIGHTENED 6 -> 5 on 2026-10-08, measured by this suite:
+	 * TerrainHarvester went, its two catalogues read by nothing (F119).
+	 */
+	private static final int ALLOWED_NAMERS_CEILING = 5;
+
+	private static String[] namerFor(String internalName) {
+		for (String[] n : ALLOWED_NAMERS) {
+			if (n[0].equals(internalName)) {
+				return n;
+			}
+		}
+		return null;
+	}
 
 	/** The holder of the open game, and the session behind it. */
 	private static final String WORKSPACE = "ctrmap/Workspace";
@@ -390,11 +580,24 @@ public class SourceSeamTest {
 
 		List<String> asked = new ArrayList<>();
 		int allowedSeen = 0;
+		Set<String> namersSeen = new LinkedHashSet<>();
 		for (Map.Entry<String, Set<String>> e : held.entrySet()) {
 			List<String> gates = pick(e.getValue(), "GATE:");
 			List<String> asks = pick(e.getValue(), "ASK:");
 			List<String> names = pick(e.getValue(), "NAME:");
 			boolean decides = !asks.isEmpty() && !names.isEmpty();
+			//NAMING A GAME IS THE BRANCH, wherever the game came from (F207): the pair rule saw 1 of
+			//the 7 classes that branch on GameType, because 6 were handed theirs, and one of the 6 -
+			//ZoneHeader - read and wrote every other game's flags with ORAS's bits
+			if (gates.isEmpty() && !decides && !names.isEmpty() && allowedFor(e.getKey()) == null) {
+				if (namerFor(e.getKey()) != null) {
+					namersSeen.add(e.getKey());
+				} else {
+					asked.add(e.getKey() + " names " + names + " - a class handed a GameType hands it to GameProfile;"
+							+ " a per-game table there, or an argued entry in ALLOWED_NAMERS");
+				}
+				continue;
+			}
 			if (gates.isEmpty() && !decides) {
 				continue;
 			}
@@ -420,10 +623,31 @@ public class SourceSeamTest {
 			System.out.println("  ASKS: the allowed list grew past its ceiling of " + ALLOWED_ASKERS_CEILING
 					+ ", or an entry gives no reason - " + ALLOWED_ASKERS.length + " entry/entries");
 		}
+		boolean askersTight = Ratchet.tight(ALLOWED_ASKERS.length, ALLOWED_ASKERS_CEILING);
+		if (!askersTight) {
+			System.out.println("  ASKS: " + Ratchet.said("allowed-asker", ALLOWED_ASKERS.length, ALLOWED_ASKERS_CEILING));
+		}
+		//the namers' table is held the same way, and an entry whose class names no game any more goes
+		List<String> staleNamers = new ArrayList<>();
+		boolean namersArgued = true;
+		for (String[] n : ALLOWED_NAMERS) {
+			namersArgued &= n[1] != null && n[1].trim().length() > 40;
+			if (!namersSeen.contains(n[0])) {
+				staleNamers.add(n[0]);
+			}
+		}
+		boolean namersTight = Ratchet.tight(ALLOWED_NAMERS.length, ALLOWED_NAMERS_CEILING);
+		if (!namersArgued || !namersTight || !staleNamers.isEmpty()) {
+			System.out.println("  ASKS: the allowed namers - " + (namersArgued ? "" : "an entry gives no reason; ")
+					+ (namersTight ? "" : Ratchet.said("allowed-namer", ALLOWED_NAMERS.length, ALLOWED_NAMERS_CEILING) + "; ")
+					+ (staleNamers.isEmpty() ? "" : "these name no game any more, so their entries go: " + staleNamers));
+		}
 		System.out.println("game-identity rule: " + app.size() + " application class file(s) read, "
-				+ asked.size() + " asking which game is loaded, " + allowedSeen + " of "
-				+ ALLOWED_ASKERS.length + " allowed exception(s) still present");
-		return asked.size() + (argued ? 0 : 1);
+				+ asked.size() + " asking or naming which game is loaded, " + allowedSeen + " of "
+				+ ALLOWED_ASKERS.length + " allowed exception(s) still present, " + namersSeen.size() + " of "
+				+ ALLOWED_NAMERS.length + " argued namer(s)");
+		return asked.size() + (argued ? 0 : 1) + (askersTight ? 0 : 1)
+				+ (namersArgued && namersTight && staleNamers.isEmpty() ? 0 : 1);
 	}
 
 	/** The tokens of one kind, without their prefix, for a readable report. */
@@ -452,24 +676,17 @@ public class SourceSeamTest {
 	 * The classes under {@code ctrmap.formats} that may still name something
 	 * above the format layer, as {internal name, what it names, why it is
 	 * still there}. Named classes with a written reason, not a count, for the
-	 * reason {@link #ALLOWED_ASKERS} gives. Both entries are a CLASS reference
-	 * with no member behind it - an {@code implements} clause - which is
-	 * exactly the shape a rule counting member edges alone would never see.
+	 * reason {@link #ALLOWED_ASKERS} gives. EMPTY since F214: the last two
+	 * were the prop and the NPC implementing {@code MapObject}, the interface
+	 * the viewport drags a placed thing through - a CLASS reference with no
+	 * member behind it, the shape a rule counting member edges alone would
+	 * never see. The interface describes a placed thing, which is format-layer
+	 * knowledge, and lives in {@code ctrmap.formats} now.
 	 */
-	private static final String[][] ALLOWED_ABOVE = {
-		{"ctrmap/formats/propdata/GRProp", "ctrmap/humaninterface/MapObject",
-			"implements MapObject, the interface the viewport selects and drags a placed thing"
-			+ " through. The interface is declared beside the widgets but describes a placed"
-			+ " thing (its position, its rotation, its name), which is format-layer knowledge;"
-			+ " a later step moves it down into ctrmap.formats, and this entry goes with it."
-			+ " Until then the prop names the interface and touches no member of its package."},
-		{"ctrmap/formats/zone/ZoneEntities", "ctrmap/humaninterface/MapObject",
-			"ZoneEntities.NPC implements MapObject for the same reason and moves in the same"
-			+ " step; the inner class folds to its outer one here, as everywhere in this battery."}
-	};
+	private static final String[][] ALLOWED_ABOVE = {};
 
 	/** Mirrors ALLOWED_ABOVE.length. Raising it is the decision this makes visible. */
-	private static final int ALLOWED_ABOVE_CEILING = 2;
+	private static final int ALLOWED_ABOVE_CEILING = 0;
 
 	/**
 	 * The class the format layer used to be allowed only PART of.
@@ -697,6 +914,11 @@ public class SourceSeamTest {
 			System.out.println("  ABOVE: the allowed list grew past its ceiling of " + ALLOWED_ABOVE_CEILING
 					+ " - " + ALLOWED_ABOVE.length + " entries");
 		}
+		boolean aboveTight = Ratchet.tight(ALLOWED_ABOVE.length, ALLOWED_ABOVE_CEILING);
+		if (!aboveTight) {
+			System.out.println("  ABOVE: " + Ratchet.said("allowed-upward-call", ALLOWED_ABOVE.length,
+					ALLOWED_ABOVE_CEILING));
+		}
 
 		//the class this rule used to defend a part of does not exist any more
 		boolean utilsOk = !new File(classesRoot, GONE_UTILS + ".class").isFile();
@@ -709,7 +931,7 @@ public class SourceSeamTest {
 		System.out.println("layering rule: " + formatClasses + " format class file(s) read, " + above.size()
 				+ " reaching above the format layer, " + allowedSeen.size() + " of " + ALLOWED_ABOVE.length
 				+ " allowed exception(s) still present; ctrmap/Utils gone: " + utilsOk);
-		return above.size() + (argued ? 0 : 1) + (utilsOk ? 0 : 1);
+		return above.size() + (argued ? 0 : 1) + (utilsOk ? 0 : 1) + (aboveTight ? 0 : 1);
 	}
 
 	/** The window, the widgets, the dialogs, the global - by internal name, nested types included. */
@@ -730,46 +952,86 @@ public class SourceSeamTest {
 	}
 
 	/**
-	 * Sweeps the repository's non-Java text - READMEs, build scripts, data
-	 * tables - for home paths. The Java scan alone would have missed the
-	 * documentation, which is where a path is most likely to be pasted.
+	 * Sweeps every other file a commit could ship - READMEs, build scripts, data tables, hooks, IDE
+	 * files - for home paths. The Java scan alone would have missed the documentation, which is where
+	 * a path is most likely to be pasted.
+	 *
+	 * <p>WHAT IT READS IS GIT'S LISTING, AND WHAT IS TEXT IS DECIDED BY THE BYTES (F141). It read a list
+	 * of suffixes and skipped folders by name: {@code .py} was not on the list, a git hook has no suffix,
+	 * and {@code nbproject} was skipped - which is where eleven lines naming the upstream author's home
+	 * sat, tracked, while the javadoc above promised ANY file. The project's own Java sources under
+	 * {@code javaRoot} are the Java scan's, read there with their comments stripped.
 	 */
-	private static int scanText(File dir, List<String> out) throws Exception {
-		int n = 0;
-		File[] files = dir.listFiles();
-		if (files == null) {
+	static int scanText(File repo, File javaRoot, List<String> out) throws Exception {
+		List<String> listed = shippable(repo);
+		if (listed == null || listed.isEmpty()) {
+			out.add("the home-path scan could not list the files a commit would ship (git ls-files in " + repo
+					+ ") - a scan that did not run is not a clean tree");
 			return 0;
 		}
-		for (File f : files) {
-			if (f.isDirectory()) {
-				boolean skip = false;
-				for (String s : SKIP_DIRS) {
-					skip |= f.getName().equalsIgnoreCase(s);
-				}
-				if (!skip) {
-					n += scanText(f, out);
-				}
+		String javaPrefix = javaRoot.getCanonicalPath() + File.separator;
+		int n = 0;
+		for (String rel : listed) {
+			File f = new File(repo, rel);
+			if (!f.isFile() || rel.endsWith(".java") && f.getCanonicalPath().startsWith(javaPrefix)) {
 				continue;
 			}
-			boolean text = false;
-			for (String e : TEXT_EXT) {
-				text |= f.getName().toLowerCase().endsWith(e);
+			byte[] bytes = Files.readAllBytes(f.toPath());
+			boolean binary = false;
+			for (byte b : bytes) {
+				binary |= b == 0;
 			}
-			if (!text) {
+			if (binary) {
 				continue;
 			}
 			n++;
-			String[] lines = new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8).split("\n", -1);
+			String[] lines = new String(bytes, StandardCharsets.UTF_8).split("\n", -1);
 			for (int i = 0; i < lines.length; i++) {
 				if (lines[i].contains("SEAM-OK")) {
 					continue;
 				}
 				if (HOME_PATH.matcher(lines[i]).find()) {
-					out.add(f.getName() + ":" + (i + 1) + " home directory in a shipped file: " + lines[i].trim());
+					out.add(rel + ":" + (i + 1) + " home directory in a shipped file: " + lines[i].trim());
 				}
 			}
 		}
 		return n;
+	}
+
+	/**
+	 * Every file a commit could ship, as git lists it: the tracked ones, and the untracked ones it does
+	 * not ignore - what {@code git add -A} would take. Null when git cannot be run or refuses, which is
+	 * not an empty repository: a listing that could not be taken is a scan that did not run.
+	 */
+	static List<String> shippable(File repo) {
+		try {
+			ProcessBuilder pb = new ProcessBuilder("git", "-C", repo.getAbsolutePath(), "ls-files", "-z", "--cached",
+					"--others", "--exclude-standard");
+			pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+			Process p = pb.start();
+			java.io.ByteArrayOutputStream said = new java.io.ByteArrayOutputStream();
+			try (java.io.InputStream in = p.getInputStream()) {
+				byte[] buf = new byte[65536];
+				for (int k = in.read(buf); k >= 0; k = in.read(buf)) {
+					said.write(buf, 0, k);
+				}
+			}
+			if (p.waitFor() != 0) {
+				return null;
+			}
+			Set<String> files = new LinkedHashSet<>();
+			for (String s : new String(said.toByteArray(), StandardCharsets.UTF_8).split("\0")) {
+				if (!s.isEmpty()) {
+					files.add(s);
+				}
+			}
+			return new ArrayList<>(files);
+		} catch (java.io.IOException e) {
+			return null;
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			return null;
+		}
 	}
 
 	private static int scan(File dir, List<String> out) throws Exception {
@@ -817,6 +1079,9 @@ public class SourceSeamTest {
 				if (!isTest && !isGamedef && GARC_PATH.matcher(line).find()) {
 					out.add(f.getName() + ":" + (i + 1) + " GARC path literal outside gamedef: " + line.trim());
 				}
+				if (isTest && GARC_PATH.matcher(line).find()) {
+					suitePathLines++;
+				}
 				if (!isTest && DUMP_PATH.matcher(line).find()) {
 					out.add(f.getName() + ":" + (i + 1) + " hardcoded dump location: " + line.trim());
 				}
@@ -846,6 +1111,18 @@ public class SourceSeamTest {
 
 	/** How many allowed redirects the scan met - an allowance nobody uses any more is stale. */
 	private static int redirectsSeen;
+
+	/** Lines in the suites that hold an archive-path literal, counted by scan (F154). */
+	private static int suitePathLines;
+
+	/**
+	 * The suites' archive-path literals, measured by this suite on 2026-10-08 (F154; the audit counted
+	 * 138 lines in 64 files of a smaller tree). Each is a suite that can only be pointed at an ORAS
+	 * dump. Lower it when one goes through GameProfile.archivePath; never raise it. TIGHTENED 168 -> 166
+	 * on 2026-10-08, measured by this suite: F250's scratch-pack section in GarcSniffTest had spelled the
+	 * dress-up archive's path in three messages (169, past this ceiling), and they name it now.
+	 */
+	private static final int SUITE_PATH_CEILING = 166;
 
 	private static String allowedRedirect(String fileName) {
 		for (String[] a : ALLOWED_REDIRECTS) {

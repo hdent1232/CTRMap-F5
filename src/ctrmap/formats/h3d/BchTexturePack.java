@@ -12,9 +12,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import static ctrmap.formats.LittleEndian.i32;
-import static ctrmap.formats.LittleEndian.putI32;
-import static ctrmap.formats.LittleEndian.putU16;
+import static ctrmap.util.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.putI32;
+import static ctrmap.util.LittleEndian.putU16;
 
 /**
  * Reader/writer for ORAS area texture packs (AreaData a/0/1/4, AD subfile 1) -
@@ -377,11 +377,12 @@ public class BchTexturePack {
 					+ " keeps its zone table, and where a zone names its area in it, was measured on"
 					+ " Omega Ruby / Alpha Sapphire only", null);
 		}
-		//the one reader (F013): the workspace's copy wins over the archive's, because edits land
-		//there first, and a staged copy of the wrong size is refused rather than replaced
+		//the one reader (F013), asked through the game this was handed (F214): the workspace's copy
+		//wins over the archive's, because edits land there first, and a staged copy of the wrong size
+		//is refused rather than replaced
 		List<Integer> hits;
 		try {
-			hits = ctrmap.MasterTable.read(files).using(ctrmap.ZoneResource.AREA, area, editingZone);
+			hits = files.zonesNamingArea(area, editingZone);
 		} catch (java.io.IOException | RuntimeException cannot) {
 			throw cannotTell(area, ctrmap.util.Bytes.reason(cannot), cannot);
 		}

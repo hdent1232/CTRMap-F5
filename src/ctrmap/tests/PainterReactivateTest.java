@@ -10,7 +10,6 @@ import ctrmap.gamedef.GameType;
 import ctrmap.humaninterface.PaintForm;
 import ctrmap.humaninterface.PaintForm.OnActivate;
 import ctrmap.humaninterface.PaintForm.Underneath;
-import ctrmap.humaninterface.TilePainterForm;
 import java.io.File;
 import java.nio.file.Files;
 
@@ -74,7 +73,7 @@ public class PainterReactivateTest {
 		File region = entry(ws, ArchiveType.FIELD_DATA, 3);
 		Files.write(matrix.toPath(), DiscardRevertsTest.matrix(3));
 		Files.write(region.toPath(), MapResizeTest.container(0x4752, new byte[]{9}, new byte[]{1, 2, 3, 4}));
-		int[] cell = TilePainterForm.firstRegionCell(lz);
+		int[] cell = ctrmap.MapPainter.firstRegionCell(lz);
 		check(cell != null && cell[0] == 3, "control: the zone's map cell is region 3");
 		byte[] seeded = new GR(region, Workspace.session()).getFile(1);
 		StringBuilder why = new StringBuilder();
@@ -95,14 +94,14 @@ public class PainterReactivateTest {
 				"so is a map whose matrix cannot be read: " + why);
 		String said = "";
 		try {
-			TilePainterForm.firstRegionCell(lz);
+			ctrmap.MapPainter.firstRegionCell(lz);
 		} catch (IllegalStateException refused) {
 			said = refused.getMessage();
 		}
 		check(said.contains("could not be read"), "and the cell lookup says it could not read, not 'no region': " + said);
 
 		Files.write(matrix.toPath(), DiscardRevertsTest.matrix(0xFFFF));
-		check(TilePainterForm.firstRegionCell(lz) == null, "a matrix holding no region at all is still 'no region'");
+		check(ctrmap.MapPainter.firstRegionCell(lz) == null, "a matrix holding no region at all is still 'no region'");
 		why.setLength(0);
 		check(underneath(lz, seeded, why) == Underneath.UNKNOWN && why.toString().contains("no region"),
 				"which the painter cannot check against either: " + why);

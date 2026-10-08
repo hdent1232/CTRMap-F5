@@ -2,10 +2,8 @@ package ctrmap.formats.cameradata;
 
 import java.io.IOException;
 
-import ctrmap.LittleEndianDataInputStream;
-import ctrmap.LittleEndianDataOutputStream;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import ctrmap.util.LittleEndianDataInputStream;
+import ctrmap.util.LittleEndianDataOutputStream;
 
 /**
  * Container for camera coordinate data.

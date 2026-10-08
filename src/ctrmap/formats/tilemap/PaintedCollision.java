@@ -1,39 +1,36 @@
 package ctrmap.formats.tilemap;
 
-import ctrmap.formats.GameFiles;
 import ctrmap.formats.gfcollision.GfColl;
-import ctrmap.formats.h3d.BchMapModel;
-import ctrmap.formats.h3d.MapModelObj;
-import ctrmap.formats.h3d.MapModelObjImporter;
-import ctrmap.formats.h3d.RegionFactory;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import static ctrmap.formats.LittleEndian.f32;
-import static ctrmap.formats.tilemap.PaintedRegionBuilder.*;
-import static ctrmap.formats.tilemap.PaintedCliffMesh.*;
-import static ctrmap.formats.tilemap.PaintedFloorMesh.*;
-import static ctrmap.formats.tilemap.PaintedHeights.*;
-import static ctrmap.formats.tilemap.PaintedMaterials.*;
-import static ctrmap.formats.tilemap.PaintedTiles.*;
+import static ctrmap.formats.tilemap.PaintedFloorMesh.floorQuad;
+import static ctrmap.formats.tilemap.PaintedFloorMesh.isWet;
+import static ctrmap.formats.tilemap.PaintedGeometry.DIM;
+import static ctrmap.formats.tilemap.PaintedGeometry.ORIGIN;
+import static ctrmap.formats.tilemap.PaintedGeometry.Quad;
+import static ctrmap.formats.tilemap.PaintedGeometry.STEP;
+import static ctrmap.formats.tilemap.PaintedGeometry.TILE;
+import static ctrmap.formats.tilemap.PaintedGeometry.WATER_SINK;
+import static ctrmap.formats.tilemap.PaintedHeights.baseFloor;
+import static ctrmap.formats.tilemap.PaintedHeights.floorYOf;
+import static ctrmap.formats.tilemap.PaintedHeights.isTouched;
+import static ctrmap.formats.tilemap.PaintedHeights.neighbourTopY;
+import static ctrmap.formats.tilemap.PaintedHeights.rampDir;
+import static ctrmap.formats.tilemap.PaintedHeights.rampFoot;
 
 /**
- * The painter's the walkable floor and the walls a player cannot pass.
+ * The painter's stage for the walkable floor and the walls a player cannot pass.
  *
  * <p>One stage of {@link PaintedRegionBuilder}, which was 3750 lines and 106
- * methods in one file. Every method here is exactly the one that was there,
- * moved and not rewritten: the split is about which file you open to read a
- * stage, not about what the pipeline does. The constants and the other stages
- * are imported statically for the same reason - a body that called a helper
- * still calls the same helper.
- *
- * <p>What this is NOT is decoupling. PaintedRegionBuilder was never a god
- * object by coupling: it is pure, it holds no state, and it has six callers.
- * It was simply too long to read.
+ * methods in one file. The split first moved every method unchanged and left
+ * each stage importing the builder and every other stage whole, one class
+ * cycle however many files it was in. It is a split now (F090): what the
+ * stages share - the frame, the constants, the quad and edge types, flipping a
+ * quad and rounding an outline - is {@link PaintedGeometry}, which needs no
+ * stage; no stage needs the builder that calls it; and each file imports by
+ * name exactly the members it uses, so its imports are its edges.
+ * PackageCycleTest refuses a class cycle it has not recorded, and
+ * SourceDebrisTest a wildcard import.
  */
 public final class PaintedCollision {
 

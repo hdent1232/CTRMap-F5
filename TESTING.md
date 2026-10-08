@@ -2,7 +2,7 @@
 
 Two halves, and they answer different questions.
 
-- **The offline battery** — 137 headless suites, run on your machine against a
+- **The offline battery** — 211 headless suites, run on your machine against a
   real dump, answering *"does the code still do what it says?"*. That is the
   first half of this file.
 - **The in-emulator checklist** — everything only the real game engine can
@@ -95,11 +95,15 @@ Five families, and they assert different kinds of thing:
      constant outside `src/ctrmap/gamedef/`. See ARCHITECTURE.md. Its last
      rule is not a grep: `noApplicationClassAsksWhichGameIsLoaded` reads
      `build\classes` through `ClassFileScanner` and fails on any class outside
-     `ctrmap.gamedef` that names `isOA`/`isXY`/`isOADemo` (all six deleted) or
-     that holds both `Workspace.game()` and a `GameType` constant. A static
-     import defeats a source pattern completely and does not defeat this one,
-     which is why it reads bytecode. One exception is allowed, argued in the
-     suite's `ALLOWED_ASKERS` table.
+     `ctrmap.gamedef` that names `isOA`/`isXY`/`isOADemo` (all six deleted),
+     that holds both `Workspace.game()` and a `GameType` constant, or that names
+     a `GameType` constant at all - a class handed the game decides on it as
+     surely as one that fetched it (F207). A static import defeats a source
+     pattern completely and does not defeat this one, which is why it reads
+     bytecode. One asker is allowed, argued in the suite's `ALLOWED_ASKERS`
+     table, and six namers in `ALLOWED_NAMERS` (two per-game tables with no
+     else, four tools that open an ORAS dump); code needing the one game a
+     feature is open to asks `GameProfile.onlyGameWith(feature)`.
    - `BatteryHygieneTest` — how a suite may touch the machine, that every
      suite is registered with its corpus, that `build\classes` came from
      `build.ps1`, and that the counts the docs publish match the data.
@@ -132,7 +136,7 @@ Five families, and they assert different kinds of thing:
      a window static. It stays a table rather than becoming a number because an
      empty table still says WHICH class and WHICH field when a name appears in
      it again. Zero does not mean the window holds nothing — it still owns
-     nineteen public statics for its own use; it means nothing else asks it for
+     public statics for its own use (GlobalStateTest counts them); it means nothing else asks it for
      them. Its fourth rule reads the window's own source and refuses to let
      anything the window builds be handed a static that method has not assigned
      yet — the defect that shipped once, when a list was built where it read
@@ -148,6 +152,10 @@ Five families, and they assert different kinds of thing:
      window, the dialog seam or the global; the workspace facade may not name
      the window; the editing tools may not name the window. All zero, no
      exceptions, all read from bytecode.
+   - `PackageCycleTest` — no strongly connected component of production
+     packages holds both a format package and one above it; the largest cycle
+     is the recorded size; the format classes that name an OpenGL type are
+     the recorded nine. Read from bytecode, the packages derived from the tree.
    - `DialogSeamTest` rule six — a dialog opened without naming a window is
      parented to the one the application gave the seam.
 
@@ -170,7 +178,7 @@ The sweep costs hours. `MutationBaselineTest` costs seconds and keeps the record
 honest in between: it re-hashes every file the sweep measured and refuses a
 baseline that no longer describes the tree.
 
-**So when you edit one of those 35 files, this suite fails. That is correct, and
+**So when you edit one of the files the sweep measured, this suite fails. That is correct, and
 it is a digest check, not a regression.** The fix is:
 
 - **Do not hand-edit `mutation_baseline.json`.** Updating a digest without
@@ -199,11 +207,13 @@ as its last entry, and skips it (loudly) where there is no Python.
 # Part two — things only the emulator can answer
 
 > **START HERE: [TESTZONE.md](TESTZONE.md).** A ready-made test world is
-> packed into your game data — entering May's house at the start of the
+> packed into the owner's game data — entering May's house at the start of the
 > game warps you to a hub that exercises nearly every item on this list,
-> with a symptom→culprit table for anything that breaks. Walk that first;
-> come back to this list for the features it doesn't cover (shops, Maison,
-> trainers, encounters editing, zone removal).
+> with a symptom→culprit table for anything that breaks. It was **built by hand
+> from commit 19e93f3** and nothing rebuilds it, so it checks that commit's
+> output: for a subsystem changed since, build with the current editor and walk
+> that (TESTZONE.md says which). Come back to this list for the features it
+> doesn't cover (shops, Maison, trainers, encounters editing, zone removal).
 
 ## Map Builder: edit-in-place + live 3D (NEW — the big behavior change)
 Two fundamentals changed after your New Mauville feedback:

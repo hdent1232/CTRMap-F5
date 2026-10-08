@@ -4,7 +4,6 @@ import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.BchTexturePack;
 import ctrmap.formats.h3d.PICACommandReader.TextureFormat;
 import ctrmap.formats.h3d.texturing.TextureCodec;
-import ctrmap.formats.propdata.PropDatabase;
 import java.io.File;
 import java.security.MessageDigest;
 import java.util.Arrays;
@@ -139,10 +138,10 @@ public class TextureCodecTest {
 		solidIs(TextureFormat.hilo8, bytes(0x5A, 0x80), bytes(0x5a, 0x5a, 0x5a, 0x80), "read exactly as la8");
 		solidIs(TextureFormat.l8, bytes(0x5A), bytes(0x5a, 0x5a, 0x5a, 0xff), "luminance, opaque");
 		solidIs(TextureFormat.a8, bytes(0x5A), bytes(0xff, 0xff, 0xff, 0x5a), "alpha over white");
-		solidIs(TextureFormat.la4, bytes(0x7C), bytes(0x07, 0x07, 0x07, 0x0c),
-				"high nibble luminance, low nibble alpha, neither widened to 8 bits");
-		solidIs(TextureFormat.la4, bytes(0xF0), bytes(0xff, 0xff, 0xff, 0x00),
-				"and a high nibble of 8..F sign-extends (recorded behaviour of the port, not endorsed)");
+		solidIs(TextureFormat.la4, bytes(0x7C), bytes(0x77, 0x77, 0x77, 0xcc),
+				"high nibble luminance, low nibble alpha, each widened to 8 bits (F163)");
+		solidIs(TextureFormat.la4, bytes(0x80), bytes(0x88, 0x88, 0x88, 0x00),
+				"and a high nibble of 8..F is read unsigned: 0x8 is 0x88, not the sign-extended 0xF8");
 		solidIs(TextureFormat.l4, bytes(0x55, 0x55, 0x55, 0x55), bytes(0x55, 0x55, 0x55, 0xff),
 				"a 4-bit luminance doubled to 8, opaque");
 		solidIs(TextureFormat.a4, bytes(0x55, 0x55, 0x55, 0x55), bytes(0xff, 0xff, 0xff, 0x55),
@@ -251,7 +250,7 @@ public class TextureCodecTest {
 			if (cont == null || cont.length < 8 || cont[0] != 'A' || cont[1] != 'D') {
 				continue;
 			}
-			byte[] p = PropDatabase.getSubfile(cont, 1);
+			byte[] p = ctrmap.formats.containers.ContainerBytes.subfile(cont, 1);
 			if (!BchTexturePack.isTexturePack(p)) {
 				continue;
 			}

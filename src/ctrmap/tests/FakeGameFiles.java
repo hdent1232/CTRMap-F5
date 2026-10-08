@@ -111,8 +111,13 @@ final class FakeGameFiles implements GameFiles {
 		return Collections.unmodifiableList(edited);
 	}
 
+	/** Where this game stages an archive's entries, one file each - what a pack reads, as the workspace's folder. */
+	File stagedDir(ArchiveType type) {
+		return new File(root, type.name().toLowerCase());
+	}
+
 	private File stagedPath(ArchiveType type, int entry) {
-		return new File(new File(root, type.name().toLowerCase()), String.valueOf(entry));
+		return new File(stagedDir(type), String.valueOf(entry));
 	}
 
 	// ------------------------------------------------------------ the contract
@@ -152,6 +157,13 @@ final class FakeGameFiles implements GameFiles {
 		}
 	}
 
+	/** The staged path when it was reported edited and is still on disk; never extracts, as the workspace. */
+	@Override
+	public File editedEntry(ArchiveType type, int entry) {
+		File f = stagedPath(type, entry);
+		return isEdit(f) ? f : null;
+	}
+
 	/** Reported through {@link #edited(File)} and still on disk, as the workspace answers it. */
 	@Override
 	public boolean isEdit(File f) {
@@ -166,6 +178,12 @@ final class FakeGameFiles implements GameFiles {
 	@Override
 	public ctrmap.formats.GameCache cache() {
 		return cache;
+	}
+
+	/** The production answer, over this fake's own staged table: the reader is what is under test. */
+	@Override
+	public List<Integer> zonesNamingArea(int area, int except) throws IOException {
+		return ctrmap.MasterTable.read(this).using(ctrmap.ZoneResource.AREA, area, except);
 	}
 
 	@Override

@@ -52,9 +52,19 @@ public class Builder extends javax.swing.JPanel {
 	public ArchiveType currentGARC;
 
 	/**
+	 * What puts a tool in the Extras tab this browser lives in, by its title - HANDED, not a call up into
+	 * the window (F007): the model converter's output shows there.
+	 */
+	private final java.util.function.BiConsumer<String, javax.swing.JComponent> showInExtras;
+
+	/**
 	 * Creates new form Builder
 	 */
-	public Builder() {
+	public Builder(java.util.function.BiConsumer<String, javax.swing.JComponent> showInExtras) {
+		if (showInExtras == null) {
+			throw new IllegalArgumentException("the raw browser must be handed what shows a tool in the Extras tab");
+		}
+		this.showInExtras = showInExtras;
 		initComponents();
 		garcFileList.setModel(GARCmodel);
 		contFileList.setModel(contModel);
@@ -98,13 +108,11 @@ public class Builder extends javax.swing.JPanel {
 		for (int i = 0; i < cont.len; i++) {
 			BuilderFile bf = new BuilderFile();
 			byte[] file = cont.getFile(i);
-			bf.raw = file;
 			StringBuilder name = new StringBuilder();
 			name.append(i);
 			String type = "";
 			if (ctrmap.formats.h3d.BchSections.hasMagic(file)) {
 				BCHFile bch = new BCHFile(file);
-				bf.bchData = bch;
 				Iterator mdlIt = bch.models.iterator();
 				if (bch.models.isEmpty()) {
 					if (!bch.textures.isEmpty()) {
@@ -150,8 +158,6 @@ public class Builder extends javax.swing.JPanel {
 
 	public static class BuilderFile {
 
-		public byte[] raw;
-		public BCHFile bchData;
 		public ContentType type;
 
 		public String getTypeString() {
@@ -427,7 +433,12 @@ public class Builder extends javax.swing.JPanel {
 				if (rsl == JOptionPane.YES_OPTION) {
 					File f = openFileDialog("Open a model file");
 					if (f != null) {
-						File donor = ResourceAccess.copyToTemp("DummyBCH3DModel.bch");
+						File donor = copyToTemp("DummyBCH3DModel.bch");
+						if (donor == null) {
+							ctrmap.Ui.error(this, "The converter's template model could not be written to the workspace's"
+									+ " temp folder, so nothing was converted.", "Builder alert");
+							return;
+						}
 						File output = new File(Workspace.temp() + "/espica_model_" + UUID.randomUUID().toString() + ".bch");
 						int textures = ctrmap.Ui.confirm(this, "Do you want to embed the model's textures into the output BCH?", "Converter alert", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
 						String[] extra = (textures == JOptionPane.YES_OPTION) ? new String[0] : new String[]{"-notextures"};
@@ -680,12 +691,24 @@ public class Builder extends javax.swing.JPanel {
 		}
 	}
 
+	/** A bundled resource copied to the workspace's temp folder, or null when it cannot be written there. */
+	private static File copyToTemp(String name) {
+		File out = new File(Workspace.temp() + "/" + name);
+		try {
+			java.nio.file.Files.write(out.toPath(), ResourceAccess.getByteArray(name));
+			return out;
+		} catch (java.io.IOException ex) {
+			return null;
+		}
+	}
+
 	private void runESPICA(ESPICAControl.ESPICAProcess proc, Runnable onSuccess) {
 		if (Workspace.ESPICA_PATH == null) {
 			ctrmap.Ui.error(this, "ESPICA path not set or invalid. Please correct it in Workspace settings.", "ESPICA error");
 		} else {
 			ESPICAControl esc = new ESPICAControl(onSuccess);
-			esc.setVisible(true);
+			//in the Extras tab beside this browser, not a window of its own (F243)
+			showInExtras.accept("ESPICA model converter", esc);
 			esc.runProcess(Workspace.ESPICA_PATH, proc);
 		}
 	}
@@ -693,7 +716,7 @@ public class Builder extends javax.swing.JPanel {
 	public void loadGARC(int index) {
 		GARCmodel.clear();
 		if (index != -1) {
-			currentGARC = ArchiveType.values()[index];
+			currentGARC = ctrmap.util.Bytes.enumOf(ArchiveType.values(), index, null);
 			if (Workspace.getArchive(currentGARC) != null) {
 				for (int i = 0; i < Workspace.getArchive(currentGARC).length; i++) {
 					GARCmodel.addElement(String.valueOf(i));

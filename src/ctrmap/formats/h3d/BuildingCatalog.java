@@ -33,9 +33,22 @@ import java.util.List;
  * (inclusive); baseY the donor floor height (stamp dy = targetY - baseY);
  * doorDX/doorDY anchor-relative door tile or -1; doorProp the door prop's
  * model name or "-"; interiorZone/-WarpId the retail interior a working door
- * warps into, or -1.
+ * warps into, or -1. The harvested table adds {@code location retailCount
+ * signature}, and a table harvested since F251 a fourth: the material that
+ * owns the most of the cut.
  */
 public class BuildingCatalog {
+
+	/** The kind a cut nothing smaller describes is filed under. */
+	public static final String STRUCTURE = "A_STRUCT";
+
+	/**
+	 * The smallest box, in tiles, that a lamp, a sign or a piece of decor cannot be (F251). Measured
+	 * over the shipped harvested table, boxes counted at both ends as {@link MapPrefab#span} counts
+	 * them: 15 small-kind rows at 30, 40 and 50 tiles alike - the plateau this sits in the middle of -
+	 * and 21 at 20; the small kinds' median box is 4 tiles.
+	 */
+	public static final int ROOM_TILES = 40;
 
 	public static class Entry {
 
@@ -57,6 +70,10 @@ public class BuildingCatalog {
 		public int retailCount = 1;
 		/** True for auto-harvested entries (curated entries stay pinned first). */
 		public boolean auto;
+		/** The material owning the most of the cut's triangles - what it is made of, which its
+		 *  harvested name otherwise does not say (F251). Empty for curated entries and for a table
+		 *  harvested before the column. */
+		public String material = "";
 
 		public int tilesW() {
 			return MapPrefab.span(tx0, tx1);
@@ -106,11 +123,14 @@ public class BuildingCatalog {
 	}
 
 	private static void load(String resource, boolean auto, List<Entry> into, List<String> problems) {
-		try (InputStream in = BuildingCatalog.class.getClassLoader().getResourceAsStream(resource)) {
-			if (in == null) {
-				problems.add(resource + " is missing from this build");
-				return;
-			}
+		InputStream opened;
+		try {
+			opened = ctrmap.resources.ResourceAccess.getStream(resource.substring(resource.lastIndexOf('/') + 1));
+		} catch (IllegalStateException missing) {
+			problems.add(ctrmap.util.Bytes.reason(missing));
+			return;
+		}
+		try (InputStream in = opened) {
 			parse(in, resource, auto, into, problems);
 		} catch (java.io.IOException ex) {
 			problems.add(resource + " could not be read: " + ex);
@@ -127,13 +147,14 @@ public class BuildingCatalog {
 		java.io.BufferedReader lines = new java.io.BufferedReader(
 				new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8));
 		int lineNo = 0;
+		List<Entry> refiled = new ArrayList<>();
 		while (true) {
 			String raw;
 			try {
 				raw = lines.readLine();
 			} catch (java.io.IOException ex) {
 				problems.add(name + " could not be read past line " + lineNo + ": " + ctrmap.util.Bytes.reason(ex));
-				return;
+				break;
 			}
 			if (raw == null) {
 				break;
@@ -165,7 +186,7 @@ public class BuildingCatalog {
 				e.interiorZone = Integer.parseInt(f[12]);
 				e.interiorWarpId = Integer.parseInt(f[13]);
 			} catch (NumberFormatException notANumber) {
-				problems.add(name + " line " + lineNo + ": " + notANumber.getMessage());
+				problems.add(name + " line " + lineNo + ": " + ctrmap.util.Bytes.reason(notANumber));
 				continue;
 			}
 			//AN INVERTED BOX IS REFUSED, BY ITS LINE (F129): one was listed 0 wide and cut 2 wide
@@ -179,13 +200,91 @@ public class BuildingCatalog {
 				try {
 					e.retailCount = Integer.parseInt(f[15]);
 				} catch (NumberFormatException notANumber) {
-					problems.add(name + " line " + lineNo + ": the retail count " + notANumber.getMessage()
+					problems.add(name + " line " + lineNo + ": the retail count " + ctrmap.util.Bytes.reason(notANumber)
 							+ "; 1 is used");
 				}
+			}
+			if (f.length >= 18) {
+				e.material = f[17];
+			}
+			String asked = e.kind;
+			e.kind = kindFor(asked, e.tilesW(), e.tilesH());
+			if (!e.kind.equals(asked)) {
+				refiled.add(e);
 			}
 			e.auto = auto;
 			into.add(e);
 		}
+		renameRefiled(into, refiled);
+	}
+
+	/**
+	 * The kind a cut is filed under, given the kind its materials asked for and its box (F251). A lamp,
+	 * a sign or a piece of decor is a small thing, and one whose box covers {@link #ROOM_TILES} or more
+	 * is a room or a block that holds one: the harvester's vote counts triangles and cannot see size, so
+	 * twelve triangles of lamp glass outvoting the unrecognised rest filed seven 11x9 Sootopolis City
+	 * rooms as lamps, and a search for "lamp" offered them. Every other kind is answered as asked.
+	 */
+	public static String kindFor(String kind, int tilesW, int tilesH) {
+		boolean small = kind.equals("A_LAMP") || kind.equals("A_SIGN") || kind.equals("A_DECOR");
+		return small && tilesW * tilesH >= ROOM_TILES ? STRUCTURE : kind;
+	}
+
+	/**
+	 * Renames the rows {@link #kindFor} refiled. A table harvested before F251 named a cut after the kind
+	 * it was filed under - "Sootopolis City lamp 3" - so a refiled row keeps the wrong word in its name,
+	 * and the name is what a search reads. Each is named as the harvester names a structure, its place
+	 * then "structure", numbered after every name the catalog already holds (the harvester leaves the
+	 * first unnumbered). A table harvested since refiles nothing, and this renames nothing.
+	 */
+	private static void renameRefiled(List<Entry> into, List<Entry> refiled) {
+		java.util.Set<String> taken = new java.util.HashSet<>();
+		for (Entry e : into) {
+			taken.add(e.name);
+		}
+		for (Entry e : refiled) {
+			String base = (e.location.isEmpty() ? "?" : e.location) + " structure";
+			String name = base;
+			for (int n = 2; taken.contains(name); n++) {
+				name = base + " " + n;
+			}
+			taken.add(name);
+			e.name = name;
+		}
+	}
+
+	/** A word of a search shaped like a box size, "11x9": up to four digits a side, so it always reads. */
+	private static final java.util.regex.Pattern SIZE_WORD = java.util.regex.Pattern.compile("(\\d{1,4})x(\\d{1,4})");
+
+	/**
+	 * Whether an entry answers a palette search (F251): every word of it is found in the entry's name,
+	 * kind, place or material, and a word shaped like a box size - "11x9" - names its box exactly, so
+	 * "1x1" is not answered by an 11x13. Case and accents are ignored ("pokemon" finds "Pokémon
+	 * League"); an empty search answers everything. The palette matched the whole search as one string
+	 * against the name or kind, and the harvested names say only where a cut came from and what bucket
+	 * it fell in - so a place's houses of one size, or two words at once, could not be asked for.
+	 */
+	public static boolean matchesQuery(Entry e, String query) {
+		String text = folded(e.name + " " + e.kind + " " + e.location + " " + e.material);
+		for (String word : folded(query).trim().split("\\s+")) {
+			if (word.isEmpty()) {
+				continue;
+			}
+			java.util.regex.Matcher size = SIZE_WORD.matcher(word);
+			boolean found = size.matches()
+					? Integer.parseInt(size.group(1)) == e.tilesW() && Integer.parseInt(size.group(2)) == e.tilesH()
+					: text.contains(word);
+			if (!found) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Lower case, accents dropped: what a search compares. */
+	private static String folded(String s) {
+		return java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD).replaceAll("\\p{M}", "")
+				.toLowerCase(java.util.Locale.ROOT);
 	}
 
 	/** Entries of one kind, or all for null. */
@@ -197,6 +296,31 @@ public class BuildingCatalog {
 			}
 		}
 		return out;
+	}
+
+	/**
+	 * The cut prefabs, kept by the game they were cut from (F218) - here beside the cut itself, and no
+	 * longer in the palette dialog (F248): the map painter stamps them, and reaching for them through a
+	 * dialog put the painter's engine in the UI package.
+	 */
+	private static final ctrmap.formats.GameCache.Key<java.util.Map<Entry, MapPrefab>> PREFABS
+			= new ctrmap.formats.GameCache.Key<>("building palette: cut prefabs");
+
+	/**
+	 * This entry cut from the handed game's pristine copy, kept for that game; null with no game handed
+	 * or nothing to cut. Bounded - the harvested catalog holds thousands of entries and browsing must not
+	 * keep every cut - and synchronized: the palette's preview thread and the Map Builder's live-regen
+	 * worker cut concurrently, and the extraction writes fixed-named temp files.
+	 */
+	public static synchronized MapPrefab prefab(GameFiles game, Entry e) {
+		if (game == null) {
+			return null;   //nothing to cut from, as extract answers for no game
+		}
+		java.util.Map<Entry, MapPrefab> prefabs = game.cache().get(PREFABS, java.util.HashMap::new);
+		if (prefabs.size() > 64 && !prefabs.containsKey(e)) {
+			prefabs.clear();
+		}
+		return prefabs.computeIfAbsent(e, k -> extract(game, k));
 	}
 
 	/**
@@ -259,7 +383,7 @@ public class BuildingCatalog {
 			return files.pristineArchive(ArchiveType.FIELD_DATA);
 		} catch (java.io.IOException damaged) {
 			throw new IllegalStateException("The untouched copy of the map archive could not be read: "
-					+ damaged.getMessage(), damaged);
+					+ ctrmap.util.Bytes.reason(damaged), damaged);
 		}
 	}
 

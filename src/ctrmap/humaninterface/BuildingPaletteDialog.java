@@ -29,7 +29,6 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
-import javax.swing.SwingUtilities;
 
 /**
  * The BUILDING PALETTE: pick a Pokemon Center, Mart, house, sign, tree...
@@ -42,49 +41,14 @@ import javax.swing.SwingUtilities;
 public class BuildingPaletteDialog {
 
 	/**
-	 * The cut prefabs and the donor areas' textures, kept by the game they were cut from (F218).
-	 * They were static maps keyed to nothing, so after repointing to another game the palette
-	 * offered - and Apply stamped - the first game's cut geometry and textures into the second.
-	 * Both loaders are synchronized - the palette preview thread and the Map Builder's
-	 * live-regen worker hit them concurrently, and the extraction writes fixed-named temp files.
+	 * The donor areas' textures, kept by the game they were read from (F218). They were a static map
+	 * keyed to nothing, so after repointing to another game the palette offered - and Apply stamped -
+	 * the first game's textures into the second. The loader is synchronized - the palette preview
+	 * thread and the Map Builder's live-regen worker hit it concurrently, and it writes a fixed-named
+	 * temp file. The cut prefabs are {@link BuildingCatalog#prefab}'s (F248).
 	 */
-	private static final GameCache.Key<Map<BuildingCatalog.Entry, MapPrefab>> PREFABS
-			= new GameCache.Key<>("building palette: cut prefabs");
 	private static final GameCache.Key<Map<Integer, List<H3DTexture>>> DONOR_TEXTURES
 			= new GameCache.Key<>("building palette: donor area textures");
-
-	/** This entry cut from the open game's pristine copy, kept for that game; null with no game open or nothing to cut. */
-	public static synchronized MapPrefab cachedPrefab(BuildingCatalog.Entry e) {
-		ctrmap.WorkspaceSession game = Workspace.session();
-		if (game == null) {
-			return null;   //nothing to cut from, as BuildingCatalog.extract answers for no game
-		}
-		Map<BuildingCatalog.Entry, MapPrefab> prefabs = game.cache().get(PREFABS, HashMap::new);
-		//bounded: the harvested catalog holds thousands of entries - browsing
-		//must not accumulate every cut prefab in memory
-		if (prefabs.size() > 64 && !prefabs.containsKey(e)) {
-			prefabs.clear();
-		}
-		return prefabs.computeIfAbsent(e, k -> BuildingCatalog.extract(game, k));
-	}
-
-	/**
-	 * What a cut actually brings, shown before it is placed: a harvested name
-	 * describes only what dominates the cut, so a "structure" can be a whole
-	 * furnished room - 27 pieces, 27 textures to import - and a "bridge" a chunk
-	 * of Sky Pillar reaching 464 units up. The numbers alone could not tell that
-	 * room from a large lamp, so the passengers - the floors, the shadow decal,
-	 * a sea plane under a pier - are named by class. {@code r} is the preview
-	 * stamp, or null when only the cut itself is known.
-	 */
-	public static String manifest(MapPrefab p, MapPrefab.StampResult r, BuildingCatalog.Entry e) {
-		String riders = p.passengerNote();
-		return p.summary(e.baseY)
-				+ (r == null || r.newMaterials.isEmpty() ? "" : ", " + r.newMaterials.size() + " new material(s) + "
-				+ r.texturesNeeded.size() + " texture(s) to import")
-				+ (p.collTris.isEmpty() ? ", no collision" : ", " + p.collTris.size() + " collision triangle(s)")
-				+ (riders.isEmpty() ? "" : ", rides along: " + riders);
-	}
 
 	/** What the palette hands back: the entry, and whether its passengers come along. */
 	public static final class Pick {
@@ -125,6 +89,80 @@ public class BuildingPaletteDialog {
 			return "Fences";
 		}
 		return "Buildings";
+	}
+
+	/**
+	 * The entries a search and the two filters leave: of the type and place chosen (null for any), and
+	 * answering {@link BuildingCatalog#matchesQuery} - every word in the name, kind, place or material,
+	 * a size word ("11x9") naming the box (F251).
+	 */
+	public static List<BuildingCatalog.Entry> shown(List<BuildingCatalog.Entry> all, String query, String category,
+			String location) {
+		List<BuildingCatalog.Entry> out = new ArrayList<>();
+		for (BuildingCatalog.Entry e : all) {
+			if ((category == null || categoryLabel(e).equals(category)) && (location == null || e.location.equals(location))
+					&& BuildingCatalog.matchesQuery(e, query)) {
+				out.add(e);
+			}
+		}
+		return out;
+	}
+
+	/** The heading the curated entries list under, open until it is closed. */
+	public static final String CURATED = "Curated, with door wiring";
+
+	/** One place's heading in the palette's list; a click opens or closes the entries under it (F251). */
+	public static final class Heading {
+
+		public final String title;
+		public final int count;
+		public final boolean open;
+
+		Heading(String title, int count, boolean open) {
+			this.title = title;
+			this.count = count;
+			this.open = open;
+		}
+
+		@Override
+		public String toString() {
+			return (open ? "▾ " : "▸ ") + title + " (" + count + ")";
+		}
+	}
+
+	/**
+	 * The palette's rows: the entries shown, each under one heading for its place - the curated entries
+	 * first, under {@link #CURATED}, then the places in alphabetical order - and a closed heading's entries
+	 * left out. The curated heading starts open and every place closed; with {@code everyOpen} - a search
+	 * typed or a place chosen, asking to see what matched - every heading starts open. {@code flipped}
+	 * names the headings clicked to the other state. The 3,535 harvested entries were one flat list, a
+	 * house in it reached by arrowing through 2,130 "structure N" rows (F251).
+	 */
+	public static List<Object> rows(List<BuildingCatalog.Entry> shown, java.util.Set<String> flipped, boolean everyOpen) {
+		Map<String, List<BuildingCatalog.Entry>> byPlace = new java.util.TreeMap<>();
+		List<BuildingCatalog.Entry> curated = new ArrayList<>();
+		for (BuildingCatalog.Entry e : shown) {
+			if (!e.auto) {
+				curated.add(e);
+			} else {
+				byPlace.computeIfAbsent(e.location.isEmpty() ? "Unknown place" : e.location, k -> new ArrayList<>()).add(e);
+			}
+		}
+		List<Object> rows = new ArrayList<>();
+		if (!curated.isEmpty()) {
+			addGroup(rows, CURATED, curated, !flipped.contains(CURATED));
+		}
+		for (Map.Entry<String, List<BuildingCatalog.Entry>> place : byPlace.entrySet()) {
+			addGroup(rows, place.getKey(), place.getValue(), everyOpen != flipped.contains(place.getKey()));
+		}
+		return rows;
+	}
+
+	private static void addGroup(List<Object> rows, String title, List<BuildingCatalog.Entry> entries, boolean open) {
+		rows.add(new Heading(title, entries.size(), open));
+		if (open) {
+			rows.addAll(entries);
+		}
 	}
 
 	/**
@@ -224,40 +262,53 @@ public class BuildingPaletteDialog {
 		for (String l : locs) {
 			locBox.addItem(l);
 		}
-		final DefaultListModel<BuildingCatalog.Entry> model = new DefaultListModel<>();
-		final JList<BuildingCatalog.Entry> list = new JList<>(model);
+		final DefaultListModel<Object> model = new DefaultListModel<>();
+		final JList<Object> list = new JList<>(model);
 		list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 		list.setCellRenderer(new javax.swing.DefaultListCellRenderer() {
 			@Override
 			public java.awt.Component getListCellRendererComponent(JList<?> l, Object v, int i, boolean sel, boolean foc) {
 				JLabel lbl = (JLabel) super.getListCellRendererComponent(l, v, i, sel, foc);
+				if (v instanceof Heading) {
+					lbl.setText("<html><b>" + Ui.html(v.toString()) + "</b></html>");
+					return lbl;
+				}
 				BuildingCatalog.Entry en = (BuildingCatalog.Entry) v;
-				lbl.setText("<html>" + en.name + " <small>(" + en.tilesW() + "x" + en.tilesH()
+				lbl.setText("<html>&nbsp;&nbsp;" + Ui.html(en.name) + " <small>(" + en.tilesW() + "x" + en.tilesH()
 						+ (en.enterable() ? ", enterable" : "")
 						+ (en.retailCount > 1 ? ", x" + en.retailCount + " in game" : "") + ")</small></html>");
 				return lbl;
 			}
 		});
-		Runnable refilter = () -> {
-			String q = search.getText().trim().toLowerCase();
+		//the headings clicked open or closed; a new search or filter starts from the defaults again
+		final java.util.Set<String> flipped = new java.util.HashSet<>();
+		//rebuilds the rows; the heading named stays selected, else the first entry is
+		final java.util.function.Consumer<String> rebuild = keep -> {
+			String q = search.getText();
 			String cat = catBox.getSelectedIndex() > 0 ? (String) catBox.getSelectedItem() : null;
 			String loc = locBox.getSelectedIndex() > 0 ? (String) locBox.getSelectedItem() : null;
 			model.clear();
-			for (BuildingCatalog.Entry e : all) {
-				if (cat != null && !categoryLabel(e).equals(cat)) {
-					continue;
-				}
-				if (loc != null && !e.location.equals(loc)) {
-					continue;
-				}
-				if (q.isEmpty() || e.name.toLowerCase().contains(q) || e.kind.toLowerCase().contains(q)
-						|| e.location.toLowerCase().contains(q)) {
-					model.addElement(e);
+			for (Object row : rows(shown(all, q, cat, loc), flipped, !q.trim().isEmpty() || loc != null)) {
+				model.addElement(row);
+			}
+			for (int i = 0; i < model.size(); i++) {
+				Object row = model.get(i);
+				if (keep == null ? row instanceof BuildingCatalog.Entry : row instanceof Heading && ((Heading) row).title.equals(keep)) {
+					list.setSelectedIndex(i);
+					list.ensureIndexIsVisible(i);
+					break;
 				}
 			}
-			if (!model.isEmpty()) {
-				list.setSelectedIndex(0);
+		};
+		Runnable refilter = () -> {
+			flipped.clear();
+			rebuild.accept(null);
+		};
+		final java.util.function.Consumer<Heading> toggle = h -> {
+			if (!flipped.remove(h.title)) {
+				flipped.add(h.title);
 			}
+			rebuild.accept(h.title);
 		};
 		catBox.addActionListener(e -> refilter.run());
 		locBox.addActionListener(e -> refilter.run());
@@ -284,11 +335,15 @@ public class BuildingPaletteDialog {
 		JScrollPane sp = new JScrollPane(list);
 		sp.setPreferredSize(new Dimension(300, 420));
 		left.add(sp, BorderLayout.CENTER);
-		left.add(new JLabel("<html><small>The whole game's structures are here - search, or narrow by<br>type and place. Curated entries (with door wiring) list first.</small></html>"), BorderLayout.SOUTH);
+		left.add(new JLabel("<html><small>The whole game's structures are here, under their places - click a<br>place"
+				+ " to open it. Search any words of a name, place or material, or a size<br>such as 11x9; or narrow by type"
+				+ " and place. Curated entries (with door<br>wiring) list first.</small></html>"), BorderLayout.SOUTH);
 		dlg.add(left, BorderLayout.WEST);
 
-		final MapPreview3D view = new MapPreview3D();
-		view.setPreferredSize(new Dimension(520, 420));
+		//NULL WHEN OPENGL CANNOT START (F077): the catalogue, search and placing still work
+		final MapPreview3D view = GlSupport.available() ? new MapPreview3D() : null;
+		final java.awt.Component viewShown = view != null ? view : GlSupport.placeholder("The structure preview");
+		viewShown.setPreferredSize(new Dimension(520, 420));
 		final JLabel info = new JLabel(" ");
 		final javax.swing.JCheckBox leave = new javax.swing.JCheckBox(
 				"Leave the passengers behind (sea planes, shadow decals, floors, terrain chips)");
@@ -297,7 +352,7 @@ public class BuildingPaletteDialog {
 		under.add(info, BorderLayout.NORTH);
 		under.add(leave, BorderLayout.SOUTH);
 		JPanel center = new JPanel(new BorderLayout(4, 4));
-		center.add(view, BorderLayout.CENTER);
+		center.add(viewShown, BorderLayout.CENTER);
 		center.add(under, BorderLayout.SOUTH);
 		dlg.add(center, BorderLayout.CENTER);
 
@@ -309,15 +364,15 @@ public class BuildingPaletteDialog {
 			if (ev.getValueIsAdjusting()) {
 				return;
 			}
-			final BuildingCatalog.Entry e = list.getSelectedValue();
-			if (e == null) {
-				return;
+			if (!(list.getSelectedValue() instanceof BuildingCatalog.Entry)) {
+				return;   //nothing, or a place's heading: the last preview stays up
 			}
+			final BuildingCatalog.Entry e = (BuildingCatalog.Entry) list.getSelectedValue();
 			info.setText("  Loading preview: " + e.name + "...");
 			previews.ask(ticket -> {
 				Preview out = new Preview();
 				try {
-					MapPrefab p = cachedPrefab(e);
+					MapPrefab p = BuildingCatalog.prefab(Workspace.session(), e);
 					if (p == null) {
 						out.note = "  Could not cut this piece from the dump (see log).";
 					} else if (ticket.current()) {
@@ -342,7 +397,7 @@ public class BuildingPaletteDialog {
 							untextured = "  [shown untextured: donor area " + e.donorArea + "'s textures could not be"
 									+ " read - " + Ui.reason(ex) + "]";
 						}
-						out.note = "  " + e.name + " - " + e.tilesW() + "x" + e.tilesH() + " tiles, " + manifest(p, r, e)
+						out.note = "  " + e.name + " - " + e.tilesW() + "x" + e.tilesH() + " tiles, " + p.manifest(r, e.baseY)
 								+ (e.enterable() ? ", enterable (door + interior wiring on Apply)" : "")
 								+ (r.missingMaterials.isEmpty() ? "" : "  [" + r.missingMaterials.size() + " of "
 								+ p.pieces.size() + " piece(s) cannot be placed on this map: " + r.missingMaterials + "]")
@@ -353,7 +408,7 @@ public class BuildingPaletteDialog {
 				}
 				return out;
 			}, shown -> {
-				if (shown.model != null) {
+				if (shown.model != null && view != null) {
 					view.setRegion(shown.model, shown.textures);
 				}
 				info.setText("<html>" + Ui.html(shown.note) + "</html>"); //wraps: the manifest outgrows one line
@@ -367,8 +422,11 @@ public class BuildingPaletteDialog {
 		buttons.add(cancel);
 		dlg.add(buttons, BorderLayout.SOUTH);
 		Runnable choose = () -> {
-			BuildingCatalog.Entry chosen = list.getSelectedValue();
-			result[0] = chosen == null ? null : new Pick(chosen, !leave.isSelected());
+			Object chosen = list.getSelectedValue();
+			if (chosen instanceof Heading) {
+				return;   //a place is not a building: the palette stays open
+			}
+			result[0] = chosen == null ? null : new Pick((BuildingCatalog.Entry) chosen, !leave.isSelected());
 			dlg.dispose();
 		};
 		place.addActionListener(ev -> choose.run());
@@ -376,8 +434,25 @@ public class BuildingPaletteDialog {
 		list.addMouseListener(new java.awt.event.MouseAdapter() {
 			@Override
 			public void mouseClicked(java.awt.event.MouseEvent e) {
-				if (e.getClickCount() == 2) {
+				int at = list.locationToIndex(e.getPoint());
+				Object row = at < 0 ? null : model.get(at);
+				if (row instanceof Heading) {
+					if (e.getClickCount() == 1) {   //a double click's second press does not close it again
+						toggle.accept((Heading) row);
+					}
+				} else if (e.getClickCount() == 2) {
 					choose.run();
+				}
+			}
+		});
+		//a heading opens and closes from the keyboard too
+		list.addKeyListener(new java.awt.event.KeyAdapter() {
+			@Override
+			public void keyPressed(java.awt.event.KeyEvent e) {
+				if ((e.getKeyCode() == java.awt.event.KeyEvent.VK_ENTER || e.getKeyCode() == java.awt.event.KeyEvent.VK_SPACE)
+						&& list.getSelectedValue() instanceof Heading) {
+					toggle.accept((Heading) list.getSelectedValue());
+					e.consume();
 				}
 			}
 		});
@@ -386,14 +461,18 @@ public class BuildingPaletteDialog {
 		dlg.addWindowListener(new java.awt.event.WindowAdapter() {
 			@Override
 			public void windowClosing(java.awt.event.WindowEvent e) {
-				view.stop();
+				if (view != null) {
+					view.stop();
+				}
 			}
 		});
 		dlg.pack();
 		dlg.setLocationRelativeTo(parent);
 		dlg.setVisible(true);
 		previews.close();
-		view.stop();
+		if (view != null) {
+			view.stop();
+		}
 		return result[0];
 	}
 

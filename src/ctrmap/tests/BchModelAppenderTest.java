@@ -15,7 +15,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.u16;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**

@@ -2,10 +2,10 @@ package ctrmap.tests;
 
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.BchMapModel;
-import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TilePalette;
 import java.io.File;
-import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.List;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
 import ctrmap.formats.tilemap.PaintedMaterials;
 
@@ -47,6 +47,9 @@ public class GroundResolveTest {
 				: "../RomFS_original_garcs/a/0/3/9");
 		GARC gr = new GARC(garcFile);
 		int regions = 0, checked = 0, bad = 0;
+		//A REGION THAT COULD NOT BE READ IS NOT ONE WITH NOTHING WRONG (F250): these were skipped
+		//silently, and the only verdict was "bad == 0" - so a sweep that read nothing passed
+		List<String> unread = new ArrayList<>();
 		String worst = null;
 		double worstFlat = 1.0;
 
@@ -54,7 +57,8 @@ public class GroundResolveTest {
 			byte[] model;
 			try {
 				model = subfile(gr.getDecompressedEntry(r), 1);
-			} catch (RuntimeException ignore) {
+			} catch (RuntimeException unreadable) {
+				unread.add(r + " (" + unreadable + ")");
 				continue;
 			}
 			if (model == null || !BchMapModel.isMapModel(model)) {
@@ -64,7 +68,8 @@ public class GroundResolveTest {
 			BchMapModel m;
 			try {
 				m = new BchMapModel(model);
-			} catch (RuntimeException ignore) {
+			} catch (RuntimeException unparsable) {
+				unread.add(r + " (" + unparsable + ")");
 				continue;
 			}
 			for (TilePalette t : GROUND) {
@@ -93,6 +98,18 @@ public class GroundResolveTest {
 		System.out.println("ground brushes resolving to a wall: " + bad);
 		if (worst != null) {
 			System.out.println("  worst: " + worst);
+		}
+		//AND SOMETHING WAS EXAMINED: a regression that stops resolving any ground mesh gives
+		//checked 0, bad 0. The floor is "any at all" until a corpus run records a measured one.
+		if (regions == 0 || checked == 0) {
+			System.out.println("  FAIL: the sweep examined " + regions + " region(s) and " + checked
+					+ " brush resolution(s) - a sweep that looked at nothing has found nothing wrong only by not looking");
+			bad++;
+		}
+		if (!unread.isEmpty()) {
+			System.out.println("  FAIL: " + unread.size() + " region(s) could not be read, so what they resolve is unknown: "
+					+ unread.subList(0, Math.min(5, unread.size())));
+			bad++;
 		}
 		System.out.println(bad == 0 ? "ALL PASS" : "FAILURES PRESENT (" + bad + ")");
 		if (bad > 0) {

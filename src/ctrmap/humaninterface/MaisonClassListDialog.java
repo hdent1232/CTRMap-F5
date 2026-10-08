@@ -6,15 +6,12 @@ import ctrmap.formats.maison.MaisonClassList;
 import ctrmap.formats.text.GFMessageFile;
 import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
-import java.awt.Dialog;
 import java.awt.FlowLayout;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.nio.file.Files;
 import java.util.List;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
-import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -147,7 +144,7 @@ public class MaisonClassListDialog {
 				ctrmap.Ui.message(dlg, "Saved " + tableNames[model.tableIndex]
 						+ ".\nDeploy to emulator to apply.", "Class assignments", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
-				ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Class assignments");
+				ctrmap.Ui.error(dlg, "Save failed:\n" + ctrmap.util.Bytes.reason(ex), "Class assignments");
 			}
 		});
 		close.addActionListener(e -> {

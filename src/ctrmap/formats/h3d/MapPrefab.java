@@ -16,8 +16,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
-import static ctrmap.formats.LittleEndian.f32;
-import static ctrmap.formats.LittleEndian.putF32;
+import static ctrmap.util.LittleEndian.f32;
+import static ctrmap.util.LittleEndian.putF32;
 
 /**
  * A map PREFAB - a reusable piece of map (a building, a bridge, a patch of
@@ -36,12 +36,14 @@ import static ctrmap.formats.LittleEndian.putF32;
  * <li>the 4-byte movement-tile tuples of the footprint.</li>
  * </ul>
  * Stamping appends each piece into the target region's mesh with the SAME
- * material name (so textures resolve). Pieces whose material the target lacks
- * are reported; injecting brand-new materials is the {@code BchModelAppender}
- * path layered on top once available.
+ * material name (so textures resolve). A piece whose material the target lacks
+ * is stamped as a brand-new material and mesh through {@code BchModelAppender},
+ * from the donor model a version-2 prefab carries; a piece that cannot be (a
+ * skinned donor mesh, or a version-1 prefab with no donor) is reported.
  *
- * <p>File format (".ctrprefab", little-endian via DataOutput = big-endian
- * Java streams kept internal-only): magic CMPF, version, then the layers.
+ * <p>File format (".ctrprefab", big-endian - Java's DataOutputStream - and read
+ * only by this class): magic CMPF, version, then the layers. Every length and
+ * count is held to the file's size before anything is allocated from it.
  */
 public class MapPrefab {
 
@@ -162,21 +164,8 @@ public class MapPrefab {
 			piece.posOffset = g.posOffset;
 			piece.donorMeshIndex = g.meshIndex;
 			piece.skinned = skinned(model, g.meshIndex);
-			//texture names from the material header slots (+0x1C/+0x20/+0x24) - what
-			//must exist in the target AREA's texture packs for the piece to render
-			int matHdr = model.matValuesPtr + model.getMeshMaterialIndex(g.meshIndex) * 0x2C;
-			for (int slot : new int[]{0x1C, 0x20, 0x24}) {
-				int sp = model.ptr(matHdr + slot);
-				if (sp > 0) {
-					StringBuilder sb = new StringBuilder();
-					for (int q = sp; q < model.raw.length && model.raw[q] != 0; q++) {
-						sb.append((char) (model.raw[q] & 0xFF));
-					}
-					if (sb.length() > 0 && !piece.textures.contains(sb.toString())) {
-						piece.textures.add(sb.toString());
-					}
-				}
-			}
+			//what must exist in the target AREA's texture packs for the piece to render
+			piece.textures.addAll(model.getMaterialTextureNames(model.getMeshMaterialIndex(g.meshIndex)));
 			piece.vertexBytes = new byte[remap.size() * g.stride];
 			for (Map.Entry<Integer, Integer> e : remap.entrySet()) {
 				int src = e.getKey(), dst = e.getValue();
@@ -444,6 +433,24 @@ public class MapPrefab {
 		return out;
 	}
 
+	/**
+	 * What a cut actually brings, shown before it is placed: a harvested name describes only what
+	 * dominates the cut, so a "structure" can be a whole furnished room - 27 pieces, 27 textures to
+	 * import - and a "bridge" a chunk of Sky Pillar reaching 464 units up. The numbers alone could not
+	 * tell that room from a large lamp, so the passengers - the floors, the shadow decal, a sea plane
+	 * under a pier - are named by class. {@code r} is the preview stamp, or null when only the cut itself
+	 * is known; {@code baseY} the catalog entry's base. Here beside the cut (F248): it was the palette
+	 * dialog's, and the map painter reached into the dialog for it.
+	 */
+	public String manifest(StampResult r, int baseY) {
+		String riders = passengerNote();
+		return summary(baseY)
+				+ (r == null || r.newMaterials.isEmpty() ? "" : ", " + r.newMaterials.size() + " new material(s) + "
+				+ r.texturesNeeded.size() + " texture(s) to import")
+				+ (collTris.isEmpty() ? ", no collision" : ", " + collTris.size() + " collision triangle(s)")
+				+ (riders.isEmpty() ? "" : ", rides along: " + riders);
+	}
+
 	/** The passengers as the user reads them - "shadow shadow_a (413 tris), floor yuka1 (24 tris)" - or "" with none. */
 	public String passengerNote() {
 		StringBuilder sb = new StringBuilder();
@@ -606,7 +613,7 @@ public class MapPrefab {
 					l.count = n;
 					r.landings.add(l);
 				} catch (RuntimeException ex) {
-					r.missingMaterials.add(piece.material + " (inject failed: " + ex.getMessage() + ")");
+					r.missingMaterials.add(piece.material + " (inject failed: " + ctrmap.util.Bytes.reason(ex) + ")");
 					r.landings.add(null);
 				}
 			} else {
@@ -764,16 +771,6 @@ public class MapPrefab {
 	}
 
 	/**
-	 * The mesh a piece stamps into: same material name AND the same vertex
-	 * layout (stride + position offset) - the same name can appear on several
-	 * meshes with different layouts, and vertex bytes are copied whole-stride
-	 * so the layout must match exactly.
-	 */
-	public static int findTargetMesh(BchMapModel model, Piece piece) {
-		return findTargetMesh(model, piece, null);
-	}
-
-	/**
 	 * As above, but when a donor model is supplied the candidate must also carry
 	 * the donor's exact vertex layout.
 	 *
@@ -876,7 +873,24 @@ public class MapPrefab {
 		}
 	}
 
+	/**
+	 * A length or count read from a prefab, held to what the file can hold (F240): each was handed
+	 * straight to {@code new byte[...]} or a loop, so a damaged file asked for whatever its field
+	 * said - a large one was an OutOfMemoryError, which the loader's callers do not catch - and a
+	 * negative one a NegativeArraySizeException. Refused in words, naming the field, before
+	 * anything is allocated: no field can describe more items of {@code unit} bytes than the file has.
+	 */
+	static int bounded(DataInputStream in, long fileBytes, int unit, String what) throws IOException {
+		int n = in.readInt();
+		if (n < 0 || (long) n * unit > fileBytes) {
+			throw new IOException("This prefab is damaged: its " + what + " says " + n + ", more than a "
+					+ fileBytes + "-byte file can hold.");
+		}
+		return n;
+	}
+
 	public static MapPrefab load(File f) throws IOException {
+		final long size = f.length();
 		try (DataInputStream in = new DataInputStream(new FileInputStream(f))) {
 			if (in.readInt() != MAGIC) {
 				throw new IOException("Not a CTRMap prefab file.");
@@ -890,21 +904,21 @@ public class MapPrefab {
 			p.sourceRegion = in.readInt();
 			p.tilesW = in.readInt();
 			p.tilesH = in.readInt();
-			int np = in.readInt();
+			int np = bounded(in, size, 1, "piece count");
 			for (int i = 0; i < np; i++) {
 				Piece piece = new Piece();
 				piece.material = in.readUTF();
 				piece.stride = in.readInt();
 				piece.posOffset = in.readInt();
-				piece.vertexBytes = new byte[in.readInt()];
+				piece.vertexBytes = new byte[bounded(in, size, 1, "vertex block length")];
 				in.readFully(piece.vertexBytes);
-				piece.triangles = new int[in.readInt()];
+				piece.triangles = new int[bounded(in, size, 4, "triangle index count")];
 				for (int t = 0; t < piece.triangles.length; t++) {
 					piece.triangles[t] = in.readInt();
 				}
 				if (ver >= 2) {
 					piece.donorMeshIndex = in.readInt();
-					int nt = in.readInt();
+					int nt = bounded(in, size, 2, "texture name count");
 					for (int t = 0; t < nt; t++) {
 						piece.textures.add(in.readUTF());
 					}
@@ -914,11 +928,16 @@ public class MapPrefab {
 			if (ver >= 2) {
 				//v2 donor payload sits between the pieces block and the collision block
 				p.donorArea = in.readInt();
-				int dl = in.readInt();
+				int dl = bounded(in, size, 1, "donor model length");
 				if (dl > 0) {
 					byte[] packed = new byte[dl];
 					in.readFully(packed);
-					p.donorModel = ctrmap.formats.garc.LZ11.decompress(packed);
+					try {
+						p.donorModel = ctrmap.formats.garc.LZ11.decompress(packed);
+					} catch (IllegalStateException damaged) {
+						throw new IOException("This prefab is damaged: its embedded donor model does not unpack: "
+								+ ctrmap.util.Bytes.reason(damaged), damaged);
+					}
 				}
 				//skinning is a fact of the embedded donor, not stored: re-read it. A donor
 				//that will not parse REFUSES the prefab (F211): it was swallowed, every piece
@@ -937,7 +956,7 @@ public class MapPrefab {
 					}
 				}
 			}
-			int nc = in.readInt();
+			int nc = bounded(in, size, 36, "collision triangle count");
 			for (int i = 0; i < nc; i++) {
 				float[] t = new float[9];
 				for (int k = 0; k < 9; k++) {
@@ -946,6 +965,12 @@ public class MapPrefab {
 				p.collTris.add(t);
 			}
 			if (in.readBoolean()) {
+				//bounded HERE, where the block is: it is written only when the prefab has tiles, so a
+				//box larger than its file is a valid prefab until it claims to carry them
+				if (p.tilesW < 0 || p.tilesH < 0 || (long) p.tilesW * p.tilesH > size / 4) {
+					throw new IOException("This prefab is damaged: its tile block says " + p.tilesW + " x " + p.tilesH
+							+ " tiles, more than a " + size + "-byte file can hold.");
+				}
 				p.tiles = new byte[p.tilesW][p.tilesH][4];
 				for (int y = 0; y < p.tilesH; y++) {
 					for (int x = 0; x < p.tilesW; x++) {
@@ -962,7 +987,7 @@ public class MapPrefab {
 				int tag = (first << 24) | (in.readUnsignedByte() << 16) | (in.readUnsignedByte() << 8) | in.readUnsignedByte();
 				if (tag == LOSS_TAG) {
 					p.facesDropped = in.readInt();
-					int nl = in.readInt();
+					int nl = bounded(in, size, 2, "lost material count");
 					for (int i = 0; i < nl; i++) {
 						p.materialsLost.add(in.readUTF());
 					}

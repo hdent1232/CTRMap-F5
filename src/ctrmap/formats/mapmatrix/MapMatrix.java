@@ -5,8 +5,8 @@
  */
 package ctrmap.formats.mapmatrix;
 
-import ctrmap.LittleEndianDataInputStream;
-import ctrmap.LittleEndianDataOutputStream;
+import ctrmap.util.LittleEndianDataInputStream;
+import ctrmap.util.LittleEndianDataOutputStream;
 import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.containers.MM;
@@ -16,8 +16,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import static ctrmap.formats.LittleEndian.u16;
-import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.i32;
 
 public class MapMatrix {
 
@@ -33,6 +33,13 @@ public class MapMatrix {
 	public ResizeableMatrix<Short> LOD;
 
 	private int boundaryEntries;
+	/**
+	 * The camera section as it was read or last written, or null for a matrix built here (F160). The
+	 * counted boundaries are written over a copy of it, so what follows them survives a save: retail
+	 * matrix 1 holds 324 bytes in this section and 64 of them were written back. What the rest is has
+	 * not been measured - that needs the dump - and a byte not understood is carried, not dropped.
+	 */
+	private byte[] camSection;
 	/** The game the regions were opened from, for a discard that opens one again (F106); null for the grid only. */
 	private GameFiles files;
 
@@ -94,7 +101,8 @@ public class MapMatrix {
 			}
 			//should be at EOSection now
 			dis.close();
-			dis = new LittleEndianDataInputStream(new ByteArrayInputStream(f.getFile(1)));
+			camSection = f.getFile(1).clone();
+			dis = new LittleEndianDataInputStream(new ByteArrayInputStream(camSection));
 			boundaryEntries = dis.readInt();
 			for (int i = 0; i < boundaryEntries; i++) {
 				cambounds.add(new MatrixCameraBoundaries(dis));
@@ -234,28 +242,16 @@ public class MapMatrix {
 	 * @return the region id, or -1 if the file is unreadable or wholly empty
 	 */
 	public static int firstRegionId(byte[] mmContainer) {
-		if (mmContainer == null || mmContainer.length < 8) {
+		//THROUGH THE GRID (F248): this parsed the grid by hand beside the Grid that exists to read it,
+		//and answered from a grid cut short as though the cells it reached were the map
+		Grid grid;
+		try {
+			grid = Grid.of(mmContainer);
+		} catch (IllegalArgumentException unreadable) {
 			return -1;
 		}
-		//subfile 0's offset lives in the container header, right after the
-		//2-byte magic and 2-byte file count
-		int sub0 = i32(mmContainer, 4);
-		if (sub0 < 0 || sub0 + 8 > mmContainer.length) {
-			return -1;
-		}
-		int w = u16(mmContainer, sub0 + 4);
-		int h = u16(mmContainer, sub0 + 6);
-		for (int k = 0; k < w * h; k++) {
-			int at = sub0 + 8 + k * 2;
-			if (at + 1 >= mmContainer.length) {
-				break;
-			}
-			int id = u16(mmContainer, at);
-			if (id != 0xFFFF) {
-				return id;
-			}
-		}
-		return -1;
+		int k = grid.firstFilledCell();
+		return k < 0 ? -1 : grid.id(k);
 	}
 
 	public byte[] assembleData() {
@@ -305,7 +301,13 @@ public class MapMatrix {
 				cambounds.get(i).write(dos);
 			}
 			dos.close();
-			return out.toByteArray();
+			byte[] written = out.toByteArray();
+			if (camSection == null || camSection.length <= written.length) {
+				return written;
+			}
+			byte[] kept = camSection.clone();
+			System.arraycopy(written, 0, kept, 0, written.length);
+			return kept;
 		} catch (IOException ex) {
 			throw new IllegalStateException("the map matrix camera bounds could not be assembled: "
 					+ ctrmap.util.Bytes.reason(ex), ex);
@@ -314,7 +316,8 @@ public class MapMatrix {
 
 	public void write() {
 		file.storeFile(0, assembleData());
-		file.storeFile(1, assembleCamData());
+		camSection = assembleCamData();
+		file.storeFile(1, camSection);
 	}
 
 	/**
@@ -350,6 +353,7 @@ public class MapMatrix {
 		cambounds.clear();
 		cambounds.addAll(saved.cambounds);
 		boundaryEntries = saved.boundaryEntries;
+		camSection = saved.camSection;
 	}
 
 	/**
@@ -398,6 +402,20 @@ public class MapMatrix {
 
 		public int cells() {
 			return width * height;
+		}
+
+		/**
+		 * The first cell, in reading order, that holds a region - the map's top-left corner - or -1
+		 * when every cell is empty. One answer to "which region does this map start with" (F248): it
+		 * was four loops, two of them parsing the grid by hand.
+		 */
+		public int firstFilledCell() {
+			for (int k = 0; k < cells(); k++) {
+				if (id(k) != 0xFFFF) {
+					return k;
+				}
+			}
+			return -1;
 		}
 
 		/** Cell {@code k}'s region id, in reading order; 0xFFFF for an empty cell. */

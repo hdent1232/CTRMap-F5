@@ -41,6 +41,7 @@ public class NpcScriptGateTest {
 		theTemplatesWriteOnlyWhereTheyWereMeasured();
 		everyTemplateWriterIsHandedTheAnswer(root);
 		theLimitsAreTheProfilesOneAnswer(root);
+		aStreakVariableInUseIsSeen();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -91,6 +92,90 @@ public class NpcScriptGateTest {
 			}
 		}
 		check(wrong.isEmpty(), "and only the game the templates were measured on says it supports them" + (wrong.isEmpty() ? "" : " - not " + wrong));
+	}
+
+	/**
+	 * A streak variable another script uses is seen before a challenge takes it (F241). Every
+	 * challenge defaulted to 0x4020 and nothing looked, so two built with the defaults shared one
+	 * streak. The frames here are the wizard's own - read: push the id, call WorkGet; write: push the
+	 * value, push the id, call WorkSet - and retail's packed write. GauntletScriptTest asks the same
+	 * scan of what the real emitter wrote, over the dump.
+	 */
+	static void aStreakVariableInUseIsSeen() throws Exception {
+		System.out.println("--- a streak variable another script uses is seen before a challenge takes it (F241)");
+		ctrmap.formats.scripts.GFLPawnScript s = new ctrmap.formats.scripts.GFLPawnScript(HandedGameTest.amx());
+		s.decompressThis();
+		int get = native_(s, "WorkGet");
+		int set = native_(s, "WorkSet");
+		int other = native_(s, "PlayerGetBP");
+		frame(s, ctrmap.formats.scripts.PawnInstruction.Commands.PUSH_C, 0x4021, get);       //the wizard's read
+		frame(s, ctrmap.formats.scripts.PawnInstruction.Commands.PUSH_PRI, 0, -1);
+		frame(s, ctrmap.formats.scripts.PawnInstruction.Commands.PUSH_C, 0x4022, set);       //the wizard's write
+		frame(s, ctrmap.formats.scripts.PawnInstruction.Commands.PUSH_P_C, 7, -1);
+		frame(s, ctrmap.formats.scripts.PawnInstruction.Commands.PUSH_P_C, 0x4030, set);     //retail's packed write
+		frame(s, ctrmap.formats.scripts.PawnInstruction.Commands.PUSH_C, 0x4040, other);     //not a work call
+		frame(s, ctrmap.formats.scripts.PawnInstruction.Commands.PUSH_PRI, 0, get);          //an id not written down
+		java.util.Set<Integer> used = ctrmap.formats.scripts.GauntletScriptWizard.workVariablesUsed(s);
+		check(used.equals(new java.util.TreeSet<>(Arrays.asList(0x4021, 0x4022, 0x4030))),
+				"the scan sees the ids the wizard's read and write and retail's packed write name, and not a"
+				+ " constant handed to another native or an id computed at run time: " + hex(used));
+		final ctrmap.formats.scripts.GFLPawnScript zone0 = s;
+		ctrmap.formats.scripts.GauntletScriptWizard.WorkUsage u = ctrmap.formats.scripts.GauntletScriptWizard.workUsage(z -> {
+			if (z == 0) {
+				return zone0;
+			}
+			if (z == 2) {
+				throw new java.io.IOException("zone 2 cannot be read");
+			}
+			if (z == 3) {
+				throw new IllegalStateException("zone 3's script does not parse");
+			}
+			return null;
+		}, 4);
+		check(u.users(0x4021).equals(Arrays.asList(0)) && u.users(0x4040).isEmpty() && u.unread.equals(Arrays.asList(2, 3)),
+				"across zones: who uses each, and the zones that could not be read are said, not counted as using"
+				+ " nothing - users of 0x4021 " + u.users(0x4021) + ", unread " + u.unread);
+		check(u.nextFree(0x4020) == 0x4020 && u.nextFree(0x4021) == 0x4023,
+				"and the next free variable skips the used ones: from 0x4020 " + Integer.toHexString(u.nextFree(0x4020))
+				+ ", from 0x4021 " + Integer.toHexString(u.nextFree(0x4021)));
+	}
+
+	/** The native's index in the script's table, added when it is not there. */
+	private static int native_(ctrmap.formats.scripts.GFLPawnScript s, String name) {
+		int hash = ctrmap.scripts.GfHash.hashForName(name);
+		for (int i = 0; i < s.natives.size(); i++) {
+			if (s.natives.get(i).data[1] == hash) {
+				return i;
+			}
+		}
+		s.natives.add(new ctrmap.formats.scripts.PawnPrefixEntry(8, ctrmap.formats.scripts.PawnPrefixEntry.Type.NATIVE,
+				new int[]{0, hash}));
+		return s.natives.size() - 1;
+	}
+
+	/** Appends one push and, when {@code nativeIndex} is not -1, the call that follows it. */
+	private static void frame(ctrmap.formats.scripts.GFLPawnScript s, ctrmap.formats.scripts.PawnInstruction.Commands push,
+			int value, int nativeIndex) {
+		ctrmap.formats.scripts.PawnInstruction p = new ctrmap.formats.scripts.PawnInstruction(0, push.ordinal(), "");
+		if (p.argumentCells.length > 0) {
+			p.argumentCells[0] = value;
+		}
+		s.instructions.add(p);
+		if (nativeIndex >= 0) {
+			ctrmap.formats.scripts.PawnInstruction call = new ctrmap.formats.scripts.PawnInstruction(0,
+					ctrmap.formats.scripts.PawnInstruction.Commands.SYSREQ_N.ordinal(), "");
+			call.argumentCells[0] = nativeIndex;
+			call.argumentCells[1] = 4;
+			s.instructions.add(call);
+		}
+	}
+
+	private static String hex(java.util.Set<Integer> ids) {
+		List<String> out = new ArrayList<>();
+		for (int i : ids) {
+			out.add("0x" + Integer.toHexString(i));
+		}
+		return out.toString();
 	}
 
 	static final String PKG = "ctrmap/formats/scripts/";
@@ -176,7 +261,7 @@ public class NpcScriptGateTest {
 				}
 			}
 		}
-		check(askers.contains("ZoneScriptEdit.apply") && askers.contains("TilePainterForm.wireSigns")
+		check(askers.contains("ZoneScriptEdit.apply") && askers.contains("MapPainter.wireSigns")
 				&& askers.contains("NPCEditForm.addTrainer"),
 				"control: the production askers are found - " + askers.size() + ": " + askers);
 		check(named.isEmpty(), "and every one asks about the zone's game, never a game named in the code"

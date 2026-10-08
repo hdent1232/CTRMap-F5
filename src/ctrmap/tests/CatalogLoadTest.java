@@ -2,6 +2,7 @@ package ctrmap.tests;
 
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.BuildingCatalog;
+import ctrmap.tools.BuildingHarvester;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -143,6 +144,9 @@ public class CatalogLoadTest {
 		check(again != first && again.length == 2, "and a snapshot rewritten since is opened anew: " + again.length + " entries");
 
 		theTablesTheBuildShipsReadWholeOrSaySo();
+		aSmallThingIsFiledByItsBox(all);
+		aSearchFindsWhatAnEntryIs(all);
+		thePaletteListsTheCatalogUnderItsPlaces(all);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		System.exit(fails == 0 ? 0 : 1);
@@ -197,6 +201,23 @@ public class CatalogLoadTest {
 				&& ctrmap.formats.tilemap.TerrainCatalog.cliffDonor() != null,
 				"and every one of them reads: " + ctrmap.formats.tilemap.TerrainCatalog.donors().size() + " brushes and the cliff");
 
+		//one table for the run (F093): the brushes, the cliff and the churn were three caches, each
+		//filled by its own read when first asked, so a table swapped after the brushes were read gave
+		//the map its churn from another design. The shipped table has no LAVA_CHURN row; another that
+		//has one, set now, must not be the one the churn is answered from.
+		File other = new File(Scratch.dir("ctrmap_terrain_rows"), "other.tsv");
+		java.nio.file.Files.write(other.toPath(), ("GRASS\t1\t2\t3\tmat\tctr_kusa\nLAVA_CHURN\t7\t8\t9\tmagma\tctr_churn\n")
+				.getBytes(StandardCharsets.UTF_8));
+		System.setProperty("terrain", other.getAbsolutePath());
+		ctrmap.formats.tilemap.TerrainCatalog.Donor churn;
+		try {
+			churn = ctrmap.formats.tilemap.TerrainCatalog.churnDonor();
+		} finally {
+			System.clearProperty("terrain");
+		}
+		check(churn == null, "the churn row is the table's the brushes came from, read once for the run - not another"
+				+ " table's set later: " + (churn == null ? "none" : churn.injectName));
+
 		//the ground-material table: a bad row is refused by its line
 		String groundSaid;
 		try {
@@ -235,6 +256,259 @@ public class CatalogLoadTest {
 		BuildingCatalog.parse(failsAfter("house\tA\t1\t2\t0\t0\t3\t3\t0\t-1\t-1\t-\t-1\t-1\n"), "cut.tsv", true, cutInto, cutProblems);
 		check(cutInto.size() == 1 && cutProblems.size() == 1 && cutProblems.get(0).startsWith("cut.tsv could not be read past line 1"),
 				"and a building catalog whose read fails part way keeps what it read and says where it stopped: " + cutProblems);
+	}
+
+	/**
+	 * A lamp, a sign or a piece of decor whose box is a room's is filed as a structure and loses the
+	 * small thing's word from its name - in the catalog the release ships, and in what the harvester
+	 * writes next (F251).
+	 *
+	 * <p>The harvester's vote counts triangles and cannot see size: twelve triangles of lamp glass
+	 * outvoting the unrecognised rest filed seven 11x9 Sootopolis City rooms as lamps, and a search for
+	 * "lamp" offered rooms.
+	 */
+	static void aSmallThingIsFiledByItsBox(List<BuildingCatalog.Entry> all) throws Exception {
+		System.out.println("--- a lamp, sign or decor the size of a room is filed and named as a structure (F251)");
+		check(BuildingCatalog.kindFor("A_LAMP", 11, 9).equals(BuildingCatalog.STRUCTURE)
+				&& BuildingCatalog.kindFor("A_SIGN", 8, 5).equals(BuildingCatalog.STRUCTURE)
+				&& BuildingCatalog.kindFor("A_DECOR", 5, 8).equals(BuildingCatalog.STRUCTURE)
+				&& BuildingCatalog.kindFor("A_SIGN", 13, 3).equals("A_SIGN") && BuildingCatalog.kindFor("A_LAMP", 2, 2).equals("A_LAMP")
+				&& BuildingCatalog.kindFor("A_BUILDING", 11, 9).equals("A_BUILDING") && BuildingCatalog.kindFor("SIGN", 11, 9).equals("SIGN"),
+				"the rule's known answers: a lamp, sign or decor of " + BuildingCatalog.ROOM_TILES + " tiles or more is a"
+				+ " structure, of 39 it is itself, and no other kind - nor a curated one - is refiled");
+
+		//the misfiled rows, counted here from the shipped file itself, boxes counted at both ends
+		java.util.Set<String> misfiled = new java.util.HashSet<>();
+		String text = new String(java.nio.file.Files.readAllBytes(new File("src/ctrmap/resources/oras_buildings_auto.tsv").toPath()),
+				StandardCharsets.UTF_8);
+		int carryMaterial = 0, harvested = 0;
+		for (String line : text.split("\n")) {
+			String[] f = line.trim().split("\t");
+			if (line.trim().isEmpty() || line.trim().startsWith("#") || f.length < 14) {
+				continue;
+			}
+			harvested++;
+			carryMaterial += f.length >= 18 ? 1 : 0;
+			int w = Integer.parseInt(f[6]) - Integer.parseInt(f[4]) + 1, h = Integer.parseInt(f[7]) - Integer.parseInt(f[5]) + 1;
+			if ((f[0].equals("A_LAMP") || f[0].equals("A_SIGN") || f[0].equals("A_DECOR")) && w * h >= 40) {
+				misfiled.add(f[2] + ":" + f[4] + "," + f[5] + "," + f[6] + "," + f[7]);
+			}
+		}
+		//a table harvested before the rule files 15 rooms as lamps and signs; one harvested since, which
+		//carries the material column, must file none - the harvester asks the rule the catalog reads by
+		if (carryMaterial == 0) {
+			check(misfiled.size() == 15, "control: the shipped harvested table, written before F251, files 15 room-sized"
+					+ " cuts as lamps or signs: " + misfiled.size());
+		} else {
+			check(carryMaterial == harvested && misfiled.isEmpty(), "the shipped harvested table, written since F251, gives"
+					+ " every row its material and files no room-sized cut as a lamp, sign or decor: " + carryMaterial + " of "
+					+ harvested + " with a material, " + misfiled.size() + " misfiled");
+		}
+		int refiled = 0;
+		List<String> wrong = new ArrayList<>();
+		java.util.Set<String> autoNames = new java.util.HashSet<>();
+		int autoCount = 0;
+		for (BuildingCatalog.Entry e : all) {
+			boolean small = e.kind.equals("A_LAMP") || e.kind.equals("A_SIGN") || e.kind.equals("A_DECOR");
+			if (small && e.tilesW() * e.tilesH() >= BuildingCatalog.ROOM_TILES) {
+				wrong.add("\"" + e.name + "\" is still " + e.kind + " at " + e.tilesW() + "x" + e.tilesH());
+			}
+			if (misfiled.contains(e.donorRegion + ":" + e.tx0 + "," + e.ty0 + "," + e.tx1 + "," + e.ty1)) {
+				refiled++;
+				String rest = e.name.startsWith(e.location + " ") ? e.name.substring(e.location.length() + 1) : e.name;
+				if (!e.kind.equals(BuildingCatalog.STRUCTURE) || !rest.matches("structure( \\d+)?")) {
+					wrong.add("\"" + e.name + "\" (" + e.kind + ") was refiled but not named a structure of its place");
+				}
+			}
+			if (e.auto) {
+				autoCount++;
+				autoNames.add(e.name);
+			}
+		}
+		check(refiled == misfiled.size() && wrong.isEmpty(), "and the catalog offers each of them as a structure of its place, named so, and"
+				+ " no lamp, sign or decor of a room's size: " + refiled + " refiled, " + wrong);
+		check(autoNames.size() == autoCount, "and no harvested name is given twice by the renaming: " + autoNames.size()
+				+ " names for " + autoCount + " entries");
+
+		//the renaming numbers after every name already taken, wherever in the file it is
+		String tsv = "A_STRUCT\tTown structure\t1\t2\t0\t0\t1\t1\t0\t-1\t-1\t-\t-1\t-1\tTown\t1\taa\n"
+				+ "A_LAMP\tTown lamp\t1\t2\t0\t0\t10\t8\t0\t-1\t-1\t-\t-1\t-1\tTown\t1\tbb\n"
+				+ "A_LAMP\tTown lamp 2\t1\t2\t0\t0\t1\t1\t0\t-1\t-1\t-\t-1\t-1\tTown\t1\tcc\n"
+				+ "A_STRUCT\tTown structure 2\t1\t2\t0\t0\t1\t1\t0\t-1\t-1\t-\t-1\t-1\tTown\t1\tdd\n";
+		List<BuildingCatalog.Entry> into = new ArrayList<>();
+		BuildingCatalog.parse(new ByteArrayInputStream(tsv.getBytes(StandardCharsets.UTF_8)), "rename.tsv", true, into,
+				new ArrayList<>());
+		check(into.size() == 4 && into.get(1).name.equals("Town structure 3") && into.get(1).kind.equals(BuildingCatalog.STRUCTURE)
+				&& into.get(2).name.equals("Town lamp 2") && into.get(2).kind.equals("A_LAMP"),
+				"a refiled row takes the first structure number no row of the file holds, before or after it, and a lamp"
+				+ " of a lamp's size keeps its name: \"" + (into.size() > 1 ? into.get(1).name : "?") + "\"");
+
+		//the harvester files and names what it writes by the same rule
+		BuildingHarvester.Comp room = comp(0, 0, 11, 9, "lamp_glass", 12);
+		BuildingHarvester.Comp lamp = comp(0, 0, 2, 2, "lamp_glass", 12);
+		check(room.tilesW() == 11 && room.tilesH() == 9 && room.hint().equals("lamp") && lamp.tilesW() * lamp.tilesH() == 4,
+				"control: the harvester reads an 11x9 and a 2x2 component, both of lamp glass");
+		check(room.category().equals(BuildingCatalog.STRUCTURE) && room.noun().equals("structure")
+				&& lamp.category().equals("A_LAMP") && lamp.noun().equals("lamp"),
+				"and files the room as a structure named so, the lamp as a lamp: " + room.category() + " \"" + room.noun()
+				+ "\", " + lamp.category() + " \"" + lamp.noun() + "\"");
+		BuildingHarvester.Comp mixed = comp(0, 0, 3, 3, "lamp_glass", 12);
+		add(mixed, 0, 0, 3, 3, "chip_kabe_a", 20);
+		BuildingHarvester.Comp tied = comp(0, 0, 3, 3, "b_mat", 5);
+		add(tied, 0, 0, 3, 3, "a_mat", 5);
+		check(mixed.dominantMaterial().equals("chip_kabe_a") && tied.dominantMaterial().equals("a_mat")
+				&& new BuildingHarvester.Comp().dominantMaterial().isEmpty(),
+				"and names the material owning the most of a cut, a tie to the first by name: " + mixed.dominantMaterial()
+				+ ", " + tied.dominantMaterial());
+
+		//and the column it writes is read
+		String withMaterial = "A_STRUCT\tTown structure (yane_roof01)\t1\t2\t0\t0\t1\t1\t0\t-1\t-1\t-\t-1\t-1\tTown\t1\taa\tyane_roof01\n"
+				+ "A_STRUCT\tTown structure\t1\t2\t0\t0\t1\t1\t0\t-1\t-1\t-\t-1\t-1\tTown\t1\tbb\n";
+		List<BuildingCatalog.Entry> read = new ArrayList<>();
+		BuildingCatalog.parse(new ByteArrayInputStream(withMaterial.getBytes(StandardCharsets.UTF_8)), "material.tsv", true, read,
+				new ArrayList<>());
+		check(read.size() == 2 && read.get(0).material.equals("yane_roof01") && read.get(1).material.isEmpty(),
+				"a harvested table's material column is read, and a table harvested before it reads as none");
+	}
+
+	/** A harvester component of {@code faces} triangles of one material over a tile box. */
+	static BuildingHarvester.Comp comp(int tx, int ty, int w, int h, String material, int faces) {
+		BuildingHarvester.Comp c = new BuildingHarvester.Comp();
+		add(c, tx, ty, w, h, material, faces);
+		return c;
+	}
+
+	static void add(BuildingHarvester.Comp c, int tx, int ty, int w, int h, String material, int faces) {
+		float x0 = -360f + (tx + 0.5f) * 18f, z0 = -360f + (ty + 0.5f) * 18f;
+		float x1 = -360f + (tx + w - 0.5f) * 18f, z1 = -360f + (ty + h - 0.5f) * 18f;
+		for (int i = 0; i < faces; i++) {
+			c.addFace(new float[]{x0, 10, z0, x1, 10, z0, x1, 10, z1}, material);
+		}
+		c.computeTiles();
+	}
+
+	/**
+	 * A search finds an entry by any of its words - name, kind, place or material - and by its size, and
+	 * every word asked must be found (F251). It matched the whole search as one string against the name or
+	 * kind, and the harvested names say only where a cut came from and which bucket it fell in.
+	 */
+	static void aSearchFindsWhatAnEntryIs(List<BuildingCatalog.Entry> all) {
+		System.out.println("--- a search finds an entry by its words, its place, its material and its size (F251)");
+		BuildingCatalog.Entry league = new BuildingCatalog.Entry();
+		league.kind = "A_LAMP";
+		league.name = "Pokémon League lamp";
+		league.location = "Pokémon League";
+		league.material = "lamp_glass";
+		BuildingCatalog.Entry wide = new BuildingCatalog.Entry();
+		wide.kind = "A_ROCK";
+		wide.name = "Route 101 rock";
+		wide.tx1 = 10;
+		wide.ty1 = 10;
+		check(BuildingCatalog.matchesQuery(league, "") && BuildingCatalog.matchesQuery(league, "pokemon league")
+				&& BuildingCatalog.matchesQuery(league, "LAMP glass") && BuildingCatalog.matchesQuery(league, "1x1")
+				&& !BuildingCatalog.matchesQuery(league, "lamp rock") && !BuildingCatalog.matchesQuery(league, "1x2")
+				&& BuildingCatalog.matchesQuery(wide, "11x11 rock") && !BuildingCatalog.matchesQuery(wide, "1x1")
+				&& BuildingCatalog.matchesQuery(wide, "a_rock"),
+				"the rule's known answers: case and accents ignored, every word must be found, the material is read, and"
+				+ " a size names the box exactly - \"1x1\" is not an 11x11");
+		int lamps = 0, rooms = 0, sootopolis = 0;
+		boolean placed = true;
+		for (BuildingCatalog.Entry e : all) {
+			if (BuildingCatalog.matchesQuery(e, "lamp")) {
+				lamps++;
+				rooms += e.tilesW() * e.tilesH() >= BuildingCatalog.ROOM_TILES ? 1 : 0;
+			}
+			if (BuildingCatalog.matchesQuery(e, "sootopolis 11x9")) {
+				sootopolis++;
+				placed &= e.location.equals("Sootopolis City") && e.tilesW() == 11 && e.tilesH() == 9;
+			}
+		}
+		check(lamps > 0 && rooms == 0, "and over the catalog the release ships, \"lamp\" finds lamps and no room: " + lamps
+				+ " found, " + rooms + " of a room's size");
+		check(sootopolis >= 7 && placed, "and \"sootopolis 11x9\" finds Sootopolis City's 11x9 cuts and nothing else: "
+				+ sootopolis);
+	}
+
+	/**
+	 * The palette lists the catalog under one heading per place, the curated entries first and open, every
+	 * place closed until clicked or searched (F251) - it was one flat list of 3,583, a house reached by
+	 * arrowing through 2,130 "structure N" rows. And the dialog builds its list from exactly these.
+	 */
+	static void thePaletteListsTheCatalogUnderItsPlaces(List<BuildingCatalog.Entry> all) throws Exception {
+		System.out.println("--- the palette lists the catalog under its places, the curated first and open (F251)");
+		java.util.TreeSet<String> places = new java.util.TreeSet<>();
+		int curated = 0;
+		for (BuildingCatalog.Entry e : all) {
+			if (e.auto) {
+				places.add(e.location.isEmpty() ? "Unknown place" : e.location);
+			} else {
+				curated++;
+			}
+		}
+		check(curated == 48 && places.size() > 50, "control: the catalog holds the 48 curated entries and harvested ones from "
+				+ places.size() + " places");
+		java.util.Set<String> none = new java.util.HashSet<>();
+		List<Object> closed = ctrmap.humaninterface.BuildingPaletteDialog.rows(all, none, false);
+		List<String> headings = new ArrayList<>();
+		int headed = 0, entries = 0;
+		for (Object row : closed) {
+			if (row instanceof ctrmap.humaninterface.BuildingPaletteDialog.Heading) {
+				ctrmap.humaninterface.BuildingPaletteDialog.Heading h = (ctrmap.humaninterface.BuildingPaletteDialog.Heading) row;
+				headings.add(h.title);
+				headed += h.count;
+			} else {
+				entries++;
+			}
+		}
+		List<String> expected = new ArrayList<>();
+		expected.add(ctrmap.humaninterface.BuildingPaletteDialog.CURATED);
+		expected.addAll(places);
+		check(headings.equals(expected) && headed == all.size(), "one heading for the curated entries, then one per place in"
+				+ " order, and every entry under one of them: " + headings.size() + " headings over " + headed + " entries");
+		check(entries == curated && closed.get(1) instanceof BuildingCatalog.Entry && !((BuildingCatalog.Entry) closed.get(1)).auto,
+				"and only the curated heading starts open, its entries straight under it: " + entries + " entries listed");
+		//the place with the most entries, so a heading that opened onto a few would show
+		java.util.Map<String, Integer> perPlace = new java.util.HashMap<>();
+		for (BuildingCatalog.Entry e : all) {
+			if (e.auto) {
+				perPlace.merge(e.location, 1, Integer::sum);
+			}
+		}
+		String place = java.util.Collections.max(perPlace.entrySet(), java.util.Map.Entry.comparingByValue()).getKey();
+		List<Object> one = ctrmap.humaninterface.BuildingPaletteDialog.rows(all, new java.util.HashSet<>(java.util.Arrays.asList(place,
+				ctrmap.humaninterface.BuildingPaletteDialog.CURATED)), false);
+		int under = 0;
+		boolean ofThePlace = true;
+		for (Object row : one) {
+			if (row instanceof BuildingCatalog.Entry) {
+				under++;
+				ofThePlace &= place.equals(((BuildingCatalog.Entry) row).location);
+			}
+		}
+		int ofPlace = 0;
+		for (BuildingCatalog.Entry e : all) {
+			ofPlace += e.auto && e.location.equals(place) ? 1 : 0;
+		}
+		check(under == ofPlace && ofThePlace, "a clicked place opens with its entries under it, and a clicked curated heading"
+				+ " closes: " + under + " listed of " + place + "'s " + ofPlace);
+		List<Object> open = ctrmap.humaninterface.BuildingPaletteDialog.rows(all, none, true);
+		check(open.size() == all.size() + headings.size(), "and a search opens every heading: " + open.size() + " rows");
+
+		List<BuildingCatalog.Entry> lights = ctrmap.humaninterface.BuildingPaletteDialog.shown(all, "", "Lamps & lights", null);
+		List<BuildingCatalog.Entry> asked = ctrmap.humaninterface.BuildingPaletteDialog.shown(all, "sootopolis 11x9", null, null);
+		boolean allLamps = !lights.isEmpty();
+		for (BuildingCatalog.Entry e : lights) {
+			allLamps &= e.kind.equals("A_LAMP");
+		}
+		check(allLamps && asked.size() >= 7, "the dialog's filter narrows by type and answers the catalog's search: "
+				+ lights.size() + " lamps, " + asked.size() + " for \"sootopolis 11x9\"");
+
+		//the dialog's list is these two, at its one call site
+		String dialog = SourceSeamTest.stripComments(new String(java.nio.file.Files.readAllBytes(
+				new File("src/ctrmap/humaninterface/BuildingPaletteDialog.java").toPath()), StandardCharsets.UTF_8));
+		int calls = dialog.split("rows\\(shown\\(all, ", -1).length - 1;
+		check(calls == 1 && !dialog.contains(".name.toLowerCase().contains("), "and the palette dialog builds its list from"
+				+ " rows(shown(...)), with no search of its own: " + calls + " call(s)");
 	}
 
 	/** {@code text}, then a read that fails - a disk that went away part way through a file. */

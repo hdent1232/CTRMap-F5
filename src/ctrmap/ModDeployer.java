@@ -70,9 +70,11 @@ public class ModDeployer {
 	 * program could give.
 	 *
 	 * <p>These archives carry their own pre-edit copy instead, taken at the last
-	 * moment it is provably retail: the first time the editor writes to them
+	 * moment it is provably retail: the first time an edit to them is staged
 	 * ({@link ctrmap.formats.pokedata.ItemTable#baselineArchive}). Deploy diffs
 	 * against that, so it ships them when they were edited and not otherwise.
+	 * Staged is not packed: an item edit reaches the game, and so a deploy, the
+	 * way every other edit does - through Pack Workspace (F082).
 	 */
 	public static final ArchiveType[] MODDABLE_IN_PLACE = {
 		ArchiveType.ITEM_DATA
@@ -96,17 +98,40 @@ public class ModDeployer {
 	}
 
 	/**
-	 * Default Azahar mods folder for a title, or null if %APPDATA% is
-	 * unavailable OR no title id is known. A null id used to build
+	 * Default Azahar mods folder for a title on this machine's platform, or null if the platform's
+	 * user-data folder cannot be named OR no title id is known. A null id used to build
 	 * "...\mods\null"; a folder named after nothing is not a suggestion.
 	 */
 	public static File azaharModRoot(String titleId) {
-		String appdata = System.getenv("APPDATA");
-		if (appdata == null || titleId == null) {
+		return azaharModRoot(titleId, System.getProperty("os.name"), System.getenv(), System.getProperty("user.home"));
+	}
+
+	/**
+	 * The same, for a named platform (F023). Only the Windows folder was known - %APPDATA% - so on
+	 * macOS and Linux, where the portable release is advertised to run, the Deploy dialog opened with
+	 * no folder and the user had to find Azahar's themselves. Each platform's user-data folder by its
+	 * own convention: %APPDATA%\Azahar on Windows, ~/Library/Application Support/Azahar on macOS,
+	 * and $XDG_DATA_HOME/azahar-emu (~/.local/share/azahar-emu when unset) everywhere else. Null
+	 * when the platform's folder cannot be named, or no title id is known.
+	 */
+	public static File azaharModRoot(String titleId, String osName, java.util.Map<String, String> env, String home) {
+		if (titleId == null) {
 			return null;
 		}
-		return new File(appdata + File.separator + "Azahar" + File.separator + "load"
-				+ File.separator + "mods" + File.separator + titleId);
+		String os = osName == null ? "" : osName.toLowerCase(java.util.Locale.ROOT);
+		File user;
+		if (os.startsWith("windows")) {
+			String appdata = env.get("APPDATA");
+			user = appdata == null || appdata.isEmpty() ? null : new File(appdata, "Azahar");
+		} else if (os.startsWith("mac")) {
+			user = home == null || home.isEmpty() ? null : new File(new File(new File(home, "Library"), "Application Support"),
+					"Azahar");
+		} else {
+			String xdg = env.get("XDG_DATA_HOME");
+			user = xdg != null && !xdg.isEmpty() ? new File(xdg, "azahar-emu")
+					: home == null || home.isEmpty() ? null : new File(new File(new File(home, ".local"), "share"), "azahar-emu");
+		}
+		return user == null ? null : new File(new File(new File(user, "load"), "mods"), titleId);
 	}
 
 	/**
@@ -208,7 +233,7 @@ public class ModDeployer {
 				File orig = session == null ? null : session.pristineArchive(t);
 				changed = orig == null || !garcContentsEqual(live, orig);
 			} catch (Exception ex) {
-				r.skipped.add(rel + " (compare failed: " + ex.getMessage() + ")");
+				r.skipped.add(rel + " (compare failed: " + ctrmap.util.Bytes.reason(ex) + ")");
 				continue;
 			}
 			if (!changed) {
@@ -220,7 +245,7 @@ public class ModDeployer {
 				copyFile(live, new File(romfsOut.getAbsolutePath() + rel));
 				r.deployed.add(rel);
 			} catch (IOException ex) {
-				r.skipped.add(rel + " (copy failed: " + ex.getMessage() + ")");
+				r.skipped.add(rel + " (copy failed: " + ctrmap.util.Bytes.reason(ex) + ")");
 			}
 		}
 		//The in-place archives are diffed against the copy the editor took
@@ -236,7 +261,7 @@ public class ModDeployer {
 					copyFile(live, new File(romfsOut.getAbsolutePath() + rel));
 					r.deployed.add(rel);
 				} catch (IOException ex) {
-					r.skipped.add(rel + " (copy failed: " + ex.getMessage() + ")");
+					r.skipped.add(rel + " (copy failed: " + ctrmap.util.Bytes.reason(ex) + ")");
 				}
 			}
 		} else if (ctrmap.formats.pokedata.ItemTable.baselineArchive(Workspace.session()) != null) {
@@ -252,7 +277,7 @@ public class ModDeployer {
 				copyFile(codeIps, new File(new File(modRoot, "exefs"), "code.ips"));
 				r.codeIpsDeployed = true;
 			} catch (IOException ex) {
-				r.skipped.add("exefs/code.ips (copy failed: " + ex.getMessage() + ")");
+				r.skipped.add("exefs/code.ips (copy failed: " + ctrmap.util.Bytes.reason(ex) + ")");
 			}
 		}
 		return r;
@@ -356,8 +381,53 @@ public class ModDeployer {
 		} catch (IOException crossVolume) {
 			//fall through to a manual copy
 		}
-		copyTree(src, dst);
-		deleteTree(src);
+		copyThenRemove(src, dst, Files::delete);
+	}
+
+	/** Removes one file or empty folder - {@code Files::delete}, or a suite's held file. */
+	public interface Remover {
+		void remove(java.nio.file.Path path) throws IOException;
+	}
+
+	/**
+	 * The move's fallback - a copy, then the original removed - which ENDS WITH ONE COMPLETE MOD,
+	 * never two and never a partial one (F022). Any IOException sends the move here (a file the
+	 * emulator holds, not only another volume), and every delete's answer was dropped: the toggle
+	 * said it worked with both folders left behind, and deploy and both toggles then refused for
+	 * good ("already exists").
+	 *
+	 * <p>A file that cannot be removed means the original is now PART-removed, so its copy is the
+	 * only whole one and is not thrown away first: what was removed is put back from it, then the
+	 * copy goes, and the move is refused naming what is held. Only if putting back fails is the
+	 * copy kept, and the message says where. Public so the suite can hand it a held file.
+	 */
+	public static void copyThenRemove(File src, File dst, Remover remover) throws IOException {
+		try {
+			copyTree(src, dst);
+		} catch (IOException copyFailed) {
+			List<String> left = removeTree(dst, Files::delete);
+			throw new IOException("Could not copy " + src.getAbsolutePath() + " to " + dst.getAbsolutePath()
+					+ ": " + ctrmap.util.Bytes.reason(copyFailed) + (left.isEmpty() ? ""
+					: ". The partial copy could not be removed either: " + left), copyFailed);
+		}
+		List<String> held = removeTree(src, remover);
+		if (held.isEmpty()) {
+			return;
+		}
+		try {
+			restoreMissing(dst, src);
+		} catch (IOException cannotPutBack) {
+			throw new IOException("Could not move " + src.getAbsolutePath() + ": " + held.size()
+					+ " file(s) are held open (" + String.join("; ", held) + "), and the files already removed"
+					+ " could not be put back (" + ctrmap.util.Bytes.reason(cannotPutBack) + "). The complete mod"
+					+ " is at " + dst.getAbsolutePath() + " - close the emulator, then delete "
+					+ src.getAbsolutePath() + " and try again.", cannotPutBack);
+		}
+		List<String> copyLeft = removeTree(dst, Files::delete);
+		throw new IOException("Could not move " + src.getAbsolutePath() + ": " + held.size()
+				+ " file(s) are held open - close the emulator and try again. Nothing was moved. Held: "
+				+ String.join("; ", held) + (copyLeft.isEmpty() ? ""
+				: ". The copy at " + dst.getAbsolutePath() + " could not be removed either: " + copyLeft));
 	}
 
 	private static void copyTree(File src, File dst) throws IOException {
@@ -374,14 +444,45 @@ public class ModDeployer {
 		}
 	}
 
-	private static void deleteTree(File f) {
+	/**
+	 * Removes {@code f} and everything under it; answers what could NOT be removed, each with why.
+	 * A folder still holding a file it could not remove is not asked - that answer is the file's.
+	 */
+	private static List<String> removeTree(File f, Remover remover) {
+		List<String> held = new ArrayList<>();
 		File[] kids = f.listFiles();
 		if (kids != null) {
 			for (File k : kids) {
-				deleteTree(k);
+				held.addAll(removeTree(k, remover));
 			}
 		}
-		f.delete();
+		if (!held.isEmpty() || !f.exists()) {
+			return held;
+		}
+		try {
+			remover.remove(f.toPath());
+		} catch (IOException cannot) {
+			held.add(f.getAbsolutePath() + " (" + ctrmap.util.Bytes.reason(cannot) + ")");
+		}
+		return held;
+	}
+
+	/** Copies back into {@code to} every file of {@code from} that {@code to} no longer has. */
+	private static void restoreMissing(File from, File to) throws IOException {
+		if (from.isDirectory()) {
+			if (!to.isDirectory() && !to.mkdirs()) {
+				throw new IOException("could not make " + to.getAbsolutePath());
+			}
+			File[] kids = from.listFiles();
+			if (kids == null) {
+				throw new IOException("cannot list " + from.getAbsolutePath());
+			}
+			for (File k : kids) {
+				restoreMissing(k, new File(to, k.getName()));
+			}
+		} else if (!to.exists()) {
+			copyFile(from, to);
+		}
 	}
 
 	/** True when two GARCs hold identical decompressed contents (ignoring container/compression bytes). */

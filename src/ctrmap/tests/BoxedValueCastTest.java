@@ -34,9 +34,12 @@ public class BoxedValueCastTest {
 	 * over src: 2026-10-07, 148 in 20 files (grep -o over the same pattern agrees: 148), once the
 	 * Multizone tool's four reads of its zone field went through Number; then 119 in 18 files
 	 * (grep -o agrees: 119, 18), the camera form 21 of them down to 12 once its save read its
-	 * spinners through Number (F123), with the rest of this batch's form work.
+	 * spinners through Number (F123), with the rest of this batch's form work; then 118 on
+	 * 2026-10-08, a cast gone with the 2026-10-06 audit's low fixes; then 117 the same day, the NPC
+	 * form's second motion-code read gone into one (F104); then 116 the same day, the Zone tab's second
+	 * read of its flag-word box gone (F221).
 	 */
-	private static final int CEILING = 119;
+	private static final int CEILING = 116;
 
 	static final Pattern CAST = Pattern.compile(
 			"\\((Short|Integer|Float|Double|Long|Byte)\\)\\s*[A-Za-z_][A-Za-z0-9_.]*\\.getValue\\(\\)");

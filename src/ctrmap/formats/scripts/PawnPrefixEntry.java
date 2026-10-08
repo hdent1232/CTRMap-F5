@@ -1,7 +1,7 @@
 package ctrmap.formats.scripts;
 
-import ctrmap.LittleEndianDataInputStream;
-import ctrmap.LittleEndianDataOutputStream;
+import ctrmap.util.LittleEndianDataInputStream;
+import ctrmap.util.LittleEndianDataOutputStream;
 import java.io.IOException;
 
 public class PawnPrefixEntry {

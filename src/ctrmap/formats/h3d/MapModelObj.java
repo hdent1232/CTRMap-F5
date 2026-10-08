@@ -7,7 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import static ctrmap.formats.LittleEndian.f32;
+import static ctrmap.util.LittleEndian.f32;
 
 /**
  * Wavefront OBJ bridge for ORAS map models (the Blender workflow): exports a
@@ -124,38 +124,78 @@ public class MapModelObj {
 	 * more than 3 corners are fan-triangulated; negative indices are relative.
 	 */
 	public static List<ObjMesh> parse(java.io.BufferedReader r) throws IOException {
+		return parse(r, "the OBJ");
+	}
+
+	/**
+	 * {@link #parse(java.io.BufferedReader)}, naming {@code name} when it refuses. STRICT, AND THE ONE
+	 * OBJ READER (F070): a vertex short of three coordinates, a number that is not one, a face of fewer
+	 * than three corners and a corner naming a vertex that does not exist are each refused naming the
+	 * line. There were two readers - this one, and one for Map > OBJ to collisions that F044 had
+	 * already made strict, while this one threw an ArrayIndexOutOfBoundsException or a bare
+	 * NumberFormatException at the same input.
+	 */
+	public static List<ObjMesh> parse(java.io.BufferedReader r, String name) throws IOException {
 		List<float[]> vs = new ArrayList<>();
 		List<float[]> vts = new ArrayList<>();
 		List<float[]> vns = new ArrayList<>();
 		Map<String, List<long[]>> facesByGroup = new LinkedHashMap<>(); // corner = packed (v,vt,vn)
 		Map<String, String> matByGroup = new LinkedHashMap<>();
-		String group = "default";
+		String group = "default";   //faces with no object or group line before them belong to one of their own
 		String line;
+		int lineNo = 0;
 		while ((line = r.readLine()) != null) {
+			lineNo++;
 			line = line.trim();
-			if (line.startsWith("o ") || line.startsWith("g ")) {
-				group = line.substring(2).trim();
-			} else if (line.startsWith("usemtl ")) {
-				matByGroup.put(group, line.substring(7).trim());
-			} else if (line.startsWith("v ")) {
-				String[] p = line.split("\\s+");
-				vs.add(new float[]{Float.parseFloat(p[1]), Float.parseFloat(p[2]), Float.parseFloat(p[3])});
-			} else if (line.startsWith("vt ")) {
-				String[] p = line.split("\\s+");
-				vts.add(new float[]{Float.parseFloat(p[1]), p.length > 2 ? Float.parseFloat(p[2]) : 0f});
-			} else if (line.startsWith("vn ")) {
-				String[] p = line.split("\\s+");
-				vns.add(new float[]{Float.parseFloat(p[1]), Float.parseFloat(p[2]), Float.parseFloat(p[3])});
-			} else if (line.startsWith("f ")) {
-				String[] p = line.split("\\s+");
-				long[] corners = new long[p.length - 1];
-				for (int i = 1; i < p.length; i++) {
-					corners[i - 1] = parseCorner(p[i], vs.size(), vts.size(), vns.size());
-				}
-				List<long[]> faces = facesByGroup.computeIfAbsent(group, k -> new ArrayList<>());
-				for (int t = 2; t < corners.length; t++) { // fan-triangulate
-					faces.add(new long[]{corners[0], corners[t - 1], corners[t]});
-				}
+			if (line.isEmpty() || line.startsWith("#")) {
+				continue;
+			}
+			String[] p = line.split("\\s+");
+			switch (p[0]) {
+				case "o":
+				case "g":
+					if (p.length > 1) {
+						group = line.substring(2).trim();
+					}
+					break;
+				case "usemtl":
+					if (p.length > 1) {
+						matByGroup.put(group, line.substring(7).trim());
+					}
+					break;
+				case "v":
+					if (p.length < 4) {
+						throw bad(name, lineNo, "a vertex needs x, y and z");
+					}
+					vs.add(new float[]{number(p[1], name, lineNo), number(p[2], name, lineNo), number(p[3], name, lineNo)});
+					break;
+				case "vt":
+					if (p.length < 2) {
+						throw bad(name, lineNo, "a texture coordinate needs at least u");
+					}
+					vts.add(new float[]{number(p[1], name, lineNo), p.length > 2 ? number(p[2], name, lineNo) : 0f});
+					break;
+				case "vn":
+					if (p.length < 4) {
+						throw bad(name, lineNo, "a normal needs x, y and z");
+					}
+					vns.add(new float[]{number(p[1], name, lineNo), number(p[2], name, lineNo), number(p[3], name, lineNo)});
+					break;
+				case "f":
+					if (p.length < 4) {
+						throw bad(name, lineNo, "a face needs at least three corners");
+					}
+					long[] corners = new long[p.length - 1];
+					for (int i = 1; i < p.length; i++) {
+						corners[i - 1] = parseCorner(p[i], vs.size(), vts.size(), vns.size(), name, lineNo);
+					}
+					List<long[]> faces = facesByGroup.computeIfAbsent(group, k -> new ArrayList<>());
+					for (int t = 2; t < corners.length; t++) { // fan-triangulate, in the face's own winding
+						faces.add(new long[]{corners[0], corners[t - 1], corners[t]});
+					}
+					break;
+				default:
+					break;
 			}
 		}
 		//re-localize each group's corners to compact per-group vertex arrays
@@ -204,17 +244,79 @@ public class MapModelObj {
 	}
 
 	//corner packing: 21 bits each for v / vt+1 / vn+1 (index -1 = absent)
-	private static long parseCorner(String tok, int nv, int nvt, int nvn) {
+	private static long parseCorner(String tok, int nv, int nvt, int nvn, String name, int lineNo) throws IOException {
 		String[] parts = tok.split("/", -1);
-		int v = resolve(parts[0], nv);
-		int vt = parts.length > 1 && !parts[1].isEmpty() ? resolve(parts[1], nvt) : -1;
-		int vn = parts.length > 2 && !parts[2].isEmpty() ? resolve(parts[2], nvn) : -1;
+		int v = resolve(parts[0], nv, "vertex", name, lineNo);
+		int vt = parts.length > 1 && !parts[1].isEmpty() ? resolve(parts[1], nvt, "texture coordinate", name, lineNo) : -1;
+		int vn = parts.length > 2 && !parts[2].isEmpty() ? resolve(parts[2], nvn, "normal", name, lineNo) : -1;
 		return ((long) v << 42) | ((long) (vt + 1) << 21) | (vn + 1);
 	}
 
-	private static int resolve(String s, int count) {
-		int i = Integer.parseInt(s);
-		return i > 0 ? i - 1 : count + i;
+	/** A corner's index: 1-based, or negative counting back from the last one read; one that names nothing is refused. */
+	private static int resolve(String s, int count, String what, String name, int lineNo) throws IOException {
+		int i;
+		try {
+			i = Integer.parseInt(s);
+		} catch (NumberFormatException notAnIndex) {
+			throw bad(name, lineNo, "'" + s + "' is not a " + what + " index");
+		}
+		int at = i > 0 ? i - 1 : count + i;
+		if (i == 0 || at < 0 || at >= count) {
+			throw bad(name, lineNo, what + " " + i + " does not exist (" + count + " read so far)");
+		}
+		return at;
+	}
+
+	private static float number(String token, String name, int lineNo) throws IOException {
+		try {
+			return Float.parseFloat(token);
+		} catch (NumberFormatException notANumber) {
+			throw bad(name, lineNo, "'" + token + "' is not a number");
+		}
+	}
+
+	private static IOException bad(String name, int lineNo, String what) {
+		return new IOException(name + ", line " + lineNo + ": " + what + ".");
+	}
+
+	/**
+	 * The collision meshes an OBJ's faces make - Map > OBJ to collisions. Every face with area on the
+	 * ground plane, one triangle per fan corner; a wall has none there and is left out. Each group goes
+	 * to the next of the sixteen collision slots, round again after the sixteenth. EMPTY when no face is
+	 * left: sixteen empty meshes would replace a zone's whole collision with nothing (F044).
+	 */
+	public static ctrmap.formats.gfcollision.GRCollisionMesh[] collision(List<ObjMesh> meshes) {
+		List<List<ctrmap.formats.Triangle>> groups = new ArrayList<>();
+		int total = 0;
+		for (ObjMesh m : meshes) {
+			List<ctrmap.formats.Triangle> tris = new ArrayList<>();
+			for (int t = 0; t + 2 < m.triangles.length; t += 3) {
+				float[] a = m.positions[m.triangles[t]], b = m.positions[m.triangles[t + 1]], c = m.positions[m.triangles[t + 2]];
+				if (!flat(a, b, c)) {
+					tris.add(new ctrmap.formats.Triangle(new float[]{a[0], b[0], c[0]}, new float[]{a[1], b[1], c[1]},
+							new float[]{a[2], b[2], c[2]}));
+				}
+			}
+			groups.add(tris);
+			total += tris.size();
+		}
+		if (total == 0) {
+			return new ctrmap.formats.gfcollision.GRCollisionMesh[0];
+		}
+		ctrmap.formats.gfcollision.GRCollisionMesh[] out = new ctrmap.formats.gfcollision.GRCollisionMesh[16];
+		for (int i = 0; i < 16; i++) {
+			out[i] = new ctrmap.formats.gfcollision.GRCollisionMesh();
+		}
+		for (int i = 0; i < groups.size(); i++) {
+			out[i % 16].tris.addAll(groups.get(i));
+		}
+		return out;
+	}
+
+	/** Twice the area of the triangle's shadow on the ground plane is zero: a wall. */
+	private static boolean flat(float[] v0, float[] v1, float[] v2) {
+		return ctrmap.util.Bytes.impreciseFloatEquals(
+			v0[0] * (v1[2] - v2[2]) + v1[0] * (v2[2] - v0[2]) + v2[0] * (v0[2] - v1[2]), 0f);
 	}
 
 	private static int vOf(long c) {

@@ -81,7 +81,7 @@ public class PokePickers {
 				if (k == null) {
 					return;
 				}
-				int cur = parseLeadingInt(String.valueOf(table.getModel().getValueAt(row, col)));
+				int cur = ctrmap.util.Text.parseLeadingInt(String.valueOf(table.getModel().getValueAt(row, col)));
 				int picked = k == Kind.SPECIES ? pickSpecies(table, cur, game)
 						: k == Kind.MOVE ? pickMove(table, cur, game) : pickItem(table, cur, game);
 				if (picked >= 0) {
@@ -89,29 +89,6 @@ public class PokePickers {
 				}
 			}
 		});
-	}
-
-	/** First integer token of a cell string ("25  Pikachu" -> 25), or -1. */
-	public static int parseLeadingInt(String s) {
-		if (s == null) {
-			return -1;
-		}
-		int i = 0, n = s.length();
-		while (i < n && !Character.isDigit(s.charAt(i)) && s.charAt(i) != '-') {
-			i++;
-		}
-		int j = i;
-		if (j < n && s.charAt(j) == '-') {
-			j++;
-		}
-		while (j < n && Character.isDigit(s.charAt(j))) {
-			j++;
-		}
-		try {
-			return Integer.parseInt(s.substring(i, j));
-		} catch (RuntimeException ex) {
-			return -1;
-		}
 	}
 
 	private static int pick(Component parent, int current, Kind kind, String title, GameFiles game) {

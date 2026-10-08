@@ -1,6 +1,7 @@
 package ctrmap.formats.codepatch;
 
-import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.putI32;
 
 /**
  * Which icon each item draws - a {@code u32[776]} inside the ORAS EXECUTABLE,
@@ -37,7 +38,7 @@ public final class ItemIconTable {
 	public static final int FILE_OFFSET = 0x47C644;
 
 	/** Entries in the table - one per item, item id == index, so the profile's highest item id plus one (F205). */
-	public static final int COUNT = ctrmap.gamedef.GameProfile.of(ctrmap.gamedef.GameType.ORAS).itemIdMax() + 1;
+	public static final int COUNT = ctrmap.gamedef.GameProfile.onlyGameWith(ctrmap.gamedef.GameProfile.Feature.CODE_PATCHES).itemIdMax() + 1;
 
 	/** Where the NEXT table starts. FILE_OFFSET + COUNT*4 exactly: no slack. */
 	public static final int NEXT_TABLE = 0x47D264;
@@ -98,7 +99,7 @@ public final class ItemIconTable {
 	 * writing 3 KB over something else.
 	 */
 	public static int locate(byte[] code) {
-		int at = indexOf(code, ANCHOR);
+		int at = Ips.indexOf(code, ANCHOR, 0);
 		if (at < 0) {
 			return -1;
 		}
@@ -191,10 +192,7 @@ public final class ItemIconTable {
 		byte[] out = code.clone();
 		for (int i = 0; i < COUNT; i++) {
 			int p = FILE_OFFSET + i * 4;
-			out[p] = (byte) icons[i];
-			out[p + 1] = (byte) (icons[i] >> 8);
-			out[p + 2] = (byte) (icons[i] >> 16);
-			out[p + 3] = (byte) (icons[i] >> 24);
+			putI32(out, p, icons[i]);
 		}
 		return out;
 	}
@@ -203,27 +201,12 @@ public final class ItemIconTable {
 	 * The IPS for these assignments, diffed against the code.bin they came
 	 * from, ready to merge into the same code.ips as the zone and shop patches.
 	 *
-	 * <p>Shares {@link ShopData}'s IPS machinery on purpose. A second IPS
+	 * <p>Writes through {@link Ips}, the one IPS writer, on purpose. A second IPS
 	 * writer would be a second place for the merge to be subtly different, and
 	 * the merge is what lets one code.ips carry every executable patch.
 	 */
 	public static byte[] diffIPS(byte[] code, int[] icons) {
-		return ShopData.diffIPS(code, write(code, icons));
+		return Ips.diff(code, write(code, icons));
 	}
 
-	private static int indexOf(byte[] hay, byte[] needle) {
-		if (hay == null || hay.length < needle.length) {
-			return -1;
-		}
-		outer:
-		for (int i = 0; i <= hay.length - needle.length; i++) {
-			for (int j = 0; j < needle.length; j++) {
-				if (hay[i + j] != needle[j]) {
-					continue outer;
-				}
-			}
-			return i;
-		}
-		return -1;
-	}
 }

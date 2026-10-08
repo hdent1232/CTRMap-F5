@@ -32,15 +32,25 @@ import sys
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console window for a captured child (F184)
 
 LF = chr(10)
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+ROOT = _tree_root.require(__file__)
 LEDGER = os.path.join(ROOT, "OUTSTANDING.md")
+
+#: What the gate says when it could not read the queue (F192).
+UNREAD = ("OUTSTANDING.md cannot be read, or has no '## Open' section, so whether work is queued is UNKNOWN - which is not the same as nothing queued")
 
 #: An open item. A done one is `- [x]` and is deliberately kept.
 _OPEN = re.compile(r"^\s*-\s*\[ \]\s*(.+?)\s*$", re.M)
 
 
 def open_items(text=None):
-    """The open items under `## Open`, first line of each, in file order.
+    """The open items under `## Open`, first line of each, in file order - or None when the queue
+    cannot be read, or has no `## Open` section to read.
+
+    NONE IS NOT EMPTY (F192). This returned [] for a file it could not open, and gate() then let a
+    long measurement start with the queue unread - A QUERY THAT CANNOT READ ITS SUBJECT MUST NOT
+    REPORT IT ABSENT, in the one tool rule_map names for two of this project's rules.
 
     ONLY THAT SECTION, deliberately. A LIMITATION is not an item: "the script archive cannot
     be forked" can never be ticked, because it is not work anybody will do, and leaving it
@@ -51,23 +61,26 @@ def open_items(text=None):
         try:
             with io.open(LEDGER, encoding="utf-8", errors="replace") as handle:
                 text = handle.read()
-        except (OSError, subprocess.TimeoutExpired):
-            return []
+        except OSError:
+            return None
     start = text.find("## Open")
     if start < 0:
-        return []
+        return None
     rest = text[start + len("## Open"):]
     nxt = rest.find(LF + "## ")
     return [m.group(1) for m in _OPEN.finditer(rest if nxt < 0 else rest[:nxt])]
 
 
 def dirty_files():
-    """Tracked files with uncommitted changes. Empty when git cannot be asked."""
+    """Tracked files with uncommitted changes, or None when git could not be asked or did not answer
+    (not on PATH, timed out, not a repository): a git that cannot say is not a clean tree (F192)."""
     try:
         done = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT,
                               capture_output=True, text=True, timeout=60, creationflags=NO_WINDOW)
-    except (OSError, subprocess.TimeoutExpired):                                    # pragma: no cover - git not on PATH
-        return []
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if done.returncode != 0:
+        return None
     out = []
     for line in done.stdout.splitlines():
         name = line[3:].strip()
@@ -137,7 +150,9 @@ def blockers():
     """Why a long measurement must not start now. Empty means it may."""
     why = []
     items = open_items()
-    if items:
+    if items is None:
+        why.append(UNREAD)
+    elif items:
         why.append("OUTSTANDING.md has %d open item(s):" % len(items))
         for it in items[:8]:
             why.append("    - " + (it if len(it) < 100 else it[:97] + "..."))
@@ -145,7 +160,10 @@ def blockers():
             why.append("    (+%d more)" % (len(items) - 8))
     why.extend(unproven_plants())
     files = dirty_files()
-    if files:
+    if files is None:
+        why.append("git could not say whether the tree is clean, so whether it is still moving is "
+                   "UNKNOWN - which is not the same as clean")
+    elif files:
         why.append("%d file(s) have uncommitted changes, so the tree is still moving:" % len(files))
         for f in files[:8]:
             why.append("    " + f)
@@ -198,7 +216,9 @@ def gate(what, anyway):
     """
     items = open_items()
     why = []
-    if items:
+    if items is None:
+        why.append(UNREAD)
+    elif items:
         why.append("OUTSTANDING.md has %d open item(s):" % len(items))
         for it in items[:8]:
             why.append("    - " + (it if len(it) < 100 else it[:97] + "..."))
@@ -231,7 +251,11 @@ if __name__ == "__main__":
             reason = sys.argv[j + 1] if j + 1 < len(sys.argv) else ""
         raise SystemExit(gate(what, reason))
     if "--list" in sys.argv:
-        for it in open_items():
+        listed = open_items()
+        if listed is None:
+            print(UNREAD)
+            raise SystemExit(1)
+        for it in listed:
             print("- " + it)
         raise SystemExit(0)
     why = blockers()

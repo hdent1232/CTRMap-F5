@@ -41,9 +41,8 @@ import java.util.Map;
 public class ItemDataTest {
 
 	//Where the item table lives is a PER-GAME fact, so it comes from the gamedef
-	//seam rather than being written here. SourceSeamTest enforces that no RomFS
-	//path lives outside that package, and a suite is not exempt from the rule it
-	//exists to protect.
+	//seam rather than being written here. SourceSeamTest exempts the suites from
+	//that rule and counts what they still spell out (F154); this one spells none.
 	private static String itemArchive() {
 		String p = ctrmap.gamedef.GameProfile.of(GameType.ORAS)
 				.archivePath(ArchiveType.ITEM_DATA);
@@ -263,7 +262,8 @@ public class ItemDataTest {
 	/** Item names from gametext file 114, or null when they cannot be read. */
 	static List<String> itemNames(String romfs) {
 		try {
-			GARC text = new GARC(new File(romfs + "/a/0/7/3"));
+			GARC text = new GARC(new File(romfs + ctrmap.gamedef.GameProfile.of(GameType.ORAS)
+					.archivePath(ctrmap.gamedef.ArchiveType.GAMETEXT)));
 			byte[] raw = text.getDecompressedEntry(114);
 			return raw == null ? null : ctrmap.formats.text.GFMessageFile.getStrings(raw);
 		} catch (Throwable t) {

@@ -3,11 +3,9 @@ package ctrmap.tests;
 import ctrmap.formats.npcreg.NPCRegistry;
 import ctrmap.formats.npcreg.NPCRegistry.NPCRegistryEntry;
 import ctrmap.gamedef.ArchiveType;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.ArrayList;
 import java.util.Arrays;
 
 /**

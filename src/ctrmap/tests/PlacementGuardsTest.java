@@ -9,14 +9,13 @@ import ctrmap.formats.h3d.BuildingCatalog;
 import ctrmap.formats.h3d.GeoBoxOps;
 import ctrmap.formats.h3d.MapPrefab;
 import ctrmap.formats.h3d.RegionFactory;
+import ctrmap.formats.tilemap.PaintedGeometry;
 import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
 import ctrmap.formats.tilemap.Tilemap;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameType;
-import ctrmap.humaninterface.BuildingPaletteDialog;
-import ctrmap.humaninterface.TilePainterForm;
 import ctrmap.tools.BuildingHarvester;
 import java.awt.geom.Area;
 import java.awt.geom.Path2D;
@@ -82,7 +81,7 @@ import java.util.TreeSet;
  */
 public class PlacementGuardsTest {
 
-	static final int DIM = PaintedRegionBuilder.DIM;
+	static final int DIM = PaintedGeometry.DIM;
 
 	static int fails = 0;
 	static GARC garc;
@@ -142,7 +141,7 @@ public class PlacementGuardsTest {
 		RegionFactory.BlankContent bc = paintedPath();
 		byte[] model = bc.model, coll = bc.collision, tiles = bc.tilemap.clone();
 		try {
-			TilePainterForm.stampPlaced(bc, at(e, 5, 5), new int[DIM][DIM], null);
+			ctrmap.MapPainter.stampPlaced(bc, at(e, 5, 5), new int[DIM][DIM], null);
 			check(false, "a building that lost 33 of 36 pieces was applied as if it were whole");
 		} catch (IllegalStateException ex) {
 			check(ex.getMessage().contains("of 36"), "the partial stamp is refused and says how much was lost: " + ex.getMessage());
@@ -163,8 +162,8 @@ public class PlacementGuardsTest {
 		for (BuildingCatalog.Entry e : donors) {
 			RegionFactory.BlankContent bc = paintedPath();
 			byte[] before = bc.tilemap.clone();
-			MapPrefab p = BuildingPaletteDialog.cachedPrefab(e);
-			String note = TilePainterForm.stampPlaced(bc, at(e, 5, 5), new int[DIM][DIM], null);
+			MapPrefab p = ctrmap.formats.h3d.BuildingCatalog.prefab(ctrmap.Workspace.session(), e);
+			String note = ctrmap.MapPainter.stampPlaced(bc, at(e, 5, 5), new int[DIM][DIM], null);
 			int walls = 0, objects = 0, solidLost = 0;
 			Map<String, Integer> leaked = new TreeMap<>();
 			for (int y = 0; y < DIM; y++) {
@@ -204,7 +203,7 @@ public class PlacementGuardsTest {
 		//the Geometry tool's explicit "also update movement tiles" copies every
 		//tuple; its status line used to say "+N tiles" and nothing about what
 		//kinds - the same silence, one tool over
-		MapPrefab room = BuildingPaletteDialog.cachedPrefab(donors[1]);
+		MapPrefab room = ctrmap.formats.h3d.BuildingCatalog.prefab(ctrmap.Workspace.session(), donors[1]);
 		Map<String, Integer> kinds = new TreeMap<>();
 		for (int y = 0; y < room.tilesH; y++) {
 			for (int x = 0; x < room.tilesW; x++) {
@@ -265,7 +264,7 @@ public class PlacementGuardsTest {
 		for (BuildingCatalog.Entry e : raised) {
 			RegionFactory.BlankContent bc = paintedPath();
 			int before = new GfColl(bc.collision).uniqueTris.size();
-			String note = TilePainterForm.stampPlaced(bc, at(e, 5, 5), new int[DIM][DIM], null);
+			String note = ctrmap.MapPainter.stampPlaced(bc, at(e, 5, 5), new int[DIM][DIM], null);
 			int added = new GfColl(bc.collision).uniqueTris.size() - before;
 			check(added > 0, e.name + ": placement adds walkable collision (+" + added + ")");
 			check(note.contains(added + " collision"), e.name + ": Apply reports the collision it added: " + note.trim());
@@ -471,7 +470,7 @@ public class PlacementGuardsTest {
 	static void passengersAreNamed() throws Exception {
 		BuildingCatalog.Entry room = entry("Littleroot Town lamp", 510, 114, 6, 6, 22, 22, 0);
 		BuildingCatalog.Entry fence = entry("Route 110 fence 2", 185, 28, 15, 11, 19, 18, -9);
-		MapPrefab p = BuildingPaletteDialog.cachedPrefab(room);
+		MapPrefab p = ctrmap.formats.h3d.BuildingCatalog.prefab(ctrmap.Workspace.session(), room);
 		check(p != null && p.pieces.size() > 20, "fixture: the \"lamp\" is a room of " + (p == null ? 0 : p.pieces.size()) + " pieces");
 		if (p == null) {
 			return;
@@ -493,29 +492,29 @@ public class PlacementGuardsTest {
 		check(p.heightSpan()[0] == lo && p.heightSpan()[1] == hi, "the manifest's height span is the pieces' own: "
 				+ Arrays.toString(p.heightSpan()) + " vs " + lo + ".." + hi);
 		RegionFactory.BlankContent base = paintedPath();
-		String manifest = BuildingPaletteDialog.manifest(p, p.stampGeometry(base.model, 5, 5, 0), room);
+		String manifest = p.manifest(p.stampGeometry(base.model, 5, 5, 0), room.baseY);
 		check(manifest.contains(tris + " triangles") && manifest.contains(Math.round(hi) + " above ground"),
 				"the palette's manifest carries the count and the span: " + manifest);
 		check(manifest.contains("rides along") && manifest.contains("shadow") && manifest.contains("floor"),
 				"the palette names the room's passengers - its shadow decal and floors - by class: " + manifest);
-		MapPrefab pf = BuildingPaletteDialog.cachedPrefab(fence);
-		String fenceManifest = pf == null ? "" : BuildingPaletteDialog.manifest(pf, pf.stampGeometry(base.model, 5, 5, 9), fence);
+		MapPrefab pf = ctrmap.formats.h3d.BuildingCatalog.prefab(ctrmap.Workspace.session(), fence);
+		String fenceManifest = pf == null ? "" : pf.manifest(pf.stampGeometry(base.model, 5, 5, 9), fence.baseY);
 		check(fenceManifest.contains("sea/water"), "the palette names the fence's sea plane: " + fenceManifest);
 		//Apply's own account repeats it
-		String note = TilePainterForm.stampPlaced(paintedPath(), at(room, 5, 5), new int[DIM][DIM], null);
+		String note = ctrmap.MapPainter.stampPlaced(paintedPath(), at(room, 5, 5), new int[DIM][DIM], null);
 		check(note.contains(tris + " triangles") && note.contains("rides along") && note.contains("shadow"),
 				"Apply's account of a placed building repeats the count and names the passengers: " + note.trim());
 		//and the confirmation before it lists the same manifest
-		String summary = TilePainterForm.placedSummary(at(room, 5, 5));
+		String summary = ctrmap.MapPainter.placedSummary(at(room, 5, 5));
 		check(summary.contains(room.name) && summary.contains(tris + " triangles") && summary.contains("rides along"),
 				"Apply's confirmation lists each building's manifest: " + summary);
 		//the palette's checkbox: the passengers stay behind, and the account says so
 		int riders = p.passengers().size();
 		check(riders > 0 && p.withoutPassengers().pieces.size() == p.pieces.size() - riders,
 				"leaving the passengers behind drops exactly them (" + riders + " of " + p.pieces.size() + " pieces)");
-		java.util.List<TilePainterForm.Placed> alone = new ArrayList<>();
-		alone.add(new TilePainterForm.Placed(room, 5, 5, false));
-		String left = TilePainterForm.stampPlaced(paintedPath(), alone, new int[DIM][DIM], null);
+		java.util.List<ctrmap.MapPainter.Placed> alone = new ArrayList<>();
+		alone.add(new ctrmap.MapPainter.Placed(room, 5, 5, false));
+		String left = ctrmap.MapPainter.stampPlaced(paintedPath(), alone, new int[DIM][DIM], null);
 		check(left.contains((p.pieces.size() - riders) + " piece(s)") && left.contains("left behind") && left.contains("shadow"),
 				"a building placed without its passengers stamps the structure alone and says what stayed: " + left.trim());
 	}
@@ -541,7 +540,7 @@ public class PlacementGuardsTest {
 	 */
 	static void nothingButPassengersIsRefused() throws Exception {
 		BuildingCatalog.Entry sea = entry("open sea patch", 40, 0, 4, 24, 11, 31, 0);
-		MapPrefab p = BuildingPaletteDialog.cachedPrefab(sea);
+		MapPrefab p = ctrmap.formats.h3d.BuildingCatalog.prefab(ctrmap.Workspace.session(), sea);
 		check(p != null && !p.pieces.isEmpty() && p.passengers().size() == p.pieces.size(),
 				"fixture: region 40's (4,24)-(11,31) cut is nothing but passengers ("
 				+ (p == null ? "no cut" : p.passengers().size() + " of " + p.pieces.size()
@@ -550,22 +549,22 @@ public class PlacementGuardsTest {
 			return;
 		}
 		//with them: a real stamp, so the donor itself is placeable
-		java.util.List<TilePainterForm.Placed> with = new ArrayList<>();
-		with.add(new TilePainterForm.Placed(sea, 5, 5, true));
+		java.util.List<ctrmap.MapPainter.Placed> with = new ArrayList<>();
+		with.add(new ctrmap.MapPainter.Placed(sea, 5, 5, true));
 		RegionFactory.BlankContent kept = paintedPath();
 		byte[] beforeModel = kept.model;
-		String note = TilePainterForm.stampPlaced(kept, with, new int[DIM][DIM], null);
+		String note = ctrmap.MapPainter.stampPlaced(kept, with, new int[DIM][DIM], null);
 		check(kept.model != beforeModel && note.contains(p.triangleCount() + " triangles"),
 				"placed WITH its passengers the sea patch stamps its " + p.triangleCount()
 				+ " triangles: " + note.trim());
 
 		//without them: nothing to place, and the map is left exactly as it was
-		java.util.List<TilePainterForm.Placed> without = new ArrayList<>();
-		without.add(new TilePainterForm.Placed(sea, 5, 5, false));
+		java.util.List<ctrmap.MapPainter.Placed> without = new ArrayList<>();
+		without.add(new ctrmap.MapPainter.Placed(sea, 5, 5, false));
 		RegionFactory.BlankContent bc = paintedPath();
 		byte[] model = bc.model, coll = bc.collision, tiles = bc.tilemap.clone();
 		try {
-			String applied = TilePainterForm.stampPlaced(bc, without, new int[DIM][DIM], null);
+			String applied = ctrmap.MapPainter.stampPlaced(bc, without, new int[DIM][DIM], null);
 			check(false, "a building with every piece left behind was placed anyway: " + applied.trim());
 		} catch (IllegalStateException ex) {
 			String m = String.valueOf(ex.getMessage());
@@ -703,9 +702,9 @@ public class PlacementGuardsTest {
 		return e;
 	}
 
-	static List<TilePainterForm.Placed> at(BuildingCatalog.Entry e, int tx, int ty) {
-		List<TilePainterForm.Placed> placed = new ArrayList<>();
-		placed.add(new TilePainterForm.Placed(e, tx, ty));
+	static List<ctrmap.MapPainter.Placed> at(BuildingCatalog.Entry e, int tx, int ty) {
+		List<ctrmap.MapPainter.Placed> placed = new ArrayList<>();
+		placed.add(new ctrmap.MapPainter.Placed(e, tx, ty));
 		return placed;
 	}
 

@@ -156,9 +156,9 @@ public class ZoneWrittenElsewhereTest {
 		check(stale >= 0 && replaced >= 0 && opened > replaced,
 				"opening a zone reads its slot again when the file changed, and the table holds the new read before it opens");
 		String mf = SourceSeamTest.stripComments(DialogSeamTest.read(new File(root, "ctrmap/CtrmapMainframe.java")));
-		String empty = PropEditFormGuardsTest.body(mf, "private static void emptyZoneAction(");
-		String rename = PropEditFormGuardsTest.body(mf, "private static void renameZoneAction(");
-		String connect = PropEditFormGuardsTest.body(mf, "private static void connectZonesAction(");
+		String empty = PropEditFormGuardsTest.body(mf, "private void emptyZoneAction(");
+		String rename = PropEditFormGuardsTest.body(mf, "private void renameZoneAction(");
+		String connect = PropEditFormGuardsTest.body(mf, "private void connectZonesAction(");
 		check(empty != null && empty.indexOf("reopenIfWritten();") > empty.indexOf("ZoneManager.clearZone(")
 				&& rename != null && rename.indexOf("reopenIfWritten();") > rename.indexOf("ZoneManager.renameZone(game, idx, name)")
 				&& connect != null && connect.contains("reopenIfWritten();"),

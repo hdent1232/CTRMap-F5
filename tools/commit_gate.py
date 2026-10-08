@@ -66,20 +66,10 @@ LF = chr(10)
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
 
-def _root():
-    """The repository root - the nearest ancestor of this file holding `.git` or `.githooks`."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    while True:
-        if os.path.exists(os.path.join(here, ".git")) or os.path.isdir(
-                os.path.join(here, ".githooks")):
-            return here
-        parent = os.path.dirname(here)
-        if parent == here:
-            return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        here = parent
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
 
-
-ROOT = _root()
+ROOT = _tree_root.require(__file__)
 
 #: Where a guard can live. A fix touching none of these carried nothing that would catch it again.
 #: ... and every folder a hook is asked from, which `guard_paths` adds: the bundle's hooks may
@@ -103,7 +93,7 @@ COAUTHOR_SHAPE = re.compile(r"^Co-Authored-By: Claude(?: [^<>\n]*\S)? <noreply@a
 #: Keep it EMPTY unless the project has declared such a path somewhere a reviewer sees it.
 SUBJECT_EXCLUDE = ()
 
-#: Adapted per project: see ADAPT.md.
+#: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("GUARD_PATHS", "RECORD", "LEDGER", "COAUTHOR_SHAPE", "SUBJECT_EXCLUDE")
 
 GUARD_KINDS = ("refusal", "detector", "convention")

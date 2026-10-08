@@ -19,5 +19,7 @@ public enum ContentType {
 	MAPMATRIX,
 	PROP_REGISTRY,
 	ZONE_HEADER,
-	ZONE_ENTITIES
+	ZONE_ENTITIES,
+	/** AreaData subfile {@link AD#ENVIRONMENT}: the fog and lighting block {@link ctrmap.formats.area.AreaEnv} reads. */
+	AREA_ENVIRONMENT
 }

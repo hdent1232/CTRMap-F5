@@ -3,9 +3,7 @@ package ctrmap.tests;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.text.GFMessageFile;
 import java.io.File;
-import java.nio.file.Files;
 import java.util.List;
-import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Verifies the reference-data decode PokeData relies on (reads the GARCs
@@ -72,7 +70,7 @@ public class PokeDataTest {
 	}
 
 	static int[] move(byte[] mini, int mv) {
-		int o = i32(mini, 4 + mv * 4);
+		int o = ctrmap.formats.containers.ContainerBytes.offsets(mini)[mv];
 		return new int[]{mini[o] & 0xFF, mini[o + 2] & 0xFF, mini[o + 3] & 0xFF};
 	}
 

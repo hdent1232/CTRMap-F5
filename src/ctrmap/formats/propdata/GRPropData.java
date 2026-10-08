@@ -1,8 +1,8 @@
 
 package ctrmap.formats.propdata;
 
-import ctrmap.LittleEndianDataInputStream;
-import ctrmap.LittleEndianDataOutputStream;
+import ctrmap.util.LittleEndianDataInputStream;
+import ctrmap.util.LittleEndianDataOutputStream;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.mapmatrix.MapMatrix;
 import java.io.ByteArrayInputStream;

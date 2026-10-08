@@ -8,7 +8,6 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import static ctrmap.formats.LittleEndian.i32;
 import ctrmap.formats.containers.ContainerBytes;
 
 /**
@@ -65,8 +64,9 @@ public class ZoneRemover {
 		//THE ONE READER, AT THE MEASURED ZONE COUNT (F013). This took the table at entry
 		//"count - 2" and accepted any table of at least 536 rows, so a table that did not
 		//match the zone count was cut to 536 rows whatever it had held. Appending zones is
-		//Omega Ruby / Alpha Sapphire's alone (BASE_ZONES is its count), so its profile answers.
-		int zones = ctrmap.ZoneTables.zoneCount(zo, ctrmap.gamedef.GameProfile.of(ctrmap.gamedef.GameType.ORAS));
+		//the one game that supports it alone (BASE_ZONES is its count), so its profile answers (F207).
+		int zones = ctrmap.ZoneTables.zoneCount(zo, ctrmap.gamedef.GameProfile.onlyGameWith(
+				ctrmap.gamedef.GameProfile.Feature.ZONE_APPEND));
 		if (zones <= BASE_ZONES) {
 			return null;
 		}
@@ -102,7 +102,7 @@ public class ZoneRemover {
 		}
 		int enCount = ctrmap.formats.containers.ContainerBytes.count(enBytes);
 		byte[] enOut = enCount == BASE_ZONES ? enBytes
-			: ctrmap.ZoneAppender.truncateEN(enBytes, enCount, BASE_ZONES);
+			: ctrmap.formats.encounters.EnPack.parse(enBytes, enCount).truncatedTo(BASE_ZONES).bytes();
 		stored.add(zo.isEntryCompressed(enIdx) ? LZ11.compress(enOut) : enOut);
 		return stored;
 	}
@@ -241,11 +241,11 @@ public class ZoneRemover {
 			}
 			ZoneEntities ent;
 			try {
-				int o0 = i32(z, 4 + 4), o1 = i32(z, 4 + 2 * 4);
-				if (ContainerBytes.count(z) < 2 || o0 < 0 || o1 > z.length || o1 <= o0) {
+				byte[] block = ContainerBytes.subfile(z, 1);
+				if (block == null || block.length == 0) {
 					throw new IllegalStateException("its container has no whole entity block");
 				}
-				ent = new ZoneEntities(java.util.Arrays.copyOfRange(z, o0, o1));
+				ent = new ZoneEntities(block);
 			} catch (RuntimeException unread) {
 				out.add("zone " + i + "'s warps could not be read (" + Ui.reason(unread) + "), so they are not checked");
 				continue;

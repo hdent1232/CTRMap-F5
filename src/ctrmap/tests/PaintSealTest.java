@@ -3,6 +3,7 @@ package ctrmap.tests;
 import ctrmap.formats.gfcollision.GfColl;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.RegionFactory;
+import ctrmap.formats.tilemap.PaintedGeometry;
 import ctrmap.formats.tilemap.PaintedHeights;
 import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainLighting;
@@ -41,9 +42,9 @@ import java.util.List;
  */
 public class PaintSealTest {
 
-	static final int DIM = PaintedRegionBuilder.DIM;
-	static final float TILE = PaintedRegionBuilder.TILE;
-	static final float ORIGIN = PaintedRegionBuilder.ORIGIN;
+	static final int DIM = PaintedGeometry.DIM;
+	static final float TILE = PaintedGeometry.TILE;
+	static final float ORIGIN = PaintedGeometry.ORIGIN;
 
 	/**
 	 * How far into the low side a sight line reaches, in tiles. A two-level face leans a whole

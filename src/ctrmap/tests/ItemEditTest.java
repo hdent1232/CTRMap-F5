@@ -29,8 +29,9 @@ import java.util.List;
  * directory and repacking, which rebuilds that offset table on every save - and
  * this project has already repaired a zone by hand after a pack wrote a stale
  * one. An item edit does not need any of that: the record is exactly as long as
- * the one it replaces, so the writer seeks and pokes 36 bytes. This suite is
- * what makes "and nothing else moved" a fact instead of an intention:
+ * the one it replaces, so the save stages it in the workspace and the pack
+ * writes those 36 bytes over their own (F082). This suite is what makes "and
+ * nothing else moved" a fact instead of an intention:
  * <ul>
  * <li>the archive's length is unchanged;</li>
  * <li>every byte outside the edited record is identical, header and offset
@@ -78,15 +79,13 @@ public class ItemEditTest {
 			return;
 		}
 		File tmp = Scratch.dir("ctrmap_item_edit");
-		File work = new File(tmp, "itemdata");
-		Files.copy(src.toPath(), work.toPath(), StandardCopyOption.REPLACE_EXISTING);
-		File baseline = new File(tmp, "baseline");
+		FakeGameFiles game = itemGame(src);
 
-		anEditChangesOnlyWhatWasEdited(work, baseline);
-		theArchiveIsNotRepacked(work, src);
-		refusesWhatWouldLandWrong(work, baseline);
-		fourSlotsAreFreeAndNotFive(work, args[0]);
-		theBaselineIsTakenOnceAndNeverRetaken(tmp, src);
+		anEditChangesOnlyWhatWasEdited(game);
+		theArchiveIsNotRepacked(game.archiveFile(ArchiveType.ITEM_DATA), src);
+		refusesWhatWouldLandWrong(game);
+		fourSlotsAreFreeAndNotFive(game, args[0]);
+		theBaselineIsTakenOnceAndNeverRetaken(src);
 		//last two: they repoint the Workspace statics at a scratch game
 		deployShipsItOnlyWhenItWasEdited(tmp, src);
 		theEditorRefusesBeforeItBuildsAnything();
@@ -101,11 +100,22 @@ public class ItemEditTest {
 	/** Ultra Ball: a well-known record, and one whose price we can state. */
 	private static final int ULTRA_BALL = 2;
 
-	static void anEditChangesOnlyWhatWasEdited(File work, File baseline) throws Exception {
+	/**
+	 * A game holding a copy of the retail item archive. An item save is staged in the game's
+	 * workspace and the pack writes it in place (F082), so the table is opened on a game - there is
+	 * no other way to open one - and {@link HandedGameTest#packItems} is that pack.
+	 */
+	static FakeGameFiles itemGame(File pristine) throws Exception {
+		FakeGameFiles g = new FakeGameFiles().plantArchive(ArchiveType.ITEM_DATA, Files.readAllBytes(pristine.toPath()));
+		return g.open(ArchiveType.ITEM_DATA, new GARC(g.archiveFile(ArchiveType.ITEM_DATA), false));
+	}
+
+	static void anEditChangesOnlyWhatWasEdited(FakeGameFiles game) throws Exception {
 		System.out.println("--- an edited record writes back byte-identical except the field changed");
+		File work = game.archiveFile(ArchiveType.ITEM_DATA);
 		byte[] before = Files.readAllBytes(work.toPath());
 
-		ItemTable t = ItemTable.open(work, baseline);
+		ItemTable t = ItemTable.open(game);
 		byte[] rec = t.raw(ULTRA_BALL);
 		check(rec != null && new ItemData(rec).buyPrice() == 1200,
 				"Ultra Ball reads as the retail record before the edit (price "
@@ -115,6 +125,9 @@ public class ItemEditTest {
 		byte[] edited = rec.clone();
 		price.set(edited, 999);
 		t.writeRecord(ULTRA_BALL, edited);
+		check(Arrays.equals(before, Files.readAllBytes(work.toPath())) && game.editedEntry(ArchiveType.ITEM_DATA, ULTRA_BALL) != null,
+				"the save is staged, and the game's archive is not written until a pack (F082)");
+		HandedGameTest.packItems(game);
 
 		byte[] after = Files.readAllBytes(work.toPath());
 		check(before.length == after.length,
@@ -140,15 +153,17 @@ public class ItemEditTest {
 		check(allInsideTheField, "every changed byte in the whole 43 KB archive lies inside the two"
 				+ " bytes of the field that was edited" + (allInsideTheField ? "" : " - changed " + changed));
 
-		ItemTable back = ItemTable.open(work, baseline);
-		check(back.record(ULTRA_BALL).priceRaw() == 999, "and the new price reads back");
+		ItemTable back = ItemTable.open(game);
+		check(back.record(ULTRA_BALL).priceRaw() == 999
+				&& new ItemData(new GARC(work, false).getDecompressedEntry(ULTRA_BALL)).priceRaw() == 999,
+				"and the new price reads back, from the packed archive too");
 		check(back.record(ULTRA_BALL).heldEffect() == new ItemData(rec).heldEffect()
 				&& back.record(ULTRA_BALL).sortIndex() == new ItemData(rec).sortIndex(),
 				"while the rest of the same record is untouched");
 	}
 
 	static void theArchiveIsNotRepacked(File work, File pristine) throws Exception {
-		System.out.println("--- a record written in place does not repack the archive");
+		System.out.println("--- a record packed in place does not repack the archive");
 		byte[] live = Files.readAllBytes(work.toPath());
 		byte[] orig = Files.readAllBytes(pristine.toPath());
 		check(live.length == orig.length, "same length as the retail archive");
@@ -197,20 +212,20 @@ public class ItemEditTest {
 				+ differing + " differed)");
 	}
 
-	static void refusesWhatWouldLandWrong(File work, File baseline) throws Exception {
+	static void refusesWhatWouldLandWrong(FakeGameFiles game) throws Exception {
 		System.out.println("--- a write that could land in the wrong place is refused, not attempted");
-		ItemTable t = ItemTable.open(work, baseline);
+		ItemTable t = ItemTable.open(game);
 		//A payload of NON-ZERO bytes, on purpose. Zeros made the check pass for
 		//the wrong reason while this suite was being proven: item 0's record is
 		//all zeros, so a rejected write of zeros over it leaves the file
 		//identical whether it was rejected or not.
-		check(refuses(t, work, 0, filled(ItemData.SIZE - 1)),
+		check(refuses(t, game, 0, filled(ItemData.SIZE - 1)),
 				"a record that is not " + ItemData.SIZE + " bytes");
-		check(refuses(t, work, 0, filled(ItemData.SIZE + 1)), "or one byte too long");
-		check(refuses(t, work, -1, filled(ItemData.SIZE)), "a negative id");
-		check(refuses(t, work, t.count(), filled(ItemData.SIZE)),
+		check(refuses(t, game, 0, filled(ItemData.SIZE + 1)), "or one byte too long");
+		check(refuses(t, game, -1, filled(ItemData.SIZE)), "a negative id");
+		check(refuses(t, game, t.count(), filled(ItemData.SIZE)),
 				"an id past the end of the table - this editor does not raise the 776 ceiling");
-		check(refuses(t, work, t.count() + 5000, filled(ItemData.SIZE)), "and one far past it");
+		check(refuses(t, game, t.count() + 5000, filled(ItemData.SIZE)), "and one far past it");
 	}
 
 	/**
@@ -220,7 +235,8 @@ public class ItemEditTest {
 	 * suite: deleting the record-length check let a 35-byte write through, the
 	 * read-back then died on an index, and a check that only asked for an
 	 * exception scored that as a refusal - while 35 bytes of the user's archive
-	 * had already been overwritten. The file is the witness, not the stack.
+	 * had already been overwritten. The files are the witness, not the stack: the
+	 * game's archive, and the staged copy of the entry with the list of edits (F082).
 	 */
 	static byte[] filled(int n) {
 		byte[] b = new byte[n];
@@ -228,8 +244,11 @@ public class ItemEditTest {
 		return b;
 	}
 
-	static boolean refuses(ItemTable t, File archive, int id, byte[] rec) throws Exception {
+	static boolean refuses(ItemTable t, FakeGameFiles game, int id, byte[] rec) throws Exception {
+		File archive = game.archiveFile(ArchiveType.ITEM_DATA);
 		byte[] before = Files.readAllBytes(archive.toPath());
+		byte[] stagedBefore = stagedBytes(game, id);
+		int editsBefore = game.edited().size();
 		boolean threw = false;
 		try {
 			t.writeRecord(id, rec);
@@ -237,12 +256,19 @@ public class ItemEditTest {
 			threw = true;
 		}
 		byte[] after = Files.readAllBytes(archive.toPath());
-		return threw && java.util.Arrays.equals(before, after);
+		return threw && java.util.Arrays.equals(before, after) && java.util.Arrays.equals(stagedBefore, stagedBytes(game, id))
+				&& game.edited().size() == editsBefore;
 	}
 
-	static void fourSlotsAreFreeAndNotFive(File work, String romfs) throws Exception {
+	/** The entry's staged bytes, or null when it is not staged as an edit. */
+	static byte[] stagedBytes(FakeGameFiles game, int id) throws Exception {
+		File f = game.editedEntry(ArchiveType.ITEM_DATA, id);
+		return f == null ? null : Files.readAllBytes(f.toPath());
+	}
+
+	static void fourSlotsAreFreeAndNotFive(FakeGameFiles game, String romfs) throws Exception {
 		System.out.println("--- exactly four slots are offered for a new item, and a fifth is not");
-		ItemTable t = ItemTable.open(work, null);
+		ItemTable t = ItemTable.open(game);
 		List<String> names = ItemDataTest.itemNames(romfs);
 		List<Integer> free = t.freeSlots(names);
 		System.out.println("      free slots: " + free);
@@ -270,13 +296,12 @@ public class ItemEditTest {
 				"a real item's id is never offered as free");
 	}
 
-	static void theBaselineIsTakenOnceAndNeverRetaken(File tmp, File pristine) throws Exception {
+	static void theBaselineIsTakenOnceAndNeverRetaken(File pristine) throws Exception {
 		System.out.println("--- the pre-edit copy is taken before the first write, and never retaken");
-		File dir = new File(tmp, "baseline2");
-		File work = new File(tmp, "itemdata2");
-		Files.copy(pristine.toPath(), work.toPath(), StandardCopyOption.REPLACE_EXISTING);
+		FakeGameFiles game = itemGame(pristine);
+		File dir = ItemTable.baselineDir(game);
 
-		ItemTable t = ItemTable.open(work, dir);
+		ItemTable t = ItemTable.open(game);
 		check(!new File(dir, "itemdata.garc").isFile(),
 				"opening the table alone takes no copy - reading is not editing");
 
@@ -289,13 +314,16 @@ public class ItemEditTest {
 				Files.readAllBytes(pristine.toPath())),
 				"and the copy is the archive as it was BEFORE that write, byte for byte");
 
-		//a second write must not overwrite the copy with the already-edited file
+		//a second write must not overwrite the copy with the already-edited file - packed first, so
+		//the game's archive holds the first edit when it is asked
+		HandedGameTest.packItems(game);
 		fieldNamed("Price / 10").set(rec, 43);
 		t.writeRecord(ULTRA_BALL, rec);
+		HandedGameTest.packItems(game);
 		check(java.util.Arrays.equals(Files.readAllBytes(copy.toPath()),
 				Files.readAllBytes(pristine.toPath())),
-				"a second write leaves it alone - a baseline that drifts forward records the"
-				+ " user's edits as the original");
+				"a second write, over an archive the first was packed into, leaves it alone - a baseline"
+				+ " that drifts forward records the user's edits as the original");
 
 		//and if the copy is deleted after edits, it must NOT be silently retaken
 		//from a file that now holds those edits
@@ -386,14 +414,23 @@ public class ItemEditTest {
 					"a workspace that has never edited items ships nothing - no pre-edit copy"
 					+ " means nothing of the user's is in there");
 
+			//the workspace opens the item archive with its game; the bare session opened none
+			Workspace.install(Workspace.session().withArchive(ArchiveType.ITEM_DATA, new GARC(live, false)));
+			Workspace.session().prepareDirectories();
 			ItemTable t = ItemTable.open(Workspace.session());
 			byte[] rec = t.raw(ULTRA_BALL);
 			byte[] original = rec.clone();
 			fieldNamed("Price / 10").set(rec, 7);
 			t.writeRecord(ULTRA_BALL, rec);
-			check(ItemTable.changedSinceBaseline(Workspace.session()), "after an edit, deploy ships it");
+			check(!ItemTable.changedSinceBaseline(Workspace.session()),
+					"a staged edit is not shipped: deploy carries what was packed, as it does for every archive (F082)");
+			Workspace.session().packArchives((percent, what) -> {
+			});
+			check(ItemTable.changedSinceBaseline(Workspace.session()), "after an edit is packed, deploy ships it");
 
 			t.writeRecord(ULTRA_BALL, original);
+			Workspace.session().packArchives((percent, what) -> {
+			});
 			check(!ItemTable.changedSinceBaseline(Workspace.session()),
 					"and putting the bytes back makes it stop shipping - the test is the CONTENT,"
 					+ " not whether the editor was ever opened");
@@ -468,6 +505,8 @@ public class ItemEditTest {
 		File live = new File(Workspace.GAMEDIR_PATH + itemArchive());
 		live.getParentFile().mkdirs();
 		Files.copy(pristine.toPath(), live.toPath(), StandardCopyOption.REPLACE_EXISTING);
+		//put there after the game opened, so opened here as the workspace opens it with the game
+		Workspace.install(Workspace.session().withArchive(ArchiveType.ITEM_DATA, new GARC(live, false)));
 		ItemEditSession s = ItemEditSession.open(Workspace.session());
 		check(s != null, "the session opens on the scratch game");
 		if (s == null) {
@@ -495,8 +534,13 @@ public class ItemEditTest {
 		EnumSet<ItemEditSession.Changed> recOnly = s.save(ULTRA_BALL, rec, name, desc);
 		check(recOnly.equals(EnumSet.of(ItemEditSession.Changed.RECORD)),
 				"a changed price writes the record, and says so (" + recOnly + ")");
+		check(Arrays.equals(before, Files.readAllBytes(live.toPath())) && s.record(ULTRA_BALL) != null
+				&& new ItemData(s.record(ULTRA_BALL)).priceRaw() == 321,
+				"the new price is staged, and the archive is not written until a pack (F082)");
+		Workspace.session().packArchives((percent, what) -> {
+		});
 		check(new ItemData(new GARC(live, false).getDecompressedEntry(ULTRA_BALL)).priceRaw() == 321,
-				"the new price is in the archive");
+				"the pack puts the new price in the archive");
 		check(!Workspace.persistPaths().contains(namesFile) && !Workspace.persistPaths().contains(descsFile),
 				"and still no text file was staged");
 

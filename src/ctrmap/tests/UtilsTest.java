@@ -15,16 +15,17 @@ import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 
 /**
- * Characterization of {@link Utils}, which is five unrelated toolkits sharing a
- * class name: byte and magic helpers, dialog wrappers, Swing helpers, the JOGL
- * picking maths, and a few odds and ends. A later step SPLITS it, and a split is
- * exactly the kind of move that silently swaps two arguments or drops a helper's
- * last caller, so this pins what each one returns today.
+ * Characterization of the helpers that were {@code ctrmap.Utils} - five unrelated
+ * toolkits that shared a class name, since SPLIT into {@link ctrmap.util.Bytes},
+ * the form and picking helpers and {@link Ui}. A split is exactly the kind of move
+ * that silently swaps two arguments or drops a helper's last caller, so this pins
+ * what each one returns.
  *
- * <p>Several of these behave oddly, and the odd behaviour is pinned AS IT IS -
- * see the notes on {@link #ba2intIsBigEndian}, {@link #trimmedArray} and
- * {@link #distanceAddsTheVectors}. A characterization test that quietly asserted
- * the improvement would break the refactor it exists to protect.
+ * <p>Some of these behave oddly, and the odd behaviour is pinned AS IT IS - see
+ * the note on {@link #ba2intIsBigEndian}. One pinned here as a suspected defect - the
+ * picking distance that adds - was right all along and is pinned as what it is now (F250).
+ * A trimmer pinned here with two defects had no caller in the program and was
+ * deleted with its section (F165).
  *
  * <p>Everything here is headless. The two methods that cannot be reached without
  * the whole main window ({@code switchToolUI}, {@code setGraphicUI}) say so and
@@ -43,13 +44,18 @@ public class UtilsTest {
 		magicBytes();
 		magicOnDisk();
 		capitalLetters();
-		trimmedArray();
-		distanceAddsTheVectors();
+		cameraDistanceIsFromTheCamera();
 		rotation();
 		makeMissingDirectories();
 		floatOutOfATextField();
 		iconsAndButtons();
 		pickingMaths();
+		aPickedModelIsOneTheCameraSees();
+		theFormHelpersEveryFormShares();
+		theScriptDropdownAnswersOnlyTheUser();
+		theMapViewsKeepOneFrameEach();
+		theAtmosphereSaysWhatItIs();
+		gizmoDistance();
 		whatTheDialogWrappersSay();
 		theTwoThatNeedTheWholeWindow();
 
@@ -150,46 +156,20 @@ public class UtilsTest {
 	}
 
 	/**
-	 * SUSPECTED DEFECTS, PINNED NOT FIXED. Two of them live here.
-	 *
-	 * <p>The scan stops at index 1, so index 0 is never examined: an array whose
-	 * only non-zero byte is its first comes back EMPTY.
-	 *
-	 * <p>The kept length is {@code i + (4 - i % 4)}, which for an i that is
-	 * already a multiple of four adds a whole four bytes - past the end of the
-	 * input when the input is not itself a multiple of four, and the copy throws.
+	 * A picked point's distance from the camera, handed the scene's translation - the negative of
+	 * the camera's position (F250). Pinned as a suspected defect for adding where a two-point
+	 * distance subtracts; with the translation the callers pass, the sum is the camera-to-point
+	 * vector, so a camera at (2,0,0) is 1 from (1,0,0) and 3 from (-1,0,0).
 	 */
-	private static void trimmedArray() {
-		check(Arrays.equals(ctrmap.util.Bytes.getTrimmedArray(new byte[]{1, 2, 3, 0, 0}), new byte[]{1, 2, 3, 0}),
-				"trailing zeroes are dropped and the length rounded up to a multiple of four");
-		check(Arrays.equals(ctrmap.util.Bytes.getTrimmedArray(new byte[]{0, 0, 0, 1}), new byte[]{0, 0, 0, 1}),
-				"a value in the last slot keeps the whole array");
-		check(ctrmap.util.Bytes.getTrimmedArray(new byte[8]).length == 0, "an all-zero array trims to nothing");
-		check(ctrmap.util.Bytes.getTrimmedArray(new byte[]{1, 0, 0, 0}).length == 0,
-				"a value in slot 0 ALONE also trims to nothing - the scan never looks at index 0");
-		check(Arrays.equals(ctrmap.util.Bytes.getTrimmedArray(new byte[]{0, 0, 0, 0, 0, 0, 0, 9}),
-				new byte[]{0, 0, 0, 0, 0, 0, 0, 9}), "an eight-byte array ending in a value is kept whole");
-		try {
-			ctrmap.util.Bytes.getTrimmedArray(new byte[]{0, 0, 0, 0, 9});
-			check(false, "a value at index 4 of a five-byte array overruns");
-		} catch (ArrayIndexOutOfBoundsException ex) {
-			check(true, "a value at index 4 of a five-byte array throws ArrayIndexOutOfBoundsException"
-					+ " (the rounding asks for eight bytes from a five-byte input)");
-		}
-	}
-
-	/**
-	 * SUSPECTED DEFECT, PINNED NOT FIXED. This is named like a distance between
-	 * two points but it ADDS the two vectors and takes the magnitude of the sum,
-	 * so opposite points are zero apart and (1,0,0) and (2,0,0) are three.
-	 */
-	private static void distanceAddsTheVectors() {
-		double a = ctrmap.humaninterface.Picking.getDistanceFromVector(new Vec3f(1, 0, 0), new Vec3f(2, 0, 0));
-		check(Math.abs(a - 3.0) < 1e-9, "'distance' from (1,0,0) to (2,0,0) is " + a + ", the magnitude of the SUM");
-		double b = ctrmap.humaninterface.Picking.getDistanceFromVector(new Vec3f(1, 0, 0), new Vec3f(-1, 0, 0));
-		check(Math.abs(b) < 1e-9, "opposite vectors are " + b + " apart");
-		double c = ctrmap.humaninterface.Picking.getDistanceFromVector(new Vec3f(3, 4, 0), new Vec3f(0, 0, 0));
-		check(Math.abs(c - 5.0) < 1e-9, "against the origin it does give the magnitude: " + c);
+	private static void cameraDistanceIsFromTheCamera() {
+		Vec3f camera = new Vec3f(2, 0, 0);
+		Vec3f translation = new Vec3f(-camera.x, -camera.y, -camera.z);
+		double near = ctrmap.humaninterface.Picking.cameraDistance(new Vec3f(1, 0, 0), translation);
+		double far = ctrmap.humaninterface.Picking.cameraDistance(new Vec3f(-1, 0, 0), translation);
+		check(Math.abs(near - 1.0) < 1e-9 && Math.abs(far - 3.0) < 1e-9, "a camera at (2,0,0) is " + near
+				+ " from (1,0,0) and " + far + " from (-1,0,0)");
+		double diagonal = ctrmap.humaninterface.Picking.cameraDistance(new Vec3f(3, 4, 0), new Vec3f(0, 0, 0));
+		check(Math.abs(diagonal - 5.0) < 1e-9, "and with the camera at the origin it is the point's own length: " + diagonal);
 	}
 
 	private static void rotation() {
@@ -258,6 +238,71 @@ public class UtilsTest {
 	}
 
 	/**
+	 * The move gizmo's distance to the camera across an axis (F244), asked of a real navigator the
+	 * way its draw asks it - with the view's translation, the camera standing at minus that - and
+	 * the arrow scale that follows from it.
+	 */
+	private static void gizmoDistance() {
+		try {
+			ctrmap.humaninterface.CM3DNavigator navi = new ctrmap.humaninterface.CM3DNavigator(null);
+			final float[] at = {300, 0, 0};
+			navi.bindModel(new ctrmap.formats.MapObject() {
+				public float getX() {
+					return at[0];
+				}
+
+				public float getY() {
+					return at[1];
+				}
+
+				public float getZ() {
+					return at[2];
+				}
+
+				public void setX(float v) {
+					at[0] = v;
+				}
+
+				public void setY(float v) {
+					at[1] = v;
+				}
+
+				public void setZ(float v) {
+					at[2] = v;
+				}
+			});
+			java.lang.reflect.Method measure = ctrmap.humaninterface.CM3DNavigator.class.getDeclaredMethod("measure",
+					float.class, float.class, float.class);
+			measure.setAccessible(true);
+			measure.invoke(navi, 300f, 0f, 0f);
+			double across = navi.distFromTarget;
+			check(Math.abs(across - 600) < 1e-6 && Math.abs(navi.ax.scale - 0.6f) < 1e-6,
+					"an object and a camera on opposite sides of x are 600 apart, not 0, and the arrows scale by it ("
+					+ across + ", scale " + navi.ax.scale + ")");
+			at[1] = 40;
+			measure.invoke(navi, -100f, -40f, 0f);
+			check(Math.abs(navi.distFromTarget - 200) < 1e-6, "and on the same side, the plain difference ("
+					+ navi.distFromTarget + ")");
+
+			//F148: a drag is an edit only when it moved the target
+			java.lang.reflect.Method drag = ctrmap.humaninterface.CM3DNavigator.class.getDeclaredMethod("drag",
+					float.class, float.class, int.class, int.class);
+			drag.setAccessible(true);
+			navi.targetAxis = ctrmap.humaninterface.CM3DNavigator.TargetAxis.X;
+			float before = at[0];
+			boolean still = (Boolean) drag.invoke(navi, 0f, 0f, 0, 0);
+			float afterStill = at[0];
+			check(!still && afterStill == before, "a drag of no pixels moves nothing and is not an edit (" + still + ", x "
+					+ before + " -> " + afterStill + ")");
+			boolean moved = (Boolean) drag.invoke(navi, 0f, 0f, 10, 0);
+			check(moved && at[0] > afterStill, "and a drag of ten along the held axis moves it and is (" + moved + ", x "
+					+ afterStill + " -> " + at[0] + ")");
+		} catch (ReflectiveOperationException ex) {
+			check(false, "the gizmo's distance can be asked: " + ex);
+		}
+	}
+
+	/**
 	 * The picking maths, which decides whether a click landed on an object. It
 	 * needs no GL context - GLU projects on the CPU - so it runs headless here
 	 * with a hand-built modelview, projection and viewport.
@@ -292,6 +337,156 @@ public class UtilsTest {
 		check(ctrmap.humaninterface.Picking.isBoxSelected(unitQuad, click(panel, 100, 100), parent, origin, unitScale,
 				new Vec3f(0, 0, 180), mv, proj, view),
 				"rotation is applied: turning the quad 180 degrees in its own plane leaves it selectable");
+	}
+
+	/**
+	 * The second half of picking (F113): a box that contains the click picks the model only when some
+	 * vertex of the model, placed as the box is placed, lands on the panel. The NPC and prop forms each
+	 * pasted this check in and placed the vertices with no rotation (and the prop copy with no scale),
+	 * so a turned model was judged where it was not drawn. Same headless projection as above: window
+	 * x = 100 + 50 * world x, and the panel is 200 wide, so world x beyond 2 is off it.
+	 */
+	private static void aPickedModelIsOneTheCameraSees() {
+		float[] mv = new float[]{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+		float[] proj = new float[]{0.5f, 0, 0, 0, 0, 0.5f, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1};
+		int[] view = new int[]{0, 0, 200, 200};
+		JPanel panel = new JPanel();
+		panel.setSize(200, 200);
+		float[][] unitQuad = new float[][]{{-1, -1, 0}, {1, -1, 0}, {1, 1, 0}, {-1, 1, 0}};
+		Vec3f origin = new Vec3f(0, 0, 0), one = new Vec3f(1, 1, 1), still = new Vec3f(0, 0, 0);
+		List<ctrmap.formats.h3d.model.H3DModel.H3DMesh> farRight = meshAt(3, 0, 0);
+		List<ctrmap.formats.h3d.model.H3DModel.H3DMesh> inside = meshAt(0.5f, 0, 0);
+
+		check(!ctrmap.humaninterface.Picking.isSeen(farRight, panel, origin, one, still, mv, proj, view)
+				&& ctrmap.humaninterface.Picking.isSeen(inside, panel, origin, one, still, mv, proj, view),
+				"control: a vertex three units right is off the panel, one half a unit right is on it");
+		check(!ctrmap.humaninterface.Picking.isPicked(unitQuad, farRight, click(panel, 100, 100), panel, origin, one, still,
+				mv, proj, view),
+				"a box that contains the click does not pick a model none of whose vertices is on the panel");
+		check(ctrmap.humaninterface.Picking.isPicked(unitQuad, inside, click(panel, 100, 100), panel, origin, one, still,
+				mv, proj, view),
+				"and does pick one that has a vertex on it");
+		check(ctrmap.humaninterface.Picking.isSeen(farRight, panel, origin, one, new Vec3f(0, 90, 0), mv, proj, view),
+				"the vertices are turned with the model: three units right, turned 90 degrees, is on the panel");
+		check(!ctrmap.humaninterface.Picking.isSeen(inside, panel, origin, new Vec3f(10, 10, 10), still, mv, proj, view),
+				"and scaled with it: half a unit right, scaled ten times, is off the panel");
+		Vec3f placed = ctrmap.humaninterface.Picking.place(1, 0, 0, new Vec3f(5, 0, 0), new Vec3f(2, 2, 2), still);
+		check(placed.x == 7f && placed.y == 0f && placed.z == 0f, "a point is scaled, then moved: (1,0,0) x2 at x=5 is x=7 ("
+				+ placed.x + ")");
+	}
+
+	private static List<ctrmap.formats.h3d.model.H3DModel.H3DMesh> meshAt(float x, float y, float z) {
+		ctrmap.formats.h3d.model.H3DModel.H3DMesh mesh = new ctrmap.formats.h3d.model.H3DModel.H3DMesh();
+		ctrmap.formats.h3d.model.H3DVertex v = new ctrmap.formats.h3d.model.H3DVertex();
+		v.position = new Vec3f(x, y, z);
+		mesh.vertices.add(v);
+		return Arrays.asList(mesh);
+	}
+
+	/**
+	 * The helpers every entity form used to write for itself (F113): the number class a field holds,
+	 * the integer a string starts with, and typed text escaped for a message file.
+	 */
+	private static void theFormHelpersEveryFormShares() {
+		JFormattedTextField f = new JFormattedTextField(new javax.swing.text.NumberFormatter());
+		f.setValue(1);
+		ctrmap.humaninterface.Forms.numberClass(Float.class, f);
+		check(((javax.swing.text.NumberFormatter) f.getFormatter()).getValueClass() == Float.class,
+				"a field handed Float holds a Float");
+		ctrmap.humaninterface.Forms.numberClass(Short.class, f);
+		check(((javax.swing.text.NumberFormatter) f.getFormatter()).getValueClass() == Short.class,
+				"and handed Short, a Short - what its saver casts to");
+		check(ctrmap.util.Text.parseLeadingInt("25  Pikachu") == 25
+				&& ctrmap.util.Text.parseLeadingInt("12 (talker: line 3)") == 12
+				&& ctrmap.util.Text.parseLeadingInt("7") == 7
+				&& ctrmap.util.Text.parseLeadingInt("-5 below") == -5,
+				"the integer a string starts with is read from a table cell, a script item, a bare id and a negative");
+		check(ctrmap.util.Text.parseLeadingInt("none") == -1 && ctrmap.util.Text.parseLeadingInt(null) == -1,
+				"and a string with none, or no string, answers -1");
+		check(ctrmap.formats.text.GFMessageFile.escapeTyped("a\r\nb\rc\nd").equals("a\\nb\\nc\\nd"),
+				"typed text's line breaks, of every platform, become the message file's \\n escape");
+	}
+
+	/**
+	 * The Script dropdown beside a script number (F113): showing a record's id selects its item, and
+	 * the box's listener - which fires for that too - is told nothing; only a row the user chose
+	 * reaches the number field.
+	 */
+	private static void theScriptDropdownAnswersOnlyTheUser() {
+		javax.swing.JComboBox<String> box = new javax.swing.JComboBox<>();
+		ctrmap.humaninterface.ScriptIdDropdown ids = new ctrmap.humaninterface.ScriptIdDropdown(box);
+		java.util.List<Integer> heard = new java.util.ArrayList<>();
+		box.addActionListener(ev -> heard.add(ids.picked()));
+		ids.fill(null);
+		check(box.getItemCount() == 0 && box.getSelectedIndex() == -1, "with no zone the dropdown is empty");
+		box.addItem("3");
+		box.addItem("12 (talker: line 3)");
+		heard.clear();
+		ids.show(12);
+		check(box.getSelectedIndex() == 1, "showing id 12 selects the talker item that names it");
+		check(!heard.isEmpty() && heard.stream().allMatch(id -> id == -1),
+				"and the listener, which fired for it, was told nothing: " + heard);
+		heard.clear();
+		box.setSelectedIndex(0);
+		check(heard.contains(3), "a row the user chooses is answered as its id: " + heard);
+		ids.show(99);
+		check(box.getSelectedIndex() == -1, "an id the zone does not define selects nothing");
+	}
+
+	/**
+	 * The map views' coordinate rules, each said once (F117): where a tile's centre is in the world,
+	 * how many pixels the tile map and the matrix grid draw a world distance across, and how many bytes
+	 * a region's tilemap is. Each was written out inline wherever it was needed, and the matrix grid's
+	 * drawing and hit test already disagreed by a pixel.
+	 */
+	private static void theMapViewsKeepOneFrameEach() {
+		check(ctrmap.formats.zone.WorldGrid.tileCentre(0) == 9 && ctrmap.formats.zone.WorldGrid.tileCentre(3) == 63
+				&& ctrmap.formats.zone.WorldGrid.tileCentre(-1) == -9,
+				"a tile's centre is 18 * tile + 9: tile 0 at 9, tile 3 at 63, tile -1 at -9");
+		check(ctrmap.formats.zone.WorldGrid.tileOfCentre(63) == 3f && ctrmap.formats.zone.WorldGrid.tileOfCentre(18) == 0.5f,
+				"and back: 63 is tile 3, and 18 is half way across tile 0");
+		check(ctrmap.humaninterface.TileMapPanel.toScreen(720, 1) == 400d && ctrmap.humaninterface.TileMapPanel.toScreen(720, 2) == 800d
+				&& ctrmap.humaninterface.TileMapPanel.toScreen(9, 1) == 5d,
+				"the tile map draws a 720-unit region across 400 pixels at scale 1, 800 at scale 2");
+		check(ctrmap.humaninterface.TileMapPanel.toWorld(400, 1) == 720f && ctrmap.humaninterface.TileMapPanel.toWorld(400, 2) == 360f,
+				"and a distance in pixels goes back to the world units under it");
+		check(ctrmap.humaninterface.MatrixCanvas.toPx(720) == 100d && ctrmap.humaninterface.MatrixCanvas.REGION_PX == 100
+				&& ctrmap.humaninterface.MatrixCanvas.ZONE_CELL_PX * ctrmap.humaninterface.MatrixCanvas.ZONE_CELLS_PER_REGION
+				== ctrmap.humaninterface.MatrixCanvas.REGION_PX,
+				"the matrix grid draws a region across " + ctrmap.humaninterface.MatrixCanvas.REGION_PX
+				+ " pixels and four zone cells inside it");
+		check(ctrmap.formats.tilemap.Tilemap.REGION_BYTES == ctrmap.util.Bytes.align(4 + 40 * 40 * 4, 0x80),
+				"a region's tilemap is its header and 40 x 40 four-byte tiles, padded to 0x80: "
+				+ ctrmap.formats.tilemap.Tilemap.REGION_BYTES);
+	}
+
+	/**
+	 * The area atmosphere says what it is (F236). viewFog's javadoc said the colour came mixed by
+	 * strength, and the body returned it raw: the doc now says raw, and this holds the body to it. And
+	 * AreaData lists its subfile 4 as the environment block AreaEnv decodes - it said "???" and typed
+	 * it UNKNOWN after the block was proven, while three readers picked it by the bare number.
+	 */
+	private static void theAtmosphereSaysWhatItIs() throws Exception {
+		ctrmap.formats.area.AreaEnv env = ctrmap.formats.area.AreaEnv.read(new byte[ctrmap.formats.area.AreaEnv.SUB4_LEN]);
+		int day = ctrmap.formats.area.AreaEnv.TIME_DAY;
+		env.fogStrength[day] = 0.1f;
+		env.fogColor[day][0] = 0.2f;
+		env.fogColor[day][1] = 0.4f;
+		env.fogColor[day][2] = 0.6f;
+		float[] thin = env.viewFog(day);
+		check(thin != null && thin[0] == 0.2f && thin[1] == 0.4f && thin[2] == 0.6f,
+				"a thin fog's view colour is the colour the block stores, not mixed by its strength: "
+				+ java.util.Arrays.toString(thin));
+		env.fogStrength[day] = 0f;
+		check(env.viewFog(day) == null, "and a fog of strength 0 is no fog");
+		File area = new File(Scratch.dir("ctrmap_adtypes"), "area.bin");
+		byte[][] empty = new byte[12][0];
+		java.nio.file.Files.write(area.toPath(), HandedGameTest.container("AD", empty));
+		ctrmap.formats.containers.AD ad = new ctrmap.formats.containers.AD(area, new FakeGameFiles());
+		check(ad.getDefaultContentType(ctrmap.formats.containers.AD.ENVIRONMENT)
+				== ctrmap.formats.containers.ContentType.AREA_ENVIRONMENT,
+				"AreaData types subfile " + ctrmap.formats.containers.AD.ENVIRONMENT + " as the environment block AreaEnv reads: "
+				+ ad.getDefaultContentType(ctrmap.formats.containers.AD.ENVIRONMENT));
 	}
 
 	private static MouseEvent click(Component on, int x, int y) {

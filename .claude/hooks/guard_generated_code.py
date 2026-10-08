@@ -26,6 +26,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import hook_env                                   # noqa: E402
 import shellin                                    # noqa: E402  (path set above)
+import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
 
 HOOK = "guard_generated_code.py"
 BYPASS = hook_env.name("ALLOW_GENERATED_EDIT")
@@ -35,8 +36,7 @@ def _rule():
     asks what ANY write changed, a command's included (F194). Loaded by its path from the
     repository this hook sits in, never by name."""
     import importlib.util
-    path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                        "tools", "guard", "generated_code.py")
+    path = os.path.join(_tree_root.require(__file__), "tools", "guard", "generated_code.py")
     spec = importlib.util.spec_from_file_location("ctrmap_generated_code", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

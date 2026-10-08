@@ -75,7 +75,7 @@ public class GRCollisionFile {
 		try {
 			return read(region);
 		} catch (IllegalStateException refused) {
-			return new GRCollisionFile(region, null, refused.getMessage());
+			return new GRCollisionFile(region, null, ctrmap.util.Bytes.reason(refused));
 		}
 	}
 
@@ -88,7 +88,11 @@ public class GRCollisionFile {
 		return made;
 	}
 
-	/** The ground height under (x, y); NaN - unknown - for a collision that was not read. */
+	/**
+	 * The ground height under (x, y); NaN - unknown - for a collision that was not read, and where no
+	 * triangle lies under the point. That answered 0 (F246): ground at 0 and no ground at all read the
+	 * same, so a quad stood on it sat at 0 and an NPC placed over a hole dropped there.
+	 */
 	public float getHeightAtPoint(float x, float y) {
 		if (unreadable != null) {
 			return Float.NaN;
@@ -108,7 +112,7 @@ public class GRCollisionFile {
 				}
 			}
 		}
-		return 0f;
+		return Float.NaN;
 	}
 
 	/**

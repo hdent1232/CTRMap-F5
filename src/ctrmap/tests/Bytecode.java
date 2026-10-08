@@ -30,7 +30,8 @@ import java.util.TreeMap;
 public final class Bytecode {
 
 	public static final int INVOKEVIRTUAL = 0xb6, INVOKESPECIAL = 0xb7, INVOKESTATIC = 0xb8,
-			INVOKEINTERFACE = 0xb9, INVOKEDYNAMIC = 0xba, NEW = 0xbb, GETSTATIC = 0xb2, PUTSTATIC = 0xb3;
+			INVOKEINTERFACE = 0xb9, INVOKEDYNAMIC = 0xba, NEW = 0xbb, GETSTATIC = 0xb2, PUTSTATIC = 0xb3,
+			GETFIELD = 0xb4, PUTFIELD = 0xb5, MONITORENTER = 0xc2, MONITOREXIT = 0xc3;
 
 	/** One instruction that names another class's member, a class, or a lambda. */
 	public static final class Insn {
@@ -104,6 +105,22 @@ public final class Bytecode {
 			return e == null ? -1 : e.getValue();
 		}
 
+		/** The [start, end) pc ranges of its synchronized blocks' bodies. */
+		public final List<int[]> lockedRanges = new ArrayList<>();
+
+		/** True when {@code pc} sits inside one of its synchronized blocks, or the method itself is synchronized. */
+		public boolean lockedAt(int pc) {
+			if ((access & 0x0020) != 0) {
+				return true;
+			}
+			for (int[] r : lockedRanges) {
+				if (pc >= r[0] && pc < r[1]) {
+					return true;
+				}
+			}
+			return false;
+		}
+
 		public String key() {
 			return name + desc;
 		}
@@ -124,6 +141,8 @@ public final class Bytecode {
 		public String source;
 		/** Keyed by name + descriptor. */
 		public final Map<String, Method> methods = new LinkedHashMap<>();
+		/** Its own fields' access flags, keyed by name - inherited ones are the superclass's. */
+		public final Map<String, Integer> fields = new LinkedHashMap<>();
 
 		Cls(String name) {
 			this.name = name;
@@ -218,8 +237,8 @@ public final class Bytecode {
 			}
 			int fields = in.readUnsignedShort();
 			for (int i = 0; i < fields; i++) {
-				in.readUnsignedShort();
-				in.readUnsignedShort();
+				int facc = in.readUnsignedShort();
+				c.fields.put(utf[in.readUnsignedShort()], facc);
 				in.readUnsignedShort();
 				skipAttributes(in);
 			}
@@ -327,7 +346,7 @@ public final class Bytecode {
 			int size = size(code, pc, op, m);
 			switch (op) {
 				case INVOKEVIRTUAL: case INVOKESPECIAL: case INVOKESTATIC: case INVOKEINTERFACE:
-				case GETSTATIC: case PUTSTATIC: {
+				case GETSTATIC: case PUTSTATIC: case GETFIELD: case PUTFIELD: {
 					String[] r = pool.member(u2(code, pc + 1));
 					m.code.add(new Insn(pc, op, r[0], r[1], r[2], -1));
 					break;
@@ -341,6 +360,10 @@ public final class Bytecode {
 				case NEW:
 					m.code.add(new Insn(pc, op, pool.className(u2(code, pc + 1)), null, null, -1));
 					break;
+				case MONITORENTER: case MONITOREXIT:
+					//names nothing, kept for where a synchronized block begins and ends
+					m.code.add(new Insn(pc, op, null, null, null, -1));
+					break;
 				default:
 					break;
 			}
@@ -350,7 +373,32 @@ public final class Bytecode {
 			throw new IOException("decoding " + m + " in " + f + " ended at " + pc + ", past its code length " + length);
 		}
 		int handlers = in.readUnsignedShort();
-		skip(in, 8L * handlers);
+		java.util.Set<Integer> enters = new java.util.HashSet<>();
+		for (Insn x : m.code) {
+			if (x.op == MONITORENTER) {
+				enters.add(x.pc);
+			}
+		}
+		//A SYNCHRONIZED BLOCK'S BODY: javac guards it with one catch-anything handler, the first of whose
+		//ranges begins on the instruction after the monitorenter - and splits the body into several
+		//ranges around each early return, all aimed at that same handler. So the handler is found by
+		//its first range and every catch-anything range aimed at it is the body. Counting enters and
+		//exits in code order gets this wrong: an early return's exit comes before the rest of the body.
+		int[][] table = new int[handlers][];
+		java.util.Set<Integer> guards = new java.util.HashSet<>();
+		for (int h = 0; h < handlers; h++) {
+			int start = in.readUnsignedShort(), end = in.readUnsignedShort(), target = in.readUnsignedShort();
+			int type = in.readUnsignedShort();
+			table[h] = new int[]{start, end, target, type};
+			if (type == 0 && enters.contains(start - 1)) {
+				guards.add(target);
+			}
+		}
+		for (int[] e : table) {
+			if (e[3] == 0 && guards.contains(e[2])) {
+				m.lockedRanges.add(new int[]{e[0], e[1]});
+			}
+		}
 		int attrs = in.readUnsignedShort();
 		for (int k = 0; k < attrs; k++) {
 			String an = pool.utf[in.readUnsignedShort()];

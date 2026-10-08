@@ -23,6 +23,8 @@ public class BchMapModelTest {
 	private static final String DEFAULT_GARC_PATH =
 			"../RomFS_original_garcs/a/0/3/9";
 	private static int fails = 0;
+	/** Grows and u8->u16 upgrades confirmed, across the corpus (F142). */
+	private static int grows = 0, upgrades = 0;
 
 	public static void main(String[] args) throws Exception {
 		File garcFile = new File(args.length > 0 ? args[0] : DEFAULT_GARC_PATH);
@@ -35,7 +37,7 @@ public class BchMapModelTest {
 
 		int tested = 0, notMapModel = 0, meshTotal = 0, matTotal = 0, lutRegions = 0;
 		long vertsTotal = 0, meshesSeen = 0, meshesDecoded = 0, meshesSkipped = 0;
-		// sample every region (step keeps it fast on the 857-entry GARC while covering the whole range)
+		// every region of the 857-entry GARC: step 1
 		int step = 1;
 		//a scratch game for the containers to report to: nothing here opens a workspace
 		FakeGameFiles game = new FakeGameFiles();
@@ -133,6 +135,15 @@ public class BchMapModelTest {
 				meshesDecoded, meshesSeen, meshesSeen == 0 ? 0.0 : 100.0 * meshesDecoded / meshesSeen, meshesSkipped, vertsTotal);
 		if (tested == 0) {
 			System.out.println("FAIL: no map models found to test");
+			System.exit(1);
+		}
+		//A CHECK THAT FOUND NOTHING TO TEST IS NOT A PASS (F142). Both checks answered null when no
+		//mesh grew and when no u8 mesh upgraded, so a regression that made every append throw, or
+		//every upgrade fail, passed green over the whole corpus. Each must have been confirmed.
+		System.out.println("   confirmed across the corpus: " + grows + " mesh grows, " + upgrades + " u8->u16 upgrades");
+		if (grows == 0 || upgrades == 0) {
+			System.out.println("FAIL: the append and the u8->u16 upgrade were each confirmed at least once - " + grows
+					+ " grows, " + upgrades + " upgrades. A check that found nothing to test said nothing");
 			System.exit(1);
 		}
 		if (fails == 0) {
@@ -244,6 +255,7 @@ public class BchMapModelTest {
 				return "grown mesh " + mi + " vertex count is " + (p == null ? "null" : p.length)
 						+ ", expected " + (g.vertexCount + 3);
 			}
+			grows++;
 			return null; // one successful grow per region is enough
 		}
 		return null;
@@ -299,6 +311,7 @@ public class BchMapModelTest {
 			if (p == null || p.length != g.vertexCount + add) {
 				return "upgraded mesh " + mi + " vertex count wrong";
 			}
+			upgrades++;
 			return null; // one confirmed upgrade is enough
 		}
 		return null; // no u8 mesh available to upgrade

@@ -1,8 +1,8 @@
 package ctrmap.formats.codepatch;
 
-import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.List;
+import ctrmap.util.LittleEndian;
 
 /**
  * Auto-scaling code patch that lifts ORAS's hardcoded 536-zone limit so a
@@ -47,8 +47,12 @@ import java.util.List;
  */
 public class ZoneLimitPatch {
 
-	/** Stock zone count this patch is measured from: Omega Ruby / Alpha Sapphire's profile answers it (F205). */
-	public static final int BASE_ZONES = ctrmap.gamedef.GameProfile.of(ctrmap.gamedef.GameType.ORAS).retailZoneCount();
+	/**
+	 * Stock zone count this patch is measured from: the profile of the one game that supports adding
+	 * zones answers it (F205, F207) - Omega Ruby / Alpha Sapphire, whose code.bin the patch is for.
+	 */
+	public static final int BASE_ZONES = ctrmap.gamedef.GameProfile.onlyGameWith(
+			ctrmap.gamedef.GameProfile.Feature.ZONE_APPEND).retailZoneCount();
 	/** Master-table row size in bytes: one zone header per row. */
 	public static final int MASTER_ROW = ctrmap.formats.zone.ZoneHeader.SIZE;
 	/** Omega Ruby title id (for the Luma patch path). */
@@ -114,11 +118,6 @@ public class ZoneLimitPatch {
 		return masterIndex(currentZones - BASE_ZONES + addZones);
 	}
 
-	/** How many zone slots the archive must actually contain (real + spares). */
-	public static int totalZoneSlots(int newZones) {
-		return masterIndex(newZones);
-	}
-
 	/** Spare (never-visited) zone slots created to keep the master index a multiple of 4. */
 	public static int spareZones(int newZones) {
 		return masterIndex(newZones) - (BASE_ZONES + newZones);
@@ -160,15 +159,12 @@ public class ZoneLimitPatch {
 							+ " the zone-limit patch was measured on: offset 0x%X (%s) holds %08X where"
 							+ " that build holds %08X. An Alpha Sapphire executable is a different build"
 							+ " whose offsets nobody has measured, so nothing was patched.",
-							MEASURED_ON, p.fileOffset, p.desc, word(code, p.fileOffset), word(p.original, 0)));
+							MEASURED_ON, p.fileOffset, p.desc, LittleEndian.i32(code, p.fileOffset), LittleEndian.i32(p.original, 0)));
 				}
 			}
 		}
 	}
 
-	private static int word(byte[] b, int at) {
-		return (b[at] & 0xFF) | (b[at + 1] & 0xFF) << 8 | (b[at + 2] & 0xFF) << 16 | (b[at + 3] & 0xFF) << 24;
-	}
 
 	/** The code.bin bytes a zone-limit save writes: the word at each site it patches (F152). */
 	public static int[][] owned() {
@@ -188,19 +184,11 @@ public class ZoneLimitPatch {
 	 */
 	public static byte[] buildIPS(int newZones, byte[] code) {
 		verify(code);
-		ByteArrayOutputStream b = new ByteArrayOutputStream();
-		writeAscii(b, "PATCH");
+		java.util.List<int[]> records = new java.util.ArrayList<>();
 		for (Patch p : patches(newZones)) {
-			int o = p.fileOffset;
-			b.write((o >> 16) & 0xFF);
-			b.write((o >> 8) & 0xFF);
-			b.write(o & 0xFF);        // 3-byte big-endian offset
-			b.write(0);
-			b.write(4);               // 2-byte big-endian length
-			b.write(p.patched, 0, 4);
+			records.add(Ips.record(p.fileOffset, p.patched, 0, 4));
 		}
-		writeAscii(b, "EOF");
-		return b.toByteArray();
+		return Ips.write(records);
 	}
 
 	/**
@@ -216,13 +204,9 @@ public class ZoneLimitPatch {
 		return out;
 	}
 
-	private static void writeAscii(ByteArrayOutputStream b, String s) {
-		for (int i = 0; i < s.length(); i++) {
-			b.write(s.charAt(i));
-		}
-	}
-
 	private static byte[] le(int v) {
-		return new byte[]{(byte) v, (byte) (v >> 8), (byte) (v >> 16), (byte) (v >> 24)};
+		byte[] b = new byte[4];
+		LittleEndian.putI32(b, 0, v);
+		return b;
 	}
 }

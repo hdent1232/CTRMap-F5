@@ -25,7 +25,7 @@ public class PaintCommitTest {
 
 	public static void main(String[] args) throws Exception {
 		String src = SourceSeamTest.stripComments(new String(Files.readAllBytes(
-				new File("src/ctrmap/humaninterface/TilePainterForm.java").toPath()), StandardCharsets.UTF_8));
+				new File("src/ctrmap/MapPainter.java").toPath()), StandardCharsets.UTF_8));
 		String apply = CollisionReadTest.body(src, "public static String applyToZone(");
 		check(apply != null && apply.contains("ensurePrivate(") && apply.contains("area.commit()")
 				&& apply.contains("could not write region"), "control: applyToZone is found, its fork, region writes and area commit in it");

@@ -1,6 +1,5 @@
 package ctrmap.humaninterface;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.formats.Triangle;
 import ctrmap.formats.gfcollision.GRCollisionFile;
 import ctrmap.humaninterface.tools.AbstractTool;
@@ -34,8 +33,20 @@ public class CollEditPanel extends javax.swing.JPanel {
 	/**
 	 * Creates new form CollEditPanel
 	 */
-	public CollEditPanel(ctrmap.humaninterface.tools.ToolSelection tools) {
+	public CollEditPanel(ctrmap.humaninterface.tools.ToolSelection tools, UndoHistory history) {
 		this.tools = tools;
+		if (history == null) {
+			throw new IllegalArgumentException("CollEditPanel must be handed the zone's history its collision"
+					+ " is a document of");
+		}
+		//each collision file held is one of the zone's documents: watched, not recorded by hand (F209)
+		history.watch(() -> {
+			java.util.List<UndoHistory.Document<?>> out = new ArrayList<>();
+			for (int i = 0; i < files.size(); i++) {
+				out.add(collision(i));
+			}
+			return out;
+		});
 		initComponents();
 		meshTree.addTreeSelectionListener((TreeSelectionEvent e) -> {
 			DefaultMutableTreeNode node = (DefaultMutableTreeNode) meshTree.getLastSelectedPathComponent();
@@ -56,141 +67,14 @@ public class CollEditPanel extends javax.swing.JPanel {
 				}
 			}
 		});
-		v1x.getDocument().addDocumentListener(new DocumentListener() {
-			@Override
-			public void insertUpdate(DocumentEvent e) {
-				adjustX(v1x, 0);
+		//ONE LISTENER, BOUND PER FIELD: these were nine pasted anonymous classes that differed only in
+		//the field and the vertex they wrote (F246)
+		JFormattedTextField[][] fields = {{v1x, v1y, v1z}, {v2x, v2y, v2z}, {v3x, v3y, v3z}};
+		for (int v = 0; v < 3; v++) {
+			for (int axis = 0; axis < 3; axis++) {
+				bindCoordinate(fields[v][axis], axis, v);
 			}
-
-			@Override
-			public void removeUpdate(DocumentEvent e) {
-				adjustX(v1x, 0);
-			}
-
-			@Override
-			public void changedUpdate(DocumentEvent e) {
-			}
-		});
-		v1y.getDocument().addDocumentListener(new DocumentListener() {
-			@Override
-			public void insertUpdate(DocumentEvent e) {
-				adjustY(v1y, 0);
-			}
-
-			@Override
-			public void removeUpdate(DocumentEvent e) {
-				adjustY(v1y, 0);
-			}
-
-			@Override
-			public void changedUpdate(DocumentEvent e) {
-			}
-		});
-		v1z.getDocument().addDocumentListener(new DocumentListener() {
-			@Override
-			public void insertUpdate(DocumentEvent e) {
-				adjustZ(v1z, 0);
-			}
-
-			@Override
-			public void removeUpdate(DocumentEvent e) {
-				adjustZ(v1z, 0);
-			}
-
-			@Override
-			public void changedUpdate(DocumentEvent e) {
-			}
-		});
-		v2x.getDocument().addDocumentListener(new DocumentListener() {
-			@Override
-			public void insertUpdate(DocumentEvent e) {
-				adjustX(v2x, 1);
-			}
-
-			@Override
-			public void removeUpdate(DocumentEvent e) {
-				adjustX(v2x, 1);
-			}
-
-			@Override
-			public void changedUpdate(DocumentEvent e) {
-			}
-		});
-		v2y.getDocument().addDocumentListener(new DocumentListener() {
-			@Override
-			public void insertUpdate(DocumentEvent e) {
-				adjustY(v2y, 1);
-			}
-
-			@Override
-			public void removeUpdate(DocumentEvent e) {
-				adjustY(v2y, 1);
-			}
-
-			@Override
-			public void changedUpdate(DocumentEvent e) {
-			}
-		});
-		v2z.getDocument().addDocumentListener(new DocumentListener() {
-			@Override
-			public void insertUpdate(DocumentEvent e) {
-				adjustZ(v2z, 1);
-			}
-
-			@Override
-			public void removeUpdate(DocumentEvent e) {
-				adjustZ(v2z, 1);
-			}
-
-			@Override
-			public void changedUpdate(DocumentEvent e) {
-			}
-		});
-		v3x.getDocument().addDocumentListener(new DocumentListener() {
-			@Override
-			public void insertUpdate(DocumentEvent e) {
-				adjustX(v3x, 2);
-			}
-
-			@Override
-			public void removeUpdate(DocumentEvent e) {
-				adjustX(v3x, 2);
-			}
-
-			@Override
-			public void changedUpdate(DocumentEvent e) {
-			}
-		});
-		v3y.getDocument().addDocumentListener(new DocumentListener() {
-			@Override
-			public void insertUpdate(DocumentEvent e) {
-				adjustY(v3y, 2);
-			}
-
-			@Override
-			public void removeUpdate(DocumentEvent e) {
-				adjustY(v3y, 2);
-			}
-
-			@Override
-			public void changedUpdate(DocumentEvent e) {
-			}
-		});
-		v3z.getDocument().addDocumentListener(new DocumentListener() {
-			@Override
-			public void insertUpdate(DocumentEvent e) {
-				adjustZ(v3z, 2);
-			}
-
-			@Override
-			public void removeUpdate(DocumentEvent e) {
-				adjustZ(v3z, 2);
-			}
-
-			@Override
-			public void changedUpdate(DocumentEvent e) {
-			}
-		});
+		}
 	}
 
 	public void unload() {
@@ -239,6 +123,75 @@ public class CollEditPanel extends javax.swing.JPanel {
 		deselectMesh();
 		deselectTri();
 		((DefaultTreeModel) meshTree.getModel()).reload();
+	}
+
+	/**
+	 * Collision file {@code index} as a document of the zone's history (F209): its sixteen meshes'
+	 * triangles, each vertex copied, put back whole. The editor had no undo at all.
+	 */
+	private UndoHistory.Document<java.util.List<java.util.List<float[][]>>> collision(int index) {
+		final GRCollisionFile file = files.get(index);
+		final String name = String.valueOf(index < meshContainers.size() ? meshContainers.get(index).getUserObject() : index);
+		return new UndoHistory.Document<java.util.List<java.util.List<float[][]>>>() {
+			@Override
+			public Object subject() {
+				return file;
+			}
+
+			@Override
+			public java.util.List<java.util.List<float[][]>> take() {
+				java.util.List<java.util.List<float[][]>> out = new ArrayList<>(file.meshes.length);
+				for (ctrmap.formats.gfcollision.GRCollisionMesh mesh : file.meshes) {
+					java.util.List<float[][]> tris = new ArrayList<>(mesh.tris.size());
+					for (Triangle t : mesh.tris) {
+						tris.add(new float[][]{t.x.clone(), t.y.clone(), t.z.clone()});
+					}
+					out.add(tris);
+				}
+				return out;
+			}
+
+			@Override
+			public void put(java.util.List<java.util.List<float[][]>> state) {
+				//the selection goes first, by its indices alone: the triangles they name are being replaced
+				selectedTri = -1;
+				selectedMesh = -1;
+				for (int m = 0; m < file.meshes.length; m++) {
+					file.meshes[m].tris.clear();
+					for (float[][] t : state.get(m)) {
+						file.meshes[m].tris.add(new Triangle(t[0].clone(), t[1].clone(), t[2].clone()));
+					}
+				}
+				file.modified = true;
+				if (files.contains(file)) {
+					deselectTri();
+					buildTree();
+				}
+				java.awt.Window shown = javax.swing.SwingUtilities.getWindowAncestor(CollEditPanel.this);
+				if (shown != null) {
+					shown.repaint();
+				}
+			}
+
+			@Override
+			public boolean same(java.util.List<java.util.List<float[][]>> a, java.util.List<java.util.List<float[][]>> b) {
+				if (a.size() != b.size()) {
+					return false;
+				}
+				for (int m = 0; m < a.size(); m++) {
+					//each triangle's float[3][3], by content: the readings are fresh arrays every time
+					if (!java.util.Arrays.deepEquals(a.get(m).toArray(), b.get(m).toArray())) {
+						return false;
+					}
+				}
+				return true;
+			}
+
+			@Override
+			public String what() {
+				return "the collision of " + name;
+			}
+		};
 	}
 
 	public void selectFile(int idx) {
@@ -525,16 +478,15 @@ public class CollEditPanel extends javax.swing.JPanel {
 		if (tool != null && tool instanceof FillTool && selectedMesh != -1) {
 			FillTool t = (FillTool) tool;
 			if (t.lastX != -1) {
-				int startX = (Math.min(t.originX, t.lastX) % 40) * 18 - 360;
-				int startY = (Math.min(t.originY, t.lastY) % 40) * 18 - 360;
-				int width = Math.abs(t.lastX - t.originX) * 18 + 18;
-				int height = Math.abs(t.lastY - t.originY) * 18 + 18;
-				float[] vertex0 = new float[]{startX, 0, startY};
-				float[] vertex1 = new float[]{startX, 0, startY + height};
-				float[] vertex2 = new float[]{startX + width, 0, startY};
-				float[] vertex3 = new float[]{startX + width, 0, startY + height};
-				coll.meshes[selectedMesh].tris.add(new Triangle(new float[]{vertex0[0], vertex1[0], vertex2[0]}, new float[3], new float[]{vertex0[2], vertex1[2], vertex2[2]}));
-				coll.meshes[selectedMesh].tris.add(new Triangle(new float[]{vertex3[0], vertex1[0], vertex2[0]}, new float[3], new float[]{vertex3[2], vertex1[2], vertex2[2]}));
+				Triangle[] quad;
+				try {
+					quad = quadOver(coll, t.originX, t.originY, t.lastX, t.lastY);
+				} catch (IllegalStateException noGround) {
+					ctrmap.Ui.error(this, ctrmap.Ui.reason(noGround), "New quad from fill tool");
+					return;
+				}
+				coll.meshes[selectedMesh].tris.add(quad[0]);
+				coll.meshes[selectedMesh].tris.add(quad[1]);
 				int index = meshNodes.get(collIndex)[selectedMesh].getChildCount();
 				meshNodes.get(collIndex)[selectedMesh].add(new DefaultMutableTreeNode("Triangle " + index));
 				meshNodes.get(collIndex)[selectedMesh].add(new DefaultMutableTreeNode("Triangle " + (index + 1)));
@@ -560,6 +512,66 @@ public class CollEditPanel extends javax.swing.JPanel {
 
 	private void reloadMeshNode(int num) {
 		((DefaultTreeModel) meshTree.getModel()).reload(meshNodes.get(collIndex)[num]);
+	}
+
+	/** Typing in {@code field} writes that coordinate - 0 x, 1 y, 2 z - of that vertex of the selected triangle. */
+	private void bindCoordinate(final JFormattedTextField field, final int axis, final int vertex) {
+		field.getDocument().addDocumentListener(new DocumentListener() {
+			@Override
+			public void insertUpdate(DocumentEvent e) {
+				adjust(field, axis, vertex);
+			}
+
+			@Override
+			public void removeUpdate(DocumentEvent e) {
+				adjust(field, axis, vertex);
+			}
+
+			@Override
+			public void changedUpdate(DocumentEvent e) {
+			}
+		});
+	}
+
+	private void adjust(JFormattedTextField source, int axis, int vertex) {
+		if (axis == 0) {
+			adjustX(source, vertex);
+		} else if (axis == 1) {
+			adjustY(source, vertex);
+		} else {
+			adjustZ(source, vertex);
+		}
+	}
+
+	/**
+	 * The two triangles of a quad over the fill tool's tiles (fromX, fromY) to (toX, toY), each corner
+	 * standing on the ground the collision has under it - sampled one unit inside the quad, so a
+	 * corner on a region edge is asked about the ground it covers (F246: all four sat at height 0).
+	 *
+	 * @throws IllegalStateException naming the corner, where the collision has no ground under it
+	 */
+	static Triangle[] quadOver(GRCollisionFile coll, int fromX, int fromY, int toX, int toY) {
+		int startX = (Math.min(fromX, toX) % 40) * 18 - 360;
+		int startZ = (Math.min(fromY, toY) % 40) * 18 - 360;
+		int width = Math.abs(toX - fromX) * 18 + 18;
+		int depth = Math.abs(toY - fromY) * 18 + 18;
+		float[][] corner = {{startX, startZ}, {startX, startZ + depth}, {startX + width, startZ},
+			{startX + width, startZ + depth}};
+		float[] y = new float[4];
+		for (int c = 0; c < 4; c++) {
+			float inX = corner[c][0] == startX ? corner[c][0] + 1 : corner[c][0] - 1;
+			float inZ = corner[c][1] == startZ ? corner[c][1] + 1 : corner[c][1] - 1;
+			y[c] = coll.getHeightAtPoint(inX, inZ);
+			if (Float.isNaN(y[c])) {
+				throw new IllegalStateException("The collision has no ground under the corner at (" + (int) corner[c][0]
+						+ ", " + (int) corner[c][1] + "), so there is no height to stand the quad on. Nothing was added.");
+			}
+		}
+		return new Triangle[]{
+			new Triangle(new float[]{corner[0][0], corner[1][0], corner[2][0]}, new float[]{y[0], y[1], y[2]},
+					new float[]{corner[0][1], corner[1][1], corner[2][1]}),
+			new Triangle(new float[]{corner[3][0], corner[1][0], corner[2][0]}, new float[]{y[3], y[1], y[2]},
+					new float[]{corner[3][1], corner[1][1], corner[2][1]})};
 	}
 
 	private void adjustX(JFormattedTextField source, int vertex) {

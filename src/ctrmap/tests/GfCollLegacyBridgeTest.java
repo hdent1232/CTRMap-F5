@@ -4,7 +4,6 @@ import ctrmap.formats.containers.GR;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.gfcollision.GfColl;
 import ctrmap.formats.gfcollision.GRCollisionFile;
-import ctrmap.formats.Triangle;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.Arrays;

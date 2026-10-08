@@ -52,7 +52,9 @@ if __name__ == "__main__":
     sys.dont_write_bytecode = True
 
 LF = chr(10)
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+ROOT = _tree_root.require(__file__)
 
 
 def source_digest(root=ROOT, exclude=()):
@@ -87,20 +89,24 @@ def source_digest(root=ROOT, exclude=()):
     #: ONE BODY (F183): this was a second implementation of require_build.subject_digest that read
     #: the rule file differently - the first CLAUDE.md within four levels, where the gate's reads
     #: every ancestor's - so record_run wrote one digest and commit_gate compared it with the other.
-    #: Loaded from its file beside this tree's tools/, never by name: a name is answered by
-    #: whichever copy the process loaded first (F184, arm_checkout).
+    try:
+        return require_build().subject_digest(root, exclude)
+    except require_build().NothingToDigest:
+        return None
+
+
+def require_build():
+    """tools/require_build.py, loaded from its file beside this tree's tools/, never by name: a name
+    is answered by whichever copy the process loaded first (F184, arm_checkout)."""
     global _REQUIRE_BUILD
     if _REQUIRE_BUILD is None:
         import importlib.util
         spec = importlib.util.spec_from_file_location(
             "require_build_of_commit_guard",
-            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "require_build.py"))
+            os.path.join(ROOT, "tools", "require_build.py"))
         _REQUIRE_BUILD = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(_REQUIRE_BUILD)
-    try:
-        return _REQUIRE_BUILD.subject_digest(root, exclude)
-    except _REQUIRE_BUILD.NothingToDigest:
-        return None
+    return _REQUIRE_BUILD
 
 
 _REQUIRE_BUILD = None
@@ -119,7 +125,7 @@ def gate():
         import importlib.util
         spec = importlib.util.spec_from_file_location(
             "commit_gate_of_commit_guard",
-            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "commit_gate.py"))
+            os.path.join(ROOT, "tools", "commit_gate.py"))
         _GATE = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(_GATE)
     return _GATE
@@ -251,7 +257,7 @@ MENU_ITEM = "Menu-item:"
 #: looking for one. A guard that has never had that question asked of it is a guard with a
 #: known way round it that nobody has written down.
 EVASION = "Cheapest-evasion:"
-_GUARD_HOMES = ("tools/guard/", "tools/hooks/", ".claude/hooks/", ".githooks/")
+_GUARD_HOMES = ("tools/guard/", ".claude/hooks/", ".githooks/")
 
 
 
@@ -540,18 +546,19 @@ def check_blanket_claim(message):
 
     THE DEFECT, and it is this file's author again. A commit reviewing the project's guards
     examined fourteen of them - eight hooks, four tools, two scripts - and then wrote
-    "Everything else reviewed holds its shape" into the message. There are 130 registered suites
-    and 150 plants. The sentence was not a lie anybody told on purpose; it is what a review feels
+    "Everything else reviewed holds its shape" into the message. There were 130 registered suites
+    and 150 plants (2026-09-14). The sentence was not a lie anybody told on purpose; it is what a review feels
     like from the inside when the part you looked at was the part you already knew, and nothing
     anywhere made the difference between fourteen and a hundred and fifty visible.
 
     The measurement that would have settled it took one command and two minutes when it was
-    finally run: 130 suites, 81 driving a refusal, 12 reading source text alone, 53 owed a plant.
+    finally run (2026-09-14): 130 suites, 81 driving a refusal, 12 reading source text alone, 53 owed
+    a plant.
 
     SO A BLANKET CLAIM NEEDS A CITATION. Saying the rest are fine is a measurement, and a
     measurement has a number and a way to reproduce it:
 
-        Reviewed: 130/130 suites by tools/guard/classify_guards.py
+        Reviewed: <n>/<n> suites by tools/guard/classify_guards.py
 
     The citation must name a path that exists, because "reviewed: all of them" is the same
     sentence with a colon in it. The escape is `No-review:` for a claim that genuinely rests on
@@ -584,10 +591,10 @@ def check_blanket_claim(message):
         + LF
         + "  Saying the rest are fine is a MEASUREMENT, and this commit does not carry one." + LF
         + "  A review of this project's guards once covered fourteen of them and then wrote" + LF
-        + "  \"everything else reviewed holds its shape\" about 130 suites and 150 plants." + LF
+        + "  \"everything else reviewed holds its shape\" about 130 suites and 150 plants (2026-09-14)." + LF
         + "  The count that settled it took one command." + LF + LF
         + "  Cite it, with a number and something runnable:" + LF + LF
-        + "    %s 130/130 suites by tools/guard/classify_guards.py" % REVIEWED + LF + LF
+        + "    %s <n>/<n> suites by tools/guard/classify_guards.py" % REVIEWED + LF + LF
         + "  Or, if the claim genuinely does not rest on counting, say so where it stays" + LF
         + "  visible:" + LF + LF
         + "    %s <what the claim rests on instead>" % NO_REVIEW + LF)
@@ -865,6 +872,64 @@ def check_undo(message):
     return 1
 
 
+#: Rule 8 - A SCORED FILE CHANGES WITH ITS SCORE (F132). The mutation baseline records the digest of
+#: every file it scored, and MutationBaselineTest fails an entry whose file has since moved - AFTER
+#: the commit, when the sweep that would re-measure it is an hour's work nobody is in the middle of.
+#: CtrmapMainframe and ZoneLoadingPanel changed in 1becdda and 4383eb2 after the sweep at 5d6dfa0, and
+#: the committed tree failed its own gate from 2026-09-21 on. A commit that changes a scored file
+#: carries a baseline whose digest of it is the staged file's, or says why the sweep is owed.
+MUTATION_BASELINE = "mutation_baseline.json"
+MUTATION_OWED = "Mutation-owed:"
+
+
+def stale_scores(staged):
+    """The staged files the staged mutation baseline scores against other bytes - each changed, or
+    removed and still scored. Empty when the tree tracks no baseline. A baseline or a file git cannot
+    show is CannotAsk: an unread score is not a fresh one."""
+    if not _git_out(["ls-files", "--", MUTATION_BASELINE]).strip():
+        return []
+    shown = gate()._git(["show", ":" + MUTATION_BASELINE], text=False)
+    if shown.returncode != 0:
+        raise CannotAsk("the staged %s could not be shown" % MUTATION_BASELINE)
+    try:
+        import json
+        book = json.loads(shown.stdout.decode("utf-8"))
+    except ValueError as exc:
+        raise CannotAsk("the staged %s is not JSON (%s)" % (MUTATION_BASELINE, exc))
+    import hashlib
+    stale = []
+    for path in staged:
+        entry = book.get(path)
+        if not isinstance(entry, dict):
+            continue
+        if not _git_out(["ls-files", "--", path]).strip():
+            stale.append(path + " (removed, and still scored)")
+            continue
+        blob = gate()._git(["show", ":" + path], text=False)
+        if blob.returncode != 0:
+            raise CannotAsk("the staged %s could not be shown" % path)
+        if hashlib.sha256(require_build().digest_of(blob.stdout, path)).hexdigest() != entry.get("sha256"):
+            stale.append(path)
+    return stale
+
+
+def check_mutation_baseline(message):
+    if marked(message, MUTATION_OWED):
+        return 0
+    stale = stale_scores(staged_files())
+    if not stale:
+        return 0
+    sys.stderr.write(
+        "REFUSING THE COMMIT: this changes file(s) the mutation baseline scored, and the baseline" + LF
+        + "  staged with it still scores the old bytes:" + LF
+        + "".join("    %s%s" % (p, LF) for p in stale)
+        + "  MutationBaselineTest fails a stale entry after the commit, where it stayed red for" + LF
+        + "  weeks. Re-run tools/mutate2.py over the stopped tree and stage its baseline, or say" + LF
+        + "  why the sweep is owed:" + LF
+        + "    %s <why it cannot be re-run in this commit>" % MUTATION_OWED + LF)
+    return 1
+
+
 def main(argv):
     if len(argv) > 1 and argv[1] == "--subject":
         #: So a recorder - and the suite that drives this file - asks THIS implementation
@@ -889,7 +954,7 @@ def main(argv):
         for check in (check_fix_has_a_guard, check_guard_class, check_test_claim,
                       check_known_hole, check_blanket_claim, check_extraction_is_tested,
                       check_detangle, check_in_game_claim, check_zero_claim,
-                      check_cheapest_evasion, check_menu_item, check_undo):
+                      check_cheapest_evasion, check_menu_item, check_undo, check_mutation_baseline):
             code = check(message)
             if code:
                 return code

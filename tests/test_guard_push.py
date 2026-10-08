@@ -1,4 +1,4 @@
-"""The push approval is compared with what the push SENDS: tools/hooks/guard_push.py, judged from
+"""The push approval is compared with what the push SENDS: .claude/hooks/guard_push.py, judged from
 outside against a scratch repository, so the real approval token is never read or written.
 
 The defects, measured 2026-09-26: the guard compared the token with HEAD whatever the command
@@ -18,18 +18,21 @@ refused; the ref the token names was never compared, though the guard's docstrin
 import importlib.util
 import io
 import os
+import sys
 import shutil
 import subprocess
 import tempfile
 import unittest
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+HERE = _tree_root.require(__file__)
 LF = chr(10)
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def _load():
-    path = os.path.join(HERE, "tools", "hooks", "guard_push.py")
+    path = os.path.join(HERE, ".claude", "hooks", "guard_push.py")
     spec = importlib.util.spec_from_file_location("guard_push_under_test", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

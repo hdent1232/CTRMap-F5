@@ -27,7 +27,7 @@ if (-not $jdk) { throw "No JDK found. Set CTRMAP_JDK to a JDK install path." }
 # BatteryHygieneTest.noOrphanClassFiles fails if this clean stops happening.
 # REFUSE TO BUILD UNDER A RUNNING BATTERY.
 #
-# The next line deletes build\classes, and test.ps1 runs 129 suites out of it over about
+# The next line deletes build\classes, and test.ps1 runs the whole battery out of it over about
 # forty minutes. A build started in the middle of that does not slow the battery down, it
 # invents failures: sixteen suites came back "Could not find or load main class", which
 # reads exactly like a regression in the code under test and is not one. That has now

@@ -1,6 +1,5 @@
 package ctrmap.tests;
 
-import ctrmap.Workspace;
 import ctrmap.ZoneCloner;
 import ctrmap.formats.containers.ZO;
 import ctrmap.formats.garc.GARC;
@@ -11,7 +10,7 @@ import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.i32;
 
 /**
  * Headless test of ZoneCloner's core byte transform. Operates ONLY on copies
@@ -127,11 +126,8 @@ public class ZoneClonerTest {
 		check(header.textID == srcHeader.textID, "cloned textID differs from source");
 		check(header.parentMap == srcHeader.parentMap, "cloned parentMap differs from source");
 		ZoneEntities entities = new ZoneEntities(zo.getFile(1));
-		check(entities.npcs.size() == entities.NPCCount, "entities NPC list/count mismatch");
-		check(entities.warps.size() == entities.warpCount, "entities warp list/count mismatch");
-		check(entities.triggers1.size() == entities.trigger1Count, "entities trigger1 list/count mismatch");
-		check(entities.totalLength == 8 + entities.furnitureCount * 0x14 + entities.NPCCount * 0x30
-				+ (entities.warpCount + entities.trigger1Count + entities.trigger2Count) * 0x18,
+		check(entities.totalLength == 8 + entities.furniture.size() * 0x14 + entities.npcs.size() * 0x30
+				+ (entities.warps.size() + entities.triggers1.size() + entities.triggers2.size()) * 0x18,
 				"entities totalLength inconsistent with record counts");
 		GFLPawnScript script = new GFLPawnScript(zo.getFile(2));
 		script.decompressThis();

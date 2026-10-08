@@ -2,7 +2,8 @@
 
 Status: **steps 1-6 built; nothing checked in the emulator yet.** Grounded in three read-only
 investigations of the retail game (2026-09-03); every offset and count below was measured, not
-assumed. Raw findings: `wt/_state/items_feasibility.json`.
+assumed. Raw findings: `wt/_state/items_feasibility.json`, outside the repository (scan output from the
+owner's dump, which is never committed - a clone cannot re-run it).
 
 What shipped, and where:
 
@@ -25,6 +26,31 @@ Two corrections the build made to what is written below:
   item uses is 629; 630 exists and nothing points at it. The editor offers it.
 
 Not attempted, deliberately: raising 776, and anything that authors a new behaviour.
+
+## Where the registry stopped
+
+**The generic editor stopped at the item record (F252, 2026-10-08).** The design below sets out to
+put every fixed-stride record behind one generic form, with each discovery a TSV row. That is not the
+direction the other editors are going, and this section says so rather than leaving the package to
+read as if it were. `RecordSchemaTest` holds this section to the code: the schemas the registry
+answers, the dialogs that build the generic form, and the editors named bespoke must be exactly as
+listed here.
+
+| | name | why |
+|---|---|---|
+| schema | `Items` | the 36-byte item record, `SchemaRegistry.items()` |
+| on the form | `ItemEditDialog` | the item editor builds `RecordEditPanel` over it |
+| bespoke | `TrainerEditDialog` | a party is `numPokemon` records of `8 + 2*hasItem + 8*hasMoves` bytes: its length and its stride change per trainer, and a schema is one stride, one record per entry |
+| bespoke | `MaisonEditDialog` | a set IS a fixed 16-byte record per entry, but its fields are a species, four moves, a nature and an item: the form names only item-effect ids, so it would show numbers where this shows names - the id kinds below were never built |
+| bespoke | `MaisonClassListDialog` | a record is `4 + count*2` bytes, and the two tables pad it differently (136 fixed, or tight) |
+| bespoke | `ShopEditDialog` | 215 item ids in the executable behind an anchor string, in 24 shops of fixed lengths: a code patch, and the shops are the editor's grouping, not the record's |
+| bespoke | `EncounterEditDialog` | a 260-byte table, but inside the zone's EN pack rather than one per archive entry, its 61 slots in 11 banks of different sizes |
+
+Not a TSV, by decision: `SchemaRegistry` is Java because each field carries the warning its form shows
+beside the control (byte 0x10's two meanings, the mirrored heal amount), and a registry nobody can
+read is worse than a hand-built form. The icon table was described here as a code-patch schema too;
+nothing rendered it - the icon panel reads `ItemIconTable`, which refuses a build whose stock bytes
+do not match - so that description and the tier it alone used were removed.
 
 ## The one thing that decides the design
 

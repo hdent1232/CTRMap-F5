@@ -19,7 +19,9 @@ import sys
 import tempfile
 import unittest
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+HERE = _tree_root.require(__file__)
 sys.path.insert(0, os.path.join(HERE, "tools"))
 import arm_checkout  # noqa: E402  - the tool under test
 

@@ -22,7 +22,10 @@ import java.util.TreeMap;
  * pack below, on top of a real contents entry, overwriting its flag. Before the readers were merged,
  * what each made of two dump-free files was recorded (PINS); every reader but the area animation
  * must still make exactly that of them, and the area animation must now record exactly the
- * contents relocations and the command relocations, each where it is.
+ * contents relocations and the command relocations, each where it is. The BCHFile materials and
+ * textures pins were added the same way before the material decoder was cut down to what the 3D
+ * view reads and the command reader's 64K table became a sparse one (F071, F079): measured on the
+ * old decoder, so the new one is held to what the old one read.
  *
  * <p>ORDER: needs no dump. The subjects are the bundled DummyBCH3DModel.bch and a two-texture pack
  * BchTexturePack writes; their digests are recorded with the pins, so a changed writer reads as a
@@ -43,6 +46,15 @@ public class BchSectionsTest {
 	 * tree over a93ef21): the first 16 hex digits of the SHA-256 of each reader's line, built exactly
 	 * as {@link #describe} builds it. WorldAnim's two are the corrected decode's, taken after the
 	 * merge, when the probe showed every other line unchanged.
+	 *
+	 * <p>RE-TAKEN 2026-10-08 (F228), three of them, from this suite's own lines: both BCHFile buf
+	 * hashes and the dummy's materials. They were measured on a BCHFile whose relocation wrote
+	 * through a wrapped buffer's absolute putInt(0, ...), so every relocation also overwrote the
+	 * first four bytes of the file; and on a material reader that read a zero name pointer as a
+	 * string at offset 0. A control run with the old classes overlaid (scratch f228_control.py)
+	 * showed the old pins passing on the old code, the buf hashes moving with the relocation fix
+	 * alone (the unused texture names then read the intact magic, "BCH"), and the names going
+	 * empty with the zero-pointer fix. No other pin moved.
 	 */
 	static final String[][] PINS = {
 		{"dummy", "BchMapModel header", "9818d7d5db7f358a"},
@@ -53,9 +65,11 @@ public class BchSectionsTest {
 		{"dummy", "BchModelAppender.decode", "50aebf4d45bd7277"},
 		{"dummy", "WorldAnim relocMap", "5bbe1462b2b638a6"},
 		{"dummy", "BCHFile header", "c4e058d8f9be5463"},
-		{"dummy", "BCHFile buf hash", "3f63ca06d9087284"},
+		{"dummy", "BCHFile buf hash", "8052dffc65ba8f55"},
 		{"dummy", "BchTexturePack.isTexturePack", "2692a0af9f0693e2"},
 		{"dummy", "BchTexturePack.parse", "99d19c69b02e9a3e"},
+		{"dummy", "BCHFile materials", "14f7934a14250e58"},
+		{"dummy", "BCHFile textures", "451a3774a42a3529"},
 		{"pack", "BchMapModel header", "0f31a1a826c63e16"},
 		{"pack", "BchMapModel ptrLocToTargetBase", "9b63805e6aeb1576"},
 		{"pack", "BchMapModel cmdRelocs", "8108c637f88b03dc"},
@@ -64,9 +78,11 @@ public class BchSectionsTest {
 		{"pack", "BchModelAppender.decode", "46f9789913a88a59"},
 		{"pack", "WorldAnim relocMap", "0496f869d436c21c"},
 		{"pack", "BCHFile header", "8e2f900b177d61c7"},
-		{"pack", "BCHFile buf hash", "996de340845a0418"},
+		{"pack", "BCHFile buf hash", "b4f0244848b6d5d6"},
 		{"pack", "BchTexturePack.isTexturePack", "cb3e12ac91218e98"},
 		{"pack", "BchTexturePack.parse", "5e23a7d9eff36236"},
+		{"pack", "BCHFile materials", "8e0ef6f644e726b4"},
+		{"pack", "BCHFile textures", "3f846913af3d3414"},
 	};
 
 	/** One section of the suite. */
@@ -110,10 +126,43 @@ public class BchSectionsTest {
 		section("the header layouts", BchSectionsTest::theHeaderIsReadForEveryLayout);
 		section("the refusals", BchSectionsTest::whatIsNotABchIsRefused);
 		section("the string readers", BchSectionsTest::aStringNothingEndsIsRefused);
+		section("the map-model verifier", () -> theVerifierReportsAModelWithNothingToDraw(dummy));
+		section("the appender's refusal", BchSectionsTest::anAppendRefusalSaysWhatDidNotParse);
+		section("a material's unlisted values", () -> aMaterialValueThePortDidNotListOpens(dummy));
+		section("a relocation writes where it is told", BchSectionsTest::aRelocationWritesOnlyWhereItIsTold);
+		section("the BCH reader's position", BchSectionsTest::theReaderIsWhereItRead);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * The map-model verifier reports a model with no meshes; it threw IndexOutOfBounds on one, reading
+	 * the first mesh before asking whether there was one (F063). The subject is the bundled dummy model
+	 * with its mesh count set to 0, which still parses.
+	 */
+	static void theVerifierReportsAModelWithNothingToDraw(byte[] dummy) throws Exception {
+		System.out.println("--- the map-model verifier reports a model with nothing to draw (F063)");
+		ctrmap.formats.h3d.BchMapModel whole = new ctrmap.formats.h3d.BchMapModel(dummy);
+		check(whole.meshCount == 1, "control: the dummy model has the one mesh the edit below takes away");
+		byte[] empty = dummy.clone();
+		int at = whole.modelPtr + 0x44;   //the model header's mesh count
+		empty[at] = empty[at + 1] = empty[at + 2] = empty[at + 3] = 0;
+		check(new ctrmap.formats.h3d.BchMapModel(empty).meshCount == 0, "control: the edited copy parses with no meshes");
+		java.util.List<String> said;
+		try {
+			said = ctrmap.formats.h3d.BchModelVerifier.verify(empty);
+		} catch (RuntimeException threw) {
+			said = null;
+			check(false, "the verifier reports a model with no meshes rather than throwing: " + threw);
+		}
+		if (said != null) {
+			check(said.contains("no meshes"), "the verifier reports a model with no meshes rather than throwing: " + said);
+		}
+		java.util.List<String> again = ctrmap.formats.h3d.BchModelVerifier.verify(dummy);
+		check(!again.contains("no meshes") && again.equals(ctrmap.formats.h3d.BchModelVerifier.verify(dummy)),
+				"and the dummy model's own report is unchanged by verifying another between: " + again.size() + " finding(s)");
 	}
 
 	static void everyReaderMakesOfThemWhatItDid(byte[] dummy, byte[] pack) throws Exception {
@@ -172,6 +221,103 @@ public class BchSectionsTest {
 		check(old.flags == 0 && old.addressCount == 0, "a layout of 7 or older has no flags or address count");
 	}
 
+	/**
+	 * A material carrying values the Ohana port did not list still opens, drawn with what it does
+	 * list (F079): the port indexed values() with raw bits, so each of these threw and BCHFile
+	 * refused the whole model. The dummy's first texture mapper gets a wrap mode of 0x7F and a
+	 * magnification filter byte of 0x80 (a signed shift made that negative), and its alpha test
+	 * gets bit 7, past the register's three function bits. Each place is found by reading the
+	 * dummy, and checked against what the pins say is there before it is changed.
+	 */
+	static void aMaterialValueThePortDidNotListOpens(byte[] dummy) throws Exception {
+		System.out.println("--- a material value the port did not list opens, drawn with what it does (F079)");
+		BchMapModel m = new BchMapModel(dummy);
+		int header = m.materialHeaderOffsets.get(0);
+		int mapper = m.ptr(header + 0x18);
+		int params = m.ptr(header);
+		int fsh = m.ptr(params + 200);
+		int words = ctrmap.util.LittleEndian.i32(dummy, params + 204);
+		int alphaAt = -1, found = 0;
+		for (int w = 0; w + 1 < words; w += 2) {
+			int head = ctrmap.util.LittleEndian.i32(dummy, fsh + (w + 1) * 4);
+			if ((head & 0xffff) == ctrmap.formats.h3d.PICACommand.alphaTestConfig && ((head >> 20) & 0x7ff) == 0) {
+				alphaAt = fsh + w * 4;
+				found++;
+			}
+		}
+		boolean located = found == 1 && dummy[mapper + 1] == 2 && dummy[mapper + 2] == 2
+				&& ((ctrmap.util.LittleEndian.i32(dummy, alphaAt) >> 4) & 0xf) == 6;
+		check(located, "control: the first mapper's wraps read repeat/repeat and one alpha-test write reads 'greater'"
+				+ " where this looks for them (mapper at " + mapper + ", alpha test at " + alphaAt + ", " + found + " found)");
+		if (!located) {
+			return;
+		}
+		byte[] odd = dummy.clone();
+		odd[mapper + 1] = 0x7F;
+		odd[mapper + 3] = (byte) 0x80;
+		odd[alphaAt] |= (byte) 0x80;
+		ctrmap.formats.h3d.BCHFile f = new ctrmap.formats.h3d.BCHFile(odd);
+		boolean opened = f.errorlevel == 0 && f.models.size() == 1 && f.models.get(0).materials.size() == 1;
+		check(opened, "the model opens (errorlevel " + f.errorlevel + ", " + f.models.size() + " model(s))");
+		if (opened) {
+			ctrmap.formats.h3d.texturing.H3DMaterial mat = f.models.get(0).materials.get(0);
+			check(mat.mappers[0].wrapU == ctrmap.formats.h3d.texturing.H3DMaterial.TextureMapper.TextureWrap.repeat
+					&& mat.mappers[0].wrapV == ctrmap.formats.h3d.texturing.H3DMaterial.TextureMapper.TextureWrap.repeat,
+					"an unlisted wrap mode draws as repeat, and the listed one beside it is read as it was ("
+					+ mat.mappers[0].wrapU + "/" + mat.mappers[0].wrapV + ")");
+			check(mat.params.alphaTest.isTestEnabled
+					&& mat.params.alphaTest.testFunction == ctrmap.formats.h3d.texturing.H3DMaterial.TestFunction.greater,
+					"the alpha test reads its three function bits: still on, still 'greater' ("
+					+ mat.params.alphaTest.isTestEnabled + "/" + mat.params.alphaTest.testFunction + ")");
+		}
+	}
+
+	/**
+	 * The model appender says which model did not parse and what its reader found (F229): it threw
+	 * "parse problems" and dropped both lists, and an OBJ import showed that for every new-material
+	 * group. Data-free: a header-only 0x21 model the reader cannot make a model of, against the
+	 * bundled dummy model, which it can (the control).
+	 */
+	static void anAppendRefusalSaysWhatDidNotParse() throws Exception {
+		System.out.println("--- an append refusal says which model did not parse, and why (F229)");
+		byte[] dummy = resource("ctrmap/resources/DummyBCH3DModel.bch");
+		java.util.List<String> clean = new ctrmap.formats.h3d.BchMapModel(dummy).validate();
+		check(clean.isEmpty(), "control: the bundled dummy model parses clean (" + clean + ")");
+		byte[] empty = new byte[0x100];
+		empty[0] = 'B';
+		empty[1] = 'C';
+		empty[2] = 'H';
+		empty[4] = 0x21;
+		empty[5] = 0x21;
+		MapResizeTest.putI32(empty, 8, 0x44);
+		MapResizeTest.putI32(empty, 28, 0x100);
+		MapResizeTest.putI32(empty, 32, 15 * 12);
+		String asTarget = appendRefusal(empty, dummy);
+		check(asTarget.startsWith("the map's model does not parse: [") && asTarget.contains("models dict count==1"),
+				"a target that does not parse is named, with what its reader found (" + asTarget + ")");
+		String asDonor = appendRefusal(dummy, empty);
+		check(asDonor.startsWith("the donor model does not parse: [") && asDonor.contains("models dict count==1"),
+				"a donor that does not parse is named, with what its reader found (" + asDonor + ")");
+		String pastIt;
+		try {
+			ctrmap.formats.h3d.BchModelAppender.append(dummy, dummy, 5, "probe");
+			pastIt = "(appended)";
+		} catch (RuntimeException ex) {
+			pastIt = ex.getClass().getSimpleName() + ": " + ex.getMessage();
+		}
+		check(pastIt.contains("1 mesh(es)") && pastIt.contains("mesh 5 is not one of them"), "a template mesh the donor"
+				+ " does not have is refused, naming how many it has (F226: it was an index out of bounds) (" + pastIt + ")");
+	}
+
+	private static String appendRefusal(byte[] target, byte[] donor) {
+		try {
+			ctrmap.formats.h3d.BchModelAppender.append(target, donor, 0, "probe");
+			return "(appended)";
+		} catch (IllegalStateException ex) {
+			return String.valueOf(ex.getMessage());
+		}
+	}
+
 	/** The header with its relocation table pointed inside the file: empty, at the end. */
 	static byte[] withReloc(byte[] b, int addrAt, int lenAt) {
 		MapResizeTest.putI32(b, addrAt, b.length);
@@ -213,7 +359,7 @@ public class BchSectionsTest {
 		};
 		String said;
 		try {
-			said = "read \"" + ctrmap.formats.h3d.StringUtils.readString(new ctrmap.LittleEndianDataInputStream(bounded)) + "\"";
+			said = "read \"" + ctrmap.formats.h3d.StringUtils.readString(new ctrmap.util.LittleEndianDataInputStream(bounded)) + "\"";
 		} catch (java.io.IOException | RuntimeException ex) {
 			said = ex.getMessage();
 		}
@@ -283,6 +429,28 @@ public class BchSectionsTest {
 		put(out, "BCHFile buf hash: " + java.util.Arrays.hashCode((byte[]) get(bf, "buf")) + " models "
 				+ ((List<?>) get(bf, "models")).size() + " textures " + ((List<?>) get(bf, "textures")).size()
 				+ " errorlevel " + get(bf, "errorlevel"));
+		//WHAT THE 3D VIEW READS from each material (F079): pinned before the material decoder was cut
+		//down to it, so the cut is held to what the old decoder made of these fields
+		StringBuilder mats = new StringBuilder("BCHFile materials:");
+		for (Object model : (List<?>) get(bf, "models")) {
+			for (ctrmap.formats.h3d.texturing.H3DMaterial m : ((ctrmap.formats.h3d.model.H3DModel) model).materials) {
+				mats.append(" [").append(m.name).append('|').append(m.name0).append('|').append(m.name1).append('|')
+						.append(m.name2);
+				for (ctrmap.formats.h3d.texturing.H3DMaterial.TextureMapper mp : m.mappers) {
+					mats.append('|').append(mp.wrapU).append('/').append(mp.wrapV);
+				}
+				mats.append('|').append(m.params.blendop.mode).append('|').append(m.params.alphaTest.isTestEnabled)
+						.append('/').append(m.params.alphaTest.testFunction).append(']');
+			}
+		}
+		put(out, mats.toString());
+		StringBuilder texs = new StringBuilder("BCHFile textures:");
+		for (Object tex : (List<?>) get(bf, "textures")) {
+			ctrmap.formats.h3d.texturing.H3DTexture x = (ctrmap.formats.h3d.texturing.H3DTexture) tex;
+			texs.append(" [").append(x.textureName).append('|').append(x.textureSize.width).append('x')
+					.append(x.textureSize.height).append('|').append(java.util.Arrays.hashCode(x.textureData)).append(']');
+		}
+		put(out, texs.toString());
 		put(out, "BchTexturePack.isTexturePack: " + BchTexturePack.isTexturePack(b));
 		try {
 			StringBuilder t = new StringBuilder("BchTexturePack.parse:");
@@ -360,6 +528,68 @@ public class BchSectionsTest {
 			sb.append(String.format("%02x", x));
 		}
 		return sb.toString();
+	}
+
+	/**
+	 * BCHFile's relocation writes the four bytes it is told to and no others (F228). It wrapped the
+	 * buffer at the offset and then wrote with ByteBuffer's ABSOLUTE putInt(0, ...) - index 0 of the
+	 * whole array - so every relocation and every changed value also overwrote the first four bytes,
+	 * the file's magic, before copying the value to where it belonged.
+	 */
+	static void aRelocationWritesOnlyWhereItIsTold() {
+		byte[] b = {'B', 'C', 'H', 0, 0x10, 0, 0, 0, 0, 0, 0, 0};
+		ctrmap.formats.h3d.BCHFile.changeValueTo(8, 0x11223344, b);
+		check(b[0] == 'B' && b[1] == 'C' && b[2] == 'H' && b[3] == 0 && ctrmap.util.LittleEndian.i32(b, 8) == 0x11223344
+				&& ctrmap.formats.h3d.BCHFile.peek(8, b) == 0x11223344,
+				"changing a value writes it at its offset and leaves the magic alone: " + java.util.Arrays.toString(b));
+		byte[] c = {'B', 'C', 'H', 0, 0x10, 0, 0, 0};
+		new ctrmap.formats.h3d.BCHFile(new byte[0]).relocateOffset(4, 0x20, c);
+		check(c[0] == 'B' && c[1] == 'C' && c[2] == 'H' && c[3] == 0 && ctrmap.util.LittleEndian.i32(c, 4) == 0x30,
+				"and relocating an offset adds to the word at its offset only: " + java.util.Arrays.toString(c));
+	}
+
+	/**
+	 * The BCH reader is where it read (F228). It counted its position beside a stream's and the two
+	 * drifted, measured on the old reader over six bytes: skip(100) said 100; read() at the end said 7;
+	 * read(byte[]) at the end said 5, backwards; seek(-2) said -2 while the stream read from 0. Each of
+	 * those is asked again here, with the reads' values against bytes whose answers are known.
+	 */
+	static void theReaderIsWhereItRead() throws Exception {
+		System.out.println("--- the BCH reader is where it read (F228)");
+		byte[] b = {0x01, 0x02, (byte) 0xFE, (byte) 0xFF, 0x00, 0x00, (byte) 0x80, 0x3F, 0x7F};
+		ctrmap.formats.h3d.RandomAccessBAIS in = new ctrmap.formats.h3d.RandomAccessBAIS(b);
+		check(in.readShort() == 0x0201 && in.position() == 2, "control: readShort reads low byte first and moves 2");
+		check(in.readUnsignedShort() == 0xFFFE && in.position() == 4, "readUnsignedShort is unsigned and moves 2");
+		check(in.readFloat() == 1.0f && in.position() == 8, "readFloat reads the IEEE bits low byte first and moves 4");
+		check(in.read() == 0x7F && in.position() == 9, "read() answers the byte and moves 1");
+		check(in.read() == -1 && in.position() == 9, "read() at the end answers -1 and does not move: " + in.position());
+		check(in.read(new byte[4]) == -1 && in.position() == 9,
+				"read(byte[]) at the end answers -1 and does not move: " + in.position());
+		in.seek(7);
+		byte[] two = new byte[4];
+		check(in.read(two) == 2 && two[0] == 0x3F && two[1] == 0x7F && in.position() == 9,
+				"read(byte[]) near the end reads what is there and moves by that: " + in.position());
+		in.seek(0);
+		check(in.skip(100) == 9 && in.position() == 9, "skip past the end stops at the end: " + in.position());
+		in.seek(0);
+		check(in.readInt() == 0xFFFE0201 && in.position() == 4, "readInt reads four bytes low first and moves 4");
+		boolean refused;
+		try {
+			in.seek(-2);
+			refused = false;
+		} catch (java.io.IOException e) {
+			refused = true;
+		}
+		check(refused && in.position() == 4, "a seek before the start is refused, and the reader stays: " + in.position());
+		in.seek(7);
+		try {
+			in.readInt();
+			check(false, "a read past the end throws EOFException");
+		} catch (java.io.EOFException e) {
+			check(in.position() == 7, "a read past the end throws EOFException and does not move: " + in.position());
+		}
+		in.seek(100);
+		check(in.read() == -1 && in.position() == 100, "a seek past the end is allowed, and reading there answers the end");
 	}
 
 	static void check(boolean ok, String what) {

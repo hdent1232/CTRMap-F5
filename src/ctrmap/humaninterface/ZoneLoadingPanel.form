@@ -137,6 +137,10 @@
                               <Component id="loadZoneLabel" min="-2" max="-2" attributes="0"/>
                               <EmptySpace max="-2" attributes="0"/>
                               <Component id="zoneList" min="-2" pref="350" max="-2" attributes="0"/>
+                              <EmptySpace max="-2" attributes="0"/>
+                              <Component id="btnCloneZone" min="-2" max="-2" attributes="0"/>
+                              <EmptySpace max="-2" attributes="0"/>
+                              <Component id="btnAddZone" min="-2" max="-2" attributes="0"/>
                           </Group>
                           <Component id="skybox" alignment="0" min="-2" max="-2" attributes="0"/>
                           <Group type="102" alignment="0" attributes="0">
@@ -201,6 +205,8 @@
               <Group type="103" groupAlignment="3" attributes="0">
                   <Component id="zoneList" alignment="3" max="-2" attributes="0"/>
                   <Component id="loadZoneLabel" alignment="3" max="-2" attributes="0"/>
+                  <Component id="btnCloneZone" alignment="3" min="-2" max="-2" attributes="0"/>
+                  <Component id="btnAddZone" alignment="3" min="-2" max="-2" attributes="0"/>
               </Group>
               <EmptySpace max="-2" attributes="0"/>
               <Component id="loaderSeparator" min="-2" pref="2" max="-2" attributes="0"/>
@@ -455,6 +461,22 @@
       <AuxValues>
         <AuxValue name="JavaCodeGenerator_TypeParameters" type="java.lang.String" value="&lt;String&gt;"/>
       </AuxValues>
+    </Component>
+    <Component class="javax.swing.JButton" name="btnCloneZone">
+      <Properties>
+        <Property name="text" type="java.lang.String" value="Clone zone..."/>
+      </Properties>
+      <Events>
+        <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="btnCloneZoneActionPerformed"/>
+      </Events>
+    </Component>
+    <Component class="javax.swing.JButton" name="btnAddZone">
+      <Properties>
+        <Property name="text" type="java.lang.String" value="Add zones (lift limit)..."/>
+      </Properties>
+      <Events>
+        <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="btnAddZoneActionPerformed"/>
+      </Events>
     </Component>
     <Component class="javax.swing.JLabel" name="loadZoneLabel">
       <Properties>

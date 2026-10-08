@@ -1,5 +1,14 @@
 # TESTZONE.md — the built-in test world (walk it once, test everything)
 
+> **Built by hand from commit 19e93f3 (2026-08-30), and nothing in the tree can rebuild it (F138).**
+> Walking it tests what the editor produced at that commit, not the editor you are running: measured
+> 2026-10-08, 518 of the 642 commits came after it, 87 of them in the subsystems the symptom table
+> below isolates (`formats/tilemap`, `formats/h3d`, `formats/scripts`, the map painter). It also
+> exists in ONE dump - the owner's - because it was packed there, not built by a tool. To check a
+> change to those subsystems, build what the change touches with the current editor and walk that;
+> use this world for the parts nothing since has touched. A tool that rebuilds it through the
+> editor's own operations needs the owner's dump to be written and checked, and is owed.
+
 A complete test world is now packed into your game data. **Entering May's
 house in Littleroot Town (the very first house you'd enter in the game)
 warps you to the TEST HUB instead.** Both doors that led to her house — the

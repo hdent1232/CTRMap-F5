@@ -16,7 +16,9 @@ import re
 import sys
 import unittest
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+HERE = _tree_root.require(__file__)
 sys.path.insert(0, os.path.join(HERE, "tools", "guard"))
 import record_run  # noqa: E402  - the runner whose record a commit's test count is checked against
 

@@ -45,7 +45,7 @@ import bundle_shell      # noqa: E402  - the call, found by shape
 
 LF = chr(10)
 
-#: Adapted per project: see ADAPT.md. The scopes, directories and lock live in `bundle_rules`.
+#: Adapted per project: see the bootstrap's ADAPT.md. The scopes, directories and lock live in `bundle_rules`.
 ADAPT = ()
 
 

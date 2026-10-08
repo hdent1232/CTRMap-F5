@@ -1,9 +1,9 @@
 package ctrmap;
 
 import ctrmap.gamedef.ArchiveType;
-import static ctrmap.formats.LittleEndian.i32;
-import static ctrmap.formats.LittleEndian.u16;
-import static ctrmap.formats.LittleEndian.putU16;
+import static ctrmap.util.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.putU16;
 
 /**
  * Everything a zone header POINTS AT, and therefore everything a zone can share

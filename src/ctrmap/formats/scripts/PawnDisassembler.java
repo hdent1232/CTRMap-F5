@@ -73,45 +73,4 @@ public class PawnDisassembler {
 		return target;
 	}
 
-	public static int isSubCorrupted(String code, int start) {
-		System.out.println(code.substring(Math.max(0, start - 20), start + 50));
-		char chara;
-		int idx = start;
-		int lines = 0;
-		if (idx >= code.length()) {
-			return lines;
-		}
-		while ((chara = code.charAt(idx)) != '{') {
-			if (chara == '\n') {
-				lines++;
-			}
-			if (code.length() > idx + 3) {
-				if (code.substring(idx, idx + 3).equals("sub")) { //new sub without ending this one
-					return lines;
-				}
-			}
-			idx++;
-			if (code.length() <= idx) { //end of source
-				return lines;
-			}
-		}
-		if (idx >= code.length()) {
-			return lines;
-		}
-		while ((chara = code.charAt(idx)) != '}') {
-			if (chara == '\n') {
-				lines++;
-			}
-			if (code.length() > idx + 2) {
-				if (code.substring(idx, idx + 2).equals("sub")) { //new sub without ending this one
-					return lines;
-				}
-			}
-			idx++;
-			if (code.length() <= idx) { //end of source
-				return lines;
-			}
-		}
-		return -1;
-	}
 }

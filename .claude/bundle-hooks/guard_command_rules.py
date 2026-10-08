@@ -75,7 +75,7 @@ LF = chr(10)
 #: git gate for this to protect, and is not refused for lacking one.
 HOOKS_DIR = ".githooks"
 
-#: Adapted per project: see ADAPT.md.
+#: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("HOOKS_DIR",)
 
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0

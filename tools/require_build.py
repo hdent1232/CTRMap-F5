@@ -60,8 +60,13 @@ class NothingToDigest(Exception):
 
 def digest_bytes(path):
     """The bytes a digest is taken over: text files with every CR removed."""
-    data = Path(path).read_bytes()
-    if str(path).lower().endswith(TEXT_DIGEST_EXT):
+    return digest_of(Path(path).read_bytes(), str(path))
+
+
+def digest_of(data, name):
+    """`data` as a digest takes it, for a file called `name` - the one rule, for bytes that are not on
+    disk too: the commit guard digests the STAGED copy of a file (F132), which may differ from it."""
+    if name.lower().endswith(TEXT_DIGEST_EXT):
         return data.replace(b"\r", b"")
     return data
 

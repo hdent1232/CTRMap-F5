@@ -1,12 +1,12 @@
 package ctrmap.formats.propdata;
 
-import ctrmap.LittleEndianDataInputStream;
-import ctrmap.LittleEndianDataOutputStream;
+import ctrmap.util.LittleEndianDataInputStream;
+import ctrmap.util.LittleEndianDataOutputStream;
 import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.BM;
 import ctrmap.formats.h3d.H3DModelNameGet;
 import ctrmap.gamedef.ArchiveType;
-import ctrmap.humaninterface.MapObject;
+import ctrmap.formats.MapObject;
 import java.io.File;
 import java.io.IOException;
 

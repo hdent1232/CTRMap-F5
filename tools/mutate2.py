@@ -55,7 +55,10 @@ import time
 from pathlib import Path
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console window for a captured child (F184)
 
-BASE = Path(__file__).resolve().parent.parent.parent   # tools -> repository -> the folder holding it
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
+REPO = Path(_tree_root.require(__file__)).resolve()
+BASE = REPO.parent   # the folder holding the repository - anchored on it, never counted (F216)
 WT = BASE / "wt" / "_guardcheck"
 DUMP = BASE / "RomFS_original_garcs"
 #the value after --anyway is a sentence, not the mutant cap
@@ -161,7 +164,7 @@ SUBST = {
 #
 # Do not add a line here because no test happens to cover it. The bar is that no
 # test COULD, without asserting its own instrument.
-EXCLUSION_CEILING = 4
+EXCLUSION_CEILING = 2
 EXCLUSIONS = {
     ("src/ctrmap/Ui.java", 122): (
         "JOptionPane.showMessageDialog(parent, text, title, type);",
@@ -180,6 +183,12 @@ if len(EXCLUSIONS) > EXCLUSION_CEILING:
     raise SystemExit("the exclusion list holds %d lines, over its ceiling of %d. Every entry "
                      "is a line nobody is watching on purpose; if the list needs to grow, that "
                      "decision belongs to a human, in a commit that says why."
+                     % (len(EXCLUSIONS), EXCLUSION_CEILING))
+# AND NO SLACK (F189): a ceiling above the list is room for a line to be excluded with nothing said.
+# MutationBaselineTest reads EXCLUSION_CEILING from this line rather than keeping a copy.
+if len(EXCLUSIONS) < EXCLUSION_CEILING:
+    raise SystemExit("FAIL: the exclusion list holds %d lines under a ceiling of %d - lower the ceiling "
+                     "to the list: a slot of slack is a line that could be excluded with nothing said"
                      % (len(EXCLUSIONS), EXCLUSION_CEILING))
 for _k, _v in EXCLUSIONS.items():
     if len(_v[1]) < 60:
@@ -491,7 +500,7 @@ def baseline_path():
     from this script's own location. It is a function because the suite ordering
     reads the last run BEFORE the sweep starts and the ratchet writes it after, and those
     two must not be able to drift into naming different files."""
-    return Path(__file__).resolve().parent.parent / "mutation_baseline.json"
+    return REPO / "mutation_baseline.json"
 
 
 def read_src(path):
@@ -1069,7 +1078,7 @@ import atexit
 
 def _door():
     """bundle_rules, where the lock's one door is."""
-    repo = str(Path(__file__).resolve().parent.parent)
+    repo = str(REPO)
     sys.path.insert(0, os.path.join(repo, "tools"))
     import bundle_hooks
     sys.path.insert(0, bundle_hooks.path(repo))

@@ -108,6 +108,7 @@ public class ZoneLoadingStateTest {
 		theZoneButtonsRefuseWhatTheyCannotDo();
 		theZoneTabRefusesToBeBuiltWithoutTheEditors();
 		aDeclineThatCannotBeSavedIsSaidOutLoudOnce();
+		aDeclineIsItsGamesNotTheMachines();
 
 		if (!dump.isDirectory()) {
 			Skip.section("no dump at " + dump + " - the state transitions need a zone table");
@@ -115,11 +116,11 @@ public class ZoneLoadingStateTest {
 			ScratchGame.open(dump);
 			LocationNames.loadFromGarc(Workspace.session());
 			LoadedZone lz = new LoadedZone();
-			ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
-			CtrmapMainframe.mZonePnl = pnl;
-			CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, CtrmapMainframe.mTileMapPanel, pane -> { });
-			CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz, REDRAW, CENTRE);
-			CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz, REDRAW, CENTRE);
+			ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+			TestWindow.mZonePnl(pnl);
+			TestWindow.mNPCEditForm(new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, TestWindow.mTileMapPanel(), pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0})));
+			TestWindow.mWarpEditForm(new WarpEditForm(lz, REDRAW, CENTRE));
+			TestWindow.mTriggerEditForm(new TriggerEditForm(lz, REDRAW, CENTRE));
 
 			theListIsTheArchivesZonesAndNothingIsOpened(pnl, lz);
 			everyRetailHeaderSurvivesTheDropdowns(pnl, lz);
@@ -163,7 +164,7 @@ public class ZoneLoadingStateTest {
 	/** What building a Zone tab with these two says, or that it said nothing. */
 	static String refusal(ctrmap.humaninterface.OpenEditors editors, ctrmap.humaninterface.ZoneEditors views) {
 		try {
-			new ZoneLoadingPanel(new LoadedZone(), TOOLS, editors, views, NAVI);
+			new ZoneLoadingPanel(new LoadedZone(), TOOLS, editors, views, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
 		} catch (IllegalArgumentException refused) {
 			return String.valueOf(refused.getMessage());
 		}
@@ -183,7 +184,7 @@ public class ZoneLoadingStateTest {
 	static void aFreshPanelHoldsNoZone() {
 		System.out.println("--- a panel that has never been given a game");
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
 		check(lz.count() == 0, "no zone table");
 		check(lz.open() == null, "no open zone");
 		check(lz.index() == -1, "and the index is -1, not 0 - nothing is open (got " + lz.index() + ")");
@@ -207,7 +208,7 @@ public class ZoneLoadingStateTest {
 	 */
 	static void theDropdownTablesAgreeWithThemselves() throws Exception {
 		System.out.println("--- the weather and map-type tables agree with themselves");
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS, ZONE_EDITORS, NAVI);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
 		WorkspaceSession was = Workspace.session();
 
 		openAs(GameType.XY);
@@ -274,7 +275,7 @@ public class ZoneLoadingStateTest {
 	static void theZoneButtonsRefuseWhatTheyCannotDo() throws Exception {
 		System.out.println("--- the Clone and Add buttons refuse before they flush anything");
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
 		WorkspaceSession was = Workspace.session();
 
 		openAs(GameType.ORAS);
@@ -703,10 +704,10 @@ public class ZoneLoadingStateTest {
 		Zone z = zoneAt(SHARED_ZONE);
 		lz.open(SHARED_ZONE, z);
 		pnl.loadZone(z);
-		CtrmapMainframe.mNPCEditForm.loadFromEntities(z.entities, null);
-		CtrmapMainframe.mWarpEditForm.loadFromEntities(z.entities);
-		CtrmapMainframe.mTriggerEditForm.loadFromEntities(z.entities);
-		check(CtrmapMainframe.mNPCEditForm.loaded, "the NPC editor is showing the zone first");
+		TestWindow.mNPCEditForm().loadFromEntities(z.entities, null);
+		TestWindow.mWarpEditForm().loadFromEntities(z.entities);
+		TestWindow.mTriggerEditForm().loadFromEntities(z.entities);
+		check(TestWindow.mNPCEditForm().loaded, "the NPC editor is showing the zone first");
 		JComboBox<?> list = (JComboBox<?>) field(pnl, "zoneList");
 		setField(pnl, "loaded", false);
 		list.setSelectedIndex(SHARED_ZONE);
@@ -719,7 +720,7 @@ public class ZoneLoadingStateTest {
 		check(lz.open() == null, "no zone is open afterwards");
 		check(lz.index() == -1, "and the index says so too (got " + lz.index() + ")");
 		check(list.getSelectedIndex() == -1, "the dropdown shows nothing selected");
-		check(!CtrmapMainframe.mNPCEditForm.loaded,
+		check(!TestWindow.mNPCEditForm().loaded,
 				"the NPC editor is not left showing the zone that is no longer open");
 		check(sameTable(lz, tableBefore),
 				"but the ZONE LIST itself is kept - the same zones in the same slots, none is open");
@@ -750,19 +751,19 @@ public class ZoneLoadingStateTest {
 		Zone z = zoneAt(SHARED_ZONE);
 		lz.open(SHARED_ZONE, z);
 		pnl.loadZone(z);
-		CtrmapMainframe.mNPCEditForm.loadFromEntities(z.entities, null);
+		TestWindow.mNPCEditForm().loadFromEntities(z.entities, null);
 		JComboBox<?> list = (JComboBox<?>) field(pnl, "zoneList");
 		setField(pnl, "loaded", false); //selecting a row must not start the load worker
 		list.setSelectedIndex(SHARED_ZONE);
-		check(lz.isOpen() && CtrmapMainframe.mNPCEditForm.loaded,
+		check(lz.isOpen() && TestWindow.mNPCEditForm().loaded,
 				"fixture: a zone is open and an editor is showing it");
 		Zone[] tableBefore = snapshot(lz);
 
-		CtrmapMainframe.mZonePnl = pnl;
+		TestWindow.mZonePnl(pnl);
 		try {
-			CtrmapMainframe.onWorkspaceOpened(null); //what a validate that failed hands the window
+			TestWindow.onWorkspaceOpened(null); //what a validate that failed hands the window
 		} finally {
-			CtrmapMainframe.onWorkspaceOpened(Workspace.session()); //this suite's game, back
+			TestWindow.onWorkspaceOpened(Workspace.session()); //this suite's game, back
 		}
 
 		check(lz.open() == null,
@@ -770,7 +771,7 @@ public class ZoneLoadingStateTest {
 		check(lz.index() == -1, "and no index either, so nothing names a slot in a table that is gone (got "
 				+ lz.index() + ")");
 		check(list.getSelectedIndex() == -1, "the dropdown shows nothing selected");
-		check(!CtrmapMainframe.mNPCEditForm.loaded,
+		check(!TestWindow.mNPCEditForm().loaded,
 				"and no editor is left showing a zone that belongs to a game that is no longer open");
 		check(sameTable(lz, tableBefore),
 				"but the zone list itself is kept, exactly as it is for a load that failed partway");
@@ -794,7 +795,6 @@ public class ZoneLoadingStateTest {
 	 */
 	static void aSharedMapIsOfferedAForkAndADeclineIsRemembered(ZoneLoadingPanel pnl, LoadedZone lz) throws Exception {
 		System.out.println("--- a shared map is offered a fork, and a decline is remembered");
-		String key = "FORK_DECLINED_" + Workspace.WORKSPACE_PATH.hashCode();
 		try {
 			lz.open(SHARED_ZONE, zoneAt(SHARED_ZONE));
 			int mtx = lz.open().header.mapmatrixID;
@@ -837,111 +837,129 @@ public class ZoneLoadingStateTest {
 			said = offerFork(pnl, JOptionPane.NO_OPTION);
 			check(said.isEmpty(), "and nothing is asked when no zone is open: " + said);
 		} finally {
-			//the declines live in the machine's own preferences; this run's
-			//workspace is a throwaway folder, so its key is removed with it
-			try {
-				java.util.prefs.Preferences.userRoot().node("ctrmap.ZoneLoadingPanel").remove(key);
-			} catch (Exception ignore) {
-			}
+			//the declines live in this run's throwaway workspace folder (F253)
+			ctrmap.ForkDeclines.forget(new File(Workspace.WORKSPACE_PATH));
 		}
 	}
 
 	/**
-	 * A decline the preferences store REFUSED is said out loud - once.
+	 * A decline the workspace cannot keep is said out loud - once.
 	 *
-	 * <p>WHY THIS EXISTS. Remembering a decline is the whole of that feature:
-	 * without it the fork offer comes back on every zone load, which is the
-	 * nagging the memory was added to prevent. The write that does the
-	 * remembering used to end {@code catch (Exception ignore) &#123;&#125;}, so a store
-	 * that refused it left no trace anywhere - the user was simply asked again,
-	 * forever, with nothing to explain it.
-	 *
-	 * <p>HOW A REFUSAL IS DRIVEN HERE, and what that does NOT claim. What refuses
-	 * the write in the field is the preferences subsystem - no backing store, a
-	 * factory that will not start, a node removed underneath the panel - and none
-	 * of those can be produced on demand. The 8192-character cap on a preferences
-	 * value can be: the decline list is one CSV value, so an oversized set makes
-	 * the REAL store refuse a REAL write, deterministically, which is the only
-	 * honest way to reach the reporting path at all. It is NOT a failure this
-	 * game can reach on its own - {@code ZoneLimitPatch} tops it out at
-	 * {@code 0xFF * 4} zones, and every one of them declined is under 4000
-	 * characters.
-	 *
-	 * <p>Three things, and the middle one is the fix: a write the store ACCEPTS
-	 * says nothing (a report on every decline would be the nagging again), a
-	 * write it REFUSES is reported, and it is reported ONCE - a broken store
-	 * must not trade one nag for another.
+	 * <p>Three things, and the middle one is the fix: a write the store ACCEPTS says nothing (a
+	 * report on every decline would be the nagging again), a write it REFUSES is reported, and it
+	 * is reported ONCE - a broken store must not trade one nag for another. The refusal is made the
+	 * same way on any machine, root included: the store's temporary file name is taken by a folder,
+	 * so the write is refused while the declines it holds still read.
 	 */
 	static void aDeclineThatCannotBeSavedIsSaidOutLoudOnce() throws Exception {
-		System.out.println("--- a decline the preferences store refuses is reported, once");
+		System.out.println("--- a decline the workspace cannot keep is reported, once");
 		String wasPath = Workspace.WORKSPACE_PATH;
-		Workspace.WORKSPACE_PATH = "ctrmap-test-fork-decline-prefs";
-		String key = "FORK_DECLINED_" + Workspace.WORKSPACE_PATH.hashCode();
+		String wasGame = Workspace.GAMEDIR_PATH;
+		File base = Scratch.dir("ctrmap_fork_declines_refused");
 		try {
-			try {
-				java.util.prefs.Preferences.userRoot().node("ctrmap.ZoneLoadingPanel").put(key, "probe");
-				java.util.prefs.Preferences.userRoot().node("ctrmap.ZoneLoadingPanel").remove(key);
-			} catch (Exception ex) {
-				Skip.section("no writable preferences store on this machine (" + Ui.reason(ex)
-						+ ") - the decline memory cannot be driven here");
-				return;
-			}
-			ZoneLoadingPanel pnl = new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS, ZONE_EDITORS, NAVI);
-			//the panel's cached set, pinned to this workspace so nothing rebuilds
-			setField(pnl, "forkDeclinedWs", Workspace.WORKSPACE_PATH);
+			String game = new File(base, "game").getAbsolutePath();
+			File ws = new File(base, "ws");
+			check(ws.mkdirs(), "a workspace folder to keep the declines in");
+			Workspace.WORKSPACE_PATH = ws.getAbsolutePath();
+			Workspace.GAMEDIR_PATH = game;
+			ctrmap.ForkDeclines.write(ws, game, new TreeSet<>(Arrays.asList(3, 4, 5)));
+			ZoneLoadingPanel pnl = new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
 
-			//a decline list the store accepts
-			setField(pnl, "forkDeclined", new TreeSet<>(Arrays.asList(3, 4)));
 			List<String> said = Ui.record();
+			try {
+				pnl.clearForkDecline(5);
+			} finally {
+				Ui.stopRecording();
+			}
+			check(said.isEmpty() && ctrmap.ForkDeclines.read(ws, game).equals(new TreeSet<>(Arrays.asList(3, 4))),
+					"a decline list the store accepts is saved with nothing said: " + said);
+
+			check(new File(ws, ctrmap.ForkDeclines.FILE + ".tmp").mkdirs(),
+					"the store's temporary name taken by a folder - the lever that refuses the write");
+			said = Ui.record();
 			try {
 				pnl.clearForkDecline(4);
 			} finally {
 				Ui.stopRecording();
 			}
-			check(said.isEmpty(), "a decline list the store accepts is saved with nothing said: " + said);
-
-			//and one past the 8192-character cap a preferences value may hold
-			TreeSet<Integer> tooMany = new TreeSet<>();
-			for (int z = 100000; z < 102000; z++) {
-				tooMany.add(z);
-			}
-			setField(pnl, "forkDeclined", tooMany);
-			check(csvLength(tooMany) > 8192, "the decline list used here is " + csvLength(tooMany)
-					+ " characters of CSV, past the 8192 a preferences value may hold - synthetic, since"
-					+ " this game's zone ceiling tops a real list out near 4000; it is the lever, not the defect");
-			said = Ui.record();
-			try {
-				pnl.clearForkDeclinesFrom(101999);
-			} finally {
-				Ui.stopRecording();
-			}
 			check(said.size() == 1 && said.get(0).contains("could not be saved"),
-					"a decline the preferences store refused is reported rather than lost in silence: " + line(said));
+					"a decline the store refused is reported rather than lost in silence: " + line(said));
+			check(ctrmap.ForkDeclines.read(ws, game).equals(new TreeSet<>(Arrays.asList(3, 4))),
+					"and the last good set is still the one kept");
 
 			said = Ui.record();
 			try {
-				pnl.clearForkDeclinesFrom(101998);
+				pnl.clearForkDecline(3);
 			} finally {
 				Ui.stopRecording();
 			}
-			check(said.isEmpty(),
-					"and reported once, not on every decline a store that stays broken refuses: " + said);
+			check(said.isEmpty(), "and reported once, not on every decline a store that stays broken refuses: " + said);
 		} finally {
 			Workspace.WORKSPACE_PATH = wasPath;
-			try {
-				java.util.prefs.Preferences.userRoot().node("ctrmap.ZoneLoadingPanel").remove(key);
-			} catch (Exception ignore) {
-			}
+			Workspace.GAMEDIR_PATH = wasGame;
 		}
 	}
 
-	/** The length of the CSV the panel writes for a decline set. */
-	static int csvLength(java.util.Set<Integer> zones) {
-		int n = 0;
-		for (int z : zones) {
-			n += String.valueOf(z).length() + (n > 0 ? 1 : 0);
+	/**
+	 * A declined fork offer is its GAME's, kept in its WORKSPACE - not the machine's (F253). It was
+	 * kept in machine-wide Preferences under the hash of the workspace path, so pointing the same
+	 * workspace at another game silenced the offer on that game's zones at the same indices, and an
+	 * edit there changed every zone sharing the map without the question asked.
+	 */
+	static void aDeclineIsItsGamesNotTheMachines() throws Exception {
+		System.out.println("--- a declined fork offer is its game's, kept in its workspace (F253)");
+		String wasPath = Workspace.WORKSPACE_PATH;
+		String wasGame = Workspace.GAMEDIR_PATH;
+		File base = Scratch.dir("ctrmap_fork_declines_owner");
+		File ws = new File(base, "ws");
+		File other = new File(base, "ws2");
+		String gameA = new File(base, "gameA").getAbsolutePath();
+		String gameB = new File(base, "gameB").getAbsolutePath();
+		TreeSet<Integer> declined = new TreeSet<>(Arrays.asList(7, 9));
+		try {
+			check(ws.mkdirs() && other.mkdirs(), "two workspace folders");
+			ctrmap.ForkDeclines.write(ws, gameA, declined);
+			check(ctrmap.ForkDeclines.file(ws).isFile(), "the declines are kept in the workspace folder: "
+					+ ctrmap.ForkDeclines.file(ws));
+			check(ctrmap.ForkDeclines.read(ws, gameA).equals(declined), "and read back for the game they were declined against");
+			check(ctrmap.ForkDeclines.read(ws, gameB).isEmpty(),
+					"the same workspace pointed at another game holds none of them - its zone 7 is another zone: "
+					+ ctrmap.ForkDeclines.read(ws, gameB));
+			check(ctrmap.ForkDeclines.read(other, gameA).isEmpty(), "and another workspace on the same game holds none either");
+			Workspace.WORKSPACE_PATH = ws.getAbsolutePath();
+			Workspace.GAMEDIR_PATH = gameA;
+			Workspace.cleanAll();
+			check(ctrmap.ForkDeclines.read(ws, gameA).isEmpty(), "a clean that forgets the edits forgets the declines with them");
+			//COULD NOT READ IS NOT NONE DECLINED: a file Properties cannot parse used to read as an empty
+			//set, so the offers came back and nothing said the file was broken
+			java.nio.file.Files.write(ctrmap.ForkDeclines.file(ws).toPath(),
+					"x=\\uZZZZ\n".getBytes(java.nio.charset.StandardCharsets.ISO_8859_1));
+			String unreadable;
+			try {
+				unreadable = "read as " + ctrmap.ForkDeclines.read(ws, gameA);
+			} catch (java.io.IOException ex) {
+				unreadable = ex.getMessage();
+			}
+			check(unreadable.contains(ctrmap.ForkDeclines.FILE) && !unreadable.startsWith("read as"),
+					"a declines file that cannot be read is refused by name, not read as none declined: " + unreadable);
+			//a clean that could not forget them SAYS so - it was a log line, and the old answers kept
+			//silencing the offer on zones that were the game's own again
+			File held = ctrmap.ForkDeclines.file(ws);
+			check(held.delete() && new File(held, "in-the-way").mkdirs(), "a folder in the declines file's place, which"
+					+ " no delete removes");
+			String cleaned;
+			try {
+				Workspace.cleanAll();
+				cleaned = "nothing said";
+			} catch (java.io.IOException ex) {
+				cleaned = ex.getMessage();
+			}
+			check(cleaned.contains("could not be forgotten") && cleaned.contains(ctrmap.ForkDeclines.FILE),
+					"a clean that cannot forget the declines says so, naming the file: " + cleaned);
+		} finally {
+			Workspace.WORKSPACE_PATH = wasPath;
+			Workspace.GAMEDIR_PATH = wasGame;
 		}
-		return n;
 	}
 
 	/**
@@ -1009,7 +1027,7 @@ public class ZoneLoadingStateTest {
 	 */
 	static byte[] emptyGarc() throws Exception {
 		java.io.ByteArrayOutputStream o = new java.io.ByteArrayOutputStream();
-		ctrmap.LittleEndianDataOutputStream d = new ctrmap.LittleEndianDataOutputStream(o);
+		ctrmap.util.LittleEndianDataOutputStream d = new ctrmap.util.LittleEndianDataOutputStream(o);
 		d.write(new byte[]{(byte) 'C', (byte) 'R', (byte) 'A', (byte) 'G'});
 		d.writeInt(0x1C);   //where the FATO starts
 		d.writeShort((short) 0xFEFF);
@@ -1170,8 +1188,8 @@ public class ZoneLoadingStateTest {
 	static void theWindowsOwnZoneViewsTakeThePropEditorDownToo(LoadedZone lz) throws Exception {
 		System.out.println("--- the window's own zone views take the prop editor down with the zone");
 		ctrmap.humaninterface.PropEditForm form = new ctrmap.humaninterface.PropEditForm(
-				lz, TOOLS, REDRAW, NAVI, CtrmapMainframe.mTileMapPanel, pane -> { });
-		CtrmapMainframe.mPropEditForm = form;
+				lz, TOOLS, REDRAW, NAVI, TestWindow.mTileMapPanel(), pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		TestWindow.mPropEditForm(form);
 		try {
 			ctrmap.formats.propdata.GRPropData held = new ctrmap.formats.propdata.GRPropData();
 			form.loadDataFile(held, null, null);
@@ -1181,7 +1199,7 @@ public class ZoneLoadingStateTest {
 					"buildZoneEditors", ctrmap.humaninterface.Scene3D.class);
 			build.setAccessible(true);
 			ctrmap.humaninterface.ZoneEditors views =
-					(ctrmap.humaninterface.ZoneEditors) build.invoke(null, new RecordingScene());
+					(ctrmap.humaninterface.ZoneEditors) build.invoke(TestWindow.W, new RecordingScene());
 			views.clear();
 
 			check(!form.loaded, "the window's list, told no zone is open, takes the prop editor down with it");
@@ -1203,7 +1221,7 @@ public class ZoneLoadingStateTest {
 			} catch (Exception ex) {
 				System.out.println("  note: the prop preview could not be stopped (" + ex + ")");
 			}
-			CtrmapMainframe.mPropEditForm = null;
+			TestWindow.mPropEditForm(null);
 		}
 	}
 }

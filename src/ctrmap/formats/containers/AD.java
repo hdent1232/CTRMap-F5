@@ -11,7 +11,8 @@ import java.io.File;
  * 1 - Prop textures
  * 2 - World animations
  * 3 - Camera data
- * 4 - ???
+ * 4 - Area environment: fog and lighting, 61 channels of 12 floats ({@link #ENVIRONMENT},
+ *     read by AreaEnv, which decodes the fog channels 54-59 and copies the rest whole)
  * 5 - Environment assets (clouds, extra lighting)
  * 6 - Default camera data
  * 7 - Extended area collision
@@ -19,15 +20,21 @@ import java.io.File;
  * 9 - Global LOD assets
  * 10 - Unused in both XY and ORAS
  * 11 - World textures
+ *
+ * <p>5, 6, 8, 9 and 10 have no reader or editor anywhere in the tree: they are carried byte for byte
+ * when an area is copied, and stay on the open reverse-engineering list (F221).
  */
 public class AD extends AbstractGamefreakContainer{
+	
+	/** The subfile holding the area's environment block - fog and lighting (F236: it was listed as "???"). */
+	public static final int ENVIRONMENT = 4;
 	
 	public ContentType[] contents = {
 		ContentType.PROP_REGISTRY,
 		ContentType.H3D_TEXTURE_PACK,
 		ContentType.H3D_OTHER,
 		ContentType.CAMERA_DATA,
-		ContentType.UNKNOWN,
+		ContentType.AREA_ENVIRONMENT,
 		ContentType.H3D_OTHER,
 		ContentType.CAMERA_DATA,
 		ContentType.COLLISION,

@@ -24,11 +24,10 @@ import java.nio.file.Files;
  *     meaningless rather than merely noisy.</li>
  * </ul>
  *
- * <p>IT DRIVES THE VERSION-CONTROLLED COPIES in {@code tools/hooks}, not the installed ones in
- * {@code .claude/hooks}, for two reasons: the installed directory is outside version control,
- * so a plant could not break it and a diff would not show it; and a suite that read the
- * installed copy would simply agree with whatever it had been edited to say.
- * {@link HooksWiredTest} is the other half - it refuses when the two differ.
+ * <p>IT DRIVES THE HOOKS THE HARNESS RUNS, in {@code .claude/hooks}, which git tracks. A second
+ * "version-controlled" copy in {@code tools/hooks} was kept for when that folder was not tracked;
+ * the two drifted - one fix in each - and this suite drove the copy that did not run (F187).
+ * {@link HooksWiredTest} refuses a hook git does not track.
  *
  * <p>EVERY SECTION ASSERTS BOTH DIRECTIONS. A guard that refuses everything passes a
  * refusal-only suite perfectly, and is worse than no guard: within an hour of being wired here
@@ -45,7 +44,7 @@ public class HookRefusalsTest {
 
 	public static void main(String[] args) throws Exception {
 		File repo = new File(args.length > 0 ? args[0] : ".");
-		File hooks = new File(repo, "tools/hooks");
+		File hooks = new File(repo, ".claude/hooks");
 		if (!hooks.isDirectory()) {
 			System.out.println("  FAIL: no " + hooks.getPath()
 					+ " - the guards are not under version control, so nothing here is pinned");
@@ -64,7 +63,9 @@ public class HookRefusalsTest {
 		aRunThatIsOverDoesNotRefuse(hooks);
 		theStatusOfAPipelineBelongsToItsFilter(hooks);
 		aBackslashInAnInlineScriptIsRefused(hooks);
+		aHeredocFeedingPythonOrJavaIsRefused(hooks);
 		agentsMayNotEditAtTheSameTime(hooks);
+		aToDoToolIsNotAFanOut(hooks);
 		aForbiddenCommandIsRefused(hooks);
 		aPayloadOutsideTheCodePageIsStillJudged(hooks);
 		aSweepRunsWhereNothingCanKillIt(hooks);
@@ -271,9 +272,7 @@ public class HookRefusalsTest {
 		git(repo, "remote", "add", "origin", remote.getAbsolutePath());
 		File installed = new File(repo, ".claude/hooks");
 		check(installed.mkdirs(), "gave it the push guard the door runs");
-		for (String name : new String[]{"guard_push.py", "shellin.py"}) {
-			Files.copy(new File(hooks, name).toPath(), new File(installed, name).toPath());
-		}
+		copyWithImports(new File(hooks, "guard_push.py"), installed);
 		//THE DOOR FOR THE PUSH ONLY: wired for the commit too, this project's commit hooks refused
 		//the scratch commit, there was nothing to push, and "the push is refused" passed for that
 		String doors = "core.hooksPath=" + door.getParentFile().getAbsolutePath();
@@ -475,6 +474,25 @@ public class HookRefusalsTest {
 				"and so is an ordinary script run");
 	}
 
+	/**
+	 * F174: CLAUDE.md says "No Bash heredocs for Java or Python - write the script to a file", and
+	 * this guard allowed a short one by design (up to 20 lines) - one rule spelled two ways. A
+	 * heredoc whose command is a Python or Java interpreter is refused at any length.
+	 */
+	static void aHeredocFeedingPythonOrJavaIsRefused(File hooks) throws Exception {
+		System.out.println("--- a heredoc feeding Python or Java, at any length");
+		File guard = new File(hooks, "guard_heredoc.py");
+		check(refuses(guard, bash("python3 - <<'EOF'\nprint(1)\nEOF")),
+				"a two-line Python heredoc is refused");
+		check(refuses(guard, bash("py -3 - <<EOF\nprint(1)\nEOF")), "and so is one to the py launcher");
+		check(refuses(guard, bash("jshell <<'EOF'\nSystem.out.println(1);\nEOF")), "and a jshell one");
+		check(!refuses(guard, bash("git commit -F - <<'EOF'\nfix: a thing\nEOF")),
+				"while a commit message through a heredoc is not");
+		check(!refuses(guard, bash("grep -c x tools/a.py <<'EOF'\nx\nEOF")),
+				"nor a command whose argument merely ends in .py");
+		check(!refuses(guard, bash("python3 tools/guard/replant.py --selftest")), "nor running a script file");
+	}
+
 	/** A backslash, built so this file does not have to escape one to talk about one. */
 	static final String BACKSLASH = String.valueOf((char) 92);
 
@@ -515,23 +533,19 @@ public class HookRefusalsTest {
 		File reader = new File(nolistRoot, ".claude/bundle-hooks");
 		check(nolist.mkdirs() && reader.mkdirs(), "built a project with no forbidden list");
 		File alone = new File(nolist, "guard_forbidden_command.py");
-		Files.copy(guard.toPath(), alone.toPath());
+		//A PROJECT HAS ITS RULES FILE, and the hooks find their project by it (F216) - counted
+		//from the hook's own folder, this scratch tree was its root by coincidence of depth.
+		Files.write(new File(nolistRoot, "CLAUDE.md").toPath(), "# scratch".getBytes(StandardCharsets.UTF_8));
+		copyWithImports(guard, nolist);
 		//AND THE SHARED SHELL READER, where shellin looks for it. Without it every call is refused
 		//as UNREADABLE - list or no list - and this check passed for that reason while a plant
 		//made a missing list permit everything (measured: the plant survived)
 		Files.copy(new File(hooks.getParentFile().getParentFile(), ".claude/bundle-hooks/bundle_shell.py")
 				.toPath(), new File(reader, "bundle_shell.py").toPath());
-		//...with the SIBLINGS every guard imports beside it. Without them the copy could not
-		//load at all, and "the guard never answered" is a different finding from "the guard
-		//permitted everything" - a fixture that cannot ask the question cannot answer it.
-		//
-		//`hook_env.py` joined that list when the environment names moved into one place, and
-		//this fixture went red the same hour: a copied guard's DEPENDENCIES are part of the
-		//fixture, and nothing but running it says which they are.
-		for (String sibling : new String[]{"shellin.py", "hook_env.py"}) {
-			Files.copy(new File(hooks, sibling).toPath(),
-					new File(nolist, sibling).toPath());
-		}
+		//...with the SIBLINGS every guard imports beside it, copied by copyWithImports above.
+		//Without them the copy could not load at all, and "the guard never answered" is a
+		//different finding from "the guard permitted everything" - a fixture that cannot ask the
+		//question cannot answer it.
 		String said = ask(alone, "decide", bash("echo hello"), nolistRoot.getAbsolutePath());
 		check(said.contains("DENY") && said.contains("list of commands that must never run here"),
 				"a guard whose list has gone missing refuses rather than permits - and says it is the list: "
@@ -632,6 +646,58 @@ public class HookRefusalsTest {
 	}
 
 	/**
+	 * F193: the cap decides a launch by what its input carries. It decided by a word in the tool's
+	 * name, so the harness's to-do tools - TaskCreate, TaskUpdate, TaskGet - were refused as
+	 * fan-outs of unreadable width though they spawn nothing, and a second word list existed only
+	 * to undo the first. Each payload below is asked of spawns_workers: NONE, ONE agent or WIDE.
+	 */
+	static void aToDoToolIsNotAFanOut(File hooks) throws Exception {
+		System.out.println("--- a launch is what its input carries, not what its tool is called");
+		File guard = new File(hooks, "guard_fanout.py");
+		String[][] cases = {
+			{"TaskCreate", "{\"subject\": \"x\", \"description\": \"y\"}", "NONE",
+				"a to-do tool that spawns nothing is not a fan-out (TaskCreate)"},
+			{"TaskUpdate", "{\"taskId\": \"1\", \"status\": \"completed\"}", "NONE",
+				"and neither is TaskUpdate"},
+			{"TaskGet", "{\"taskId\": \"1\"}", "NONE", "nor TaskGet"},
+			{"mcp__ccd_session__spawn_task", "{\"title\": \"t\", \"prompt\": \"p\", \"tldr\": \"x\"}", "NONE",
+				"nor a task suggestion, which carries a prompt but nothing that launches it"},
+			{"TaskStop", "{\"task_id\": \"b1\"}", "NONE", "nor the brake"},
+			{"Agent", "{\"description\": \"d\", \"prompt\": \"p\", \"subagent_type\": \"general\"}", "ONE",
+				"while an agent launch is one agent"},
+			{"Spawner", "{\"prompt\": \"p\", \"subagent_type\": \"general\"}", "ONE",
+				"under any name"},
+			{"Workflow", "{\"script\": \"agent('x')\"}", "WIDE", "and a workflow script is a wide fan-out"},
+			{"Orchestrate", "{\"scriptPath\": \"/tmp/w.js\"}", "WIDE", "under any name"},
+			{"Workflow", "{\"name\": \"saved-review\"}", "WIDE",
+				"and a saved workflow launched by name is one, though it carries no script"},
+		};
+		for (String[] c : cases) {
+			String said = spawns(guard, c[0], c[1]);
+			check(said.contains(c[2]), c[3] + " - said " + oneLine(said));
+		}
+	}
+
+	/** Asks the guard's spawns_workers about one tool call: NONE, ONE or WIDE. */
+	static String spawns(File guard, String tool, String input) throws Exception {
+		File dir = Scratch.dir("fanoutspawn");
+		File ask = new File(dir, "ask.py");
+		Files.write(ask.toPath(),
+				("import importlib.util, json, sys\n"
+				+ "spec = importlib.util.spec_from_file_location('g', sys.argv[1])\n"
+				+ "g = importlib.util.module_from_spec(spec); spec.loader.exec_module(g)\n"
+				+ "fan, wide = g.spawns_workers(sys.argv[2], json.loads(sys.argv[3]))\n"
+				+ "print('WIDE' if fan and wide else 'ONE' if fan else 'NONE')\n")
+						.getBytes(StandardCharsets.UTF_8));
+		ProcessBuilder pb = new ProcessBuilder("python", ask.getAbsolutePath(), guard.getAbsolutePath(), tool, input);
+		pb.redirectErrorStream(true);
+		Process p = pb.start();
+		String said = CommitGuardTest.drain(p);
+		p.waitFor();
+		return said;
+	}
+
+	/**
 	 * F177: guard_all read its payload with json.load(sys.stdin) - the locale's code page, cp1252 on
 	 * Windows - and exited 0, which is ALLOW, on any failure to read it. One character the code page
 	 * cannot decode, in a path, a commit message or a comment, and every project guard was skipped.
@@ -692,6 +758,35 @@ public class HookRefusalsTest {
 			fails++;
 		}
 		return said;
+	}
+
+	/**
+	 * Copies {@code guard} into {@code to} with every module it imports from its own folder,
+	 * followed through theirs - DERIVED from the files, never listed. The lists this replaced
+	 * went red twice: {@code hook_env.py} joined one the hour the environment names moved into
+	 * one place, and {@code _tree_root.py} both the day the root stopped being counted (F216).
+	 */
+	static void copyWithImports(File guard, File to) throws java.io.IOException {
+		java.util.regex.Pattern imported = java.util.regex.Pattern.compile("(?m)^\\s*(?:import|from)\\s+(\\w+)");
+		java.util.ArrayDeque<File> todo = new java.util.ArrayDeque<>();
+		java.util.Set<String> done = new java.util.HashSet<>();
+		todo.add(guard);
+		while (!todo.isEmpty()) {
+			File file = todo.poll();
+			if (!done.add(file.getName())) {
+				continue;
+			}
+			Files.copy(file.toPath(), new File(to, file.getName()).toPath(),
+					java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+			java.util.regex.Matcher m = imported.matcher(
+					new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
+			while (m.find()) {
+				File sibling = new File(file.getParentFile(), m.group(1) + ".py");
+				if (sibling.isFile()) {
+					todo.add(sibling);
+				}
+			}
+		}
 	}
 
 	static String oneLine(String said) {

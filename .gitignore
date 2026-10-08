@@ -12,6 +12,10 @@
 
 # Build output
 build/
+build-ide/
+
+# NetBeans' per-user folder (F141): open tabs, the active configuration, a home path.
+nbproject/private/
 dist/
 store/
 

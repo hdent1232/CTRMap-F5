@@ -69,6 +69,12 @@ $shipDir = Join-Path $env:TEMP ("ctrmap-ship-" + [guid]::NewGuid().ToString("N")
 New-Item -ItemType Directory -Force -Path $shipDir | Out-Null
 Copy-Item -Recurse -Force (Join-Path $root "build\classes\*") $shipDir
 Remove-Item -Recurse -Force (Join-Path $shipDir "ctrmap\tests") -ErrorAction SilentlyContinue
+# NOR DO THE HARVESTERS (F133). ctrmap\tools is the developer's: four harvesters, each with a main,
+# each reading a dump and writing tables, and nothing in the program calls one. The line above was
+# one name for what is a class - "runs, and is not the program" - so BatteryHygieneTest now holds
+# every class with a main to it: the manifest's Main-Class, a class a shipped launcher runs, or a
+# package stripped here.
+Remove-Item -Recurse -Force (Join-Path $shipDir "ctrmap\tools") -ErrorAction SilentlyContinue
 # A SUITE IS A TOP-LEVEL CLASS. This matched "*Test.class" and nothing else, so it also
 # caught H3DMaterial$AlphaTest - a nested enum about alpha testing in the graphics sense,
 # which has been production code since before this check existed. The check was written and

@@ -47,12 +47,6 @@ public class WorldEditorToolbar extends JToolBar {
 	private final JToggleButton view3D = new JToggleButton("3D view");
 	private final JToggleButton fogOff = new JToggleButton("Fog off");
 
-	/** The tile inspector the undo buttons re-show a tile in, handed in. */
-	private final TileInspector inspector;
-
-	/** The map view the undo buttons repaint, handed in. */
-	private final TileMapPanel map;
-
 	/**
 	 * @param toolSwitch gets each tool button's action command ("edit", "set",
 	 * "fill", "cam", "prop", "npc", "warp", "trigger", "paint", "geo") when the
@@ -62,13 +56,12 @@ public class WorldEditorToolbar extends JToolBar {
 	 * toggle can never disagree with the view
 	 */
 	public WorldEditorToolbar(ActionListener toolSwitch, Runnable viewToggle, Runnable fogToggle,
-			TileInspector inspector, TileMapPanel map) {
-		this.map = map;
-		if (inspector == null) {
-			throw new IllegalArgumentException("the tool row must be handed the tile inspector its"
-				+ " undo buttons re-show a tile in");
+			UndoHistory history) {
+		if (history == null) {
+			throw new IllegalArgumentException("the tool row must be handed the zone's history its undo buttons"
+				+ " take back from");
 		}
-		this.inspector = inspector;
+		this.history = history;
 		ButtonGroup group = new ButtonGroup();
 		for (int i = 0; i < TOOLS.length; i++) {
 			String[] t = TOOLS[i];
@@ -85,18 +78,17 @@ public class WorldEditorToolbar extends JToolBar {
 		tools[0].setSelected(true);
 		add(currentTool);
 
-		//undo/redo for tile edits, ON the World Editor where they belong (the
-		//panel's Ctrl+Z / Ctrl+Y keep working; this is the primary home)
+		//undo/redo for EVERY edit to the open zone - tiles, entities, the painter - ON the World
+		//Editor where they belong (the panel's Ctrl+Z / Ctrl+Y keep working; this is the primary
+		//home). It was the tile history alone (F209).
 		addSeparator();
-		undo.setToolTipText("Undo the last tile edit (Ctrl+Z)");
-		redo.setToolTipText("Redo the undone tile edit (Ctrl+Y)");
 		undo.setFocusable(false);
 		redo.setFocusable(false);
-		undo.addActionListener(e -> TileUndo.undo(inspector, map));
-		redo.addActionListener(e -> TileUndo.redo(inspector, map));
+		undo.addActionListener(e -> history.act(this, true));
+		redo.addActionListener(e -> history.act(this, false));
 		add(undo);
 		add(redo);
-		TileUndo.addListener(this::refreshUndoRedo);
+		history.addListener(this::refreshUndoRedo);
 		refreshUndoRedo();
 
 		//the 2D/3D view switch, ALWAYS visible and valid for every tool
@@ -153,8 +145,14 @@ public class WorldEditorToolbar extends JToolBar {
 		throw new IllegalArgumentException("no tool button for " + command);
 	}
 
+	/** The zone's history these buttons take back from and put again. */
+	private final UndoHistory history;
+
+	/** Enabled exactly when there is something to do, saying what (the history calls this on every change). */
 	private void refreshUndoRedo() {
-		undo.setEnabled(TileUndo.canUndo());
-		redo.setEnabled(TileUndo.canRedo());
+		undo.setEnabled(history.canUndo());
+		redo.setEnabled(history.canRedo());
+		undo.setToolTipText(history.canUndo() ? "Undo " + history.undoName() + " (Ctrl+Z)" : "Nothing to undo (Ctrl+Z)");
+		redo.setToolTipText(history.canRedo() ? "Redo " + history.redoName() + " (Ctrl+Y)" : "Nothing to redo (Ctrl+Y)");
 	}
 }

@@ -4,8 +4,8 @@ import ctrmap.formats.text.GFMessageFile;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import static ctrmap.formats.LittleEndian.i32;
-import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.u16;
 
 /**
  * Headless round-trip test for GFMessageFile. Run with:
@@ -80,6 +80,8 @@ public class GFMessageFileRoundTripTest {
 		check("N6 trailing backslash throws", throwsOnWrite(Arrays.asList("oops\\")));
 		check("N7 unknown method throws", throwsOnWrite(Arrays.asList("[NOPE 1]")));
 		check("N8 out of range arg throws", throwsOnWrite(Arrays.asList("[VAR TRNAME(FFFFF)]")));
+
+		locationNamesAreReadByThisCodec();
 
 		System.out.println();
 		System.out.println("Passed: " + passed + ", Failed: " + failed);
@@ -212,6 +214,34 @@ public class GFMessageFileRoundTripTest {
 			System.out.println("    (not a refusal: " + ex.getClass().getName() + ": "
 					+ ex.getMessage() + " - the guard that should have refused is gone)");
 			return false;
+		}
+	}
+
+	/**
+	 * Location names are read by THIS codec (F089). A second, legacy decoder read them, named the
+	 * text variables differently from the text editor, appended the digits "9792" where a female
+	 * sign belonged, and LocationNames answered "NullPointerException" for an id past the table.
+	 * A table this codec wrote, loaded the way a suite stands it in for a game's own: its female
+	 * sign comes back a female sign, and an id past it is named as one, in words.
+	 */
+	private static void locationNamesAreReadByThisCodec() {
+		try {
+			java.io.File f = java.io.File.createTempFile("locnames", ".bin");
+			f.deleteOnExit();
+			java.nio.file.Files.write(f.toPath(),
+					GFMessageFile.write(Arrays.asList("Littleroot Town", "Route ♀"), true));
+			FakeGameFiles game = new FakeGameFiles();
+			ctrmap.formats.text.LocationNames.load(game, f);
+			check("L1 a location name reads back", "Littleroot Town".equals(
+					ctrmap.formats.text.LocationNames.getLocName(game, 0)));
+			String female = ctrmap.formats.text.LocationNames.getLocName(game, 1);
+			check("L2 a female sign in a location name is a female sign (" + female + ")",
+					"Route ♀".equals(female));
+			String past = ctrmap.formats.text.LocationNames.getLocName(game, 7);
+			check("L3 an id past the table is named as one, in words (" + past + ")",
+					ctrmap.formats.text.LocationNames.unknown(7).equals(past) && !past.contains("Exception"));
+		} catch (Exception ex) {
+			fail("L0 location names through GFMessageFile", String.valueOf(ex));
 		}
 	}
 

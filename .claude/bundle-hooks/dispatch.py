@@ -63,13 +63,13 @@ PREFIX = "guard_"
 #: blinks ten terminals on every tool call is a hook somebody deletes within the hour.
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
-#: NOT ENFORCED, AND SAID SO. A guard is asked in this process (`ask`), where nothing can stop
-#: it, and some guards legitimately take minutes - a write-time rule runs the tests a write
+#: NO PER-GUARD TIMEOUT, AND SAID SO. A guard is asked in this process (`ask`), where nothing can
+#: stop it, and some guards legitimately take minutes - a write-time rule runs the tests a write
 #: changes. What bounds a hung guard is the hook's own `timeout` in the settings (1800 s for
 #: `PreToolUse`), and a hook the harness times out is a hook it IGNORES: the call goes ahead. So
 #: every subprocess a guard starts is bounded (`tools/timeouts.py`), which is the bound that
-#: holds. This constant was documented here as "this long to answer" while nothing read it.
-TIMEOUT = 20
+#: holds. A `TIMEOUT = 20` stood here, and a `timeout` parameter `ask` deleted on entry, while
+#: nothing read either (F169); both are gone rather than left to read as a bound.
 
 #: The owner's way past the unreadable-command refusal, spelled once in `bundle_env`.
 ALLOW_UNREADABLE = bundle_env.name("ALLOW_UNREADABLE")
@@ -85,7 +85,7 @@ def guards(folder=HERE):
             if name.startswith(PREFIX) and name.endswith(".py")]
 
 
-def ask(path, raw, timeout=TIMEOUT):
+def ask(path, raw):
     """(exit code, stderr, stdout) for one guard, handed the identical payload.
 
     IN-PROCESS, NOT SPAWNED, AND THE REASON IS ARITHMETIC. This dispatcher is asked on EVERY
@@ -103,7 +103,6 @@ def ask(path, raw, timeout=TIMEOUT):
     raised `ValueError` inside the dispatcher instead of being reported, which is the one branch
     whose whole job is to report.
     """
-    del timeout
     import importlib.util
     import io as _io
 

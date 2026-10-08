@@ -1,10 +1,10 @@
 package ctrmap.formats.h3d;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import static ctrmap.formats.LittleEndian.putF32;
+import static ctrmap.util.LittleEndian.putF32;
+import static ctrmap.util.LittleEndian.putU16;
 
 /**
  * Applies a parsed OBJ (see {@link MapModelObj}) back onto a map model - the
@@ -111,7 +111,7 @@ public class MapModelObjImporter {
 				}
 				applied++;
 			} catch (RuntimeException ex) {
-				oc.action = "skipped: " + ex.getMessage();
+				oc.action = "skipped: " + ctrmap.util.Bytes.reason(ex);
 			}
 		}
 		if (applied == 0) {
@@ -179,8 +179,7 @@ public class MapModelObjImporter {
 				break;
 			default: //s16 - not observed in map models; natural normalization for safety
 				int s = Math.max(-32767, Math.min(32767, Math.round(v * 32767f)));
-				b[o] = (byte) s;
-				b[o + 1] = (byte) (s >> 8);
+				putU16(b, o, s);
 				break;
 		}
 	}

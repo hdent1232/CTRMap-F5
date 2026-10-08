@@ -6,7 +6,7 @@ import java.io.File;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import ctrmap.formats.LittleEndian;
+import ctrmap.util.LittleEndian;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**

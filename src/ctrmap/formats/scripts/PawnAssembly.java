@@ -48,11 +48,6 @@ public class PawnAssembly {
 		natives = nativesFrom;
 	}
 
-	/** natives[] index whose registered name hash matches {@code name}, or -1. */
-	int resolveNativeIndex(String name) {
-		return natives == null ? -1 : natives.nativeIndexOf(name);
-	}
-
 	/** The script whose natives a name resolves in, or null when this assembly takes no names. */
 	GFLPawnScript nativesFrom() {
 		return natives;

@@ -20,7 +20,7 @@ import java.nio.file.Files;
  * account cannot open. Twelve live workers were reported gone, and acting on that discarded
  * 134 verdicts.
  *
- * <p>The project now answers the question in one place - {@code tools/hooks/liveness.py} - and
+ * <p>The project now answers the question in one place - {@code .claude/hooks/liveness.py} - and
  * {@code tools/guard/liveness_check.py} refuses any other spelling in any {@code .py} or
  * {@code .ps1} it owns.
  *
@@ -199,7 +199,7 @@ public class LivenessProbeTest {
 	 */
 	static void theOneAnswerSaysHowItKnows(File repo) throws Exception {
 		System.out.println("--- and it says how it knows");
-		File answer = new File(repo, "tools/hooks/liveness.py");
+		File answer = new File(repo, ".claude/hooks/liveness.py");
 		check(answer.isFile(), "the one answer lives at " + answer.getPath());
 		String body = new String(Files.readAllBytes(answer.toPath()), StandardCharsets.UTF_8);
 		check(body.contains("return True, (") || body.contains("return True,"),

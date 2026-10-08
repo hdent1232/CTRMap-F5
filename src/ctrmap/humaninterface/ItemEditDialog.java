@@ -3,7 +3,6 @@ package ctrmap.humaninterface;
 import ctrmap.Ui;
 import ctrmap.Workspace;
 import ctrmap.formats.codepatch.ItemIconTable;
-import ctrmap.formats.codepatch.ShopData;
 import ctrmap.formats.pokedata.ItemData;
 import ctrmap.formats.pokedata.ItemEditSession;
 import ctrmap.formats.pokedata.ItemEffectLabels;
@@ -15,7 +14,6 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
-import java.awt.Frame;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -29,7 +27,6 @@ import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
 import javax.swing.JComponent;
-import javax.swing.JDialog;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JList;
@@ -98,7 +95,7 @@ public class ItemEditDialog {
 		try {
 			s = ItemEditSession.open(Workspace.session());
 		} catch (Exception ex) {
-			Ui.error(parent, "Could not read the item table:\n" + ex.getMessage(), "Item editor");
+			Ui.error(parent, "Could not read the item table:\n" + ctrmap.util.Bytes.reason(ex), "Item editor");
 			return null;
 		}
 		if (s == null) {
@@ -352,7 +349,7 @@ public class ItemEditDialog {
 			} catch (Exception ex) {
 				iconState.setText("no code.bin loaded");
 				Ui.error(dlg, "That file is not the executable this editor knows how to patch:\n\n"
-						+ ex.getMessage(), "Item icons");
+						+ ctrmap.util.Bytes.reason(ex), "Item icons");
 			}
 		});
 
@@ -378,9 +375,21 @@ public class ItemEditDialog {
 		});
 
 		save.addActionListener(e -> {
-			try {
+			//ONE UNIT (F082): the record and its text are staged together, and a failure part way
+			//puts both back - then the lists are read again from what was put back
+			try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Save item " + st.id, Workspace.session())) {
+				ctrmap.WorkspaceUnit.onRollback(() -> {
+					try {
+						s.reread();
+					} catch (java.io.IOException rereadFailed) {
+						throw new IllegalStateException("the item editor could not re-read the items after a save was"
+								+ " put back; close it and open it again: " + ctrmap.util.Bytes.reason(rereadFailed),
+								rereadFailed);
+					}
+				});
 				EnumSet<ItemEditSession.Changed> changed
 						= s.save(st.id, form.record(), nameField.getText(), descField.getText());
+				unit.commit();
 				if (changed.contains(ItemEditSession.Changed.NAME)) {
 					int row = rowFor(listModel, st.id);
 					if (row >= 0) {
@@ -392,11 +401,11 @@ public class ItemEditDialog {
 				String iconNote = st.iconsChanged()
 						? "\n\nThe ICON is NOT saved by this button - it lives in the executable."
 						+ " Use \"Save code.ips...\" for it." : "";
-				info(dlg, "Item " + st.id + " saved into the game folder."
-						+ "\nText changes are staged in the workspace; Pack Workspace writes them."
-						+ "\nDeploy to emulator ships both." + iconNote, "Item editor");
+				info(dlg, "Item " + st.id + " is staged in the workspace, with its name and description."
+						+ "\nPack Workspace writes them into the game; Deploy to emulator ships them."
+						+ iconNote, "Item editor");
 			} catch (Exception ex) {
-				Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Item editor");
+				Ui.error(dlg, "Save failed:\n" + ctrmap.util.Bytes.reason(ex), "Item editor");
 			}
 		});
 
@@ -498,7 +507,7 @@ public class ItemEditDialog {
 					+ "Then fully restart the emulator. Icons are the only part of the item editor"
 					+ " that needs any of this.", "Item icons");
 		} catch (Exception ex) {
-			Ui.error(dlg, "Could not write the icon patch:\n" + ex.getMessage(), "Item icons");
+			Ui.error(dlg, "Could not write the icon patch:\n" + ctrmap.util.Bytes.reason(ex), "Item icons");
 		}
 	}
 
@@ -533,7 +542,7 @@ public class ItemEditDialog {
 	/** The item id a list row names. */
 	private static int idOf(String row) {
 		return row == null ? -1
-				: ctrmap.humaninterface.pokepick.PokePickers.parseLeadingInt(row.trim());
+				: ctrmap.util.Text.parseLeadingInt(row.trim());
 	}
 
 	private static int rowFor(DefaultListModel<String> model, int id) {

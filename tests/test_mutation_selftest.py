@@ -8,13 +8,16 @@ scratch folder, where nothing sits beside it - and its lock check asks for the l
 mutant, inside the folder it mutates, never in the repository's parent.
 """
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+HERE = _tree_root.require(__file__)
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
@@ -28,6 +31,9 @@ class TheHarnessSelftestNeedsNoWorktree(unittest.TestCase):
                         ignore=shutil.ignore_patterns("__pycache__"))
         shutil.copytree(os.path.join(HERE, ".claude"), os.path.join(repo, ".claude"),
                         ignore=shutil.ignore_patterns("__pycache__"))
+        # A CHECKOUT HAS ITS RULES FILE. The harness finds its repository by that anchor (F216); a
+        # copy of tools/ with none above it sits in no project, and is refused as one.
+        shutil.copyfile(os.path.join(HERE, "CLAUDE.md"), os.path.join(repo, "CLAUDE.md"))
         self.assertFalse(os.path.exists(os.path.join(base, "wt")), "control: no worktree beside it")
         done = subprocess.run([sys.executable, "-B", os.path.join(repo, "tools", "mutate2.py"), "--selftest"],
                               cwd=repo, capture_output=True, text=True, timeout=600, creationflags=NO_WINDOW)
@@ -37,6 +43,31 @@ class TheHarnessSelftestNeedsNoWorktree(unittest.TestCase):
         self.assertIn("ALL PASS", said)
         self.assertFalse(os.path.exists(os.path.join(base, ".mutation-in-flight")),
                          "the selftest left a lock in the repository's parent, where no reader looks")
+
+    def test_a_ceiling_above_the_exclusion_list_refuses_to_run(self):
+        """F189: the exclusion ceiling sat at 4 over a list of 2 - room for two more lines to stop
+        being measured with nothing said. The harness refuses slack before it does anything, driven
+        here on a copy whose ceiling is raised by one."""
+        base = tempfile.mkdtemp(prefix="ctrmap-exclusion-slack-")
+        self.addCleanup(shutil.rmtree, base, True)
+        repo = os.path.join(base, "repo")
+        for folder in ("tools", ".claude"):
+            shutil.copytree(os.path.join(HERE, folder), os.path.join(repo, folder),
+                            ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copyfile(os.path.join(HERE, "CLAUDE.md"), os.path.join(repo, "CLAUDE.md"))
+        path = os.path.join(repo, "tools", "mutate2.py")
+        with open(path, encoding="utf-8", newline="") as handle:
+            text = handle.read()
+        found = re.search(r"(?m)^EXCLUSION_CEILING = (\d+)\s*$", text)
+        self.assertIsNotNone(found, "control: mutate2.py declares its exclusion ceiling")
+        with open(path, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text[:found.start(1)] + str(int(found.group(1)) + 1) + text[found.end(1):])
+        done = subprocess.run([sys.executable, "-B", path, "--selftest"], cwd=repo, capture_output=True,
+                              text=True, timeout=600, creationflags=NO_WINDOW)
+        said = done.stdout + done.stderr
+        self.assertIn("lower the ceiling to the list", said,
+                      "a ceiling above the exclusion list is refused in words:\n%s" % said[-800:])
+        self.assertNotEqual(done.returncode, 0, "and the run stops there")
 
 
 if __name__ == "__main__":

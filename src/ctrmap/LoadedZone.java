@@ -33,19 +33,47 @@ import ctrmap.formats.zone.Zone;
  * holds a zone and a slot cannot be emptied, so at() never answers null and no reader has to
  * remember that it might.
  *
- * <p>Plain fields, as the panel's were: the panel writes from its workers and
- * the window reads on the event thread, and this class changes nothing about
- * that - it gives the state an owner, not a lock.
+ * <p>ONE STATE, REPLACED WHOLE (F016). The table, the open zone and the index were three plain
+ * fields with the comment "it gives the state an owner, not a lock" - and the zone-open worker
+ * read the table off the event thread while the event thread swapped it, so under the memory
+ * model it could see a new table with an old index, or a slot half written. They are one
+ * immutable {@link State} behind a volatile reference now: every write builds the next state and
+ * publishes it at once, and a reader on any thread sees one whole state, never a mixture.
+ * Writes are serialised so two of them cannot each build from the same old state.
  */
 public final class LoadedZone {
 
-	private Zone[] table;
-	private Zone open;
-	private int index = -1;
+	/** The three answers together, never changed once made. */
+	private static final class State {
+
+		final Zone[] table;
+		final Zone open;
+		final int index;
+
+		State(Zone[] table, Zone open, int index) {
+			this.table = table;
+			this.open = open;
+			this.index = index;
+		}
+
+		int count() {
+			return table == null ? 0 : table.length;
+		}
+
+		Zone at(int i) {
+			if (i < 0 || i >= count()) {
+				throw new IndexOutOfBoundsException("zone " + i + " is outside the loaded zone table, which holds "
+						+ count() + " zone(s)");
+			}
+			return table[i];
+		}
+	}
+
+	private volatile State state = new State(null, null, -1);
 
 	/** How many slots the zone table holds; 0 before any rebuild. */
 	public int count() {
-		return table == null ? 0 : table.length;
+		return state.count();
 	}
 
 	/**
@@ -53,26 +81,22 @@ public final class LoadedZone {
 	 * Refuses, naming the index and the count, for a slot the table does not have.
 	 */
 	public Zone at(int i) {
-		if (i < 0 || i >= count()) {
-			throw new IndexOutOfBoundsException("zone " + i + " is outside the loaded zone table, which holds "
-					+ count() + " zone(s)");
-		}
-		return table[i];
+		return state.at(i);
 	}
 
 	/** The open zone, or null when none is. */
 	public Zone open() {
-		return open;
+		return state.open;
 	}
 
 	/** The index the open zone was opened at; -1 when none was, and see the class comment for a rebuild. */
 	public int index() {
-		return index;
+		return state.index;
 	}
 
 	/** True when a zone is open. */
 	public boolean isOpen() {
-		return open != null;
+		return state.open != null;
 	}
 
 	// ------------------------------------------------------------------ writes
@@ -83,7 +107,7 @@ public final class LoadedZone {
 	 * index is left as it was - PINNED by ZoneLoadingStateTest, which is how
 	 * the Add-zones picker still defaults to the zone that was open before.
 	 */
-	public void table(Zone[] zones) {
+	public synchronized void table(Zone[] zones) {
 		if (zones == null) {
 			throw new IllegalArgumentException("a zone table cannot be null - hand an empty table to say the archive holds no zones");
 		}
@@ -93,27 +117,26 @@ public final class LoadedZone {
 						+ " whole, once every zone in it has been read (F208)");
 			}
 		}
-		table = zones.clone();
-		open = null;
+		state = new State(zones.clone(), null, state.index);
 	}
 
 	/** One slot of the table, refilled with another zone; a slot is never emptied (F208). */
-	public void replace(int i, Zone z) {
+	public synchronized void replace(int i, Zone z) {
 		if (z == null) {
 			throw new IllegalArgumentException("slot " + i + " of the zone table cannot be emptied - a zone table"
 					+ " has no holes (F208)");
 		}
-		if (i < 0 || i >= count()) {
-			throw new IndexOutOfBoundsException("zone " + i + " is outside the loaded zone table, which holds "
-					+ count() + " zone(s)");
-		}
-		table[i] = z;
+		State s = state;
+		s.at(i);   //refuses a slot the table does not have
+		Zone[] next = s.table.clone();   //copied: a reader holding the old state keeps the old table whole
+		next[i] = z;
+		state = new State(next, s.open, s.index);
 	}
 
 	/** Opens slot {@code i} of the table; refuses a slot the table does not have. */
-	public void open(int i) {
-		open = at(i);
-		index = i;
+	public synchronized void open(int i) {
+		State s = state;
+		state = new State(s.table, s.at(i), i);
 	}
 
 	/**
@@ -121,22 +144,21 @@ public final class LoadedZone {
 	 * loaded, a zone a suite plants, a zone opened from a file ({@code i} of
 	 * -1, no slot), or - {@code z} null - an index with no zone open.
 	 */
-	public void open(int i, Zone z) {
+	public synchronized void open(int i, Zone z) {
 		if (i < -1) {
 			throw new IllegalArgumentException("a zone index is -1 for none or a table position, not " + i);
 		}
-		open = z;
-		index = i;
+		state = new State(state.table, z, i);
 	}
 
 	/** The open zone is let go; the index is not touched. See the class comment. */
-	public void release() {
-		open = null;
+	public synchronized void release() {
+		State s = state;
+		state = new State(s.table, null, s.index);
 	}
 
 	/** Nothing is open and the index says so. */
-	public void close() {
-		open = null;
-		index = -1;
+	public synchronized void close() {
+		state = new State(state.table, null, -1);
 	}
 }

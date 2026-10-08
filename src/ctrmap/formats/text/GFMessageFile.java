@@ -4,11 +4,11 @@ import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import static ctrmap.formats.LittleEndian.u16;
-import static ctrmap.formats.LittleEndian.i32;
-import static ctrmap.formats.LittleEndian.u32;
-import static ctrmap.formats.LittleEndian.putU16;
-import static ctrmap.formats.LittleEndian.putI32;
+import static ctrmap.util.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.u32;
+import static ctrmap.util.LittleEndian.putU16;
+import static ctrmap.util.LittleEndian.putI32;
 
 /**
  * Gen 6/7 GameFreak text file codec (read AND write), ported from pk3DS' TextFile.cs.
@@ -20,6 +20,15 @@ import static ctrmap.formats.LittleEndian.putI32;
  * the overloads to translate 0xE07F/0xE08D/0xE08E/0xE08F to their Unicode equivalents.
  */
 public class GFMessageFile {
+
+	/**
+	 * Multi-line text typed into a dialog uses real newlines; the message files store them as the \\n
+	 * escape, the form the text editor shows. The one escape for every form that writes typed text
+	 * (F113), here in the text layer (F248) so the map painter's engine reaches it without the UI.
+	 */
+	public static String escapeTyped(String text) {
+		return text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n");
+	}
 
 	private static final int KEY_BASE = 0x7C89;
 	private static final int KEY_ADVANCE = 0x2983;
@@ -280,8 +289,7 @@ public class GFMessageFile {
 		for (int i = 0; i < result.length; i += 2) {
 			int v = u16(data, i);
 			v ^= key;
-			result[i] = (byte) (v & 0xFF);
-			result[i + 1] = (byte) ((v >>> 8) & 0xFF);
+			putU16(result, i, v);
 			key = ((key << 3) | (key >>> 13)) & 0xFFFF; //16-bit ROL3, key is always kept 16-bit clean
 		}
 		return result;
@@ -549,7 +557,8 @@ public class GFMessageFile {
 	}
 
 	private static void writeU16(ByteArrayOutputStream out, int val) {
-		out.write(val & 0xFF);
-		out.write((val >>> 8) & 0xFF);
+		byte[] two = new byte[2];
+		putU16(two, 0, val);
+		out.write(two, 0, 2);
 	}
 }

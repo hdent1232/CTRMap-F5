@@ -8,8 +8,6 @@ import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLJPanel;
 import com.jogamp.opengl.glu.GLU;
 
-import ctrmap.formats.containers.GR;
-import ctrmap.formats.gfcollision.GRCollisionFile;
 
 /**
  * Collision editor OpenGL surface. Very old.

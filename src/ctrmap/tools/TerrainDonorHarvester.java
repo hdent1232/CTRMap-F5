@@ -12,8 +12,7 @@ import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import static ctrmap.formats.LittleEndian.u16;
-import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.u16;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
@@ -37,16 +36,18 @@ import static ctrmap.formats.containers.ContainerBytes.subfile;
  */
 public class TerrainDonorHarvester {
 
-	/** Targets every winner must inject into cleanly: indoor mall, cave, route. */
+	/** Targets every winner must inject into cleanly: indoor mall, cave, route - ORAS zone ids, as
+	 *  this harvester reads ORAS only (GameType.ORAS below). */
 	static final int[] PROBE_TARGETS = {153, 745, 1};
 
 	public static void main(String[] args) throws Exception {
-		if (args.length < 1) {
-			System.out.println("Usage: java ctrmap.tools.TerrainDonorHarvester <pristineRomfsDir> [outTsv]");
-			return;
+		if (args.length < 2) {
+			System.out.println("Usage: java ctrmap.tools.TerrainDonorHarvester <pristineRomfsDir> <outTsv> - the output is named"
+					+ " every time, so a run cannot rewrite a table the release ships without saying so");
+			System.exit(1);
 		}
 		String romfs = args[0];
-		String out = args.length > 1 ? args[1] : "src/ctrmap/resources/oras_terrain.tsv";
+		String out = args[1];   //named every time: a default here was a shipped resource (F133)
 		GameType game = GameType.ORAS;
 		GARC gr = new GARC(new File(romfs + ctrmap.Workspace.getArchivePath(ArchiveType.FIELD_DATA, game)));
 		GARC zo = new GARC(new File(romfs + ctrmap.Workspace.getArchivePath(ArchiveType.ZONE_DATA, game)));
@@ -127,7 +128,6 @@ public class TerrainDonorHarvester {
 						continue;
 					}
 					Cand c = new Cand();
-					c.brush = t;
 					c.region = r;
 					c.area = regionArea[r];
 					c.mesh = g.meshIndex;
@@ -261,7 +261,6 @@ public class TerrainDonorHarvester {
 
 	static final class Cand {
 
-		TilePalette brush;
 		int region, area, mesh;
 		String material;
 		double score;

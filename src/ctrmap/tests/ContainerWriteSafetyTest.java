@@ -68,6 +68,12 @@ public class ContainerWriteSafetyTest {
 		public void edited(File f) {
 		}
 
+		/** It stages nothing ({@link #staged} is null), so no entry has a staged copy. */
+		@Override
+		public File editedEntry(ArchiveType type, int entry) {
+			return null;
+		}
+
 		/** It keeps no list, so it cannot tell: an edit, which nothing may replace. */
 		@Override
 		public boolean isEdit(File f) {
@@ -82,6 +88,11 @@ public class ContainerWriteSafetyTest {
 		@Override
 		public ctrmap.formats.GameCache cache() {
 			return new ctrmap.formats.GameCache();   //nothing here is read twice
+		}
+
+		@Override
+		public java.util.List<Integer> zonesNamingArea(int area, int except) throws IOException {
+			return ctrmap.MasterTable.read(this).using(ctrmap.ZoneResource.AREA, area, except);
 		}
 
 		@Override

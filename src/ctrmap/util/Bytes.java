@@ -4,7 +4,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.Arrays;
-import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.u16;
 
 /**
  * Reading and comparing raw data: padding, magic numbers, a word, a trim.
@@ -35,16 +35,35 @@ public final class Bytes {
 	 * is not one.
 	 */
 	public static void replaceFile(java.io.File f, byte[] data) throws java.io.IOException {
-		java.io.File tmp = java.io.File.createTempFile("ctrmap-" + f.getName() + ".", ".writing",
-				f.getAbsoluteFile().getParentFile());
+		replaceFile(f, java.io.File.createTempFile("ctrmap-" + f.getName() + ".", ".writing",
+				f.getAbsoluteFile().getParentFile()), data);
+	}
+
+	/**
+	 * {@link #replaceFile(java.io.File, byte[])} staged at a name the caller chose - for a file with
+	 * one writer, where a crash then leaves one stale stage the next write overwrites rather than a
+	 * new one each time. A stage this write did not make as a file (a folder in the way) is left.
+	 */
+	public static void replaceFile(java.io.File f, java.io.File staging, byte[] data) throws java.io.IOException {
+		java.io.File tmp = staging;
 		try {
 			java.nio.file.Files.write(tmp.toPath(), data);
 			moveOver(tmp, f);
 			tmp = null;
 		} finally {
-			if (tmp != null) {
+			if (tmp != null && tmp.isFile()) {
 				tmp.delete();
 			}
+		}
+	}
+
+	/**
+	 * Removes {@code f} if it is there, and THROWS when it is there and stays: {@code File.delete}
+	 * answers false and nothing else, so a file held open or read-only read as removed.
+	 */
+	public static void removeFile(java.io.File f) throws java.io.IOException {
+		if (f.exists() && !f.delete() && f.exists()) {
+			throw new java.io.IOException(f.getAbsolutePath() + " could not be removed");
 		}
 	}
 
@@ -82,6 +101,30 @@ public final class Bytes {
 			said += " - and " + reason(rider);
 		}
 		return said;
+	}
+
+	/**
+	 * The member of an enum that {@code raw} numbers - {@code values[raw]} - or, when it numbers
+	 * none, {@code unknown}; with no {@code unknown} the number is refused in words, naming the
+	 * enum. The one way a number read from a file or a list becomes an enum member (F079): the
+	 * Ohana port indexed {@code values()} with raw bits in 49 places, so a value it did not list
+	 * threw ArrayIndexOutOfBounds - and a magnification filter read through a signed shift was
+	 * negative for any byte of 0x80 or more - and the whole BCH failed to open over a field
+	 * nothing drew. A caller chooses here, once, whether an unlisted value has a sensible stand-in
+	 * or is an error, and says which.
+	 *
+	 * @param values {@code E.values()}
+	 * @param unknown what an unlisted number reads as, or null to refuse it
+	 */
+	public static <E extends Enum<E>> E enumOf(E[] values, long raw, E unknown) {
+		if (raw >= 0 && raw < values.length) {
+			return values[(int) raw];
+		}
+		if (unknown != null) {
+			return unknown;
+		}
+		throw new IllegalArgumentException(raw + " is not a " + values.getClass().getComponentType().getSimpleName()
+				+ " this program knows (it knows 0-" + (values.length - 1) + ").");
 	}
 
 	private Bytes() {
@@ -146,18 +189,5 @@ public final class Bytes {
 	/** True for an ASCII capital, which is how a GameFreak container's identifier is spelled. */
 	public static boolean isUTF8Capital(byte check) {
 		return (check & 0xFF) >= 0x41 && (check & 0xFF) <= 0x5a;
-	}
-
-	/** The data up to its last non-zero byte, rounded up to a word. */
-	public static byte[] getTrimmedArray(byte[] in) {
-		for (int i = in.length - 1; i > 0; i--) {
-			if (in[i] != 0) {
-				int finalIndex = i + (4 - (i % 4));
-				byte[] ret = new byte[finalIndex];
-				System.arraycopy(in, 0, ret, 0, finalIndex);
-				return ret;
-			}
-		}
-		return new byte[0];
 	}
 }

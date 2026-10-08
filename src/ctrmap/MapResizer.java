@@ -1,26 +1,32 @@
 package ctrmap;
 
+import ctrmap.formats.containers.ContainerBytes;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.RegionFactory;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameProfile;
+import ctrmap.gamedef.GameType;
+import ctrmap.formats.mapmatrix.MapMatrix;
+import ctrmap.formats.zone.ZoneEntities;
+import ctrmap.formats.zone.ZoneFootprint;
+import ctrmap.formats.zone.ZoneHeader;
 import java.io.File;
 import java.io.IOException;
-import static ctrmap.formats.LittleEndian.u16;
-import static ctrmap.formats.LittleEndian.i32;
-import static ctrmap.formats.LittleEndian.f32;
-import static ctrmap.formats.LittleEndian.putU16;
+import static ctrmap.util.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.f32;
+import static ctrmap.util.LittleEndian.putU16;
 import java.nio.file.Files;
-import static ctrmap.formats.LittleEndian.putI32;
-import static ctrmap.formats.LittleEndian.putF32;
+import static ctrmap.util.LittleEndian.putI32;
+import static ctrmap.util.LittleEndian.putF32;
 
 /**
- * Grows a zone's map beyond one region - the "bigger custom maps" feature
+ * Grows or shrinks a zone's map - the "bigger custom maps" feature
  * (a 2x1 route, a 2x2 hub area...). The zone gets a NEW map matrix
- * of the requested width/height: the old grid keeps its cells (top-left, with
- * whatever sharing they had), and every new cell is a fresh BLANK canvas region
+ * of the requested width/height: the old grid keeps the cells that fit (top-left,
+ * with whatever sharing they had), and every new cell is a fresh BLANK canvas region
  * (flat walkable plane in the zone's own area style, via {@link RegionFactory}).
  * Regions tile at 720 world units; the in-game loader reads matrix dimensions
  * from the data (multi-cell retail matrices prove the path), and CTRMap's map
@@ -28,8 +34,16 @@ import static ctrmap.formats.LittleEndian.putF32;
  *
  * <p>Both plain and LOD matrices are supported (LOD matrices grow their
  * 4x-resolution zone-switch grid and LOD grid in lockstep; new segments join
- * the resized zone). Growing only (no shrink). Full-extent camera containment
- * entries are stretched to the new extent; repulsors are left alone.
+ * the resized zone). Full-extent camera containment entries follow the new
+ * extent; repulsors are left alone.
+ *
+ * <p>SHRINKING (F020). Growing was the only direction, so a map grown one cell too
+ * far could not be put back short of a restore. The cells past the new size are
+ * dropped, ground and all, so a shrink is refused while anything of the zone's own -
+ * its spawn point, an NPC, a warp, a prop, a trigger - stands in one, and when the
+ * zone's entities cannot be read to say. A containment box reaching past the new
+ * edge is cut at it. The dropped cells' regions stay in FieldData, unused by this
+ * zone, and the result names them.
  */
 public class MapResizer {
 
@@ -42,10 +56,12 @@ public class MapResizer {
 		public int[] ownRegions = new int[0];
 		/** Zones whose ground those copies still carry (see GeometryForker.planFork). */
 		public int[] otherZones = new int[0];
+		/** Regions drawn only by the cells a shrink dropped: left in FieldData, unused by this zone (F020). */
+		public int[] droppedRegions = new int[0];
 	}
 
 	/**
-	 * Headless core: the resized matrix container. Old cells land top-left;
+	 * Headless core: the resized matrix container. Old cells that fit land top-left and the rest are dropped;
 	 * {@code newCellRegionIds} fill the remaining cells in row-major order.
 	 * All other subfiles are carried verbatim except full-extent camera
 	 * containment entries, which stretch to the new extent. LOD matrices grow
@@ -54,28 +70,31 @@ public class MapResizer {
 	 * fills the new zone-switch segments (ignored for non-LOD matrices, pass -1).
 	 */
 	public static byte[] buildResizedMatrix(byte[] mat, int newW, int newH, int[] newCellRegionIds, int primaryZone) {
-		int count = u16(mat, 2);
+		int count = ContainerBytes.count(mat);
 		if (count < 2) {
 			throw new IllegalArgumentException("matrix container has no camera subfile");
 		}
-		int[] offs = new int[count + 1];
-		for (int i = 0; i <= count; i++) {
-			offs[i] = i32(mat, 4 + i * 4);
+		int[] offs = ContainerBytes.offsets(mat);
+		if (offs == null) {
+			throw new IllegalArgumentException("matrix container's offset table is cut short");
 		}
-		byte[] sub0 = slice(mat, offs[0], offs[1]);
-		int hasLOD = u16(sub0, 0), unk = u16(sub0, 2), w = u16(sub0, 4), h = u16(sub0, 6);
-		if (newW < w || newH < h || (newW == w && newH == h)) {
-			throw new IllegalArgumentException("New size must grow the map (current " + w + "x" + h + ").");
+		//THE GRID IS READ BY THE GRID (F248): this parsed it by hand; it still WRITES the layout, and
+		//copies the two header words the Grid does not interpret
+		MapMatrix.Grid grid = MapMatrix.Grid.of(mat);
+		int hasLOD = u16(mat, offs[0]), unk = u16(mat, offs[0] + 2), w = grid.width, h = grid.height;
+		if (newW < 1 || newH < 1 || (newW == w && newH == h)) {
+			throw new IllegalArgumentException("New size must differ from the current " + w + "x" + h + " and be at least 1x1.");
 		}
-		if (newCellRegionIds.length != newW * newH - w * h) {
-			throw new IllegalArgumentException("Need " + (newW * newH - w * h) + " new region ids.");
+		int kept = Math.min(w, newW) * Math.min(h, newH);
+		if (newCellRegionIds.length != newW * newH - kept) {
+			throw new IllegalArgumentException("Need " + (newW * newH - kept) + " new region ids.");
 		}
 		//main ids grid (grown), tracked so LOD grids can fill by cell occupancy
 		int[] newIds = new int[newW * newH];
 		int next = 0;
 		for (int y = 0; y < newH; y++) {
 			for (int x = 0; x < newW; x++) {
-				newIds[y * newW + x] = (x < w && y < h) ? u16(sub0, 8 + (y * w + x) * 2) : newCellRegionIds[next++];
+				newIds[y * newW + x] = (x < w && y < h) ? grid.id(x, y) : newCellRegionIds[next++];
 			}
 		}
 		int mainLen = 8 + newW * newH * 2;
@@ -98,7 +117,7 @@ public class MapResizer {
 				for (int zx = 0; zx < nzw; zx++) {
 					int v;
 					if (zx < zw && zy < zh) {
-						v = u16(sub0, 8 + w * h * 2 + (zy * zw + zx) * 2);
+						v = u16(mat, grid.zoneLayerOffset() + (zy * zw + zx) * 2);
 					} else {
 						int rid = newIds[(zy / 4) * newW + (zx / 4)];
 						v = (rid != 0xFFFF && primaryZone >= 0) ? primaryZone : 0xFFFF;
@@ -108,19 +127,22 @@ public class MapResizer {
 			}
 			//LOD grid: old cells copied, new cells 0xFFFF (no LOD swap)
 			int lBase = mainLen + zoneLen;
-			int oldLodBase = 8 + w * h * 2 + zw * zh * 2;
+			int oldLodBase = grid.zoneLayerOffset() + zw * zh * 2;
 			for (int y = 0; y < newH; y++) {
 				for (int x = 0; x < newW; x++) {
-					int v = (x < w && y < h) ? u16(sub0, oldLodBase + (y * w + x) * 2) : 0xFFFF;
+					int v = (x < w && y < h) ? u16(mat, oldLodBase + (y * w + x) * 2) : 0xFFFF;
 					putU16(ns0, lBase + (y * newW + x) * 2, v);
 				}
 			}
 		}
-		//camera subfile: stretch full-extent containment entries
+		//camera subfile: full-extent containment entries follow the new extent; on a shrink a
+		//containment box reaching past the new edge is cut at it, and one wholly past it shrinks to
+		//nothing on the edge rather than turning inside out (F020)
 		byte[] cam = slice(mat, offs[1], offs[2]).clone();
 		if (cam.length >= 4) {
 			int n = i32(cam, 0);
 			float oldEast = w * 720f, oldSouth = h * 720f;
+			float newEast = newW * 720f, newSouth = newH * 720f;
 			for (int e = 0; e < n && 4 + e * 20 + 20 <= cam.length; e++) {
 				int base = 4 + e * 20;
 				float north = f32(cam, base), south = f32(cam, base + 4);
@@ -129,6 +151,11 @@ public class MapResizer {
 				if (isRepeal == 0 && south >= oldSouth - 40f && east >= oldEast - 40f && north <= 40f && west <= 40f) {
 					putF32(cam, base + 4, south + (newH - h) * 720f);
 					putF32(cam, base + 12, east + (newW - w) * 720f);
+				} else if (isRepeal == 0 && (newW < w || newH < h)) {
+					putF32(cam, base, Math.min(north, newSouth));
+					putF32(cam, base + 4, Math.min(south, newSouth));
+					putF32(cam, base + 8, Math.min(west, newEast));
+					putF32(cam, base + 12, Math.min(east, newEast));
 				}
 			}
 		}
@@ -156,10 +183,23 @@ public class MapResizer {
 		return out;
 	}
 
+	/** The zone's map's size in cells, {width, height}, as the workspace holds it: where a resize starts. */
+	public static int[] currentSize(WorkspaceSession ws, int zoneIndex) throws IOException {
+		MapMatrix.Grid g = MapMatrix.Grid.of(zoneAndMap(ws, zoneIndex)[1]);
+		return new int[]{g.width, g.height};
+	}
+
+	/** The zone's container and the map matrix its header names, as the workspace holds them. */
+	private static byte[][] zoneAndMap(WorkspaceSession ws, int zoneIndex) throws IOException {
+		byte[] zo = Files.readAllBytes(ws.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex).toPath());
+		int matrix = u16(zo, i32(zo, 4) + 4);
+		return new byte[][]{zo, Files.readAllBytes(ws.getWorkspaceFile(ArchiveType.MAP_MATRIX, matrix).toPath())};
+	}
+
 	/**
-	 * Workspace operation: gives the zone a grown matrix with blank-canvas
-	 * regions in the new cells. Pack Workspace must run afterwards (one
-	 * append per pack cycle, same rule as the fork).
+	 * Workspace operation: gives the zone a matrix of the new size, with blank-canvas regions in
+	 * the new cells and the cells past it dropped. Pack Workspace must run afterwards (one append
+	 * per pack cycle, same rule as the fork).
 	 */
 	public static ResizeResult resize(WorkspaceSession ws, int zoneIndex, int newW, int newH) throws IOException {
 		//WAS "if (!ws.isOA())", which refused X/Y and let Sun/Moon and Ultra
@@ -197,29 +237,42 @@ public class MapResizer {
 		}
 
 		File zoneFile = ws.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
-		byte[] zoBytes = Files.readAllBytes(zoneFile.toPath());
+		byte[][] read = zoneAndMap(ws, zoneIndex);
+		byte[] zoBytes = read[0];
 		int hdrOff = i32(zoBytes, 4);
 		int oldMatrix = u16(zoBytes, hdrOff + 4);
-		byte[] matBytes = Files.readAllBytes(ws.getWorkspaceFile(ArchiveType.MAP_MATRIX, oldMatrix).toPath());
+		byte[] matBytes = read[1];
 
 		//template = the zone's first region (same area -> textures guaranteed)
-		ctrmap.formats.mapmatrix.MapMatrix.Grid grid = ctrmap.formats.mapmatrix.MapMatrix.Grid.of(matBytes);
+		MapMatrix.Grid grid = MapMatrix.Grid.of(matBytes);
 		int w = grid.width, h = grid.height;
-		int templateRegion = -1;
-		for (int k = 0; k < w * h && templateRegion < 0; k++) {
-			int id = grid.id(k);
-			if (id != 0xFFFF) {
-				templateRegion = id;
-			}
-		}
+		int first = grid.firstFilledCell();
+		int templateRegion = first < 0 ? -1 : grid.id(first);
 		if (templateRegion < 0) {
 			throw new IOException("The zone's matrix has no regions.");
 		}
 		byte[] templateGr = Files.readAllBytes(ws.getWorkspaceFile(ArchiveType.FIELD_DATA, templateRegion).toPath());
 
-		int newCells = newW * newH - w * h;
-		if (newCells <= 0) {
-			throw new IOException("New size must grow the map (current " + w + "x" + h + ").");
+		if (newW < 1 || newH < 1 || (newW == w && newH == h)) {
+			throw new IOException("New size must differ from the current " + w + "x" + h + " and be at least 1x1.");
+		}
+		int keepW = Math.min(w, newW), keepH = Math.min(h, newH);
+		int newCells = newW * newH - keepW * keepH;
+		int[] dropped = new int[0];
+		if (keepW < w || keepH < h) {
+			//NOTHING OF THE ZONE'S IN A DROPPED CELL (F020): the cells past the new size go, ground
+			//and all, so a spawn point, an NPC, a warp, a prop or a trigger standing in one would be
+			//left over nothing. Asked of the zone's own content, and refused when it cannot be read -
+			//unknown is not empty
+			ZoneFootprint fp = footprint(zoBytes, ws.game(), zoneIndex);
+			if (fp != null && !fp.fitsIn(newW, newH)) {
+				throw new IOException("Zone " + zoneIndex + "'s own content - its spawn point, NPCs, warps, props or"
+						+ " triggers - reaches " + fp.describeCells() + ", and a " + newW + "x" + newH + " map ends"
+						+ " before that. Move or delete what stands past it first; the map was not shrunk.");
+			}
+			dropped = droppedRegions(grid, keepW, keepH);
+			//cropped first, so a shared map's private copies are made of the cells that stay
+			matBytes = buildResizedMatrix(matBytes, keepW, keepH, new int[0], zoneIndex);
 		}
 		//THE OLD CELLS BECOME THIS ZONE'S OWN (F018). The action said growing a map made the
 		//zone's geometry private first, and nothing did: the new matrix kept the old cells on the
@@ -246,7 +299,8 @@ public class MapResizer {
 		}
 		//build the matrix FIRST (validates size before any file lands); new LOD
 		//zone-switch segments belong to this zone
-		byte[] newMat = buildResizedMatrix(matBytes, newW, newH, newIds, zoneIndex);
+		byte[] newMat = newW == keepW && newH == keepH ? matBytes
+				: buildResizedMatrix(matBytes, newW, newH, newIds, zoneIndex);
 
 		//ALL OF IT OR NONE OF IT (F227). New regions, then the matrix, then the zone
 		//header, then the master row: a failure between any two used to leave the
@@ -308,11 +362,53 @@ public class MapResizer {
 		r.newH = newH;
 		r.newMatrix = newMatrix;
 		r.newRegions = newIds;
+		r.droppedRegions = dropped;
 		if (own != null) {
 			r.ownRegions = own.newRegions;
 			r.otherZones = own.otherZones;
 		}
 		return r;
+	}
+
+	/**
+	 * The zone's own content's extent, from its container's header and entities - or a refusal in
+	 * words when they cannot be read, because a shrink that could not look must not go ahead as if
+	 * nothing stood in the cells it drops.
+	 */
+	private static ZoneFootprint footprint(byte[] zoBytes, GameType game, int zoneIndex) throws IOException {
+		try {
+			int[] offs = ContainerBytes.offsets(zoBytes);
+			if (offs == null || ContainerBytes.count(zoBytes) < 2) {
+				throw new IllegalArgumentException("its container holds no entities");
+			}
+			return ZoneFootprint.of(new ZoneHeader(slice(zoBytes, offs[0], offs[1]), game),
+					new ZoneEntities(slice(zoBytes, offs[1], offs[2])));
+		} catch (RuntimeException unread) {
+			throw new IOException("Zone " + zoneIndex + "'s header and entities could not be read ("
+					+ ctrmap.util.Bytes.reason(unread) + "), so whether anything of it stands in the cells a"
+					+ " shrink drops is unknown; the map was not shrunk.", unread);
+		}
+	}
+
+	/** The regions the cells past keepW x keepH draw that no kept cell draws, ascending (F020). */
+	static int[] droppedRegions(MapMatrix.Grid grid, int keepW, int keepH) {
+		java.util.TreeSet<Integer> gone = new java.util.TreeSet<>();
+		java.util.Set<Integer> kept = new java.util.HashSet<>();
+		for (int y = 0; y < grid.height; y++) {
+			for (int x = 0; x < grid.width; x++) {
+				int id = grid.id(x, y);
+				if (id != 0xFFFF) {
+					(x < keepW && y < keepH ? kept : gone).add(id);
+				}
+			}
+		}
+		gone.removeAll(kept);
+		int[] out = new int[gone.size()];
+		int i = 0;
+		for (int id : gone) {
+			out[i++] = id;
+		}
+		return out;
 	}
 
 	private static byte[] slice(byte[] b, int a, int e) {

@@ -374,7 +374,8 @@ zero bytes.
 
 ## Reproducing this
 
-Probes in `wt/_state/queue2/runtime/`: `rtti.py` (RTTI names → typeinfo → vtables),
+Probes in `wt/_state/queue2/runtime/`, outside the repository (they read the owner's game executable, which is
+never committed, so the figures here cannot be re-run from a clone): `rtti.py` (RTTI names → typeinfo → vtables),
 `callgraph.py` (BL index over the whole binary), `p15_classes.py` (vtable slot →
 class), `dz.py` / `dumpregion.py` (annotated ARM disassembly with literal-pool
 resolution), `p13_verify.py` / `p17_e2.py` (index-table layout check), and `Q3.java`

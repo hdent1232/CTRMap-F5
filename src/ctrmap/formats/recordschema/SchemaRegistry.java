@@ -1,29 +1,29 @@
 package ctrmap.formats.recordschema;
 
-import ctrmap.Workspace;
 import ctrmap.formats.pokedata.ItemData;
 import ctrmap.formats.pokedata.ItemEffectLabels;
 import ctrmap.gamedef.ArchiveType;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 /**
  * Every fixed-stride table this editor knows how to render, in one readable
  * place.
  *
- * <p>THE POINT OF A REGISTRY. Tomorrow's discovery - personal data, moves,
- * trainer classes, gift encounters - is a method here and a line in
- * {@link #all()}, not another dialog. What it is NOT is a place to hide
+ * <p>THE POINT OF A REGISTRY. Tomorrow's fixed-stride discovery - personal
+ * data, moves, gift encounters - is a public static method here returning its
+ * {@link RecordSchema}, not another dialog. What it is NOT is a place to hide
  * knowledge: a registry nobody can read is worse than a hand-built form,
  * because the form at least admits it is bespoke. So each entry is written out
  * field by field with the offsets visible, and the comment above it says where
- * the layout came from.
+ * the layout came from. Which editors are on the generic form, and why the rest
+ * are not, is docs/items-plan.md's "Where the registry stopped" (F252), and
+ * {@code RecordSchemaTest} holds that section to the methods here and to the
+ * dialogs that build the form.
  *
  * <p>Nothing here is a guess. The item layout is pk3DS's {@code Item6.cs}
  * (GPLv3, in this tree), re-verified byte for byte against a retail dump by
- * {@code ItemDataTest}; the icon table's offset was measured in a decompressed
- * ORAS code.bin. Per-game locations come from the {@link ctrmap.gamedef}
+ * {@code ItemDataTest}. Per-game locations come from the {@link ctrmap.gamedef}
  * profiles, never from here.
  */
 public final class SchemaRegistry {
@@ -142,34 +142,5 @@ public final class SchemaRegistry {
 				+ " palette of 183 with no spare, and some behaviour (Exp. Share, Ability Capsule) is"
 				+ " keyed on the item id in code and is not in this record at all.",
 				ArchiveType.ITEM_DATA, -1, ItemData.SIZE, f);
-	}
-
-	/**
-	 * The item-to-icon table inside the executable: {@code u32[776]} at file
-	 * offset 0x47C644 of a decompressed ORAS code.bin.
-	 *
-	 * <p>MEASURED, and the measurement is the reason this is a separate schema
-	 * rather than another field of the item record: it is not in the archive at
-	 * all, so changing it is a {@link RecordSchema.Tier#CODE_PATCH} - a
-	 * different blast radius, a different deploy step, and a thing that can be
-	 * refused against the wrong build. The table has ZERO slack: the next table
-	 * begins at 0x47D264, which is exactly 776 * 4 bytes later, so the count is
-	 * a hard bound rather than a convention.
-	 */
-	public static RecordSchema itemIcons() {
-		return RecordSchema.code("Item icons",
-				"Which icon each item draws. One 32-bit index per item in the executable, so it ships"
-				+ " as a code.ips patch and not as archive data. Retail uses indices 0..629.",
-				ctrmap.formats.codepatch.ItemIconTable.FILE_OFFSET,
-				ctrmap.formats.codepatch.ItemIconTable.COUNT,
-				4,
-				Arrays.asList(RecordField.number("Icon", "Icon index", 0x00, 32,
-						"Index into the item-icon texture archive. Reassigns an icon that already"
-						+ " exists; it does not add one.")));
-	}
-
-	/** Everything the registry knows, for a UI that wants to list it. */
-	public static List<RecordSchema> all() {
-		return Arrays.asList(items(), itemIcons());
 	}
 }

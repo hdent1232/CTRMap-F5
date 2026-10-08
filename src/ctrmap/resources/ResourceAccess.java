@@ -1,14 +1,16 @@
 
 package ctrmap.resources;
 
-import ctrmap.CtrmapMainframe;
-import ctrmap.Workspace;
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 
+/**
+ * The resources the build ships - tables, icons, meshes, template files - opened one way (F130).
+ * One that is missing is a broken build and is refused here, by name: getResourceAsStream answers
+ * null, and five loaders took that for an empty table - a native-name table that named nothing, a
+ * build that did not know its version, a move gizmo with no arrows - each indistinguishable from
+ * "nothing matched". Depends on nothing above it, so the format layer may open resources here.
+ */
 public class ResourceAccess {
 	/**
 	 * A bundled resource's bytes, read to the end. IT READ ONE available()-SIZED BUFFER (F166, F131):
@@ -18,9 +20,6 @@ public class ResourceAccess {
 	 */
 	public static byte[] getByteArray(String name){
 		try (InputStream in = getStream(name)) {
-			if (in == null) {
-				throw new IllegalStateException("the program's resource " + name + " is missing");
-			}
 			java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
 			byte[] buf = new byte[8192];
 			int n;
@@ -32,18 +31,17 @@ public class ResourceAccess {
 			throw new IllegalStateException("the program's resource " + name + " could not be read: " + ex, ex);
 		}
 	}
-	public static InputStream getStream(String name){
-		return ResourceAccess.class.getClassLoader().getResourceAsStream("ctrmap/resources/" + name);
-	}
-	/** A bundled resource copied to the workspace's temp folder, or null when it cannot be written there. */
-	public static File copyToTemp(String name){
-		byte[] b = getByteArray(name);
-		File out = new File(Workspace.temp() + "/" + name);
-		try {
-			java.nio.file.Files.write(out.toPath(), b);
-			return out;
-		} catch (IOException ex) {
-			return null;
+
+	/**
+	 * A bundled resource, opened; the caller closes it.
+	 *
+	 * @throws IllegalStateException naming the resource, when this build does not have it
+	 */
+	public static InputStream getStream(String name) {
+		InputStream in = ResourceAccess.class.getClassLoader().getResourceAsStream("ctrmap/resources/" + name);
+		if (in == null) {
+			throw new IllegalStateException("ctrmap/resources/" + name + " is missing from this build");
 		}
+		return in;
 	}
 }

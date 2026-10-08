@@ -7,8 +7,10 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -46,6 +48,10 @@ import java.util.regex.Pattern;
  *     class, which is what {@link GlobalStateTest} counts;</li>
  * <li>{@link ClassFile#statics} - every static field it declares, with its
  *     flags and type, which is what {@link GlobalStateTest} argues;</li>
+ * <li>{@link ClassFile#methods} - every method it declares with the methods
+ *     its body invokes, and {@link ClassFile#handles} - the methods its
+ *     lambdas and method references name - which is what
+ *     {@link EveryMethodIsReachedTest} walks;</li>
  * <li>{@link #edgesTo} - every distinct (referencing class, member name) pair
  *     that touches a named owner, with inner and anonymous classes folded to
  *     their outer class so one listener does not read as a separate reader;</li>
@@ -58,8 +64,9 @@ import java.util.regex.Pattern;
  * </ul>
  *
  * <p>This is test infrastructure, not a bytecode library. It reads the
- * constant pool and the field table and stops; method bodies are skipped
- * because no guard has needed one yet.
+ * constant pool, the field table, and of each method body only its invoke
+ * instructions - walking the rest by length, so a body it cannot walk is an
+ * IOException, never a method that calls nothing.
  */
 public final class ClassFileScanner {
 
@@ -149,6 +156,161 @@ public final class ClassFileScanner {
 		}
 	}
 
+	/** One method a class declares: its flags, and every method its body invokes, as name + descriptor. */
+	public static final class Method {
+
+		public final String owner;
+		public final String name;
+		public final String descriptor;
+		public final int flags;
+		/**
+		 * Every invokevirtual, invokespecial, invokestatic and invokeinterface in its body, as
+		 * {@code owner#name+descriptor}: the class the call was resolved against, and what it names.
+		 */
+		public final Set<String> invokes;
+		/** The fields its body READS - getfield and getstatic - as {@code owner#name}, the owner as the
+		 *  instruction names it (the declaring class or a subclass of it). A write is not a read (F204). */
+		public final Set<String> reads;
+		/** The Code attribute, from max_stack on, or null for a body-less method; and each invoke by its code offset. */
+		private final byte[] code;
+		private final Map<Integer, String> invokeAt;
+
+		Method(String owner, String name, String descriptor, int flags, Set<String> invokes, Set<String> reads,
+				byte[] code, Map<Integer, String> invokeAt) {
+			this.owner = owner;
+			this.name = name;
+			this.descriptor = descriptor;
+			this.flags = flags;
+			this.invokes = Collections.unmodifiableSet(invokes);
+			this.reads = Collections.unmodifiableSet(reads);
+			this.code = code;
+			this.invokeAt = invokeAt;
+		}
+
+		/**
+		 * The invokes reachable from the method's entry without passing the "yes" edge of a branch on a
+		 * call to {@code ask} (a boolean method, as in {@link #invokes}) - every path, exception handlers
+		 * included. An invoke left out runs only where {@code ask} said yes (F077).
+		 *
+		 * <p>BY PATH, NOT BY PRESENCE. A rule asking only whether the method branches on the answer is
+		 * satisfied by guarding one call and adding a second beside it unguarded.
+		 */
+		public Set<String> reachedUnless(String ask) throws IOException {
+			Set<String> out = new LinkedHashSet<>();
+			if (code == null) {
+				return out;
+			}
+			int start = 8;
+			int length = intAt(code, 4);
+			int table = start + length;
+			int handlers = ((code[table] & 0xFF) << 8) | (code[table + 1] & 0xFF);
+			boolean[] seen = new boolean[length];
+			java.util.ArrayDeque<Integer> todo = new java.util.ArrayDeque<>();
+			todo.push(0);
+			while (!todo.isEmpty()) {
+				int at = todo.pop();
+				if (at < 0 || at >= length) {
+					throw new IOException(this + ": a jump to " + at + " leaves its " + length + " bytes of code");
+				}
+				if (seen[at]) {
+					continue;
+				}
+				seen[at] = true;
+				for (int h = 0; h < handlers; h++) {
+					int e = table + 2 + h * 8;
+					int from = ((code[e] & 0xFF) << 8) | (code[e + 1] & 0xFF);
+					int to = ((code[e + 2] & 0xFF) << 8) | (code[e + 3] & 0xFF);
+					if (at >= from && at < to) {
+						todo.push(((code[e + 4] & 0xFF) << 8) | (code[e + 5] & 0xFF));
+					}
+				}
+				int pc = start + at;
+				int op = code[pc] & 0xFF;
+				int next = at + stepAt(code, pc, start);
+				String invoked = invokeAt.get(at);
+				if (invoked != null) {
+					out.add(invoked);
+					int branch = next < length ? code[start + next] & 0xFF : -1;
+					if (invoked.equals(ask) && (branch == 0x99 || branch == 0x9a)) {
+						//the answer branched on: only its "no" edge is walked. ifeq jumps on no, ifne on yes
+						todo.push(branch == 0x99 ? next + s2(code, start + next + 1) : next + 3);
+						continue;
+					}
+				}
+				if ((op >= 0x99 && op <= 0xa6) || op == 0xc6 || op == 0xc7 || op == 0xa8) {   //if*, jsr
+					todo.push(at + s2(code, pc + 1));
+					todo.push(next);
+				} else if (op == 0xa7) {   //goto
+					todo.push(at + s2(code, pc + 1));
+				} else if (op == 0xc8 || op == 0xc9) {   //goto_w, jsr_w
+					todo.push(at + intAt(code, pc + 1));
+					if (op == 0xc9) {
+						todo.push(next);
+					}
+				} else if (op == 0xaa || op == 0xab) {   //tableswitch, lookupswitch
+					int p = pc + 1 + ((4 - ((pc - start + 1) % 4)) % 4);
+					todo.push(at + intAt(code, p));
+					if (op == 0xaa) {
+						int cases = intAt(code, p + 8) - intAt(code, p + 4) + 1;
+						for (int c = 0; c < cases; c++) {
+							todo.push(at + intAt(code, p + 12 + c * 4));
+						}
+					} else {
+						for (int c = 0, pairs = intAt(code, p + 4); c < pairs; c++) {
+							todo.push(at + intAt(code, p + 12 + c * 8));
+						}
+					}
+				} else if (!((op >= 0xac && op <= 0xb1) || op == 0xbf || op == 0xa9)) {   //not a return, athrow, ret
+					todo.push(next);
+				}
+			}
+			return out;
+		}
+
+		/** name + descriptor: what an invoke names, whatever class it was resolved against. */
+		public String signature() {
+			return name + descriptor;
+		}
+
+		@Override
+		public String toString() {
+			return simpleName(owner) + "." + name + descriptor;
+		}
+	}
+
+	/** A field a class declares, static or not, with its flags and whether javac inlines its value. */
+	public static final class Field {
+
+		public final String owner;
+		public final String name;
+		public final String descriptor;
+		public final int flags;
+		/** A compile-time constant (a ConstantValue attribute): javac copies its value into every reader, so
+		 *  no instruction ever reads it and "never read" says nothing about it. */
+		public final boolean constant;
+
+		Field(String owner, String name, String descriptor, int flags, boolean constant) {
+			this.owner = owner;
+			this.name = name;
+			this.descriptor = descriptor;
+			this.flags = flags;
+			this.constant = constant;
+		}
+
+		public boolean isSynthetic() {
+			return (flags & ACC_SYNTHETIC) != 0;
+		}
+
+		public boolean isEnumConstant() {
+			return (flags & ACC_ENUM) != 0;
+		}
+
+		@Override
+		public String toString() {
+			return simpleName(owner) + "." + name;
+		}
+	}
+
 	/** One Fieldref, Methodref or InterfaceMethodref out of a constant pool. */
 	public static final class Ref {
 
@@ -181,6 +343,15 @@ public final class ClassFileScanner {
 		public final List<Member> globals;
 		/** Every static field it declares, but the synthetic ones and enum constants. */
 		public final List<StaticField> statics;
+		/** Every method it declares, with what each body invokes. */
+		public final List<Method> methods;
+		/** name + descriptor of every method a MethodHandle constant names - lambdas and method references. */
+		public final Set<String> handles;
+		/** Its superclass's internal name (null for java/lang/Object) and its interfaces'. */
+		public final String superName;
+		public final List<String> interfaces;
+		/** Its access flags. */
+		public final int flags;
 		/** Every field and method reference in its constant pool. */
 		public final List<Ref> refs;
 		/** Every string constant in its constant pool, folded as javac left it. */
@@ -204,12 +375,24 @@ public final class ClassFileScanner {
 		 * as a parameter from one that fetches it.
 		 */
 		public final List<Ref> declares;
+		/** The name of every field it declares, static or not, synthetic ones included. */
+		public final Set<String> fields;
+		/** Every field it declares, with its flags and whether javac inlines it (F204). */
+		public final List<Field> declaredFields;
 
 		ClassFile(String name, List<Member> globals, List<StaticField> statics, List<Ref> refs, List<String> strings,
-				Set<String> classes, List<Ref> declares) {
+				Set<String> classes, List<Ref> declares, List<Method> methods, Set<String> handles, String superName,
+				List<String> interfaces, int flags, Set<String> fields, List<Field> declaredFields) {
 			this.name = name;
+			this.fields = Collections.unmodifiableSet(fields);
+			this.declaredFields = Collections.unmodifiableList(declaredFields);
 			this.globals = Collections.unmodifiableList(globals);
 			this.statics = Collections.unmodifiableList(statics);
+			this.methods = Collections.unmodifiableList(methods);
+			this.handles = Collections.unmodifiableSet(handles);
+			this.superName = superName;
+			this.interfaces = Collections.unmodifiableList(interfaces);
+			this.flags = flags;
 			this.refs = Collections.unmodifiableList(refs);
 			this.strings = Collections.unmodifiableList(strings);
 			this.classes = Collections.unmodifiableSet(classes);
@@ -324,7 +507,12 @@ public final class ClassFileScanner {
 			List<Ref> refs = new ArrayList<>();
 			List<String> strings = new ArrayList<>();
 			Set<String> classes = new LinkedHashSet<>();
+			Set<String> handles = new LinkedHashSet<>();
 			for (int i = 1; i < cpCount; i++) {
+				if (tag[i] == 15 && (tag[a[i]] == 10 || tag[a[i]] == 11)) {
+					int nt = b[a[i]];
+					handles.add(utf[a[nt]] + utf[b[nt]]);
+				}
 				if (tag[i] == 8) {
 					strings.add(utf[a[i]]);
 				} else if (tag[i] == 9 || tag[i] == 10 || tag[i] == 11) {
@@ -339,17 +527,31 @@ public final class ClassFileScanner {
 					classesIn(utf[i], classes); //a method descriptor or signature nothing else reached
 				}
 			}
-			skip(in, 6);                          //access flags, this class, super class
-			skip(in, 2 * in.readUnsignedShort()); //interfaces
+			int classFlags = in.readUnsignedShort();
+			skip(in, 2);                          //this class
+			int superIndex = in.readUnsignedShort();
+			String superName = superIndex == 0 ? null : utf[a[superIndex]];
+			List<String> interfaces = new ArrayList<>();
+			for (int n = in.readUnsignedShort(); n > 0; n--) {
+				interfaces.add(utf[a[in.readUnsignedShort()]]);
+			}
 			List<Member> globals = new ArrayList<>();
 			List<StaticField> statics = new ArrayList<>();
+			Set<String> fields = new LinkedHashSet<>();
+			List<Field> declaredFields = new ArrayList<>();
 			int fieldCount = in.readUnsignedShort();
 			for (int i = 0; i < fieldCount; i++) {
 				int flags = in.readUnsignedShort();
 				String name = utf[in.readUnsignedShort()];
+				fields.add(name);
 				String type = utf[in.readUnsignedShort()];
 				classesIn(type, classes); //the field's type
-				skipAttributes(in);
+				boolean constant = false;
+				for (int n = in.readUnsignedShort(); n > 0; n--) {
+					constant |= "ConstantValue".equals(utf[in.readUnsignedShort()]);
+					skip(in, in.readInt());
+				}
+				declaredFields.add(new Field(internalName, name, type, flags, constant));
 				if ((flags & ACC_STATIC) != 0 && (flags & (ACC_SYNTHETIC | ACC_ENUM)) == 0) {
 					if (type == null) {
 						throw new IOException(internalName + "." + name + ": its type is not a UTF-8 constant");
@@ -363,16 +565,33 @@ public final class ClassFileScanner {
 				}
 			}
 			List<Ref> declares = new ArrayList<>();
+			List<Method> methods = new ArrayList<>();
 			int methodCount = in.readUnsignedShort();
 			for (int i = 0; i < methodCount; i++) {
-				skip(in, 2); //access flags
+				int flags = in.readUnsignedShort();
 				String name = utf[in.readUnsignedShort()];
 				String descriptor = utf[in.readUnsignedShort()];
-				skipAttributes(in);
+				Set<String> invokes = new LinkedHashSet<>();
+				Set<String> reads = new LinkedHashSet<>();
+				Map<Integer, String> invokeAt = new HashMap<>();
+				byte[] code = null;
+				for (int n = in.readUnsignedShort(); n > 0; n--) {
+					String attribute = utf[in.readUnsignedShort()];
+					int length = in.readInt();
+					if (!"Code".equals(attribute)) {
+						skip(in, length);
+						continue;
+					}
+					code = new byte[length];
+					in.readFully(code);
+					invokesIn(code, tag, utf, a, b, invokes, reads, invokeAt, internalName + "." + name);
+				}
 				classesIn(descriptor, classes);
 				declares.add(new Ref(internalName, name, descriptor, true));
+				methods.add(new Method(internalName, name, descriptor, flags, invokes, reads, code, invokeAt));
 			}
-			return new ClassFile(internalName, globals, statics, refs, strings, classes, declares);
+			return new ClassFile(internalName, globals, statics, refs, strings, classes, declares, methods, handles,
+					superName, interfaces, classFlags, fields, declaredFields);
 		} finally {
 			in.close();
 		}
@@ -403,12 +622,88 @@ public final class ClassFileScanner {
 		}
 	}
 
-	private static void skipAttributes(DataInputStream in) throws IOException {
-		int n = in.readUnsignedShort();
-		for (int i = 0; i < n; i++) {
-			skip(in, 2);
-			skip(in, in.readInt());
+	/** Bytes each opcode takes, operands included; 0 for the three whose length the code must work out. */
+	private static final int[] OPCODE_LENGTH = new int[256];
+
+	static {
+		java.util.Arrays.fill(OPCODE_LENGTH, 1);
+		for (int op : new int[]{0x10, 0x12, 0x15, 0x16, 0x17, 0x18, 0x19, 0x36, 0x37, 0x38, 0x39, 0x3a, 0xa9, 0xbc}) {
+			OPCODE_LENGTH[op] = 2;
 		}
+		for (int op : new int[]{0x11, 0x13, 0x14, 0x84, 0xbb, 0xbd, 0xc0, 0xc1, 0xc6, 0xc7}) {
+			OPCODE_LENGTH[op] = 3;
+		}
+		for (int op = 0x99; op <= 0xa8; op++) {
+			OPCODE_LENGTH[op] = 3;   //the conditional branches, goto and jsr
+		}
+		for (int op = 0xb2; op <= 0xb8; op++) {
+			OPCODE_LENGTH[op] = 3;   //the field accesses and three of the invokes
+		}
+		OPCODE_LENGTH[0xb9] = 5;     //invokeinterface
+		OPCODE_LENGTH[0xba] = 5;     //invokedynamic
+		OPCODE_LENGTH[0xc5] = 4;     //multianewarray
+		OPCODE_LENGTH[0xc8] = 5;     //goto_w
+		OPCODE_LENGTH[0xc9] = 5;     //jsr_w
+		OPCODE_LENGTH[0xaa] = 0;     //tableswitch
+		OPCODE_LENGTH[0xab] = 0;     //lookupswitch
+		OPCODE_LENGTH[0xc4] = 0;     //wide
+	}
+
+	/**
+	 * The invokes in one Code attribute: max_stack, max_locals, code_length and
+	 * the code, walked opcode by opcode. A walk that runs off the end of the code
+	 * is an IOException: a body read wrong would report a method calling nothing.
+	 */
+	private static void invokesIn(byte[] attr, int[] tag, String[] utf, int[] a, int[] b, Set<String> out,
+			Set<String> reads, Map<Integer, String> invokeAt, String where) throws IOException {
+		int length = ((attr[4] & 0xFF) << 24) | ((attr[5] & 0xFF) << 16) | ((attr[6] & 0xFF) << 8) | (attr[7] & 0xFF);
+		int start = 8;
+		int end = start + length;
+		int pc = start;
+		while (pc < end) {
+			int op = attr[pc] & 0xFF;
+			if (op >= 0xb6 && op <= 0xb9) {
+				int ref = ((attr[pc + 1] & 0xFF) << 8) | (attr[pc + 2] & 0xFF);
+				int nt = b[ref];
+				String invoked = utf[a[a[ref]]] + "#" + utf[a[nt]] + utf[b[nt]];
+				out.add(invoked);
+				invokeAt.put(pc - start, invoked);
+			} else if (op == 0xb2 || op == 0xb4) {   //getstatic, getfield; 0xb3 and 0xb5 write
+				int ref = ((attr[pc + 1] & 0xFF) << 8) | (attr[pc + 2] & 0xFF);
+				reads.add(utf[a[a[ref]]] + "#" + utf[a[b[ref]]]);
+			}
+			pc += stepAt(attr, pc, start);
+		}
+		if (pc != end) {
+			throw new IOException(where + ": its code did not walk to its end (" + (pc - start) + " of " + length + ")");
+		}
+	}
+
+	/** The length of the instruction at {@code pc}, the code starting at {@code start}: switches and wide by their operands. */
+	private static int stepAt(byte[] attr, int pc, int start) {
+		int op = attr[pc] & 0xFF;
+		if (op == 0xaa || op == 0xab) {
+			int p = pc + 1 + ((4 - ((pc - start + 1) % 4)) % 4);
+			if (op == 0xaa) {
+				int low = intAt(attr, p + 4);
+				int high = intAt(attr, p + 8);
+				return p + 12 + (high - low + 1) * 4 - pc;
+			}
+			return p + 8 + intAt(attr, p + 4) * 8 - pc;
+		}
+		if (op == 0xc4) {
+			return (attr[pc + 1] & 0xFF) == 0x84 ? 6 : 4;
+		}
+		return OPCODE_LENGTH[op];
+	}
+
+	/** A signed two-byte branch offset. */
+	private static int s2(byte[] x, int at) {
+		return (short) (((x[at] & 0xFF) << 8) | (x[at + 1] & 0xFF));
+	}
+
+	private static int intAt(byte[] x, int at) {
+		return ((x[at] & 0xFF) << 24) | ((x[at + 1] & 0xFF) << 16) | ((x[at + 2] & 0xFF) << 8) | (x[at + 3] & 0xFF);
 	}
 
 	/** skipBytes may stop short; a short skip here would silently misparse. */
@@ -446,7 +741,7 @@ public final class ClassFileScanner {
 	/**
 	 * Every distinct (referencing top-level class, named class) pair where the
 	 * named class satisfies {@code target} - a class reference with or without
-	 * a member edge behind it. {@code implements ctrmap/humaninterface/MapObject}
+	 * a member edge behind it. {@code implements ctrmap/formats/MapObject}
 	 * is one of these and nothing in {@link #edgesTo}, which is why a layering
 	 * rule asks both.
 	 */

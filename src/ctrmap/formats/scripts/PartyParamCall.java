@@ -153,6 +153,6 @@ public final class PartyParamCall {
 	}
 
 	private static String name(PawnInstruction ins) {
-		return PawnInstruction.Commands.values()[ins.getCommand()].name();
+		return ctrmap.util.Bytes.enumOf(PawnInstruction.Commands.values(), ins.getCommand(), null).name();
 	}
 }

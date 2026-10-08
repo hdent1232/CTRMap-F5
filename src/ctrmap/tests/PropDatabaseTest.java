@@ -110,7 +110,7 @@ public class PropDatabaseTest {
 
 		//texture availability: com_bm_pc01 must be satisfied in its own donor area
 		if (pc01 != null && !pc01.donorAreas.isEmpty()) {
-			byte[] bch = PropDatabase.getSubfile(bm.getDecompressedEntry(pc01.modelIndex), 0);
+			byte[] bch = ctrmap.formats.containers.ContainerBytes.subfile(bm.getDecompressedEntry(pc01.modelIndex), 0);
 			Set<String> required = PropDatabase.getMaterialTextureNames(bch);
 			int donor = pc01.donorAreas.get(0);
 			List<String> missing = PropDatabase.getMissingTextureNames(bch, db.areaTextureNames.get(donor));
@@ -137,7 +137,7 @@ public class PropDatabaseTest {
 			if (m.donorAreas.isEmpty()) {
 				continue;
 			}
-			byte[] bch = PropDatabase.getSubfile(bm.getDecompressedEntry(m.modelIndex), 0);
+			byte[] bch = ctrmap.formats.containers.ContainerBytes.subfile(bm.getDecompressedEntry(m.modelIndex), 0);
 			Set<String> required = PropDatabase.getMaterialTextureNames(bch);
 			if (required.isEmpty()) {
 				continue;

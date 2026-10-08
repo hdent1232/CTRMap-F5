@@ -36,19 +36,10 @@ if __name__ == "__main__":
 LF = chr(10)
 
 
-def _root():
-    here = os.path.dirname(os.path.abspath(__file__))
-    while True:
-        if os.path.exists(os.path.join(here, ".git")) or os.path.isdir(
-                os.path.join(here, ".githooks")):
-            return here
-        parent = os.path.dirname(here)
-        if parent == here:
-            return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        here = parent
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
 
-
-ROOT = _root()
+ROOT = _tree_root.require(__file__)
 
 if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -63,7 +54,7 @@ IMPORT_DIRS = ("tools",)
 #: The floor on how many gate files the derivation must find before its answer is believed.
 MIN_GATES = 3
 
-#: Adapted per project: see ADAPT.md.
+#: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("GATE_DIRS", "IMPORT_DIRS", "MIN_GATES")
 
 WAITS = ("run", "check_output", "check_call", "call")
@@ -71,22 +62,50 @@ CEILING = 0
 
 
 def unbounded(source):
-    """[line] of every `subprocess.<wait>(...)` and `.communicate(...)` with no `timeout=`."""
+    """[line] of every call in SOURCE that starts a child and waits with no bound.
+
+    ASKED BY SHAPE, NOT BY THE NAME `subprocess` (F199): an alias (`import subprocess as sp`), a
+    from-import (`from subprocess import run`), `Popen(...).wait()`, `os.system` and `os.popen`
+    all blocked forever and passed a check that looked for the word. Every name this source binds
+    to subprocess, to one of its waits, or to os.system/os.popen is resolved first. Flagged: a wait
+    with no `timeout=`; `.communicate()` with none; `.wait()` given no bound at all; and every
+    os.system / os.popen, which cannot take one - start the child through subprocess instead.
+    """
     try:
         tree = ast.parse(source)
     except SyntaxError:
         return [0]
+    modules, oses, waits, shells = {"subprocess"}, {"os"}, set(), set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "subprocess":
+                    modules.add(alias.asname or alias.name)
+                elif alias.name == "os":
+                    oses.add(alias.asname or alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module in ("subprocess", "os"):
+            for alias in node.names:
+                if node.module == "subprocess" and alias.name in WAITS:
+                    waits.add(alias.asname or alias.name)
+                elif node.module == "os" and alias.name in ("system", "popen"):
+                    shells.add(alias.asname or alias.name)
     out = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
-        name = getattr(node.func, "attr", None)
+        attr = getattr(node.func, "attr", None)
         owner = getattr(getattr(node.func, "value", None), "id", None)
-        if not ((name in WAITS and owner == "subprocess") or name == "communicate"):
-            continue
-        if not any(keyword.arg == "timeout" for keyword in node.keywords):
+        bare = getattr(node.func, "id", None)
+        timed = any(keyword.arg == "timeout" for keyword in node.keywords)
+        if (attr in WAITS and owner in modules) or bare in waits or attr == "communicate":
+            if not timed:
+                out.append(node.lineno)
+        elif attr == "wait":
+            if not timed and not node.args:
+                out.append(node.lineno)
+        elif (attr in ("system", "popen") and owner in oses) or bare in shells:
             out.append(node.lineno)
-    return out
+    return sorted(set(out))
 
 
 def _with_imports(rel, seen):

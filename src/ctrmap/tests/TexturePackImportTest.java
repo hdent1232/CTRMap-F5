@@ -15,8 +15,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
-import static ctrmap.formats.LittleEndian.i32;
-import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.u16;
 
 /**
  * Headless acceptance battery for BchTexturePack (cross-area texture import).
@@ -80,7 +80,7 @@ public class TexturePackImportTest {
 			if (cont == null || cont.length < 8 || cont[0] != 'A' || cont[1] != 'D') {
 				continue;
 			}
-			byte[] p = PropDatabase.getSubfile(cont, 1);
+			byte[] p = ctrmap.formats.containers.ContainerBytes.subfile(cont, 1);
 			if (!BchTexturePack.isTexturePack(p)) {
 				fail("area " + area + " AD subfile 1 not recognized as texture pack");
 				continue;
@@ -153,7 +153,7 @@ public class TexturePackImportTest {
 			fail("battle01_bm_object01 not found or has no donor areas");
 		} else {
 			int donorArea = battle01.donorAreas.get(0);
-			byte[] modelBch = PropDatabase.getSubfile(bm.getDecompressedEntry(battle01.modelIndex), 0);
+			byte[] modelBch = ctrmap.formats.containers.ContainerBytes.subfile(bm.getDecompressedEntry(battle01.modelIndex), 0);
 			Set<String> required = PropDatabase.getMaterialTextureNames(modelBch);
 			List<String> missing = PropDatabase.getMissingTextureNames(modelBch, db.areaTextureNames.get(0));
 			System.out.println("battle01_bm_object01: donor area " + donorArea + " (Battle Resort), requires "
@@ -343,7 +343,7 @@ public class TexturePackImportTest {
 
 		//--- isTexturePack discrimination ------------------------------------
 		{
-			byte[] modelBch = PropDatabase.getSubfile(bm.getDecompressedEntry(0), 0);
+			byte[] modelBch = ctrmap.formats.containers.ContainerBytes.subfile(bm.getDecompressedEntry(0), 0);
 			if (BchTexturePack.isTexturePack(modelBch)) {
 				fail("isTexturePack accepted a prop model BCH");
 			}

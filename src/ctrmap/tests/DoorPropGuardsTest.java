@@ -5,11 +5,9 @@ import ctrmap.formats.h3d.BchTexturePack;
 import ctrmap.formats.h3d.BuildingCatalog;
 import ctrmap.formats.propdata.PropDatabase;
 import ctrmap.gamedef.ArchiveType;
-import ctrmap.humaninterface.TilePainterForm;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
 /**
  * A door placed on an area that already holds one of its textures under a
@@ -47,8 +45,8 @@ public class DoorPropGuardsTest {
 		int zone = zoneOnArea(TARGET_AREA);
 		check(zone >= 0, "some zone sits on area " + TARGET_AREA + " (zone " + zone + ")");
 		byte[] areaEntry = Workspace.getArchive(ArchiveType.AREA_DATA).getDecompressedEntry(TARGET_AREA);
-		byte[] world = PropDatabase.getSubfile(areaEntry, 11);
-		byte[] props = PropDatabase.getSubfile(areaEntry, 1);
+		byte[] world = ctrmap.formats.containers.ContainerBytes.subfile(areaEntry, 11);
+		byte[] props = ctrmap.formats.containers.ContainerBytes.subfile(areaEntry, 1);
 
 		//find a door whose home pixels differ from what the target area holds
 		BuildingCatalog.Entry door = null;
@@ -58,7 +56,7 @@ public class DoorPropGuardsTest {
 			if (e.doorProp == null || "-".equals(e.doorProp) || e.donorArea == TARGET_AREA || looked++ > 400) {
 				continue;
 			}
-			byte[] donorPack = PropDatabase.getSubfile(Workspace.getArchive(ArchiveType.AREA_DATA).getDecompressedEntry(e.donorArea), 1);
+			byte[] donorPack = ctrmap.formats.containers.ContainerBytes.subfile(Workspace.getArchive(ArchiveType.AREA_DATA).getDecompressedEntry(e.donorArea), 1);
 			List<String> names = new ArrayList<>(PropDatabase.getMaterialTextureNames(modelOf(e.doorProp, e.donorArea)));
 			List<String> clashes = BchTexturePack.clashesWith(world, props, donorPack, names);
 			if (!clashes.isEmpty()) {
@@ -76,8 +74,8 @@ public class DoorPropGuardsTest {
 				+ ") draws area " + TARGET_AREA + "'s " + clash);
 
 		StringBuilder note = new StringBuilder();
-		TilePainterForm.StagedArea area = new TilePainterForm.StagedArea(new ctrmap.LoadedZone(), TARGET_AREA, zone);
-		TilePainterForm.ensureDoorPropRegistered(door.doorProp, area, note);
+		ctrmap.MapPainter.StagedArea area = new ctrmap.MapPainter.StagedArea(new ctrmap.LoadedZone(), TARGET_AREA, zone);
+		ctrmap.MapPainter.ensureDoorPropRegistered(door.doorProp, area, note);
 		check(note.toString().contains(clash), "registering the door tells the user it will draw the area's " + clash + " - note: " + note);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -94,7 +92,7 @@ public class DoorPropGuardsTest {
 		}
 		for (PropDatabase.PropModel m : db.models) {
 			if (propName.equals(m.name)) {
-				return PropDatabase.getSubfile(Workspace.getArchive(ArchiveType.BUILDING_MODELS).getDecompressedEntry(m.modelIndex), 0);
+				return ctrmap.formats.containers.ContainerBytes.subfile(Workspace.getArchive(ArchiveType.BUILDING_MODELS).getDecompressedEntry(m.modelIndex), 0);
 			}
 		}
 		throw new IllegalStateException("no prop model named " + propName);

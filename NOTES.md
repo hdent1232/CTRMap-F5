@@ -55,8 +55,8 @@ editor carried on quietly with the wrong bytes.
 
 ### How this was checked
 
-Verified against a real dump by 137 headless test suites, 136 of which pass. The one that does
-not is an internal gate on the mutation baseline: it refuses a baseline that was measured while
+Verified against a real dump by the headless battery (`test.ps1`); at 1.0.3 every suite in it but
+one passed. The one that did not is an internal gate on the mutation baseline: it refuses a baseline that was measured while
 other work was still queued, which is the honest state of this repository today. The sweep behind
 1.0.3 is clean — it broke 202 lines on purpose and every one of them was caught by a suite, with
 no survivors.

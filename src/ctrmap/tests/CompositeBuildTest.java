@@ -6,6 +6,7 @@ import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.BchModelVerifier;
 import ctrmap.formats.h3d.RegionFactory;
+import ctrmap.formats.tilemap.PaintedGeometry;
 import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
@@ -34,8 +35,8 @@ import ctrmap.formats.tilemap.PaintedHeights;
  */
 public class CompositeBuildTest {
 
-	static final int DIM = PaintedRegionBuilder.DIM;
-	static final float TILE = PaintedRegionBuilder.TILE, ORIGIN = PaintedRegionBuilder.ORIGIN;
+	static final int DIM = PaintedGeometry.DIM;
+	static final float TILE = PaintedGeometry.TILE, ORIGIN = PaintedGeometry.ORIGIN;
 
 	public static void main(String[] args) throws Exception {
 		File garcFile = new File(args.length > 0 ? args[0]
@@ -137,7 +138,7 @@ public class CompositeBuildTest {
 					}
 				}
 			}
-			float overhead = blockTop + PaintedRegionBuilder.STEP;
+			float overhead = blockTop + PaintedGeometry.STEP;
 
 			// collision: nothing near the ground covers the erased block any more
 			GfColl out = new GfColl(c.collision);

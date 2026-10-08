@@ -1,6 +1,7 @@
 package ctrmap.formats.propdata;
 
 import ctrmap.formats.GameCache;
+import ctrmap.formats.containers.ContainerBytes;
 import ctrmap.formats.GameFiles;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.H3DModelNameGet;
@@ -15,8 +16,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import static ctrmap.formats.LittleEndian.u16;
-import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.util.LittleEndian.u16;
+import static ctrmap.util.LittleEndian.i32;
 
 /**
  * Searchable database of all BuildingModels props: model names, which areas
@@ -100,7 +101,7 @@ public class PropDatabase {
 			PropModel m = new PropModel(i);
 			byte[] container = bmGarc.getDecompressedEntry(i);
 			if (container != null && container.length > 4 && container[0] == 'B' && container[1] == 'M') {
-				byte[] bch = getSubfile(container, 0);
+				byte[] bch = ContainerBytes.subfile(container, 0);
 				if (isBCH(bch) && i32(bch, 8) + 8 <= bch.length && i32(bch, i32(bch, 8) + 4) > 0) { //content header model count > 0
 					try {
 						m.name = H3DModelNameGet.H3DModelNameGet(bch);
@@ -116,9 +117,9 @@ public class PropDatabase {
 			if (ad == null || ad.length < 8 || ad[0] != 'A' || ad[1] != 'D') {
 				continue; //not an AD container (e.g. ORAS AreaData entry 228)
 			}
-			byte[] pack = getSubfile(ad, 1);
+			byte[] pack = ContainerBytes.subfile(ad, 1);
 			db.areaTextureNames.put(area, isBCH(pack) ? getTexturePackTextureNames(pack) : new HashSet<String>());
-			byte[] reg = getSubfile(ad, 0);
+			byte[] reg = ContainerBytes.subfile(ad, 0);
 			if (reg == null || reg.length < 4) {
 				continue;
 			}
@@ -234,28 +235,6 @@ public class PropDatabase {
 	}
 
 	//--- lightweight static parsers ------------------------------------------
-
-	/**
-	 * Extracts a subfile from a GF mini container (BM/AD/GR/ZO...) byte array
-	 * without any File IO. Returns null when out of bounds/corrupt.
-	 */
-	public static byte[] getSubfile(byte[] container, int index) {
-		if (container == null || container.length < 8) {
-			return null;
-		}
-		int count = u16(container, 2);
-		if (index < 0 || index >= count || 4 + (count + 1) * 4 > container.length) {
-			return null;
-		}
-		int start = i32(container, 4 + index * 4);
-		int end = i32(container, 4 + (index + 1) * 4);
-		if (start < 0 || end > container.length || end < start) {
-			return null;
-		}
-		byte[] out = new byte[end - start];
-		System.arraycopy(container, start, out, 0, out.length);
-		return out;
-	}
 
 	/**
 	 * Names of the textures embedded in a BCH texture pack (or any BCH), read

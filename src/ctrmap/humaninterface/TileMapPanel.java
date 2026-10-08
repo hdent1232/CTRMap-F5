@@ -7,7 +7,6 @@ import com.jogamp.opengl.GLCapabilities;
 import com.jogamp.opengl.GLDrawableFactory;
 import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.util.awt.AWTGLReadBufferUtil;
-import ctrmap.CtrmapMainframe;
 import ctrmap.LoadedZone;
 import java.awt.Color;
 import java.awt.Graphics;
@@ -17,7 +16,6 @@ import java.awt.image.BufferedImage;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 
-import static ctrmap.CtrmapMainframe.*;
 import ctrmap.formats.vectors.Vec3f;
 import ctrmap.formats.tilemap.Tilemap;
 import ctrmap.formats.containers.GR;
@@ -35,7 +33,6 @@ import java.awt.Graphics2D;
 import java.awt.GraphicsConfiguration;
 import java.awt.GraphicsEnvironment;
 import java.awt.Point;
-import java.awt.Transparency;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.awt.event.MouseEvent;
@@ -72,9 +69,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	public List<H3DTexture> getWorldTextures() {
 		return savedWorldTextures;
 	}
-	public BufferedImage tilemapImage;// = new BufferedImage(400, 400, BufferedImage.TYPE_INT_RGB);
 	public BufferedImage tilemapScaledImage = new BufferedImage(400, 400, BufferedImage.TYPE_INT_RGB);
-	public BufferedImage cm2dOverlayImage = new BufferedImage(400, 400, BufferedImage.TYPE_INT_RGB);
 	public double tilemapScale = 1.0d;
 	public boolean loaded = false;
 	private final JLabel placeholder = new JLabel("No map loaded");
@@ -132,6 +127,30 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	/** The collision editor drawn alongside this view, handed in. */
 	private final CollEditPanel collision;
 
+	/**
+	 * Told when this view's regions are replaced or reloaded in place: the zone's undo history starts
+	 * again, since none of its edits could be put on regions read afresh (F209). Nothing until a history
+	 * is handed in - a suite's map view has none. It was a static call into a process-wide tile history.
+	 */
+	private Runnable mapReplaced = () -> {
+	};
+
+	/**
+	 * Makes this view's regions documents of {@code history} (F209) - each region's tiles one, as the
+	 * regions are when asked - and starts that history again whenever the regions are replaced or read
+	 * afresh. Once, by whoever built the history: the window, or a suite.
+	 *
+	 * @param shown draws the regions again after an undo or redo put tiles back
+	 */
+	public void useHistory(UndoHistory history, Runnable shown) {
+		if (history == null || shown == null) {
+			throw new IllegalArgumentException("the map view must be handed the history its tiles belong to, and how"
+					+ " to draw them again");
+		}
+		history.watch(ZoneDocuments.tiles(() -> this, shown));
+		mapReplaced = history::reset;
+	}
+
 	/** The regions whose collision the last load could not read, each with why - for {@link #collisionRefused}. */
 	private final List<String> collisionRefusals = new ArrayList<>();
 
@@ -174,18 +193,26 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		setLayout(new GridBagLayout());
 		add(placeholder);
 		g = tilemapScaledImage.getGraphics();
-		glp = GLProfile.get(GLProfile.GL2);
-		caps = new GLCapabilities(glp);
-		caps.setHardwareAccelerated(true);
-		caps.setDoubleBuffered(false);
-		caps.setAlphaBits(8);
-		caps.setRedBits(8);
-		caps.setBlueBits(8);
-		caps.setGreenBits(8);
-		caps.setOnscreen(false);
+		//THE GL OVERLAY IS OPTIONAL (F077): this line was where the main window died on a machine
+		//whose OpenGL natives do not load - an UnsatisfiedLinkError out of this constructor, taking
+		//the 2D editor with it. Without GL the map draws without the overlay of models on it.
+		glp = GlSupport.available() ? GLProfile.get(GLProfile.GL2) : null;
+		caps = glp == null ? null : new GLCapabilities(glp);
+		if (caps != null) {
+			caps.setHardwareAccelerated(true);
+			caps.setDoubleBuffered(false);
+			caps.setAlphaBits(8);
+			caps.setRedBits(8);
+			caps.setBlueBits(8);
+			caps.setGreenBits(8);
+			caps.setOnscreen(false);
+		}
 		addComponentListener(new ComponentAdapter() {
 			@Override
 			public void componentResized(ComponentEvent e) {
+				if (!GlSupport.available()) {
+					return;
+				}
 				if (CM2DDrawable != null) {
 					scene.renderables().forEach((r) -> {
 						r.deleteGLInstanceBuffers(CM2DDrawable.getGL().getGL2());
@@ -260,7 +287,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		//tile is the same shape: a loose region is one 40x40 cell, so a coordinate
 		//from any matrix wider than one region is off it, and the tile inspector
 		//indexes with it.
-		TileUndo.clear();
+		mapReplaced.run();
 		Selector.unfocus(this);
 		mode = ViewportMode.SINGLE;
 		width = 40;
@@ -290,7 +317,6 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 					? "Region" : models[0][0].models.get(0).name);
 		}
 		tilemaps[0][0] = new Tilemap(file, tileColors());
-		tilemapImage = tilemaps[0][0].getImage();
 		tilemapScaledImage = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice().getDefaultConfiguration().createCompatibleImage(400, 400);
 		scaleImage(1);
 		revalidate();
@@ -378,7 +404,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		//Open GR Mapfile) replaces tilemaps[0][0] over a different container without
 		//coming through here, so it clears the history and the picked tile itself,
 		//beside the textures it already dropped for the same reason.
-		TileUndo.clear();
+		mapReplaced.run();
 		mode = ViewportMode.SINGLE;
 		loaded = false;
 		add(placeholder);
@@ -472,7 +498,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	}
 
 	public void loadMatrix(MapMatrix matrix, ADPropRegistry reg, List<H3DTexture> worldTextures, List<H3DTexture> propTextures) {
-		TileUndo.clear(); //a different zone's tilemaps - old history is invalid
+		mapReplaced.run(); //a different zone's tilemaps - old history is invalid
 		//AND THE PICKED TILE IS INVALID FOR EXACTLY THE SAME REASON, so it goes with the
 		//history. Nothing reset it before, so Selector.selTileX/selTileY kept naming a tile
 		//of the map being replaced, and picking a tile on a large zone then loading a
@@ -772,7 +798,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 				perfScale(tilemapScale, l, k);
 			}
 		}
-		TileUndo.clear();
+		mapReplaced.run();
 		firePropertyChange(PROP_REPAINT, false, true);
 	}
 
@@ -781,7 +807,6 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 				.getLocalGraphicsEnvironment().getDefaultScreenDevice()
 				.getDefaultConfiguration();
 		tilemapScaledImage = gConfig.createCompatibleImage((int) (width * 10 * tilemapScale), (int) (height * 10 * tilemapScale));
-		cm2dOverlayImage = gConfig.createCompatibleImage((int) (width * 10 * tilemapScale), (int) (height * 10 * tilemapScale), Transparency.TRANSLUCENT);
 		g = tilemapScaledImage.getGraphics();
 		g.setColor(new Color(0xffffff));
 		g.fillRect(0, 0, width * 10, height * 10);
@@ -848,15 +873,6 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 					if (cell(tallgrass, j, i) != null) {
 						cell(tallgrass, j, i).render(gl);
 					}
-					//useless probably? Can't really edit it in CM3D so it's better to just link it with CollEd per region.
-					/*if (colls[j][i] != null) {
-						gl.glPushMatrix();
-						gl.glTranslatef(j * 720 + 360f, 1, i * 720 + 360f); //we translate it 1 unit up so it does not overlap with the world models
-						gl.glBegin(GL2.GL_TRIANGLES);
-						colls[j][i].render(gl);
-						gl.glEnd();
-						gl.glPopMatrix();
-					}*/
 				}
 			}
 		} else {
@@ -913,7 +929,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		}
 		GRCollisionFile f = colls[cx][cz];
 		if (f == null) {
-			return 0f;
+			return Float.NaN; //a region with no collision has no ground to stand on: unknown, not 0 (F246)
 		}
 		return f.getHeightAtPoint((x % 720f) - 360f, (z % 720f) - 360f);
 	}
@@ -970,8 +986,9 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	}
 
 	public Point getRawAtViewportCentre() {
-		int imgstartx = (this.getWidth() - tilemapScaledImage.getWidth()) / 2;
-		int imgstarty = (this.getHeight() - tilemapScaledImage.getHeight()) / 2;
+		java.awt.Point origin = imageOrigin();
+		int imgstartx = origin.x;
+		int imgstarty = origin.y;
 		int WPStartX = Math.round(viewport.getViewport().getViewPosition().x - imgstartx);
 		int WPStartY = Math.round(viewport.getViewport().getViewPosition().y - imgstarty);
 		int xFromWPStart = Math.round(viewport.getViewport().getWidth() / 2);
@@ -994,8 +1011,9 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	protected void paintComponent(Graphics g) {
 		super.paintComponent(g);
 		if (loaded) {
-			int imgstartx = (this.getWidth() - tilemapScaledImage.getWidth()) / 2;
-			int imgstarty = (this.getHeight() - tilemapScaledImage.getHeight()) / 2;
+			java.awt.Point origin = imageOrigin();
+			int imgstartx = origin.x;
+			int imgstarty = origin.y;
 			int scrollpanex = viewport.getViewport().getViewPosition().x;
 			int scrollpaney = viewport.getViewport().getViewPosition().y;
 			int scrollpanew = viewport.getViewport().getSize().width;
@@ -1021,7 +1039,10 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			BufferedImage crop2;
 			double globimgdim = tilemapScaledImage.getHeight() / (double) height;
 			int gidround = (int) Math.round(globimgdim);
-			if (CM2DTempImage != null && (tools.current().CM2DNoUpdate || Selector.getSelectorCM2DRenderOptimizationFlag())) {
+			if (CM2DDrawable == null) {
+				//no GL overlay: OpenGL could not start (F077), or no resize has made the drawable yet
+				crop2 = null;
+			} else if (CM2DTempImage != null && (tools.current().CM2DNoUpdate || Selector.getSelectorCM2DRenderOptimizationFlag())) {
 				crop2 = CM2DTempImage;
 			} else {
 				CM2DDrawable.display();
@@ -1041,10 +1062,12 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 				gl.glRotatef(-90f, 1.0f, 0.0f, 0.0f);
 				crop2 = renderGL(gl);
 			}
-			Graphics2D g2d = (Graphics2D) g;
-			g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.5f));
-			g2d.drawImage(crop2, imgstartx + scrollpanex, scrollpaney - imgstarty, null);
-			g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 1.0f));
+			if (crop2 != null) {
+				Graphics2D g2d = (Graphics2D) g;
+				g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.5f));
+				g2d.drawImage(crop2, imgstartx + scrollpanex, scrollpaney - imgstarty, null);
+				g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 1.0f));
+			}
 
 			CM2DTempImage = crop2;
 
@@ -1107,8 +1130,15 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			protected void done() {
 				Throwable failed = null;
 				try {
-					get(); //without this, a tile image that failed to rebuild closes the dialog and
-					//the old picture stays up as if it were current
+					//without get(), a tile image that failed to rebuild closes the dialog and
+					//the old picture stays up as if it were current.
+					//AND ONLY WHAT WAS REBUILT IS RESCALED: with no map open the worker rebuilds
+					//nothing and says so. Moving the rescale here (F220) dropped the early return
+					//that had skipped it, so a refresh with nothing open sized the empty panel -
+					//caught by DataSafetyGuardsTest once OpenGL stopped killing it first (F077).
+					if (get() != Boolean.TRUE) {
+						return;
+					}
 					//THE RESCALE IS LAYOUT, SO IT IS THE EVENT THREAD'S (F220): it sizes this
 					//panel and revalidates the viewport, and it ran at the end of the worker.
 					//THE PANEL THAT JUST REBUILT ITS IMAGES IS THE ONE THAT MUST RESCALE
@@ -1147,7 +1177,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 						progress.setBarPercent((int) (((i * tilemaps[i].length + j) / (float) (tilemaps.length * tilemaps[i].length)) * 100));
 					}
 				}
-				return null;
+				return Boolean.TRUE;   //rebuilt: done() rescales
 			}
 		};
 		worker.execute();
@@ -1178,5 +1208,39 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			g.drawImage(changed.getImage(), (int) (Math.round(400d * tilemapScale * changedRegionX)), (int) (Math.round(400d * tilemapScale * changedRegionY)), regionSize + 1, regionSize, null);
 			viewport.repaint();
 		}
+	}
+
+	/**
+	 * Pixels across a distance in world units at {@code scale}: the map image draws 400 pixels per
+	 * 720-unit region at scale 1. One of the two rules every tool drew and hit-tested by (F117) - the
+	 * prop, trigger and warp tools wrote it out seventeen times, and a change to the view had to find
+	 * each one.
+	 */
+	public static double toScreen(double world, double scale) {
+		return world * 400d / 720d * scale;
+	}
+
+	/** {@link #toScreen(double, double)} at this view's scale. */
+	public double toScreen(double world) {
+		return toScreen(world, tilemapScale);
+	}
+
+	/** World units across a distance in pixels at {@code scale}, as the prop drag has always written them. */
+	public static float toWorld(double pixels, double scale) {
+		return (float) (pixels * (720f / 400f) / scale);
+	}
+
+	/** {@link #toWorld(double, double)} at this view's scale. */
+	public float toWorld(double pixels) {
+		return toWorld(pixels, tilemapScale);
+	}
+
+	/**
+	 * Where the map image starts inside the panel - the other rule (F117): centred, by a plain int
+	 * division that goes negative when the image is wider than the panel, which is how it scrolls.
+	 */
+	public java.awt.Point imageOrigin() {
+		return new java.awt.Point((getWidth() - tilemapScaledImage.getWidth()) / 2,
+				(getHeight() - tilemapScaledImage.getHeight()) / 2);
 	}
 }

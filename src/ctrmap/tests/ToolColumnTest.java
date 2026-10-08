@@ -42,7 +42,7 @@ public class ToolColumnTest {
 
 		System.out.println("--- the column's one way in uses it, and the editors answer for their saves (F105)");
 		String frame = source("src/ctrmap/CtrmapMainframe.java");
-		String sw = CollisionReadTest.body(frame, "public static void switchToolUI(JComponent rightComponent)");
+		String sw = CollisionReadTest.body(frame, "public void switchToolUI(JComponent rightComponent)");
 		check(sw != null && sw.contains("jsp.setRightComponent") && sw.indexOf("public static", 1) < 0, "control: switchToolUI is found, whole and alone");
 		check(sw != null && sw.contains("mayLeave(") && sw.indexOf("mayLeave(") < sw.indexOf("setRightComponent"),
 				"switchToolUI asks before it replaces anything");

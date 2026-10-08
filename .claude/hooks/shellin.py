@@ -32,6 +32,8 @@ input could not be walked, and a caller that gets True must refuse rather than a
 import importlib.util
 import os
 import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
 
 #: How deep to walk a tool input looking for command strings. `browser_batch` nests one tool
 #: input inside another; nothing here nests deeper than that, and an unbounded walk on a
@@ -75,7 +77,7 @@ def _bundle_shell():
     stack is shadowed by a bundle module of the same name.
     """
     import importlib
-    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    root = _tree_root.require(__file__)
     folder = os.path.join(root, ".claude", "bundle-hooks")
     locator = os.path.join(root, "tools", "bundle_hooks.py")
     if os.path.isfile(locator):

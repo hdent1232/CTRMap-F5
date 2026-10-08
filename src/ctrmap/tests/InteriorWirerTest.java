@@ -47,6 +47,13 @@ public class InteriorWirerTest {
 	/** The floor under it: a catalog read that came back empty must not check nothing and pass. */
 	static final int AT_LEAST = 39;
 
+	static int checkFails = 0;
+
+	static void check(boolean ok, String what) {
+		System.out.println((ok ? "  ok: " : "  FAIL: ") + what);
+		checkFails += ok ? 0 : 1;
+	}
+
 	public static void main(String[] args) throws Exception {
 		int[] interiors = interiors();
 		if (interiors.length < AT_LEAST) {
@@ -54,13 +61,40 @@ public class InteriorWirerTest {
 					+ " it did - a read that lost them would check nothing and pass");
 			System.exit(1);
 		}
-		zo = new GARC(new File(args.length > 0 ? args[0]
-				: "../RomFS_original_garcs/a/0/1/3"));
-		int fails = 0, singles = 0, multis = 0;
+		aBuildingsFloorsAreFoundAndRewired();
+		everyFloorIsClonedAndItsStairsLeadToTheClones();
+		File garc = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs/a/0/1/3");
+		if (!garc.isFile()) {
+			Skip.section("no ZoneData archive at " + garc + " - the retail interiors were NOT checked");
+			System.out.println(checkFails == 0 ? "ALL PASS" : "FAILURES PRESENT");
+			System.exit(checkFails == 0 ? 0 : 1);
+		}
+		zo = new GARC(garc);
+		int fails = checkFails, singles = 0, multis = 0, multiFloor = 0;
 		for (int zone : interiors) {
 			try {
 				ZoneEntities ent = entities(zone);
 				int area = area(zone);
+				//EVERY FLOOR (F015): the floors found are closed - no floor's warp leads into the
+				//building's area anywhere but another of its floors - and rewired, none is left retail
+				List<Integer> floors = InteriorWirer.floors(zone, RETAIL);
+				java.util.Map<Integer, Integer> cloneOf = new java.util.LinkedHashMap<>();
+				for (int f : floors) {
+					cloneOf.put(f, 3000 + cloneOf.size());
+				}
+				for (int f : floors) {
+					ZoneEntities floor = entities(f);
+					int left = InteriorWirer.rewire(floor, area(f), cloneOf, 500, 7, f == zone, InteriorWirerTest::area);
+					for (ZoneEntities.Warp w : floor.warps) {
+						if (floors.contains(w.targetZone)) {
+							throw new IllegalStateException("floor " + f + " still has a warp into retail floor " + w.targetZone);
+						}
+					}
+					if (left != 0) {
+						throw new IllegalStateException("floor " + f + " has " + left + " warp(s) left on a retail target");
+					}
+				}
+				multiFloor += floors.size() > 1 ? 1 : 0;
 				List<Integer> exits = InteriorWirer.exitWarps(ent, area, InteriorWirerTest::area);
 				if (exits.isEmpty()) {
 					throw new IllegalStateException("no exit warps found");
@@ -122,7 +156,8 @@ public class InteriorWirerTest {
 				fails++;
 			}
 		}
-		System.out.println("interiors: " + interiors.length + " (" + singles + " single-warp, " + multis + " multi), " + fails + " failure(s)");
+		System.out.println("interiors: " + interiors.length + " (" + singles + " single-warp, " + multis + " multi, "
+				+ multiFloor + " of more than one floor), " + fails + " failure(s)");
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT");
 		if (fails > 0) {
 			System.exit(1);
@@ -131,6 +166,195 @@ public class InteriorWirerTest {
 
 	static ZoneEntities entities(int zone) {
 		return new ZoneEntities(subfile(zo.getDecompressedEntry(zone), 1));
+	}
+
+	/** The retail dump's zones, as the wiring reads them. */
+	static final InteriorWirer.Zones RETAIL = new InteriorWirer.Zones() {
+		@Override
+		public ZoneEntities entities(int zone) {
+			return InteriorWirerTest.entities(zone);
+		}
+
+		@Override
+		public int area(int zone) {
+			return InteriorWirerTest.area(zone);
+		}
+	};
+
+	/** A building's zones as a table: each zone's area and the zones its warps lead to. */
+	static InteriorWirer.Zones zones(java.util.Map<Integer, Integer> areas, java.util.Map<Integer, int[]> warps) {
+		return new InteriorWirer.Zones() {
+			@Override
+			public ZoneEntities entities(int zone) throws java.io.IOException {
+				if (!warps.containsKey(zone)) {
+					throw new java.io.IOException("zone " + zone + " is not in this building");
+				}
+				return withWarps(warps.get(zone));
+			}
+
+			@Override
+			public int area(int zone) {
+				return areas.getOrDefault(zone, -1);
+			}
+		};
+	}
+
+	/** Entities holding one warp to each zone given, the warp id the warp's own index plus ten. */
+	static ZoneEntities withWarps(int... targets) {
+		ZoneEntities e = EditorBench.emptyEntities();
+		for (int t : targets) {
+			ZoneEntities.Warp w = new ZoneEntities.Warp();
+			w.targetZone = t;
+			w.targetWarpId = 10 + e.warps.size();
+			e.warps.add(w);
+		}
+		return e;
+	}
+
+	/**
+	 * The floors are what the door's floor reaches by stairs, and each clone's warps lead to the door or
+	 * to the cloned floors (F015). Only the door's floor was cloned: a two-floor house's stairs led to the
+	 * retail upstairs, shared with the original house.
+	 */
+	static void aBuildingsFloorsAreFoundAndRewired() throws Exception {
+		System.out.println("--- a building's floors are found by its stairs, and each clone leads to the clones (F015)");
+		java.util.Map<Integer, Integer> areas = new java.util.HashMap<>();
+		java.util.Map<Integer, int[]> warps = new java.util.HashMap<>();
+		areas.put(1, 2);                  //the town outside
+		areas.put(10, 5);                 //the ground floor: the door out, stairs up, a warp nothing can read
+		warps.put(10, new int[]{1, 11, 99});
+		areas.put(11, 5);                 //the middle floor: down, up
+		warps.put(11, new int[]{10, 12});
+		areas.put(12, 5);                 //the top floor: down, and a back door outside
+		warps.put(12, new int[]{11, 1});
+		areas.put(20, 5);                 //another building in the same area, reached by no stair of this one
+		warps.put(20, new int[]{1});
+		InteriorWirer.Zones building = zones(areas, warps);
+		check(InteriorWirer.floors(10, building).equals(java.util.Arrays.asList(10, 11, 12))
+				&& InteriorWirer.floors(11, building).equals(java.util.Arrays.asList(11, 10, 12)),
+				"the floors are the door's floor and every zone its stairs reach, in the order reached - not the other"
+				+ " building in the area, nor a target nothing can read: " + InteriorWirer.floors(10, building));
+		String refused = null;
+		areas.remove(10);
+		try {
+			InteriorWirer.floors(10, building);
+		} catch (java.io.IOException ex) {
+			refused = ex.getMessage();
+		}
+		areas.put(10, 5);
+		check(refused != null && refused.contains("stairs cannot be told"), "and a door floor whose area cannot be read is"
+				+ " refused, not taken for one floor: " + refused);
+
+		java.util.Map<Integer, Integer> cloneOf = new java.util.LinkedHashMap<>();
+		cloneOf.put(10, 300);
+		cloneOf.put(11, 301);
+		cloneOf.put(12, 302);
+		ZoneEntities ground = withWarps(warps.get(10));
+		int groundLeft = InteriorWirer.rewire(ground, 5, cloneOf, 7, 3, true, z -> areas.getOrDefault(z, -1));
+		check(ground.warps.get(0).targetZone == 7 && ground.warps.get(0).targetWarpId == 3
+				&& ground.warps.get(1).targetZone == 301 && ground.warps.get(1).targetWarpId == 11
+				&& ground.warps.get(2).targetZone == 99 && groundLeft == 1,
+				"the ground floor's door leads to the placed door, its stairs to the cloned floor - same warp id - and the"
+				+ " warp nothing can read is left and counted: " + groundLeft);
+		ZoneEntities middle = withWarps(warps.get(11));
+		int middleLeft = InteriorWirer.rewire(middle, 5, cloneOf, 7, 3, false, z -> areas.getOrDefault(z, -1));
+		check(middle.warps.get(0).targetZone == 300 && middle.warps.get(1).targetZone == 302 && middleLeft == 0,
+				"an upper floor with no door keeps both its stairs, on the clones - its warp 0 is not taken for the door");
+		ZoneEntities top = withWarps(warps.get(12));
+		InteriorWirer.rewire(top, 5, cloneOf, 7, 3, false, z -> areas.getOrDefault(z, -1));
+		check(top.warps.get(0).targetZone == 301 && top.warps.get(1).targetZone == 7 && top.warps.get(1).targetWarpId == 3,
+				"and an upper floor's own way outside leads to the placed door too");
+	}
+
+	/** A zone container of this area holding these entities, as MapResizeTest's game reads one. */
+	static byte[] zoneOf(int area, ZoneEntities entities) {
+		byte[] header = new byte[ctrmap.MasterTable.ROW];
+		header[2] = (byte) area;
+		header[3] = (byte) (area >> 8);
+		return MapResizeTest.container(0x5a4f, header, entities.assembleData(), HandedGameTest.amx());
+	}
+
+	static ZoneEntities read(ctrmap.WorkspaceSession ws, int zone) throws Exception {
+		return new ZoneEntities(subfile(MapResizeTest.bytes(ws, ctrmap.gamedef.ArchiveType.ZONE_DATA, zone), 1));
+	}
+
+	/**
+	 * Placing a two-floor house clones both floors into free base slots and wires them to each other and to
+	 * the door, leaving the retail house as it was; a building with more floors than slots is refused with
+	 * no slot taken (F015). Driven through the workspace, as the Map Builder's Apply drives it.
+	 */
+	static void everyFloorIsClonedAndItsStairsLeadToTheClones() throws Exception {
+		System.out.println("--- placing a two-floor house clones both floors, wired to each other and the door (F015)");
+		byte[][] zones = {
+			zoneOf(1, withWarps()),          //0: the town the house is placed in
+			zoneOf(5, withWarps(0, 2)),      //1: the retail ground floor: the door out, the stairs up
+			zoneOf(5, withWarps(1)),         //2: the retail upstairs
+			zoneOf(9, withWarps()),          //3, 4, 5: free base slots
+			zoneOf(9, withWarps()),
+			zoneOf(9, withWarps())};
+		ctrmap.WorkspaceSession ws = MapResizeTest.game("interior_floors", zones, new int[]{0, 0, 0, 0, 0, 0},
+				new byte[][]{MapResizeTest.matrix(0)}, MapResizeTest.region("region zero"));
+		java.util.List<Integer> slots = new java.util.ArrayList<>(java.util.Arrays.asList(3, 4, 5));
+		InteriorWirer.Wired wired = InteriorWirer.cloneAndWire(0, 4, 1, slots);
+		ZoneEntities ground = read(ws, 3), upstairs = read(ws, 4);
+		check(wired.cloneOf.toString().equals("{1=3, 2=4}") && wired.entry() == 3 && wired.retailLinks == 0
+				&& slots.equals(java.util.Collections.singletonList(5)),
+				"both floors are cloned into the first free slots, the ground floor first, and the slots used are taken: "
+				+ wired.cloneOf + ", left " + slots);
+		check(ground.warps.get(0).targetZone == 0 && ground.warps.get(0).targetWarpId == 4
+				&& ground.warps.get(1).targetZone == 4 && upstairs.warps.get(0).targetZone == 3,
+				"the clone's door leads to the placed door, its stairs to the cloned upstairs, and back down to the clone");
+		check(read(ws, 1).warps.get(1).targetZone == 2 && read(ws, 2).warps.get(0).targetZone == 1,
+				"and the retail house's floors still lead to each other, untouched");
+		String refused = null;
+		byte[] before = MapResizeTest.bytes(ws, ctrmap.gamedef.ArchiveType.ZONE_DATA, 5);
+		try {
+			InteriorWirer.cloneAndWire(0, 4, 1, slots);
+		} catch (Exception ex) {   //any failure is caught and read: only the refusal in words passes
+			refused = String.valueOf(ex.getMessage());
+		}
+		check(refused != null && refused.contains("2 floors") && slots.equals(java.util.Collections.singletonList(5))
+				&& java.util.Arrays.equals(before, MapResizeTest.bytes(ws, ctrmap.gamedef.ArchiveType.ZONE_DATA, 5)),
+				"a building with more floors than free slots is refused, no slot taken and none written: " + refused);
+		thePainterPointsTheDoorAtTheClone(zones);
+	}
+
+	/**
+	 * The Map Builder's Apply hands each placed door to {@code MapPainter.privateInterior}: the door is
+	 * pointed at the clone of the floor it enters, every slot the floors took is reported, and a building
+	 * that cannot be cloned keeps its retail interior and says why (F015).
+	 */
+	static void thePainterPointsTheDoorAtTheClone(byte[][] zones) throws Exception {
+		MapResizeTest.game("interior_floors_painter", zones, new int[]{0, 0, 0, 0, 0, 0},
+				new byte[][]{MapResizeTest.matrix(0)}, MapResizeTest.region("region zero"));
+		ZoneEntities exterior = withWarps(1);   //the door the painter added, on the retail ground floor
+		java.util.List<Integer> slots = new java.util.ArrayList<>(java.util.Arrays.asList(3, 4, 5));
+		java.util.List<Integer> taken = new java.util.ArrayList<>();
+		String line = ctrmap.MapPainter.privateInterior(exterior, 0, "House", 0, 1, slots, taken::add);
+		check(exterior.warps.get(0).targetZone == 3 && exterior.warps.get(0).targetWarpId == 0
+				&& taken.equals(java.util.Arrays.asList(3, 4)) && line.contains("its floors zones [3, 4]"),
+				"the painter points the door at the cloned ground floor, reports both floors' slots taken, and says so: "
+				+ line.trim() + ", taken " + taken);
+		ZoneEntities second = withWarps(1);
+		String failed = ctrmap.MapPainter.privateInterior(second, 0, "House", 0, 1, slots, taken::add);
+		check(second.warps.get(0).targetZone == 1 && taken.size() == 2 && failed.contains("2 floors")
+				&& failed.contains("linked retail instead"),
+				"and a house it cannot clone keeps its retail interior, nothing reported taken, and the reason said: "
+				+ failed.trim());
+		slots.clear();
+		String none = ctrmap.MapPainter.privateInterior(second, 0, "House", 0, 1, slots, taken::add);
+		check(none.contains("No free base zone left") && second.warps.get(0).targetZone == 1,
+				"and with no free slot at all the door stays retail and the line says so");
+
+		//and Apply's door wiring is that step, at its one call site - the step above guards nothing if the
+		//painter clones by another path, or by none
+		String painter = SourceSeamTest.stripComments(new String(java.nio.file.Files.readAllBytes(
+				new File("src/ctrmap/MapPainter.java").toPath()), java.nio.charset.StandardCharsets.UTF_8));
+		String wiring = CollisionReadTest.body(painter, "static int wireDoorWarps(");
+		int clones = painter.split("InteriorWirer\\.cloneAndWire\\(", -1).length - 1;
+		check(wiring != null && wiring.contains("privateInterior(") && !wiring.contains("cloneAndWire(") && clones == 1,
+				"and the painter's door wiring gives each door its interior through that step, the one place it clones: "
+				+ clones + " clone call(s)");
 	}
 
 	static int area(int zone) {

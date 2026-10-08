@@ -278,6 +278,8 @@ public class MasterTableTest {
 				+ " files)");
 		check(found.size() <= HAND_INDEXED_ROW_CEILING, found.size() + " line(s) index master rows by hand, against a"
 				+ " ceiling of " + HAND_INDEXED_ROW_CEILING + " - read the table through MasterTable instead: " + found);
+		check(Ratchet.tight(found.size(), HAND_INDEXED_ROW_CEILING), Ratchet.said("hand-indexed-row", found.size(),
+				HAND_INDEXED_ROW_CEILING));
 	}
 
 	/**

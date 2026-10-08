@@ -1,6 +1,6 @@
 package ctrmap.tests;
 
-import ctrmap.humaninterface.MapObject;
+import ctrmap.formats.MapObject;
 import ctrmap.humaninterface.Navigator;
 import java.util.ArrayList;
 import java.util.List;

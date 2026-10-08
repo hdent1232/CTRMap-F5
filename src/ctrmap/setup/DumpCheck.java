@@ -90,7 +90,7 @@ public class DumpCheck {
 		} catch (RuntimeException ex) {
 			r.status = Status.NOT_A_DUMP;
 			r.headline = "CTRMap could not read that folder.";
-			r.detail = String.valueOf(ex.getMessage());
+			r.detail = String.valueOf(ctrmap.util.Bytes.reason(ex));
 			return r;
 		}
 	}

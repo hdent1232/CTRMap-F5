@@ -6,7 +6,6 @@ import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameProfile;
 import java.io.File;
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
@@ -15,15 +14,20 @@ import java.util.List;
 /**
  * The whole item table, and the only writer for it.
  *
- * <p>WHY IT WRITES IN PLACE. The records are fixed-size, uncompressed and
- * contiguous (measured: 776 entries of 36 bytes from file offset 0x3CE0, with
- * the archive ending exactly where the last one does). Replacing one is
- * therefore a seek and 36 bytes, and the container's header, offset table and
- * every other entry are untouched BY CONSTRUCTION. The alternative - extract to
- * a directory and repack, which is how every other archive in this editor is
- * written - rebuilds the offset table on every save, and this project has
- * already repaired a zone by hand after a pack wrote a stale one. Nothing about
- * an item edit needs that risk.
+ * <p>STAGED, THEN PACKED IN PLACE (F082). The records are fixed-size,
+ * uncompressed and contiguous (measured: 776 entries of 36 bytes from file
+ * offset 0x3CE0, with the archive ending exactly where the last one does), so
+ * replacing one is a seek and 36 bytes and the header, offset table and every
+ * other entry are untouched BY CONSTRUCTION - no repack, which rebuilds the
+ * table and has written a stale one before. That write used to go straight
+ * into the game folder at save time, outside the workspace: Clean put an
+ * item's name and description back and left its record edited, and a save
+ * whose text failed after its record could not be undone. A table opened on a
+ * game stages the record instead - the workspace's copy of the entry, reported
+ * edited - and reads that game's staged records over the archive; the pack
+ * writes them in place ({@code GARC.prepareInPlace}), with every other edit.
+ * There is no other way in: a table opened on a bare file wrote in place
+ * there, a second write path that only suites reached.
  *
  * <p>WHAT IT REFUSES. A record that is not {@link ItemData#SIZE} bytes, an id
  * outside the archive, an entry the container stores compressed, or an entry
@@ -31,12 +35,13 @@ import java.util.List;
  * "work" - the write would land somewhere - and the damage would show up much
  * later as an archive that reads as data and is not.
  *
- * <p>THE BASELINE. Before the first byte is written, the untouched archive is
+ * <p>THE BASELINE. Before the first record is staged, the untouched archive is
  * copied aside inside the workspace. That copy is what "revert to retail" reads
  * and what {@code ModDeployer} diffs against to decide whether the item archive
  * needs to ship at all. It is taken at the last moment when it is still
- * provably retail: this class is the only thing in CTRMap that has ever written
- * this archive, so before its first write there is nothing of ours in there. If
+ * provably retail: only this class's records reach this archive (packed, or
+ * written in place before F082), so before its first edit there is nothing of
+ * ours in there. If
  * the copy has been deleted after edits were made, it is NOT retaken - a
  * baseline captured from an edited game is worse than an absent one, which is
  * the lesson {@code Workspace.snapshotMissingArchives} was written for.
@@ -60,12 +65,15 @@ public final class ItemTable {
 	/** Written beside the baseline the first time this class saves, and never removed. */
 	private static final String EDITED_MARK = "edited.txt";
 
+	/** The game whose workspace a record is staged in. */
+	private final GameFiles game;
 	private final File garcFile;
 	private final File baselineDir;
 	private GARC garc;
 	private final List<byte[]> records = new ArrayList<>();
 
-	private ItemTable(File garcFile, File baselineDir) {
+	private ItemTable(GameFiles game, File garcFile, File baselineDir) {
+		this.game = game;
 		this.garcFile = garcFile;
 		this.baselineDir = baselineDir;
 	}
@@ -111,24 +119,10 @@ public final class ItemTable {
 			return null;
 		}
 		File f = archiveFile(game);
-		return f == null ? null : open(f, baselineDir(game));
-	}
-
-	/**
-	 * Opens an item archive.
-	 *
-	 * <p>Compression sniffing is OFF. An item record is 36 arbitrary bytes and
-	 * may legitimately begin with 0x11, which the sniffer reads as an LZ11
-	 * header; the trainer archives are opened the same way for the same reason.
-	 *
-	 * @param baselineDir where the pre-edit copy is kept, or null for a caller
-	 * (a suite, a tool) that wants no copy taken
-	 */
-	public static ItemTable open(File garcFile, File baselineDir) throws IOException {
-		if (garcFile == null || !garcFile.isFile()) {
-			throw new IOException("no item archive at " + garcFile);
+		if (f == null) {
+			return null;
 		}
-		ItemTable t = new ItemTable(garcFile, baselineDir);
+		ItemTable t = new ItemTable(game, f, baselineDir(game));
 		t.reload();
 		return t;
 	}
@@ -148,12 +142,21 @@ public final class ItemTable {
 		return game;
 	}
 
-	private void reload() throws IOException {
+	/**
+	 * Reads the archive, then the records staged over it.
+	 *
+	 * <p>Compression sniffing is OFF. An item record is 36 arbitrary bytes and
+	 * may legitimately begin with 0x11, which the sniffer reads as an LZ11
+	 * header; the trainer archives are opened the same way for the same reason.
+	 */
+	void reload() throws IOException {
 		garc = new GARC(garcFile, false);
 		records.clear();
 		for (int i = 0; i < garc.getEntryCount(); i++) {
-			byte[] raw = garc.getDecompressedEntry(i);
-			records.add(raw);
+			//a record staged and not yet packed is the record (F082): the editor shows what the next
+			//pack writes, as every other archive's editor does
+			File staged = game.editedEntry(ArchiveType.ITEM_DATA, i);
+			records.add(staged != null ? Files.readAllBytes(staged.toPath()) : garc.getDecompressedEntry(i));
 		}
 		if (records.isEmpty()) {
 			throw new IOException(garcFile + " holds no entries - it is not an item archive");
@@ -164,10 +167,6 @@ public final class ItemTable {
 
 	public int count() {
 		return records.size();
-	}
-
-	public File file() {
-		return garcFile;
 	}
 
 	/** A copy of the record's bytes, or null when the entry is not a record. */
@@ -238,17 +237,13 @@ public final class ItemTable {
 	// ---- writing -----------------------------------------------------------
 
 	/**
-	 * Replaces one record, in place, without repacking the archive.
+	 * Replaces one record: staged in the handed game's workspace, for the next pack to write in place.
 	 *
 	 * <p>Everything that could make the write land somewhere it should not is
-	 * checked first, and the bytes are read back afterwards: a write that
-	 * reported success and did nothing is the failure this project keeps
-	 * finding, so this one confirms itself rather than trusting the file
-	 * system.
-	 *
-	 * <p>Nothing is reported as edited to the game: the archive is written
-	 * where it lives, not staged for a pack, and a pack that heard of it would
-	 * look for an extracted file that does not exist.
+	 * checked first - here, at save, and again by the pack - and the bytes are
+	 * read back afterwards: a write that reported success and did nothing is
+	 * the failure this project keeps finding, so this one confirms itself
+	 * rather than trusting the file system.
 	 */
 	public void writeRecord(int id, byte[] rec) throws IOException {
 		if (rec == null || rec.length != ItemData.SIZE) {
@@ -276,28 +271,20 @@ public final class ItemTable {
 		}
 		captureBaseline();
 
-		try (RandomAccessFile raf = new RandomAccessFile(garcFile, "rw")) {
-			raf.seek(off);
-			raf.write(rec);
+		//the workspace's copy of the entry, rewritten and reported edited, then read back: a save
+		//that silently did nothing is the failure mode this whole editor exists downstream of
+		File f = game.staged(ArchiveType.ITEM_DATA, id);
+		if (f == null) {
+			throw new IOException("item " + id + " has no place in this game's workspace to be staged in, so it"
+					+ " was not saved.");
 		}
-		if (garcFile.length() != lengthBefore) {
-			throw new IOException("writing item " + id + " changed the archive's length from "
-					+ lengthBefore + " to " + garcFile.length() + " - an in-place write must not");
+		game.aboutToWrite(f);
+		Files.write(f.toPath(), rec);
+		if (!java.util.Arrays.equals(Files.readAllBytes(f.toPath()), rec)) {
+			throw new IOException("item " + id + " did not survive being staged at " + f
+					+ ". Is the workspace open in another program?");
 		}
-		//read it back: a save that silently did nothing is the failure mode this
-		//whole editor exists downstream of
-		byte[] back = new byte[ItemData.SIZE];
-		try (RandomAccessFile raf = new RandomAccessFile(garcFile, "r")) {
-			raf.seek(off);
-			raf.readFully(back);
-		}
-		for (int i = 0; i < ItemData.SIZE; i++) {
-			if (back[i] != rec[i]) {
-				throw new IOException("item " + id + " did not survive the write - byte 0x"
-						+ Integer.toHexString(i) + " reads back as " + (back[i] & 0xFF)
-						+ " instead of " + (rec[i] & 0xFF) + ". Is the archive open in another program?");
-			}
-		}
+		game.edited(f);
 		records.set(id, rec.clone());
 		markEdited();
 	}
@@ -343,7 +330,7 @@ public final class ItemTable {
 			if (!baselineDir.isDirectory()) {
 				baselineDir.mkdirs();
 			}
-			Files.write(mark.toPath(), ("This workspace has edited the item archive in place.\r\n"
+			Files.write(mark.toPath(), ("This workspace has edited the item archive.\r\n"
 					+ "The copy beside this file is the archive as it was before the first edit.\r\n")
 					.getBytes("UTF-8"));
 		} catch (IOException ex) {
