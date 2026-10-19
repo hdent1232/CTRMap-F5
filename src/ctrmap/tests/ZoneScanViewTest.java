@@ -43,7 +43,9 @@ public class ZoneScanViewTest {
 					Collections.singletonMap(ArchiveType.ZONE_DATA, zo));
 			Workspace.install(s);
 			theReusableZoneScanReadsTheWorkspace(s, ws);
+			everyZonesDoorsCountAndAnUnreadNameIsNoPlaceholder();
 			theRemovalWarningReadsTheWorkspace(s, ws);
+			theSharedScriptsAreSaidWhenNotRead(s, ws, game);
 			theActionsAskTheWorkspace(root);
 			theParentMapHasOneSpelling(root);
 		} finally {
@@ -95,10 +97,45 @@ public class ZoneScanViewTest {
 		return false;
 	}
 
+	static ZoneRepurposeScanner.Candidate candidate(ZoneRepurposeScanner.Scan scan, int zone) {
+		for (ZoneRepurposeScanner.Candidate c : scan.candidates) {
+			if (c.index == zone) {
+				return c;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Census H.57: the reusable-zone scan counts the doors of every zone the game holds, and a name it cannot read
+	 * is no placeholder. It counted the base zones' doors alone, so a door from an added zone into a base zone did
+	 * not count; and a name lookup that threw answered "", the placeholder's own look, so the zone was offered as
+	 * the SAFEST to overwrite.
+	 */
+	static void everyZonesDoorsCountAndAnUnreadNameIsNoPlaceholder() throws Exception {
+		System.out.println("--- a door from an added zone counts, and a name nobody could read is no placeholder (census H.57)");
+		byte[][] zones = {empty(), empty(), empty(), empty(), empty(), empty(), warpingTo(3)};
+		ZoneRepurposeScanner.SharedReach none = new ZoneRepurposeScanner.SharedReach();
+		check(listed(ZoneRepurposeScanner.scanZones(6, 6, i -> zones[i], parentMap -> "", none).candidates, 3),
+				"control: asked of the six base zones alone, zone 3 has no door into it");
+		check(!listed(ZoneRepurposeScanner.scanZones(6, 7, i -> zones[i], parentMap -> "", none).candidates, 3),
+				"asked of every zone the game holds, the added zone 6's door into zone 3 counts");
+		ZoneRepurposeScanner.Candidate named = candidate(ZoneRepurposeScanner.scanZones(6, 6, i -> zones[i], parentMap -> "", none), 2);
+		check(named != null && named.tier == 0, "control: an empty zone with an empty name is the safest tier");
+		ZoneRepurposeScanner.Scan unnamed = ZoneRepurposeScanner.scanZones(6, 6, i -> zones[i], parentMap -> {
+			throw new IllegalStateException("planted: the names do not read");
+		}, none);
+		ZoneRepurposeScanner.Candidate unread = candidate(unnamed, 2);
+		check(unread != null && unread.tier != 0, "a zone whose name cannot be read is not the safest tier ("
+				+ (unread == null ? "not listed" : "tier " + unread.tier) + ")");
+		check(unnamed.unreadable.contains("zone 2: its name cannot be read (planted: the names do not read), so it is not"
+				+ " taken for a placeholder"), "and that is said: " + unnamed.unreadable);
+	}
+
 	static void theReusableZoneScanReadsTheWorkspace(WorkspaceSession s, File ws) throws Exception {
 		System.out.println("--- 'Find reusable zones' reads the workspace's zones, unpacked edits included (F225)");
 		byte[][] packed = {empty(), empty(), empty(), empty(), empty(), empty()};
-		ZoneRepurposeScanner.Scan asPacked = ZoneRepurposeScanner.scanZones(6, i -> packed[i]);
+		ZoneRepurposeScanner.Scan asPacked = ZoneRepurposeScanner.scanZones(6, 6, i -> packed[i], parentMap -> "", new ZoneRepurposeScanner.SharedReach());
 		check(listed(asPacked.candidates, 3), "control: as last packed, zone 3 has no incoming warp and is a candidate");
 
 		stage(ws, 0, empty());
@@ -129,6 +166,27 @@ public class ZoneScanViewTest {
 			saysFive |= r.startsWith("zone 5") && r.contains("not checked");
 		}
 		check(saysFour && saysFive, "and the zones it could not read are named, not skipped: " + refs);
+	}
+
+	/**
+	 * The scripts no zone owns send the player to zones too (F225). A workspace whose shared-script archive
+	 * did not open - this one has only ZoneData - and a game where nobody has measured where it is, are both
+	 * SAID, by the scan and by the removal: neither is a game whose shared scripts send the player nowhere.
+	 */
+	static void theSharedScriptsAreSaidWhenNotRead(WorkspaceSession s, File ws, File game) throws Exception {
+		System.out.println("--- shared scripts nothing could read are said, never read as going nowhere (F225)");
+		check(s.getArchive(ArchiveType.SHARED_SCRIPTS) == null, "control: this workspace's shared-script archive is not open");
+		String unopened = "the shared-script archive: their archive did not open";
+		check(ZoneRepurposeScanner.scanZones(s).unreadable.contains(unopened + ", so the zones it sends the player to are not counted"),
+				"the scan says the shared scripts were not read: " + ZoneRepurposeScanner.scanZones(s).unreadable);
+		check(ZoneRemover.referencesToAdded(s).contains(unopened + ", so where it sends the player is not checked"),
+				"and the removal says it: " + ZoneRemover.referencesToAdded(s));
+		GARC zo = (GARC) RenderLoopTest.bare(GARC.class);
+		zo.length = 6;
+		WorkspaceSession xy = new WorkspaceSession(ws, game, GameType.XY, Collections.singletonMap(ArchiveType.ZONE_DATA, zo));
+		check(xy.profile().archivePath(ArchiveType.SHARED_SCRIPTS) == null, "control: where X/Y keeps its shared scripts is not measured");
+		check(ZoneRepurposeScanner.sharedReach(xy).unread.contains("the shared-script archive: where this game keeps them is not measured"),
+				"on X/Y the shared scripts are said unmeasured: " + ZoneRepurposeScanner.sharedReach(xy).unread);
 	}
 
 	static void theActionsAskTheWorkspace(File root) throws Exception {

@@ -43,7 +43,7 @@ public class RuleRefusalsTest {
 	public static void main(String[] args) throws Exception {
 		File repo = new File(args.length > 0 ? args[0] : ".");
 		for (String tool : new String[]{"count_first.py", "magnitude.py", "game_identity.py",
-				"unclosed.py"}) {
+				"unclosed.py", "lf_checkout.py", "native_stderr.py"}) {
 			File f = new File(repo, "tools/guard/" + tool);
 			if (!f.isFile()) {
 				System.out.println("  FAIL: no " + f.getPath()
@@ -65,6 +65,18 @@ public class RuleRefusalsTest {
 		aGameIdentityOutsideTheSeamIsRefused(repo);
 		anUnheldOpenIsRefused(repo);
 		theProjectLeavesNoHandleOpen(repo);
+		aCheckoutWithLineEndsItsAttributesDoNotGiveIsSaid(repo);
+		thisCheckoutHasTheLineEndsItsAttributesGive(repo);
+		everyToolHereRefusesAWordItDoesNotRead(repo);
+		//ASKED BY RUNNING IT, not by `--version`: powershell rejects that flag, and onPath read the refusal as "not on PATH"
+		if (runs("powershell", "-NoProfile", "-Command", "exit 0")) {
+			aNativeCommandOutsideInvokeNativeIsRefused(repo);
+			thisTreeRunsEveryNativeCommandThroughInvokeNative(repo);
+			invokeNativeJudgesByTheExitCode(repo);
+			theBuildIsSignedOnlyOnceItsGatesHaveJudgedIt(repo);
+		} else {
+			Skip.section("powershell is not on PATH - the .ps1 rule, Invoke-Native and build.ps1 cannot be asked here");
+		}
 
 		System.out.println(fails == 0 ? "ALL PASS" : fails + " FAILED");
 		if (fails != 0) {
@@ -305,6 +317,322 @@ public class RuleRefusalsTest {
 				"every open under tools/ and .claude/ is held: " + firstReason(said));
 	}
 
+	// ---------------------------------------- LINE ENDINGS ARE THE INDEX'S, ON EVERY CHECKOUT
+
+	/**
+	 * {@code tools/guard/lf_checkout.py}, asked after every call that changes the tree.
+	 *
+	 * <p>Measured 2026-10-09: every text file in the index is LF, and this Windows checkout held 622 of
+	 * them CRLF and 89 LF. Six suites that read a tracked file and compared it with LF text failed for
+	 * it - pass or fail decided by which group a file happened to be in.
+	 */
+	static void aCheckoutWithLineEndsItsAttributesDoNotGiveIsSaid(File repo) throws Exception {
+		System.out.println("--- a tracked file checked out with line ends .gitattributes does not give");
+		File root = gitTree("lf", "* text=auto eol=lf\n", "one\r\ntwo\r\n");
+		String said = ask(repo, "lf_checkout.py", root);
+		check(said.contains("a.txt: checked out crlf, and .gitattributes gives it lf"),
+				"a CRLF copy of a file the attributes give LF is named: " + firstReason(said));
+		said = askWith(repo, "lf_checkout.py", "--fix", root.getAbsolutePath());
+		check(said.contains("converted 1 file") && said.contains("every one of 2 tracked file")
+				&& new String(Files.readAllBytes(new File(root, "a.txt").toPath()), StandardCharsets.UTF_8).equals("one\ntwo\n"),
+				"and --fix rewrites its line ends, and only those: " + firstReason(said));
+
+		//A TREE WITH NO RULE IS NOT A CLEAN TREE: attributes that lost the line leave nothing fixed
+		root = gitTree("none", "", "one\ntwo\n");
+		said = ask(repo, "lf_checkout.py", root);
+		check(said.contains("a.txt: a text file .gitattributes gives no line ending"),
+				"a text file the attributes give no ending is said, not passed: " + firstReason(said));
+
+		//THE NEGATIVE HALF: a file already as the attributes give it
+		root = gitTree("clean", "* text=auto eol=lf\n", "one\ntwo\n");
+		said = ask(repo, "lf_checkout.py", root);
+		check(said.contains("every one of 2 tracked file"), "while one already LF is left alone: " + firstReason(said));
+	}
+
+	/** The live checkout, which held 623 of them the day this was written. */
+	static void thisCheckoutHasTheLineEndsItsAttributesGive(File repo) throws Exception {
+		System.out.println("--- and this checkout");
+		String said = ask(repo, "lf_checkout.py", repo);
+		check(said.contains("every one of") && said.contains("is checked out as .gitattributes says"),
+				"every tracked text file here has the line ends .gitattributes gives it: " + firstReason(said));
+	}
+
+	// ---------------------------------------- A WORD A TOOL DOES NOT READ IS REFUSED, NEVER IGNORED
+
+	/**
+	 * Every tool under tools/ that reads its command line, RUN with a word it does not read, refuses it
+	 * in words and exits 2 - asked of the running tool, not only of its text. PAID FOR 2026-10-09:
+	 * `replant.py --help` drove all 1,363 plants, about 7.5 hours with the tree unwritable. On
+	 * 2026-10-10 the bundle's cli_words found 23 of this project's tools dropping words they did not
+	 * know; each now asks cli_words.refused first. The tools are found by walking, as cli_words finds
+	 * them, and a scratch tool that ignores its words is the control.
+	 */
+	static void everyToolHereRefusesAWordItDoesNotRead(File repo) throws Exception {
+		System.out.println("--- every tool here refuses a word it does not read, run");
+		String word = "--ctrmap-no-such-word";
+		File scratch = Scratch.dir("rulerefusal-words");
+		File ignoring = new File(scratch, "ignoring.py");
+		Files.write(ignoring.toPath(), "import sys\nprint('ran with', sys.argv[1:])\n".getBytes(StandardCharsets.UTF_8));
+		String said = runTool(ignoring, word);
+		check(said.startsWith("0 ") && !said.contains("REFUSING"), "control: a tool that drops its words runs on past one: " + said.trim());
+
+		java.util.List<File> tools = new java.util.ArrayList<>();
+		java.util.Deque<File> walk = new java.util.ArrayDeque<>();
+		walk.add(new File(repo, "tools"));
+		while (!walk.isEmpty()) {
+			File[] here = walk.pop().listFiles();
+			for (File f : here == null ? new File[0] : here) {
+				if (f.isDirectory() && !f.getName().equals("__pycache__")) {
+					walk.add(f);
+				} else if (f.getName().endsWith(".py") && !f.getName().equals("cli_words.py")
+						&& new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8).contains("sys.argv")) {
+					tools.add(f);
+				}
+			}
+		}
+		check(tools.size() >= 23, "control: the walk finds the tools that read their command line (" + tools.size() + ")");
+		java.util.List<String> ranOn = new java.util.ArrayList<>();
+		for (File t : tools) {
+			String out = runTool(t, word);
+			if (!(out.startsWith("2 ") && out.contains("REFUSING") && out.contains(word))) {
+				ranOn.add(t.getName() + " (" + CommitGuardTest.firstLine(out) + ")");
+			}
+		}
+		check(ranOn.isEmpty(), "every one of " + tools.size() + " refuses " + word + " in words, exit 2, before acting: " + ranOn);
+	}
+
+	/** "exit output" of a python tool run with one word, its stdin closed, held to two minutes. */
+	static String runTool(File tool, String word) throws Exception {
+		ProcessBuilder pb = new ProcessBuilder("python", "-B", tool.getAbsolutePath(), word);
+		pb.directory(tool.getParentFile());
+		pb.redirectErrorStream(true);
+		Process p = pb.start();
+		p.getOutputStream().close();
+		java.util.concurrent.Future<String> out = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+			Thread th = new Thread(r);
+			th.setDaemon(true);
+			return th;
+		}).submit(() -> CommitGuardTest.drain(p));
+		if (!p.waitFor(120, java.util.concurrent.TimeUnit.SECONDS)) {
+			p.destroyForcibly();
+			return "TIMEOUT ran past two minutes";
+		}
+		return p.exitValue() + " " + out.get(30, java.util.concurrent.TimeUnit.SECONDS);
+	}
+
+	// ---------------------------------------- A NATIVE COMMAND'S EXIT CODE IS ITS VERDICT, NEVER ITS STDERR
+
+	/**
+	 * {@code tools/guard/native_stderr.py}, asked at the write of a .ps1.
+	 *
+	 * <p>Under Windows PowerShell 5.1 a native command's redirected stderr is an ErrorRecord, and
+	 * ErrorActionPreference Stop makes it terminating. Paid for seven times across this tree's scripts,
+	 * each fixed where it bit; the seventh, on 2026-10-10, was a structure gate's Swing warning ending
+	 * build.ps1 between its stamp and the gates' verdict. Three ways to run a program are planted - the
+	 * call operator, a program on PATH by name, a name nothing here defines - and the harmless forms.
+	 */
+	static void aNativeCommandOutsideInvokeNativeIsRefused(File repo) throws Exception {
+		System.out.println("--- a .ps1 that runs a program outside Invoke-Native");
+		File root = Scratch.dir("rulerefusal-ps1");
+		Files.copy(new File(repo, "native.ps1").toPath(), new File(root, "native.ps1").toPath());
+		Files.write(new File(root, "bare.ps1").toPath(), ("$ErrorActionPreference = 'Stop'\n"
+				+ "& \"$env:windir\\system32\\cmd.exe\" /c exit 0\n"
+				+ "git status\n"
+				+ "frobnicate-ctrmap-tool --x\n").getBytes(StandardCharsets.UTF_8));
+		Files.write(new File(root, "held.ps1").toPath(), (". (Join-Path $PSScriptRoot 'native.ps1')\n"
+				+ "Invoke-Native { & cmd.exe /c exit 0 }\n"
+				+ "Write-Host 'a cmdlet'\n"
+				+ "& { Write-Host 'a block' }\n"
+				+ "& \"$PSScriptRoot\\other.ps1\"\n"
+				+ "function Do-Thing { }\n"
+				+ "Do-Thing\n").getBytes(StandardCharsets.UTF_8));
+		String said = ask(repo, "native_stderr.py", root);
+		check(said.contains("bare.ps1:2 ") && said.contains("the call operator runs it"),
+				"a program run by the call operator is named: " + firstReason(said));
+		check(said.contains("bare.ps1:3 ") && said.contains("git is a program on PATH"),
+				"a program run by name is named: " + firstReason(said));
+		check(said.contains("bare.ps1:4 ") && said.contains("taken for a program"),
+				"a name nothing here defines is taken for a program, never for safe: " + firstReason(said));
+		check(!said.contains("held.ps1"), "while Invoke-Native, a cmdlet, a block, a script and a function pass: " + firstReason(said));
+
+		//WHAT IT COULD NOT READ IS UNKNOWN, NEVER CLEAN: a script PowerShell cannot parse, and no PowerShell to ask
+		File broken = Scratch.dir("rulerefusal-ps1-broken");
+		Files.write(new File(broken, "broken.ps1").toPath(), "function {\n& git status\n".getBytes(StandardCharsets.UTF_8));
+		said = ask(repo, "native_stderr.py", broken);
+		check(said.contains("UNKNOWN: PowerShell cannot parse it"), "a script that does not parse is UNKNOWN, not clean: " + CommitGuardTest.firstLine(said));
+		String python = CommitGuardTest.firstLine(askPython("import sys; print(sys.executable)"));
+		ProcessBuilder pb = new ProcessBuilder(python, new File(repo, "tools/guard/native_stderr.py").getAbsolutePath(), root.getAbsolutePath());
+		pb.environment().put("PATH", new File(python).getParent());
+		pb.redirectErrorStream(true);
+		Process p = pb.start();
+		said = CommitGuardTest.drain(p);
+		int code = p.waitFor();
+		check(code == 2 && said.contains("UNKNOWN: PowerShell could not be asked"),
+				"with no PowerShell to ask, which commands run unguarded is UNKNOWN (exit " + code + "): " + CommitGuardTest.firstLine(said));
+	}
+
+	/** What python prints for one statement. */
+	static String askPython(String statement) throws Exception {
+		ProcessBuilder pb = new ProcessBuilder("python", "-c", statement);
+		pb.redirectErrorStream(true);
+		Process p = pb.start();
+		String out = CommitGuardTest.drain(p);
+		p.waitFor();
+		return out;
+	}
+
+	/** This tree's five scripts, which held nine unguarded native commands the day this was written. */
+	static void thisTreeRunsEveryNativeCommandThroughInvokeNative(File repo) throws Exception {
+		System.out.println("--- and this tree's .ps1 files");
+		String said = ask(repo, "native_stderr.py", repo);
+		check(said.contains("every native command in the") && said.contains("runs through Invoke-Native"),
+				"every native command in this tree's scripts runs through Invoke-Native: " + firstReason(said));
+	}
+
+	/**
+	 * What Invoke-Native promises, asked of PowerShell: under Stop, a program that writes to stderr and
+	 * exits 3 does not end the script, its exit code survives, its stderr comes back as output, the
+	 * caller's variables reach the block, the preference is put back - and a block that ran no program
+	 * answers -1, never the 0 left by whatever ran before. The control is the same call made bare.
+	 */
+	static void invokeNativeJudgesByTheExitCode(File repo) throws Exception {
+		System.out.println("--- Invoke-Native judges a program by its exit code");
+		File dir = Scratch.dir("invoke-native");
+		File probe = new File(dir, "probe.ps1");
+		Files.write(probe.toPath(), ("param([string]$Root)\n"
+				+ "$ErrorActionPreference = 'Stop'\n"
+				+ ". (Join-Path $Root 'native.ps1')\n"
+				+ "$g = @{ c = 'from-the-caller' }\n"
+				+ "$out = Invoke-Native { & cmd.exe /c \"echo $($g.c) & echo to-stderr 1>&2 & exit /b 3\" 2>&1 }\n"
+				+ "'exit=' + $LASTEXITCODE\n"
+				+ "'lines=' + ((@($out) | ForEach-Object { \"$_\".Trim() }) -join '|')\n"
+				+ "'preference-after=' + $ErrorActionPreference\n"
+				+ "Invoke-Native { & cmd.exe /c 'exit /b 0' }\n"
+				+ "Invoke-Native { if ($false) { & cmd.exe /c 'exit /b 0' } }\n"
+				+ "'never-ran=' + $LASTEXITCODE\n"
+				+ "try { $bare = & cmd.exe /c 'echo to-stderr 1>&2 & exit /b 0' 2>&1; 'control: bare call survived' } catch { 'control: bare call TERMINATED' }\n"
+				+ "'end reached'\n").getBytes(StandardCharsets.UTF_8));
+		ProcessBuilder pb = new ProcessBuilder("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+				"-File", probe.getAbsolutePath(), "-Root", repo.getAbsolutePath());
+		pb.redirectErrorStream(true);
+		Process p = pb.start();
+		String said = CommitGuardTest.drain(p);
+		p.waitFor();
+		check(said.contains("control: bare call TERMINATED"), "control: under Stop, a bare program's stderr ends the script: " + CommitGuardTest.firstLine(said));
+		check(said.contains("exit=3") && said.contains("end reached"),
+				"through Invoke-Native it does not, and its exit code is the verdict: " + said.replace('\n', ' ').trim());
+		check(said.contains("lines=from-the-caller to-stderr") || said.contains("lines=from-the-caller|to-stderr"),
+				"its stderr comes back as output, and the caller's variable reached the block: " + said.replace('\n', ' ').trim());
+		check(said.contains("preference-after=Stop"), "and the preference is put back");
+		check(said.contains("never-ran=-1"), "a block that ran no program answers -1, not the 0 before it: " + said.replace('\n', ' ').trim());
+	}
+
+	/**
+	 * build.ps1 on a scratch tree whose two structure gates are stand-ins. A gate that writes a warning to
+	 * stderr and exits 0 - what DialogSeamTest's Swing table did on 2026-10-10 - lets the build through,
+	 * signed; a gate that refuses removes build\classes. Each stand-in also refuses if the stamp is
+	 * already there when it runs: the stamp is the build's word that the gates judged it, so it is
+	 * written after them. And package.ps1 packages no build the gates refused.
+	 */
+	static void theBuildIsSignedOnlyOnceItsGatesHaveJudgedIt(File repo) throws Exception {
+		System.out.println("--- build.ps1 signs a build only once its gates have judged it, and package.ps1 ships no refused one");
+		File root = Scratch.dir("build-gates");
+		for (String f : new String[]{"build.ps1", "stamp.ps1", "native.ps1", "package.ps1"}) {
+			Files.copy(new File(repo, f).toPath(), new File(root, f).toPath());
+		}
+		File resources = new File(root, "src/ctrmap/resources");
+		resources.mkdirs();
+		Files.write(new File(resources, "version.properties").toPath(), "version=0.0.1\n".getBytes(StandardCharsets.UTF_8));
+		for (String gate : new String[]{"DuplicateWorkTest", "DialogSeamTest"}) {
+			File src = new File(root, "src/ctrmap/tests/" + gate + ".java");
+			src.getParentFile().mkdirs();
+			Files.write(src.toPath(), ("package ctrmap.tests;\n"
+					+ "public class " + gate + " {\n"
+					+ "\tpublic static void main(String[] a) {\n"
+					+ "\t\tif (new java.io.File(\"build/classes/.built-by-build-ps1\").exists()) {\n"
+					+ "\t\t\tSystem.out.println(\"FAIL: the build was signed before its gates judged it\");\n"
+					+ "\t\t\tSystem.exit(1);\n"
+					+ "\t\t}\n"
+					+ "\t\tif (new java.io.File(\"gate-refuses\").exists()) {\n"
+					+ "\t\t\tSystem.out.println(\"FAIL: the planted refusal\");\n"
+					+ "\t\t\tSystem.exit(1);\n"
+					+ "\t\t}\n"
+					+ "\t\tif (new java.io.File(\"gate-crashes\").exists()) {\n"
+					+ "\t\t\tSystem.out.println(\"  ok: and a blank reason is refused\");\n"
+					+ "\t\t\tthrow new IllegalStateException(\"the planted crash\");\n"
+					+ "\t\t}\n"
+					+ "\t\tSystem.err.println(\"WARNING: row index is bigger than sorter's row count. Most likely this is a wrong sorter usage.\");\n"
+					+ "\t\tSystem.out.println(\"ALL PASS\");\n"
+					+ "\t}\n"
+					+ "}\n").getBytes(StandardCharsets.UTF_8));
+		}
+		String said = powershellScript(root, "build.ps1");
+		File stamp = new File(root, "build/classes/.built-by-build-ps1");
+		check(said.contains("Build OK") && stamp.isFile(),
+				"gates that warn on stderr and pass let the build through, signed: " + lastLines(said));
+		Files.write(new File(root, "gate-refuses").toPath(), new byte[0]);
+		said = powershellScript(root, "build.ps1");
+		check(said.contains("BUILD REFUSED") && said.contains("the planted refusal") && !new File(root, "build/classes").exists(),
+				"a gate that refuses removes build\\classes: " + lastLines(said));
+		said = powershellScript(root, "package.ps1");
+		check(said.contains("build.ps1 refused (exit 1) - nothing was packaged"),
+				"and package.ps1 packages nothing after it: " + lastLines(said));
+		//measured 2026-10-14: DialogSeamTest exited non-zero under eight sweep JVMs with no FAIL line, and the
+		//refusal showed only an ok line that said "refused" - the crash was filtered out, and a mutation sweep
+		//reads BUILD REFUSED as a kill by the gate's suite
+		Files.delete(new File(root, "gate-refuses").toPath());
+		Files.write(new File(root, "gate-crashes").toPath(), new byte[0]);
+		said = powershellScript(root, "build.ps1");
+		check(!said.contains("BUILD REFUSED") && said.contains("BUILD FAILED") && said.contains("judged nothing")
+				&& !new File(root, "build/classes").exists(),
+				"a gate that stops without failing a check is a failed build, not a refusal: " + lastLines(said));
+		check(said.contains("the planted crash"), "and what stopped it is shown, not filtered away: " + lastLines(said));
+	}
+
+	/** Does this command start and exit 0? */
+	static boolean runs(String... argv) {
+		try {
+			ProcessBuilder pb = new ProcessBuilder(argv);
+			pb.redirectErrorStream(true);
+			Process p = pb.start();
+			CommitGuardTest.drain(p);
+			return p.waitFor() == 0;
+		} catch (Exception missing) {
+			return false;
+		}
+	}
+
+	/** Runs one of the scratch tree's scripts as the owner would, its whole output returned. */
+	static String powershellScript(File root, String script) throws Exception {
+		ProcessBuilder pb = new ProcessBuilder("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+				"-File", new File(root, script).getAbsolutePath());
+		pb.directory(root);
+		pb.redirectErrorStream(true);
+		Process p = pb.start();
+		String said = CommitGuardTest.drain(p);
+		p.waitFor();
+		return said;
+	}
+
+	static String lastLines(String said) {
+		String[] lines = said.trim().split("\n");
+		StringBuilder sb = new StringBuilder();
+		for (int i = Math.max(0, lines.length - 3); i < lines.length; i++) {
+			sb.append(lines[i].trim()).append(" | ");
+		}
+		return sb.toString();
+	}
+
+	/** A scratch repository holding .gitattributes and a.txt, both added - so git lists them. */
+	static File gitTree(String name, String attributes, String text) throws Exception {
+		File root = Scratch.dir("rulerefusal-eol-" + name);
+		Files.write(new File(root, ".gitattributes").toPath(), attributes.getBytes(StandardCharsets.UTF_8));
+		Files.write(new File(root, "a.txt").toPath(), text.getBytes(StandardCharsets.UTF_8));
+		CommitGuardTest.git(root, "init", "-q");
+		CommitGuardTest.git(root, "add", "-A");
+		return root;
+	}
+
 	// ---------------------------------------------------------------- fixtures
 
 	/** A scratch tree holding one python file under tools/. */
@@ -333,9 +661,15 @@ public class RuleRefusalsTest {
 	}
 
 	static String ask(File repo, String tool, File root) throws Exception {
-		ProcessBuilder pb = new ProcessBuilder("python",
-				new File(repo, "tools/guard/" + tool).getAbsolutePath(),
-				root.getAbsolutePath());
+		return askWith(repo, tool, root.getAbsolutePath());
+	}
+
+	static String askWith(File repo, String tool, String... args) throws Exception {
+		java.util.List<String> line = new java.util.ArrayList<>();
+		line.add("python");
+		line.add(new File(repo, "tools/guard/" + tool).getAbsolutePath());
+		line.addAll(java.util.Arrays.asList(args));
+		ProcessBuilder pb = new ProcessBuilder(line);
 		pb.redirectErrorStream(true);
 		Process p = pb.start();
 		String out = CommitGuardTest.drain(p);

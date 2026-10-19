@@ -1,0 +1,9 @@
+# LINE ENDINGS ARE THE INDEX'S, ON EVERY CHECKOUT. Every text file in the index is LF; with
+# core.autocrlf on, a Windows checkout wrote 622 of them CRLF and left 89 LF, and six suites that read
+# a tracked file and compared it with LF text failed for it on 2026-10-09 - pass or fail decided by
+# which group a file happened to be in. tools/guard/lf_checkout.py checks the working copy against
+# this file and puts it right (--fix).
+* text=auto eol=lf
+# cmd.exe reads a batch file's labels by its line ends
+*.bat text eol=crlf
+*.cmd text eol=crlf

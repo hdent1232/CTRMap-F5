@@ -52,17 +52,10 @@ public class FillTool extends AbstractTool {
 	@Override
 	public void drawOverlay(Graphics g, int imgstartx, int imgstarty, double globimgdim) {
 		if ((dragging || locked) && originX != -1) {
-			int dX;
-			int dY;
-			if (Selector.hilightTileX == -1 || locked) {
-				dX = lastX;
-				dY = lastY;
-			} else {
-				dX = Selector.hilightTileX;
-				dY = Selector.hilightTileY;
-				lastX = dX;
-				lastY = dY;
-			}
+			//DRAWN, NEVER WRITTEN HERE (census H.41): the far corner is the gesture's - painting set it, so a fill
+			//with no repaint between its press and its release wrote the previous gesture's rectangle
+			int dX = lastX;
+			int dY = lastY;
 			int oX = originX;
 			int oY = originY;
 			int x = Math.min(oX, dX);
@@ -90,6 +83,8 @@ public class FillTool extends AbstractTool {
 			locked = false;
 			originX = Selector.hilightTileX;
 			originY = Selector.hilightTileY;
+			lastX = originX;     //a press alone is one tile, never the last gesture's corner
+			lastY = originY;
 			dragging = true;
 			CM2DNoUpdate = true;
 		}
@@ -98,6 +93,7 @@ public class FillTool extends AbstractTool {
 	@Override
 	public void onTileMouseUp(MouseEvent e) {
 		if (SwingUtilities.isLeftMouseButton(e)) {
+			follow();
 			locked = true;
 			dragging = false;
 			CM2DNoUpdate = false;
@@ -106,7 +102,17 @@ public class FillTool extends AbstractTool {
 
 	@Override
 	public void onTileMouseDragged(MouseEvent e) {
+		if (dragging) {
+			follow();
+		}
+	}
 
+	/** The far corner to the tile under the pointer, while it is over the map. */
+	private void follow() {
+		if (Selector.hilightTileX != -1) {
+			lastX = Selector.hilightTileX;
+			lastY = Selector.hilightTileY;
+		}
 	}
 
 	@Override

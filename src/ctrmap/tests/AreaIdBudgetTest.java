@@ -43,10 +43,40 @@ public class AreaIdBudgetTest {
 		addingAndRemovingZonesDoesNotRunTheBudgetOut();
 		aForkOntoAnIdGivenBackKeepsTheTable();
 		removingZonesGivesBackOnlyWhatTheyHeld();
+		everyForkAsksWhetherTheRegistryIsInStep(new File(args.length > 0 ? args[0] : "src"));
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * Census M.43: every area fork asks whether the NPC registry archive already reaches past its tail id. Fork
+	 * area asked; the append's fork did not, and wrote its registry over whatever sat at that id.
+	 */
+	static void everyForkAsksWhetherTheRegistryIsInStep(File src) throws Exception {
+		System.out.println("--- every area fork asks whether the NPC registry is in step with AreaData (census M.43)");
+		String refused = null;
+		try {
+			ctrmap.AreaForker.requireInStep(229, 229, 231);
+		} catch (java.io.IOException said) {
+			refused = said.getMessage();
+		}
+		check(refused != null && refused.contains("out of step"), "a registry reaching past the new tail id is refused: " + refused);
+		boolean taken = true;
+		try {
+			ctrmap.AreaForker.requireInStep(229, 229, 228);
+			ctrmap.AreaForker.requireInStep(100, 229, 300);
+		} catch (java.io.IOException said) {
+			taken = false;
+		}
+		check(taken, "control: retail's step (229 areas, 228 registries), and an id given back inside both, are forked");
+		String forker = SourceSeamTest.stripComments(new String(java.nio.file.Files.readAllBytes(
+				new File(src, "ctrmap/AreaForker.java").toPath()), java.nio.charset.StandardCharsets.UTF_8));
+		String one = CollisionReadTest.body(forker, "private static ForkResult forkAreaWrites(");
+		String appended = CollisionReadTest.body(forker, "private static void forkAppendedAreasWrites(");
+		check(one != null && one.contains("requireInStep(") && appended != null && appended.contains("requireInStep("),
+				"and Fork area and the append's fork both ask it");
 	}
 
 	/** A master table whose zone i names area areas[i]. */

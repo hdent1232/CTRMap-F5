@@ -24,10 +24,12 @@ import record_run  # noqa: E402  - the runner whose record a commit's test count
 
 
 def block():
-    """test.ps1's Python-suite block: from `$pname =` to the line that restores the error action."""
+    """test.ps1's Python-suite block: from `$pname =` to the battery's stopwatch stopping, the line after it.
+    It ended at the line restoring the error action until Invoke-Native (2026-10-10) took that juggling
+    out of every call site - and this said "no Python-suite block", loudly rather than passing on nothing."""
     text = io.open(os.path.join(HERE, "test.ps1"), encoding="utf-8").read()
     start = text.find("$pname = ")
-    end = text.find("$ErrorActionPreference = $prevEAP", start)
+    end = text.find("$sw.Stop()", start)
     return text, (text[start:end] if start >= 0 and end > start else "")
 
 
@@ -38,7 +40,7 @@ class TheBatteryRunsThePythonSuite(unittest.TestCase):
         self.assertTrue(body, "test.ps1 has no Python-suite block - nothing runs tests/")
         self.assertRegex(body, r"-m unittest discover -s \(Join-Path \$root \"tests\"\)",
                          "the block does not run this folder")
-        self.assertRegex(body, r"\$pyExit = \$LASTEXITCODE[\s\S]*if \(\$pyExit -ne 0\) \{ \$failed \+= \$pname \}",
+        self.assertRegex(body, r"\$pyExit = \$LASTEXITCODE[\s\S]*if \(\$pyExit -ne 0\) \{[^}]*\$failed \+= \$pname \}",
                          "a red Python suite does not reach the battery's failed list")
 
     def test_no_python_is_a_failure_not_a_pass(self):

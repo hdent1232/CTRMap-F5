@@ -428,6 +428,15 @@ def classify(label, kind, project=None):
 
 
 def main(argv):
+    import cli_words      # a word this does not read refuses the run, before anything runs
+    why = cli_words.refused(argv[1:], most=3)
+    if why:
+        print(why)
+        return 2
+    if len(argv) > 1 and argv[1] not in ("check", "record", "classify", "list"):
+        print("REFUSING: %s is not a command this reads (check, record, classify, list) - an unknown"
+              " command ran check, so nothing was run" % argv[1])
+        return 2
     command = argv[1] if len(argv) > 1 else "check"
     if command == "record":
         return record()

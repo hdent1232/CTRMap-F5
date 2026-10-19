@@ -42,6 +42,12 @@ public class GroundResolveTest {
 	/** Below this, the picked mesh is a wall rather than a surface. */
 	static final double MIN_FLAT = 0.5;
 
+	/** MEASURED 2026-10-09 over the retail ORAS FIELD_DATA (a/0/3/9): every entry is a map model. */
+	static final int RETAIL_REGIONS = 857;
+
+	/** MEASURED the same run: the ground brushes resolve to a native mesh 2278 times across it. */
+	static final int RETAIL_RESOLVED = 2278;
+
 	public static void main(String[] args) throws Exception {
 		File garcFile = new File(args.length > 0 ? args[0]
 				: "../RomFS_original_garcs/a/0/3/9");
@@ -100,11 +106,21 @@ public class GroundResolveTest {
 			System.out.println("  worst: " + worst);
 		}
 		//AND SOMETHING WAS EXAMINED: a regression that stops resolving any ground mesh gives
-		//checked 0, bad 0. The floor is "any at all" until a corpus run records a measured one.
+		//checked 0, bad 0. On the retail ORAS corpus the floor is what a corpus run MEASURED
+		//(2026-10-09: all 857 regions are map models, 2278 ground resolutions) - a regression that
+		//resolves fewer reads as fewer, not as clean; any other archive keeps "something at all"
 		if (regions == 0 || checked == 0) {
 			System.out.println("  FAIL: the sweep examined " + regions + " region(s) and " + checked
 					+ " brush resolution(s) - a sweep that looked at nothing has found nothing wrong only by not looking");
 			bad++;
+		} else if (gr.length == RETAIL_REGIONS && (regions != RETAIL_REGIONS || checked < RETAIL_RESOLVED)) {
+			System.out.println("  FAIL: the retail corpus measured " + RETAIL_REGIONS + " map regions and "
+					+ RETAIL_RESOLVED + " ground resolutions; this sweep read " + regions + " and " + checked
+					+ " - fewer is a resolution that stopped finding ground, not a cleaner map");
+			bad++;
+		} else if (gr.length != RETAIL_REGIONS) {
+			System.out.println("  note: " + gr.length + " entries is not the retail ORAS corpus (" + RETAIL_REGIONS
+					+ "), so only the something-was-examined floor applies");
 		}
 		if (!unread.isEmpty()) {
 			System.out.println("  FAIL: " + unread.size() + " region(s) could not be read, so what they resolve is unknown: "

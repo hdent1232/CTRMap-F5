@@ -88,29 +88,40 @@ _READS = frozenset(("log", "show", "status", "diff", "reflog", "rev-parse", "rev
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 
 
 ROOT = _tree_root.require(__file__)
 
 
-def _git(root, args, given=None):
+def _git(root, args, given=None, trouble=None):
     # UTF-8, NOT THE CODE PAGE. `text=True` alone decodes git's output as cp1252 on Windows, while
     # `stamp` reads the message file as UTF-8 - so a message with any non-ASCII character (an em
     # dash, an accent, the byte-order mark PowerShell's `Set-Content -Encoding utf8` writes) was
     # digested two ways and every such commit read as made past the gate (measured 2026-09-27: a
     # BOM-led subject stamped by commit-msg and then refused as unstamped).
+    #
+    # AND WHAT GIT SAID, when `trouble` is handed in. A pathspec commit was refused on CTRMap
+    # (2026-09-26) with "git could not say the tree or where the repository keeps its state" and
+    # nothing else: this discarded git's own words, so the refusal could not say WHY, and the case
+    # stayed unexplained for two weeks. A failure now appends git's stderr - or the exception.
     try:
-        done = subprocess.run(["git"] + args, cwd=root, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace",
-                              input=given, timeout=GIT_TIMEOUT, creationflags=NO_WINDOW)
-    except (OSError, subprocess.SubprocessError):
+        done = bounded.run(["git"] + args, cwd=root, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace",
+                           input=given, timeout=GIT_TIMEOUT, creationflags=NO_WINDOW)
+    except (OSError, subprocess.SubprocessError) as exc:
+        if trouble is not None:
+            trouble.append("git %s: %s: %s" % (" ".join(args), type(exc).__name__, exc))
         return None
+    if done.returncode != 0 and trouble is not None:
+        trouble.append("git %s exited %d: %s" % (" ".join(args), done.returncode,
+                                                 (done.stderr or "").strip()[:300] or "nothing said"))
     return done.stdout if done.returncode == 0 else None
 
 
-def common_dir(root):
+def common_dir(root, trouble=None):
     """The repository's common git directory, or None when git cannot say."""
-    held = _git(root, ["rev-parse", "--git-common-dir"])
+    held = _git(root, ["rev-parse", "--git-common-dir"], trouble=trouble)
     if not held or not held.strip():
         return None
     return os.path.normpath(os.path.join(root, held.strip()))
@@ -145,11 +156,13 @@ def stamp(message_path, root=ROOT):
         sys.stderr.write("REFUSING THE COMMIT: the gate cannot stamp it, the message cannot be "
                          "read (%s)%s" % (exc, LF))
         return 1
-    tree = (_git(root, ["write-tree"]) or "").strip()
-    common = common_dir(root)
+    trouble = []
+    tree = (_git(root, ["write-tree"], trouble=trouble) or "").strip()
+    common = common_dir(root, trouble)
     if not tree or not common:
         sys.stderr.write("REFUSING THE COMMIT: the gate cannot stamp it - git could not say "
-                         "the tree or where the repository keeps its state%s" % LF)
+                         "the tree or where the repository keeps its state (%s)%s"
+                         % ("; ".join(trouble) or "git exited 0 and printed nothing", LF))
         return 1
     try:
         with io.open(os.path.join(common, STAMPS), "a", encoding="utf-8", newline=LF) as handle:
@@ -351,84 +364,6 @@ AT_COMMAND = "before_command"
 #: ASKED THE MOMENT AFTER EVERY CALL: the call that made the commit hears about it at once.
 AT_AFTER = "after_call"
 
-#: ASKED OF EVERY COMMIT, BEFORE GIT STARTS: a hook git would skip is a gate that is off.
-AT_COMMIT = "before_commit"
-
-#: Every hook git runs, by the name it looks for (githooks(5)). A file in the hooks folder under
-#: one of these names is a gate; anything else there - `BEFORE_FILE` sits beside them - is not.
-GIT_HOOKS = ("applypatch-msg", "pre-applypatch", "post-applypatch", "pre-commit",
-             "pre-merge-commit", "prepare-commit-msg", "commit-msg", "post-commit", "pre-rebase",
-             "post-checkout", "post-merge", "pre-push", "pre-receive", "update", "proc-receive",
-             "post-receive", "post-update", "reference-transaction", "push-to-checkout",
-             "pre-auto-gc", "post-rewrite", "sendemail-validate", "fsmonitor-watchman",
-             "p4-changelist", "p4-prepare-changelist", "p4-post-changelist", "p4-pre-submit",
-             "post-index-change")
-
-
-def hooks_here(root=ROOT):
-    """(folder, [(repo-relative path or None, name, index mode or None)]) for every hook in the
-    folder git itself runs hooks from - `rev-parse --git-path hooks`, which reads `core.hooksPath` -
-    or (None, why) when that cannot be read. The path is None for a hook outside the repository."""
-    where = _git(root, ["rev-parse", "--git-path", "hooks"])
-    if where is None:
-        return None, "git could not say where its hooks are"
-    folder = os.path.join(root, where.strip())
-    try:
-        names = sorted(name for name in os.listdir(folder) if name in GIT_HOOKS)
-    except FileNotFoundError:
-        return folder, []
-    except OSError as bad:
-        return None, "%s cannot be listed (%s)" % (where.strip(), bad)
-    rels = {}
-    for name in names:
-        rel = os.path.relpath(os.path.join(folder, name), root).replace(os.sep, "/")
-        rels[name] = None if rel.startswith("../") or os.path.isabs(rel) else rel
-    asked = [rel for rel in rels.values() if rel]
-    staged = _git(root, ["ls-files", "-s", "--"] + asked) if asked else ""
-    if staged is None:
-        return None, "git could not list the hooks in %s" % where.strip()
-    modes = {}
-    for line in staged.splitlines():
-        meta, _tab, path = line.partition("\t")
-        modes[path.strip()] = (meta.split() or [""])[0]
-    return folder, [(rels[name], name, modes.get(rels[name])) for name in names]
-
-
-def unrunnable_hooks(root=ROOT):
-    """[why] for every hook git would SKIP here: committed without the executable bit, or - on a
-    system that has one - not executable on disk.
-
-    MEASURED 2026-10-07: this bundle and CTRMap had both committed `.githooks/*` as 100644, from
-    Windows, where git runs a hook whatever its mode. On Linux and macOS git skips such a hook with
-    only a hint, so on every cloud checkout `core.hooksPath` named the gate, the session-start check
-    said "armed", and the gate was off - its hooks installed, wired and present. A commit made past
-    it is found the moment after (`ungated`); nothing stopped it being made. The index is asked on
-    every system, because a clone takes a file's mode from it.
-    """
-    folder, hooks = hooks_here(root)
-    if folder is None:
-        return ["%s, so whether git would run its hooks is UNKNOWN - and a hook git skips is a "
-                "gate that is off" % hooks]
-    found = []
-    for rel, name, mode in hooks:
-        shown = rel or os.path.join(folder, name)
-        if mode is not None and mode != "100755":
-            found.append("`%s` is committed as %s, not executable, so git on Linux and macOS skips "
-                         "it with only a hint and every rule it asks is off there. `git "
-                         "update-index --chmod=+x -- %s` records it executable" % (rel, mode, rel))
-        if os.name != "nt" and not os.access(os.path.join(folder, name), os.X_OK):
-            found.append("`%s` is not executable on this machine, so git skips it with only a hint "
-                         "and every rule it asks is off. `chmod +x %s`" % (shown, shown))
-    return found
-
-
-def before_commit(message, root=ROOT):
-    """A commit is refused before git starts while git would skip one of its hooks: made, it would
-    be made past the gate, and `ungated` would then refuse every command after it."""
-    del message
-    return unrunnable_hooks(root)
-
-
 #: ASKED AT THE WRITE of the baseline: a commit added to it is a commit forgiven.
 AT_WRITE_CHANGE = "forgiven_in"
 AT_SCOPE = r"^\.githooks/gate-before$"
@@ -590,11 +525,25 @@ def forges(command, root=ROOT):
     return ""
 
 
+#: The one command that writes the baseline - this tool's `init`, however the interpreter is spelled.
+INIT_CALL = re.compile(r"^\s*(?:py(?:\s+-\d[\d.]*)?|python[0-9.]*w?)(?:\s+-[A-Za-z]+)*\s+"
+                       r"[\"']?[^\s\"']*gate_stamps\.py[\"']?\s+init\s*$", re.I)
+
+
 def before_command(command, root=ROOT):
     forged = forges(command, root)
     if forged:
         return [forged]
-    return [] if _undoes(command) else ungated(root)
+    if _undoes(command):
+        return []
+    # THE REMEDY THE REFUSAL NAMES MUST RUN. With no baseline every command was refused with
+    # "`gate_stamps.py init` writes it" - and `gate_stamps.py init` with them, since it is not a git
+    # read. Measured 2026-10-07 in the bundle's own repository the moment its wiring landed: only
+    # the Write tool, which this rule does not ask, was left. `init` writes the baseline once and
+    # refuses when one exists, so letting it run while there is none forgives nothing.
+    if INIT_CALL.match(command or "") and before(root)[0] is None:
+        return []
+    return ungated(root)
 
 
 def after_call(root=ROOT):
@@ -618,6 +567,11 @@ def forgiven_in(rel, before_text, after_text, root=ROOT):
 
 
 def main(argv):
+    import cli_words      # a word this does not read refuses the run, before anything runs
+    why = cli_words.refused(argv[1:], most=2)
+    if why:
+        print(why)
+        return 2
     if len(argv) > 2 and argv[1] == "stamp":
         # WHERE GIT RUNS THE HOOK, not where this file sits: git runs a hook at the top of the
         # worktree being committed, and a tool shared by several stamps into the one committed.

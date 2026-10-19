@@ -179,12 +179,14 @@ public class HandedGameTest {
 			thePropRegistryAndItsPropsReadTheGameTheyAreHanded();
 			theNpcRegistryReadsAndWritesTheGameItIsHanded();
 			thePropsAndNpcsRefuseToBeHandedNothing();
+			aZoneWithNoFileIsRefusedByName();
 			theZoneHeaderOpensTheArchivesOfTheGameItIsHanded();
 			theCatalogsCutFromTheSnapshotOfTheGameTheyAreHanded();
 			theZoneWritesWhatItIsToldAndAsksNothing();
 			theNpcStandsOnTheGroundItIsHanded();
 			theTilemapIsPicturedInTheColoursItIsHanded();
 			theMigratedClassesReachNoWindow();
+			whatTheTablesCannotHoldIsRefusedInWords();
 		} finally {
 			Workspace.reset();
 		}
@@ -456,6 +458,32 @@ public class HandedGameTest {
 				"the table answers both the retail record and the edited one");
 		check(copy.equals(ItemTable.baselineArchive(fake)) && copy.equals(t.baselineArchive()),
 				"the static and the instance name the same copy");
+		String pastEnd = null;
+		byte[] answered = null;
+		try {
+			answered = t.baselineRecord(5);
+		} catch (RuntimeException e) {
+			pastEnd = e.getMessage();
+		}
+		check(pastEnd != null && pastEnd.contains("it holds 3 item(s), and no item 5"),
+				"an item past the copy's end is refused, naming the count it holds: "
+				+ (pastEnd != null ? pastEnd : "it answered " + (answered == null ? "null" : answered.length + " byte(s)")));
+		//measured by the 2026-10-14 shared sweep (ItemTable 392, swallowed, SURVIVED; dropped, credited to a renderer
+		//suite that never reads items): no copy ever held a record of another size, so its refusal was never asked
+		byte[] whole = Files.readAllBytes(copy.toPath());
+		Files.write(copy.toPath(), garcBytes(record(0), Arrays.copyOf(record(12), ItemData.SIZE - 1), record(7)));
+		String shortSaid = null;
+		byte[] shortAnswer = null;
+		try {
+			shortAnswer = t.baselineRecord(1);
+		} catch (RuntimeException e) {
+			shortSaid = e.getMessage();
+		}
+		Files.write(copy.toPath(), whole);
+		check(shortSaid != null && shortSaid.endsWith("holds item 1 as " + (ItemData.SIZE - 1) + " byte(s), not a "
+				+ ItemData.SIZE + "-byte record"),
+				"a copy holding a record of another size is refused, naming both sizes: "
+				+ (shortSaid != null ? shortSaid : "it answered " + (shortAnswer == null ? "null" : shortAnswer.length + " byte(s)")));
 		//STAGED, THEN PACKED (F082): the record was poked into the game folder at save, outside the
 		//workspace, so a clean put its name back and kept it
 		File live = fake.archiveFile(ArchiveType.ITEM_DATA);
@@ -519,14 +547,14 @@ public class HandedGameTest {
 				.plant(ArchiveType.GAMETEXT, descs, textOf("", "The best Ball.", "A very good Ball."));
 		check(Arrays.asList("", "Master Ball", "Ultra Ball").equals(ItemText.read(fake, ItemText.Which.NAMES)),
 				"the names are the handed game's staged list (" + ItemText.read(fake, ItemText.Which.NAMES) + ")");
-		check("A very good Ball.".equals(ItemText.line(fake, ItemText.Which.DESCRIPTIONS, 2))
-				&& ItemText.count(fake, ItemText.Which.DESCRIPTIONS) == 3,
-				"and so are the descriptions (" + ItemText.count(fake, ItemText.Which.DESCRIPTIONS) + " lines)");
+		check("A very good Ball.".equals(itemLine(fake, ItemText.Which.DESCRIPTIONS, 2))
+				&& ItemText.read(fake, ItemText.Which.DESCRIPTIONS).size() == 3,
+				"and so are the descriptions (" + ItemText.read(fake, ItemText.Which.DESCRIPTIONS).size() + " lines)");
 		check(fake.edited().isEmpty(), "reading stages nothing");
 
 		ItemText.setLine(fake, ItemText.Which.NAMES, 2, "Mega Ball");
 		File namesFile = fake.staged(ArchiveType.GAMETEXT, names);
-		check("Mega Ball".equals(ItemText.line(fake, ItemText.Which.NAMES, 2)), "a line written reads back");
+		check("Mega Ball".equals(itemLine(fake, ItemText.Which.NAMES, 2)), "a line written reads back");
 		check(fake.edited().size() == 1 && fake.edited().get(0).equals(namesFile.getAbsoluteFile()),
 				"and the names file, and only it, was reported edited to the handed game (" + fake.edited() + ")");
 		check(Workspace.persistPaths().isEmpty(), "and nothing reached the global's edited-file list");
@@ -537,21 +565,36 @@ public class HandedGameTest {
 			check(String.valueOf(ex.getMessage()).contains("does not add lines"),
 					"a line past the end is refused in words: " + firstLine(ex));
 		}
-		check(ItemText.count(fake, ItemText.Which.NAMES) == 3 && fake.edited().size() == 1,
+		check(ItemText.read(fake, ItemText.Which.NAMES).size() == 3 && fake.edited().size() == 1,
 				"and the refused write neither lengthened the list nor reported anything new");
 
 		//a DIFFERENT game: the same slot names a Great Ball, and stages no descriptions
 		FakeGameFiles other = new FakeGameFiles()
 				.plant(ArchiveType.GAMETEXT, names, textOf("", "Master Ball", "Great Ball"));
-		check("Great Ball".equals(ItemText.line(other, ItemText.Which.NAMES, 2)),
+		check("Great Ball".equals(itemLine(other, ItemText.Which.NAMES, 2)),
 				"handed another game, the same line is that game's");
-		check("Mega Ball".equals(ItemText.line(fake, ItemText.Which.NAMES, 2)), "and the first game's is unchanged");
-		check(ItemText.read(other, ItemText.Which.DESCRIPTIONS).isEmpty(),
-				"a list that game has not staged reads as empty, not as the other game's");
+		check("Mega Ball".equals(itemLine(fake, ItemText.Which.NAMES, 2)), "and the first game's is unchanged");
+		//census M.111: a list the game does not hold is REFUSED - it read as empty, and Save then wrote the record and
+		//skipped the name it could not find
+		String unstaged;
+		try {
+			unstaged = "read " + ItemText.read(other, ItemText.Which.DESCRIPTIONS);
+		} catch (IOException refused) {
+			unstaged = refused.getMessage();
+		}
+		check(unstaged.contains("not in this game's workspace"),
+				"a list that game has not staged is refused, not read as empty or as the other game's: " + unstaged);
 
 		//a game with no VERIFIED entry for item text: XY answers -1
 		FakeGameFiles xy = new FakeGameFiles().profile(GameProfile.of(GameType.XY));
-		check(ItemText.read(xy, ItemText.Which.NAMES).isEmpty(), "a game with no verified item-name entry reads as empty");
+		String unverified;
+		try {
+			unverified = "read " + ItemText.read(xy, ItemText.Which.NAMES);
+		} catch (IOException refused) {
+			unverified = refused.getMessage();
+		}
+		check(unverified.contains("not in this game's workspace"),
+				"a game with no verified item-name entry is refused when read, not read as empty: " + unverified);
 		try {
 			ItemText.setLine(xy, ItemText.Which.NAMES, 1, "x");
 			check(false, "and refuses a write (it accepted)");
@@ -579,7 +622,7 @@ public class HandedGameTest {
 				"a changed name writes the name and only that (" + changed + ")");
 		check(fake.edited().size() == 1 && fake.edited().get(0).equals(fake.staged(ArchiveType.GAMETEXT, names).getAbsoluteFile()),
 				"staged in the handed game (" + fake.edited() + ")");
-		check("Mega Ball".equals(ItemText.line(fake, ItemText.Which.NAMES, 2)), "and readable from it");
+		check("Mega Ball".equals(itemLine(fake, ItemText.Which.NAMES, 2)), "and readable from it");
 		check(Workspace.persistPaths().isEmpty(), "and not in the global");
 		changed = s.save(2, record(70), "Mega Ball", "Very good.");
 		File rec2 = fake.editedEntry(ArchiveType.ITEM_DATA, 2);
@@ -603,6 +646,35 @@ public class HandedGameTest {
 				"handed another game, the session sees that game's unedited item");
 		check(ItemEditSession.open(new FakeGameFiles().profile(GameProfile.of(GameType.XY))) == null,
 				"and a game whose item table was never measured opens no session");
+
+		//census M.111: an item with no name line of its own is refused before anything is written - Save wrote the
+		//record and skipped the name past the list's end, an item with new behaviour under its old name
+		FakeGameFiles shortNames = itemGame(names, descs).plant(ArchiveType.GAMETEXT, names, textOf("", "Master Ball"));
+		ItemEditSession cut = ItemEditSession.open(shortNames);
+		String refused = null;
+		try {
+			cut.save(2, record(70), "Mega Ball", "Very good.");
+		} catch (IOException said) {
+			refused = said.getMessage();
+		}
+		check(refused != null && refused.contains("nothing was saved") && shortNames.edited().isEmpty(),
+				"an item past the end of its names is refused before its record is written: " + refused + " "
+				+ shortNames.edited());
+
+		//census M.112: a pre-edit copy that is there and does not read is said, not answered as no copy at all
+		File copy = s.table.baselineArchive();
+		check(copy != null && copy.isFile(), "control: the session's first save took a pre-edit copy");
+		if (copy != null && copy.isFile()) {
+			Files.write(copy.toPath(), new byte[]{1, 2, 3});
+			String damaged = null;
+			try {
+				damaged = "answered " + java.util.Arrays.toString(s.baselineRecord(2));
+			} catch (IllegalStateException said) {
+				damaged = said.getMessage();
+			}
+			check(damaged.contains("pre-edit copy") && damaged.contains(copy.getName()) && !damaged.startsWith("answered"),
+					"a damaged pre-edit copy is said, naming it, not answered as no copy: " + damaged);
+		}
 	}
 
 	// ------------------------------------------------ 9. the Pokemon reference tables
@@ -730,9 +802,7 @@ public class HandedGameTest {
 		refuses("ItemTable.baselineArchive", () -> ItemTable.baselineArchive(null));
 		refuses("ItemTable.changedSinceBaseline", () -> ItemTable.changedSinceBaseline(null));
 		refuses("ItemText.read", () -> ItemText.read(null, ItemText.Which.NAMES));
-		refuses("ItemText.line", () -> ItemText.line(null, ItemText.Which.NAMES, 1));
 		refuses("ItemText.setLine", () -> ItemText.setLine(null, ItemText.Which.NAMES, 1, "x"));
-		refuses("ItemText.count", () -> ItemText.count(null, ItemText.Which.NAMES));
 		refuses("ItemEditSession.open", () -> ItemEditSession.open(null));
 		refuses("PokeData.of", () -> PokeData.of(null));
 		refuses("LocationNames.gametextIndex", () -> LocationNames.gametextIndex(null));
@@ -921,6 +991,143 @@ public class HandedGameTest {
 		check(said.isEmpty(), "and no dialog seam was involved in any of it - the question belongs to the NPC form, not here (said " + said + ")");
 	}
 
+	/**
+	 * What a table cannot hold, or a game cannot give it, is refused in its own words.
+	 *
+	 * <p>Measured by the 2026-10-14 shared sweep, each SURVIVED with nothing asking: NPCRegistry 170 (no UID free past
+	 * 0xFFFF) and 146 (an entry mapped by UID but not listed - the registry's own two indexes disagreeing), ItemTable
+	 * 278 (a game with no place to stage the record) and 284 (a staged record that does not read back as written),
+	 * MaisonPoolGuard 151 (a snapshot pool cut short), ADPropRegistry 224 (replacing a reference the registry does not
+	 * hold) and PropRegistration 106 (a game with no BuildingModels to check a model's textures in).
+	 */
+	static void whatTheTablesCannotHoldIsRefusedInWords() throws Exception {
+		System.out.println("--- what a table cannot hold, or a game cannot give it, is refused in its own words");
+		//NPCRegistry: UID 0xFFFF taken, and the next is not a 16-bit UID
+		FakeGameFiles npc = npcGame("hero", "rival").plant(ArchiveType.NPC_REGISTRIES, 3, registryBytes(npcEntry(0xFFFF, 1)));
+		NPCRegistry reg = new NPCRegistry(npc.staged(ArchiveType.NPC_REGISTRIES, 3), npc);
+		check(reg.register(npcEntry(0, 1), 5) == 5, "control: a free UID is given as asked");
+		check(said(() -> reg.register(npcEntry(0, 1), 0xFFFF)).equals(
+				"no NPC registry UID is free from 65535 up: UIDs are 16-bit"),
+				"a registry with no UID free from 0xFFFF up refuses the entry: " + said(() -> reg.register(npcEntry(0, 1), 0xFFFF)));
+		//measured by the 2026-10-14 shared sweep (NPCRegistry 189, dropped, SURVIVED): every replace named a UID the
+		//registry holds, so one it does not hold was never refused where anyone looked; nor one moved onto a taken UID
+		check(act(() -> reg.replace(77, npcEntry(77, 1))).equals("no NPC registry entry has UID 77"),
+				"replacing a UID the registry does not hold is refused: " + act(() -> reg.replace(77, npcEntry(77, 1))));
+		check(act(() -> reg.replace(5, npcEntry(0xFFFF, 1))).equals("UID 65535 is already registered"),
+				"moving an entry onto a UID another holds is refused: " + act(() -> reg.replace(5, npcEntry(0xFFFF, 1))));
+		//a replace that keeps its UID keeps the model read for it, and one that moves it lets the old one go (the
+		//2026-10-14 shared sweep, NPCRegistry 196, negated, SURVIVED: no replace ever looked at the model cache)
+		reg.models.put(5, null);
+		act(() -> reg.replace(5, npcEntry(5, 2)));
+		boolean keptOwn = reg.models.containsKey(5);
+		act(() -> reg.replace(5, npcEntry(6, 2)));
+		check(keptOwn && !reg.models.containsKey(5) && reg.entries.containsKey(6),
+				"an entry replaced under its own UID keeps its model (" + keptOwn + "); moved to UID 6, its old UID's model goes ("
+				+ !reg.models.containsKey(5) + ")");
+		//and remove: a UID it does not hold is refused, and a removed one's model goes with it (NPCRegistry 206, dropped,
+		//SURVIVED the same sweep - no remove ever named a UID the registry lacks)
+		check(act(() -> reg.remove(77)).equals("no NPC registry entry has UID 77"),
+				"removing a UID the registry does not hold is refused: " + act(() -> reg.remove(77)));
+		reg.models.put(6, null);
+		act(() -> reg.remove(6));
+		check(!reg.entries.containsKey(6) && !reg.models.containsKey(6),
+				"a removed entry takes its model with it (entry " + reg.entries.containsKey(6) + ", model " + reg.models.containsKey(6) + ")");
+		//its two indexes made to disagree, as only a defect in the registry itself could
+		java.lang.reflect.Field byUid = NPCRegistry.class.getDeclaredField("byUid");
+		byUid.setAccessible(true);
+		@SuppressWarnings("unchecked")
+		java.util.Map<Integer, NPCRegistry.NPCRegistryEntry> map = (java.util.Map<Integer, NPCRegistry.NPCRegistryEntry>) byUid.get(reg);
+		map.put(9, npcEntry(9, 1));
+		check(act(() -> reg.replace(9, npcEntry(9, 0))).equals("an NPC registry entry is mapped by UID but not in the registry"),
+				"an entry the registry maps but does not list is refused, never written over another: "
+				+ act(() -> reg.replace(9, npcEntry(9, 0))));
+
+		//ItemTable: no place to stage the record, and a staged record that does not read back
+		byte[] retail = garcBytes(record(0), record(12), record(7));
+		FakeGameFiles nowhere = new FakeGameFiles().plantArchive(ArchiveType.ITEM_DATA, retail);
+		ItemTable unstaged = ItemTable.open(nowhere);
+		nowhere.stagesAt(ArchiveType.ITEM_DATA, entry -> null);
+		check(unstaged != null && act(() -> unstaged.writeRecord(1, record(99))).equals(
+				"item 1 has no place in this game's workspace to be staged in, so it was not saved."),
+				"a record with no place to be staged is refused: "
+				+ (unstaged == null ? "no table" : act(() -> unstaged.writeRecord(1, record(99)))));
+		//a staged path that keeps nothing written to it: the NUL device here, /dev/null elsewhere
+		File sink = System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT).startsWith("windows")
+				? new File(Scratch.dir("ctrmap_items_sink"), "NUL") : new File("/dev/null");
+		FakeGameFiles forgets = new FakeGameFiles().plantArchive(ArchiveType.ITEM_DATA, retail);
+		ItemTable lost = ItemTable.open(forgets);
+		forgets.stagesAt(ArchiveType.ITEM_DATA, entry -> sink);
+		check(lost != null && act(() -> lost.writeRecord(1, record(99))).startsWith("item 1 did not survive being staged at "),
+				"a staged record that does not read back as written is refused: "
+				+ (lost == null ? "no table" : act(() -> lost.writeRecord(1, record(99)))));
+
+		//MaisonPoolGuard: a snapshot pool cut inside its last set
+		FakeGameFiles cut = new FakeGameFiles().withPristine();
+		pristineArchive(cut, ArchiveType.MAISON_SET_POOL_A,
+				set(25).write(), set(0).write(), set(0).write(), set(0).write(), set(0).write(), set(0).write());
+		File pool = new File(cut.pristine().getAbsolutePath() + cut.profile().archivePath(ArchiveType.MAISON_SET_POOL_A));
+		byte[] whole = Files.readAllBytes(pool.toPath());
+		Files.write(pool.toPath(), Arrays.copyOf(whole, whole.length - 1));
+		MaisonPoolGuard g = MaisonPoolGuard.load(cut, ArchiveType.MAISON_SET_POOL_A, ArchiveType.MAISON_CLASS_LIST_A, emptySets(6));
+		check(!g.exact && String.valueOf(g.inexact).contains("set 5 is missing from the snapshot"),
+				"a snapshot pool cut inside its last set is said, naming the set, and its labels are not exact: " + g.inexact);
+
+		//ADPropRegistry: replacing a reference it does not hold
+		FakeGameFiles props = propGame(0, "pc01", "tree01", "sign01");
+		ADPropRegistry areaReg = new ADPropRegistry(new AD(props.staged(ArchiveType.AREA_DATA, 0), props), null, props);
+		check(act(() -> areaReg.replace(99, new ADPropRegistry.ADPropRegistryEntry())).equals(
+				"no prop registry entry has reference 99"),
+				"replacing a reference the registry does not hold is refused: "
+				+ act(() -> areaReg.replace(99, new ADPropRegistry.ADPropRegistryEntry())));
+		areaReg.register(new ADPropRegistry.ADPropRegistryEntry(), 40);
+		java.util.List<Integer> heldRefs = new java.util.ArrayList<>(areaReg.entries.keySet());
+		if (heldRefs.size() < 2) {
+			check(false, "control: the prop game's registry holds two references to move one onto (" + heldRefs + ")");
+		} else {
+			ADPropRegistry.ADPropRegistryEntry movedOnto = areaReg.entries.get(heldRefs.get(0)).copy();
+			movedOnto.reference = heldRefs.get(1);
+			check(act(() -> areaReg.replace(heldRefs.get(0), movedOnto)).equals("reference " + heldRefs.get(1) + " is already registered"),
+					"moving an entry onto a reference another holds is refused: " + act(() -> areaReg.replace(heldRefs.get(0), movedOnto)));
+		}
+
+		//PropRegistration: a game with no BuildingModels to check the model's textures in
+		check(said(() -> ctrmap.formats.propdata.PropRegistration.register(new FakeGameFiles(), null,
+				new ctrmap.formats.propdata.PropDatabase.PropModel(4), null, null)).equals(
+				"BuildingModels entry 4 cannot be read, so the textures it draws with cannot be checked"),
+				"a prop model whose BuildingModels entry cannot be read is refused: " + said(() -> ctrmap.formats.propdata.PropRegistration
+				.register(new FakeGameFiles(), null, new ctrmap.formats.propdata.PropDatabase.PropModel(4), null, null)));
+	}
+
+	/** A call that answers and may throw, as {@link #said} asks it. */
+	interface Asked {
+		Object run() throws Exception;
+	}
+
+	/** A call that answers nothing and may throw, as {@link #act} asks it. */
+	interface Done {
+		void run() throws Exception;
+	}
+
+	/** What a call that answers nothing said: its refusal's words, or that it went through. */
+	static String act(Done a) {
+		return said(() -> {
+			a.run();
+			return null;
+		});
+	}
+
+	/** What a call said: its refusal's words, or that it went through. */
+	static String said(Asked c) {
+		try {
+			Object answer = c.run();
+			return "it went through" + (answer == null ? ", answering null" : ": " + answer);
+		} catch (IllegalArgumentException | IllegalStateException | IOException refused) {
+			return String.valueOf(refused.getMessage());
+		} catch (Exception other) {
+			return "it failed some other way: " + other;
+		}
+	}
+
 	/** The body of section 16, run while {@code Ui} is recording. */
 	static void npcRegistryHandedTwoGames() throws Exception {
 		//MoveModels 0 "hero", 1 "rival"; registry 3 maps uid 7 to model 1
@@ -996,6 +1203,39 @@ public class HandedGameTest {
 				"after all of it no workspace is open and nothing reached the global");
 	}
 
+	/**
+	 * A zone whose file the game does not hold is refused by name - one staged nowhere, and one staged at a path that is
+	 * not there - never read as a path that is not there (the 2026-10-15 shared sweep, PawnClosure 530, drop-throw,
+	 * SURVIVED: every zone a suite asked the one reader of zone scripts for was there).
+	 */
+	static void aZoneWithNoFileIsRefusedByName() throws Exception {
+		System.out.println("--- a zone whose file the game does not hold is refused by name");
+		FakeGameFiles nowhere = new FakeGameFiles().stagesAt(ArchiveType.ZONE_DATA, z -> null);
+		File empty = Scratch.dir("ctrmap_handed_nozone");
+		FakeGameFiles notThere = new FakeGameFiles().stagesAt(ArchiveType.ZONE_DATA, z -> new File(empty, "zone " + z));
+		String none = said(() -> ctrmap.formats.scripts.PawnClosure.zoneScript(nowhere, 7));
+		String gone = said(() -> ctrmap.formats.scripts.PawnClosure.zoneScript(notThere, 7));
+		check("zone 7 has no file in the workspace".equals(none) && "zone 7 has no file in the workspace".equals(gone),
+				"a zone staged nowhere, or at a path that is not there, is refused naming it: " + none + " / " + gone);
+		//and one whose file is there but holds no zone script is refused naming it too, never answered as no script
+		//(the 2026-10-15 shared sweep, PawnClosure 534, drop-throw, SURVIVED)
+		File junk = new File(empty, "zone junk");
+		java.nio.file.Files.write(junk.toPath(), new byte[]{1, 2, 3, 4, 5, 6, 7, 8});
+		FakeGameFiles notAZone = new FakeGameFiles().stagesAt(ArchiveType.ZONE_DATA, z -> junk);
+		String unparsed = said(() -> ctrmap.formats.scripts.PawnClosure.zoneScript(notAZone, 7));
+		check("zone 7's script could not be parsed".equals(unparsed),
+				"a zone file that holds no script is refused naming the zone: " + unparsed);
+		//and the donor search's zone count is the handed game's ZoneData length, refused in words with none open
+		//(the 2026-10-15 shared sweep, PawnClosure 584, negate-if, SURVIVED: no suite asked it)
+		File zones = Scratch.file("ctrmap_handed_zonecount");
+		writeGarc(zones, new byte[]{1}, new byte[]{2}, new byte[]{3});
+		String counted = said(() -> ctrmap.formats.scripts.PawnClosure.zoneCount(
+				new FakeGameFiles().open(ArchiveType.ZONE_DATA, new ctrmap.formats.garc.GARC(zones))));
+		String noZones = said(() -> ctrmap.formats.scripts.PawnClosure.zoneCount(new FakeGameFiles()));
+		check("it went through: 3".equals(counted) && "The ZoneData archive is not loaded.".equals(noZones),
+				"the donor search counts the handed game's zones, and is refused with none open: " + counted + " / " + noZones);
+	}
+
 	// ------------------------------------------------ 17. null is refused
 	static void thePropsAndNpcsRefuseToBeHandedNothing() throws Exception {
 		System.out.println("--- the prop and NPC classes handed null refuse in words, rather than answering for no game");
@@ -1011,6 +1251,120 @@ public class HandedGameTest {
 		refuses("GRProp.updateName", () -> new GRProp().updateName(null, null));
 		refuses("NPCRegistry", () -> new NPCRegistry(regFile, null));
 		refuses("NPCRegistry.loadFreshModelByIndex", () -> NPCRegistry.loadFreshModelByIndex(null, 0));
+		//the fog and lighting pane's three refusals, each in its own words - "handed" alone is said by all three, so a
+		//dropped one hid behind the next (the 2026-10-14 shared sweep, AreaLightingDialog 57, dropped, SURVIVED)
+		ctrmap.humaninterface.SaveHistory ops = new ctrmap.humaninterface.SaveHistory(() -> Collections.<Object>emptyList());
+		Runnable nothing = () -> { };
+		String[][] lighting = {
+			{said(() -> ctrmap.humaninterface.AreaLightingDialog.panel(null, new ctrmap.LoadedZone(), null, nothing, null, ops, nothing)),
+				"the fog and lighting editor must be handed what redraws the fog"},
+			{said(() -> ctrmap.humaninterface.AreaLightingDialog.panel(null, new ctrmap.LoadedZone(), null, nothing, nothing, null, nothing)),
+				"the fog and lighting editor must be handed the history that keeps its saves and what reads the zone again"},
+			{said(() -> ctrmap.humaninterface.AreaLightingDialog.panel(null, null, null, nothing, nothing, ops, nothing)),
+				"AreaLightingDialog must be handed the LoadedZone"}};
+		for (String[] l : lighting) {
+			check(l[1].equals(l[0]), "the fog and lighting pane refuses in its own words: " + l[0]);
+		}
+		//and every other method with two "handed" refusals, found by walking the production source (scratchpad
+		//handed_methods.py, its control the fog pane above): the area fork, the encounter and the facility editors
+		//(the 2026-10-14 shared sweep, AreaForkPrompt 68, swallowed, SURVIVED - the same class)
+		String[][] handedTwice = {
+			{said(() -> ctrmap.humaninterface.AreaForkPrompt.ensurePrivate(null, null, 0, "x", ops, nothing)),
+				"AreaForkPrompt.ensurePrivate must be handed the LoadedZone"},
+			{said(() -> ctrmap.humaninterface.AreaForkPrompt.ensurePrivate(new ctrmap.LoadedZone(), null, 0, "x", null, nothing)),
+				"an area fork must be handed the history that keeps it and what reads the zone again"},
+			{said(() -> ctrmap.humaninterface.EncounterEditDialog.panel(null, new ctrmap.LoadedZone(), nothing, null)),
+				"the encounter editor must be handed the history its saves are kept in"},
+			{said(() -> ctrmap.humaninterface.EncounterEditDialog.panel(null, null, nothing, ops)),
+				"EncounterEditDialog must be handed the LoadedZone"},
+			{said(() -> ctrmap.humaninterface.MaisonEditDialog.panel(null, nothing, (title, editor) -> { }, null)),
+				"the facility editor must be handed the history its saves are kept in"},
+			{said(() -> ctrmap.humaninterface.MaisonEditDialog.panel(null, nothing, null, ops)),
+				"the facility editor must be handed what shows an editor in the Game Data tab"}};
+		for (String[] h2 : handedTwice) {
+			check(h2[1].equals(h2[0]), "a pane with two refusals of what it is handed refuses in its own words: " + h2[0]);
+		}
+		//a building palette asked for an area's untouched textures with no workspace open says so, never an empty list
+		//(the 2026-10-14 shared sweep, BuildingPaletteDialog 177, swallowed, SURVIVED: every suite that asked had one)
+		check(!Workspace.isValid() && said(() -> ctrmap.humaninterface.BuildingPaletteDialog.donorTextures(5)).equals(
+				"no workspace is open, so there is no untouched game to take textures from"),
+				"donor textures asked for with no workspace open are refused in words: "
+				+ said(() -> ctrmap.humaninterface.BuildingPaletteDialog.donorTextures(5)));
+		//the atmosphere picker opened with no workspace (the 2026-10-14 shared sweep, GfEnvPicker 67, negate-if,
+		//SURVIVED: every suite that opened it had one) - said, and nothing picked, never read as a Cancel in silence
+		java.util.List<String> heard = ctrmap.Ui.record();
+		String picked;
+		try {
+			byte[] answer = ctrmap.humaninterface.GfEnvPicker.pick(null, true, new ctrmap.LoadedZone(), null);
+			picked = answer == null ? "nothing" : answer.length + " byte(s)";
+		} catch (RuntimeException threw) {   //read as an answer: a throw fails below, in words
+			picked = "threw " + threw;
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(!Workspace.isValid() && "nothing".equals(picked) && heard.size() == 1
+				&& heard.get(0).contains("Open a workspace first"),
+				"the atmosphere picker opened with no workspace says so and picks nothing: " + picked + ", " + heard);
+		//the picker's live preview of a zone that is not open: nothing to show, and nothing to say (the 2026-10-14 shared
+		//sweep, GfEnvPicker 277, negate-if, SURVIVED: the picker is modal)
+		java.util.List<String> zoneNotes = new java.util.ArrayList<>();
+		String preview;
+		try {
+			java.lang.reflect.Method model = ctrmap.humaninterface.GfEnvPicker.class.getDeclaredMethod("currentZoneModel",
+					ctrmap.LoadedZone.class, java.util.List.class);
+			model.setAccessible(true);
+			Object drawn = model.invoke(null, new ctrmap.LoadedZone(), zoneNotes);
+			preview = drawn == null ? "nothing" : "a model";
+		} catch (ReflectiveOperationException | RuntimeException threw) {
+			preview = "threw " + (threw.getCause() != null ? threw.getCause() : threw);
+		}
+		check("nothing".equals(preview) && zoneNotes.isEmpty(),
+				"the picker's preview of a zone not open shows nothing and says nothing: " + preview + ", " + zoneNotes);
+		//the Game Data editors handed no history to keep their saves in, each refused in its own words (the 2026-10-14
+		//shared sweep: ItemEditDialog 90 and MaisonClassListDialog 85, drop-throw, SURVIVED - every suite handed one; the
+		//shop and trainer editors carry the same refusal and are asked with them before the sweep reaches them)
+		String[][] noHistory = {
+			{said(() -> ctrmap.humaninterface.MaisonClassListDialog.panel(null, nothing, null)),
+				"the class-assignment editor must be handed the history its saves are kept in"},
+			{said(() -> ctrmap.humaninterface.ShopEditDialog.panel(null, nothing, null)),
+				"the shop editor must be handed the history its saves are kept in"},
+			{said(() -> ctrmap.humaninterface.TrainerEditDialog.panel(null, 0, nothing, null)),
+				"the trainer editor must be handed the history its saves are kept in"},
+			{said(() -> ctrmap.humaninterface.TrainerEditDialog.panelForSelection(null, null, nothing, null)),
+				"the trainer editor must be handed the history its saves are kept in"}};
+		for (String[] h : noHistory) {
+			check(h[1].equals(h[0]), "a Game Data editor handed no history refuses in its own words: " + h[0]);
+		}
+		//and where its atmospheres came from, said under its list only when there is something to say (the 2026-10-14
+		//shared sweep, GfEnvPicker 196, negate-if, SURVIVED: the picker is modal)
+		javax.swing.JLabel none = ctrmap.humaninterface.GfEnvPicker.sourceNotes(java.util.Collections.<String>emptyList());
+		javax.swing.JLabel live = ctrmap.humaninterface.GfEnvPicker.sourceNotes(
+				java.util.Arrays.asList("The untouched copy of ZONE_DATA could not be read.", "Your edited game was used."));
+		check(none == null && live != null && live.getText().contains("could not be read.")
+				&& live.getText().contains("Your edited game was used."),
+				"the picker says where its atmospheres came from only when there is something to say: "
+				+ (none == null ? "nothing" : "\"" + none.getText() + "\"") + " for no notes, \""
+				+ (live == null ? "nothing" : live.getText()) + "\" for two");
+		//and its list side carries them under the list only then (the 2026-10-16 assembly, GfEnvPicker 210, negate-if,
+		//SURVIVED): inverted, the notes went unshown and a picker with none added a null where they go
+		String[] sides = new String[2];
+		for (int k = 0; k < 2; k++) {
+			java.util.List<String> notes = k == 0 ? java.util.Collections.<String>emptyList()
+					: java.util.Arrays.asList("The untouched copy of AREA_DATA could not be read.");
+			try {
+				javax.swing.JPanel side = ctrmap.humaninterface.GfEnvPicker.listPane(new javax.swing.JTextField(),
+						new javax.swing.JList<String>(), notes);
+				java.awt.Component south = ((java.awt.BorderLayout) side.getLayout())
+						.getLayoutComponent(java.awt.BorderLayout.SOUTH);
+				sides[k] = side.getComponentCount() + " part(s), " + (south instanceof javax.swing.JLabel
+						? "\"" + ((javax.swing.JLabel) south).getText() + "\"" : "nothing") + " under the list";
+			} catch (RuntimeException ex) {
+				sides[k] = "threw " + ex;
+			}
+		}
+		check(sides[0].equals("2 part(s), nothing under the list") && sides[1].startsWith("3 part(s), \"")
+				&& sides[1].contains("could not be read."), "the picker's list side shows its notes under the list only"
+				+ " when there are any: " + sides[0] + "; " + sides[1]);
 	}
 
 	// ------------------------------------------------ 18. the zone header
@@ -1034,6 +1388,26 @@ public class HandedGameTest {
 				"and its model, MoveModels entry 1, was staged from the handed game - and no other");
 		check(h.propTextures.isEmpty() && h.worldTextures.isEmpty(), "the fixture packs hold no textures, and none were invented");
 		check(fake.edited().isEmpty() && Workspace.persistPaths().isEmpty(), "opening reported no write, to the handed game or to the global");
+		//an area whose prop slot holds a texture pack hands the header those textures (the 2026-10-14 shared sweep,
+		//ZoneHeader 338, negated, SURVIVED: every fixture's prop slot was empty, so no texture was ever asked for)
+		byte[][] propSubs = new byte[12][];
+		Arrays.fill(propSubs, new byte[0]);
+		propSubs[1] = pack("prop_a", "prop_b");
+		propSubs[11] = bch("world", 0);
+		FakeGameFiles props = npcGame("hero")
+				.plant(ArchiveType.AREA_DATA, 5, container("AD", propSubs))
+				.plant(ArchiveType.NPC_REGISTRIES, 5, registryBytes(npcEntry(7, 0)))
+				.plant(ArchiveType.MAP_MATRIX, 9, container("MM", new byte[]{0, 0, 0, 0}, new byte[0]));
+		ZoneHeader p = new ZoneHeader(new byte[0x38], GameType.ORAS);
+		p.areadataID = 5;
+		p.mapmatrixID = 9;
+		p.fetchArchives(props);
+		List<String> propNames = new ArrayList<>();
+		for (ctrmap.formats.h3d.texturing.H3DTexture t : p.propTextures) {
+			propNames.add(t.textureName);
+		}
+		check(propNames.equals(Arrays.asList("prop_a", "prop_b")),
+				"an area whose prop slot holds a texture pack gives the header its textures: " + propNames);
 
 		//a DIFFERENT game: registry 5 maps uid 4 to model 2
 		FakeGameFiles other = zoneWorld(npcEntry(4, 2), "mom", "prof", "clerk");
@@ -1054,9 +1428,22 @@ public class HandedGameTest {
 					&& other.edited().isEmpty(),
 					"a write through the registry the header opened reports to the game the header was handed (" + fake.edited() + ")");
 		}
+		//WHAT IT HOLDS IS WHAT IT NAMES (F255): a header whose area or map id moved holds containers for the old ones
+		check(!h.repointed(), "control: a header opened for area 5 and map 9 holds what it names");
+		h.areadataID = 6;
+		boolean area = h.repointed();
+		h.areadataID = 5;
+		h.mapmatrixID = 8;
+		boolean map = h.repointed();
+		h.mapmatrixID = 9;
+		check(area && map && !h.repointed(),
+				"one whose area or map id moved is repointed - read again, its containers follow (area " + area + ", map "
+				+ map + ")");
 		refuses("ZoneHeader.fetchArchives", () -> h.fetchArchives(null));
 		h.freeArchives();
 		check(h.areadata == null && h.npcreg == null && h.mapmatrix == null, "freeArchives() lets go of all three");
+		h.areadataID = 6;
+		check(!h.repointed(), "and a header holding nothing is repointed to nothing");
 		check(Workspace.session() == null && Workspace.persistPaths().isEmpty(),
 				"after all of it no workspace is open and nothing reached the global");
 	}
@@ -1125,15 +1512,15 @@ public class HandedGameTest {
 		pristineArchive(ta, ArchiveType.FIELD_DATA, region("zero"), region("one"));
 		FakeGameFiles tb = new FakeGameFiles().withPristine();
 		pristineArchive(tb, ArchiveType.FIELD_DATA, region("null"), region("eins"));
-		File cutA = new File(ta.scratch(), "bcat_region_1");
-		File cutB = new File(tb.scratch(), "bcat_region_1");
-		check(!cutA.exists() && !cutB.exists(), "nothing has been cut from either game yet");
+		check(cutOf(ta) == null && cutOf(tb) == null, "nothing has been cut from either game yet");
 		List<String> names = TerrainCatalog.donorTextures(ta, d);
-		check(names.isEmpty() && cutA.isFile() && !cutB.exists(),
+		File cutA = cutOf(ta);
+		check(names.isEmpty() && cutA != null && cutA.isFile() && cutOf(tb) == null,
 				"asked for a donor's textures, the terrain catalog cut the donor from the handed game's snapshot into its scratch, and not the other's");
 		check(startsWith(Files.readAllBytes(cutA.toPath()), "GR"), "what it cut is the region container");
 		TerrainCatalog.donorTextures(tb, d);
-		check(cutB.isFile() && startsWith(new GR(cutB, tb).getFile(1), "eins"), "handed the other game, it cuts from that one");
+		File cutB = cutOf(tb);
+		check(cutB != null && startsWith(new GR(cutB, tb).getFile(1), "eins"), "handed the other game, it cuts from that one");
 
 		//a real failure is THROWN with its reason, not shown. Two of them: a
 		//model that is one byte, with a snapshot present to cut from; and a
@@ -1310,6 +1697,17 @@ public class HandedGameTest {
 		Tilemap keyed = new Tilemap(null, 40, 40, tile -> tile == 0x21000001 ? Color.GREEN : Color.RED);
 		check(keyed.getImage().getRGB(5, 5) == Color.GREEN.getRGB(),
 				"handed a palette, a tile's own value picks its colour (a fresh region is all unwalkable 0x21000001)");
+		int[] asked = {0};
+		Tilemap counted = new Tilemap(null, 40, 40, tile -> {
+			asked[0]++;
+			return tile == 0x21000001 ? Color.GREEN : Color.RED;
+		});
+		check(asked[0] == 1600, "control: a whole picture asks the palette once per tile (" + asked[0] + ")");
+		asked[0] = 0;
+		counted.setTileData(0, 0, new byte[]{0, 0, 0, 0});
+		check(counted.getImage().getRGB(5, 5) == Color.RED.getRGB() && counted.getImage().getRGB(15, 15) == Color.GREEN.getRGB(),
+				"an edit paints its own tile, with no repaint asked for (census L.39)");
+		check(asked[0] == 1, "and asks the palette for that one tile, not all 1,600 (" + asked[0] + ")");
 		keyed.setTileData(0, 0, new byte[]{0, 0, 0, 0});
 		keyed.updateImage();
 		check(keyed.getImage().getRGB(5, 5) == Color.RED.getRGB() && keyed.getImage().getRGB(15, 15) == Color.GREEN.getRGB(),
@@ -1676,6 +2074,12 @@ public class HandedGameTest {
 		return m;
 	}
 
+	/** The region 1 the catalog cut into {@code game}'s scratch - a file of its own, named from this prefix - or null. */
+	static File cutOf(FakeGameFiles game) {
+		File[] in = game.scratch().listFiles((dir, name) -> name.startsWith("bcat_region_1_"));
+		return in == null || in.length == 0 ? null : in[0];
+	}
+
 	/** The bytes of an area container whose world texture pack (subfile 11) holds these textures. */
 	static byte[] areaHolding(String... names) throws Exception {
 		FakeGameFiles kit = new FakeGameFiles();
@@ -1818,6 +2222,12 @@ public class HandedGameTest {
 	interface Call {
 
 		void run() throws Exception;
+	}
+
+	/** One line of an item list as the program reads it, or null past its end. */
+	static String itemLine(GameFiles game, ItemText.Which w, int id) throws java.io.IOException {
+		java.util.List<String> l = ItemText.read(game, w);
+		return id >= 0 && id < l.size() ? l.get(id) : null;
 	}
 
 	static void refuses(String what, Call call) {

@@ -99,6 +99,9 @@ public class CtrmapMainframe {
 	 */
 	private JFrame frame;
 
+	/** How the window first shows: Updater.firstWindowState of the arguments it was started with. */
+	private int firstState = JFrame.MAXIMIZED_BOTH;
+
 	/** The open zone's undo history (F209): see where it is built. */
 	private ctrmap.humaninterface.UndoHistory zoneHistory;
 
@@ -247,6 +250,8 @@ public class CtrmapMainframe {
 		//them off by default so that a test suite or a command-line tool cannot
 		//stop dead on a modal window nobody is there to click.
 		Ui.enableDialogs();
+		//so no build deletes the classes this window is running from (2026-10-11) - see RunningFrom
+		RunningFrom.declare();
 		//BEFORE ANYTHING CAN FAIL (F219): the launcher has no console, so an error with
 		//nowhere to go reached nobody. If the log folder cannot be written either, the user
 		//is told, in a dialog - stderr is the console that is not there.
@@ -282,6 +287,8 @@ public class CtrmapMainframe {
 		//touched them - so a second window, or a suite holding two editors, was impossible by
 		//construction. This is the only place one is made in the program.
 		CtrmapMainframe window = new CtrmapMainframe();
+		//reopened by the updater, it comes back minimized rather than up over what the owner is doing
+		window.firstState = ctrmap.update.Updater.firstWindowState(args);
 		SwingUtilities.invokeLater(() -> window.startOnTheEventThread(logFailure));
 	}
 
@@ -327,10 +334,7 @@ public class CtrmapMainframe {
 				ask -> mCamEditForm.store(ask),
 				ask -> mTileMapPanel.saveTileMap(ask),
 				ask -> mMtxEditForm.store(ask),
-				ask -> {
-					mCollEditPanel.store();
-					return true;
-				},
+				ask -> mCollEditPanel.store(ask),
 				ask -> mPropEditForm.store(ask),
 				ask -> mNPCEditForm.saveRegistry(ask),
 				ask -> mZonePnl.store(ask),
@@ -595,6 +599,71 @@ public class CtrmapMainframe {
 				}));
 	}
 
+	/**
+	 * The histories a gesture settles: the zone's, Game Data's, the text editor's and the workspace's, and the tileset
+	 * editor's when it is open - null until the Tileset tab opens it. Out of the window so a suite asks it: no suite
+	 * builds the window (the 2026-10-16 assembly, CtrmapMainframe 710, negate-if, SURVIVED).
+	 */
+	private static java.util.List<ctrmap.humaninterface.UndoHistory> settledHistories(ctrmap.humaninterface.UndoHistory zone,
+			ctrmap.humaninterface.UndoHistory gameData, ctrmap.humaninterface.UndoHistory text,
+			ctrmap.humaninterface.UndoHistory workspace, TileDBWriter tileset) {
+		java.util.List<ctrmap.humaninterface.UndoHistory> open = new java.util.ArrayList<>(java.util.Arrays.asList(
+				zone, gameData, text, workspace));
+		if (tileset != null) {
+			open.add(tileset.history());
+		}
+		return open;
+	}
+
+	/**
+	 * The 3D collision view's mouse and keys, where OpenGL started; nothing where it did not and there is no view.
+	 * Out of the window so a suite asks it: no suite builds the window (the 2026-10-16 assembly, CtrmapMainframe 837,
+	 * negate-if, SURVIVED).
+	 */
+	private static void collisionInput(GLPanel glPanel) {
+		if (glPanel != null) {
+			new CollInputManager(glPanel);
+		}
+	}
+
+	/**
+	 * A form's path field filled with what a chooser or a maker answered, and left as it was when the answer is none.
+	 * One step where the deploy form had three - its folder, its code.ips picked, its code.ips made - each a guard of
+	 * its own in a lambda no suite reached (the 2026-10-16 assembly, CtrmapMainframe 2324, 2332 and 2345, SURVIVED).
+	 */
+	private static void fillWith(javax.swing.JTextField field, File answered) {
+		if (answered != null) {
+			field.setText(answered.getAbsolutePath());
+		}
+	}
+
+	/**
+	 * Said at the start, after an update the launcher could not install: the reason it kept, and that this is the
+	 * version the user had - said at the start because the install's own output went to a log in a hidden folder
+	 * (census M.143); nothing when the last update installed or there was none. Out of the window so a suite asks it
+	 * (the 2026-10-16 final measurement, CtrmapMainframe 967, negate-if, SURVIVED).
+	 */
+	private static void sayAnUpdateNotInstalled(java.awt.Component frame, String notInstalled) {
+		if (notInstalled != null) {
+			Ui.error(frame, "The update could not be installed, so this is the version you had:\n\n" + notInstalled, "Update");
+		}
+	}
+
+	/**
+	 * The new-materials form's mesh spinner bounded to the template region's {@code meshes}: its top lowered to the
+	 * last mesh, a number above that brought down to it, and the count said beside it. Out of the form's listener so a
+	 * suite asks it: the form is a dialog no recording reaches into (the 2026-10-16 assembly, CtrmapMainframe 3313,
+	 * negate-if, SURVIVED).
+	 */
+	private static void boundMeshSpinner(javax.swing.JSpinner tMesh, javax.swing.JLabel tMeshes, int meshes) {
+		javax.swing.SpinnerNumberModel m = (javax.swing.SpinnerNumberModel) tMesh.getModel();
+		m.setMaximum(Math.max(0, meshes - 1));
+		if (((Number) tMesh.getValue()).intValue() > Math.max(0, meshes - 1)) {
+			tMesh.setValue(Math.max(0, meshes - 1));
+		}
+		tMeshes.setText(meshes == 0 ? "(this region has no map model)" : "(" + meshes + " mesh(es): 0-" + (meshes - 1) + ")");
+	}
+
 	private void createAndShowGUI() {
 		Workspace.loadWorkspace();
 		frame = new JFrame("CTRMap Editor");
@@ -663,11 +732,14 @@ public class CtrmapMainframe {
 					frame.repaint();
 				}));
 		mZonePnl = new ZoneLoadingPanel(loadedZone, tools, editors, zoneViews, navigator,
-			CtrmapMainframe.this::showWorldEditor, CtrmapMainframe.this::refreshSceneFog, zoneHistory);
+			CtrmapMainframe.this::showWorldEditor, CtrmapMainframe.this::refreshSceneFog, zoneHistory, workspaceOps());
 		//the Zone tab IS the zone saver, and the script editor is handed it. Both
 		//exist by here: the tab on the line above, and nothing uses the editor until
 		//the NPC form below is built over both.
 		mScriptPnl = new ScriptEditor(mZonePnl);
+		//the zone's script is a document of its history (F209): the NPC wizards replace it, the dialogue editor
+		//re-points it, this panel edits it; put back, it is shown here again
+		zoneHistory.watch(ctrmap.humaninterface.ZoneDocuments.script(loadedZone, () -> mScriptPnl.loadScript(loadedZone.open().s)));
 		mTextEditor = new TextEditor();
 		mBuilder = new Builder(CtrmapMainframe.this::showInExtras);
 
@@ -697,7 +769,8 @@ public class CtrmapMainframe {
 		mTileMapPanel = new TileMapPanel(loadedZone, tools, scene, mTilemapScrollPane, mCollEditPanel, colours);
 		//the map view adds its own regions' tiles, and starts the history again when it replaces them
 		mTileMapPanel.useHistory(zoneHistory, this::redrawRegions);
-		ctrmap.humaninterface.UndoHistory.settleAroundGestures(() -> java.util.Collections.singletonList(zoneHistory));
+		ctrmap.humaninterface.UndoHistory.settleAroundGestures(() -> settledHistories(zoneHistory,
+				gameDataSaves().history(), mTextEditor.history(), workspaceOps().history(), tileset));
 		//A BOUND METHOD REFERENCE, not a lambda over the static and not a captured
 		//Point. Not a lambda, because the map view exists by this line and the
 		//construction-order rule can therefore see and check this handoff - a
@@ -724,7 +797,8 @@ public class CtrmapMainframe {
 		//MainframeEdgesTest skips lambda bodies for exactly this reason, so this one
 		//is chosen in a comment rather than slipped past a rule.
 		mTileEditForm = new TileEditForm(tools, () -> worldToolbar.selectSetTool(), mTileMapPanel);
-		mPaintForm = new ctrmap.humaninterface.PaintForm(loadedZone, editors, mZonePnl, mTileMapPanel, zoneHistory);
+		mPaintForm = new ctrmap.humaninterface.PaintForm(loadedZone, editors, mZonePnl, mTileMapPanel, zoneHistory,
+				workspaceOps(), CtrmapMainframe.this::readTheWorkspaceAgain);
 		mCamEditForm = new CameraEditForm(redraw, zoneHistory);
 		mPropEditForm = new PropEditForm(loadedZone, tools, redraw, navigator, mTileMapPanel,
 			CtrmapMainframe.this::switchToolUI, zoneHistory);
@@ -819,9 +893,7 @@ public class CtrmapMainframe {
 		if (m3DDebugPanel != null) {
 			new CM3DInputManager(m3DDebugPanel, tools);
 		}
-		if (glPanel != null) {
-			new CollInputManager(glPanel);
-		}
+		collisionInput(glPanel);
 		new MatrixPanelInputManager(mMtxPanel, mMtxEditForm);
 
 		jsp2 = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
@@ -840,7 +912,8 @@ public class CtrmapMainframe {
 		tileEditMasterPnl.add(toolbarRows, BorderLayout.NORTH);
 		tileEditMasterPnl.add(jsp, BorderLayout.CENTER);
 
-		collEditMasterPnl.add(jsp2);
+		collEditMasterPnl.add(buildCollisionActionsBar(), BorderLayout.NORTH);   //the tab's own actions (census M.146)
+		collEditMasterPnl.add(jsp2, BorderLayout.CENTER);
 
 		mtxEditMasterPnl.add(jsp3);
 
@@ -855,7 +928,7 @@ public class CtrmapMainframe {
 		tabs.add("Game Data", buildGameDataTab(buildGameDataPanel()));
 		tabs.add("Script Editor (experimental)", mScriptPnl.withStatus());
 		tabs.add("Extras", extrasTabPnl);
-		tabs.add("Text Editor", mTextEditor);
+		tabs.add("Text Editor", mTextEditor.withUndo());
 		tabs.setToolTipTextAt(tabs.indexOfComponent(tileEditMasterPnl),
 				"The map itself: tile BEHAVIOR (walkable/encounters/water/warps - the colored grid) plus props, NPCs, warps, triggers and cameras. Edit tool inspects a tile; Set/Fill paint tile types.");
 		tabs.setToolTipTextAt(tabs.indexOfComponent(collEditMasterPnl),
@@ -894,7 +967,7 @@ public class CtrmapMainframe {
 
 		frame.setSize(1280, 720 + menubar.getHeight());
 		frame.setMinimumSize(frame.getSize());
-		frame.setExtendedState(JFrame.MAXIMIZED_BOTH);
+		frame.setExtendedState(firstState);
 		frame.setVisible(true);
 
 		//an update applied by the launcher leaves its unpacked copy behind,
@@ -902,6 +975,7 @@ public class CtrmapMainframe {
 		File installDir = ctrmap.update.Updater.installDir();
 		ctrmap.update.Updater.holdRunLock(installDir); //so an update knows when we are gone
 		ctrmap.update.Updater.sweep(installDir);
+		sayAnUpdateNotInstalled(frame, ctrmap.update.Updater.takeApplyFailure(installDir));
 
 		mTileMapPanel.addPropertyChangeListener(new PropertyChangeListener() {
 			@Override
@@ -1001,10 +1075,10 @@ public class CtrmapMainframe {
 		map.add(item(AreaAction.FOG_AND_LIGHTING));
 		map.add(item(AreaAction.MAKE_INDEPENDENT));
 		map.addSeparator();
-		map.add(item("Import map model (.bch)...", CtrmapMainframe.this::importMapModelAction));
-		map.add(item("Export map region to OBJ (Blender)...", CtrmapMainframe.this::exportMapObjAction));
-		map.add(item("Import OBJ into map region (Blender)...", CtrmapMainframe.this::importMapObjAction));
-		map.add(item("OBJ to collisions", CtrmapMainframe.this::objToCollisionsAction));
+		map.add(item(AreaAction.IMPORT_MAP_MODEL));
+		map.add(item(AreaAction.EXPORT_MAP_OBJ));
+		map.add(item(AreaAction.IMPORT_MAP_OBJ));
+		map.add(item(AreaAction.OBJ_TO_COLLISIONS));
 		map.add(item("Tileset Editor", CtrmapMainframe.this::tilesetEditorAction));
 
 		JMenu zone = new JMenu("Zone");
@@ -1072,13 +1146,21 @@ public class CtrmapMainframe {
 	 * eight-tab window and left to find the zone list on the fourth tab by themselves.
 	 */
 	private void quickStartAction() {
-		File guide = new File("QUICKSTART.md");
-		if (!guide.isFile()) {
-			guide = new File(System.getProperty("user.dir"), "QUICKSTART.md");
+		java.util.List<File> places = ctrmap.update.Updater.besideTheProgram("QUICKSTART.md",
+				ctrmap.update.Updater.installDir(), new File(System.getProperty("user.dir")));
+		File guide = null;
+		for (File place : places) {
+			if (place.isFile()) {
+				guide = place;
+				break;
+			}
 		}
-		if (!guide.isFile()) {
-			Ui.error(frame, "QUICKSTART.md is not beside the program (looked in "
-				+ new File(".").getAbsolutePath() + ").", "Quick start guide");
+		if (guide == null) {
+			StringBuilder looked = new StringBuilder();
+			for (File place : places) {
+				looked.append("\n  ").append(place.getPath());
+			}
+			Ui.error(frame, "QUICKSTART.md is not beside the program. Looked in:" + looked, "Quick start guide");
 			return;
 		}
 		try {
@@ -1157,6 +1239,14 @@ public class CtrmapMainframe {
 		MAKE_INDEPENDENT(Area.MAP, INDEPENDENT_TITLE + " (own map, own area)...", "Make independent",
 				"Give this zone its own private map and its own area, so edits stop affecting the source town.",
 				CtrmapMainframe::makeZoneIndependentAction),
+		//THE BLENDER ROUND TRIP, ON THE MAP'S OWN ROW (census M.146): these four were Map-menu items and nothing
+		//else, so the way to bring a map or a collision in from Blender was found only in a menu
+		IMPORT_MAP_MODEL(Area.MAP, "Import map model (.bch)...", "Import model",
+				"Replace a map region's 3D model with a .bch model file.", CtrmapMainframe::importMapModelAction),
+		EXPORT_MAP_OBJ(Area.MAP, "Export map region to OBJ (Blender)...", "Export OBJ",
+				"Export a map region's 3D model as a Wavefront OBJ to edit in Blender.", CtrmapMainframe::exportMapObjAction),
+		IMPORT_MAP_OBJ(Area.MAP, "Import OBJ into map region (Blender)...", "Import OBJ",
+				"Bring a Blender-edited OBJ back into the map region it was exported from.", CtrmapMainframe::importMapObjAction),
 		CONNECT_ZONES(Area.ZONE, "Connect zones through a warp...", "Connect zones",
 				"Wire a warp in one zone to a warp in another, both ways, so the trip works there AND back.",
 				CtrmapMainframe::connectZonesAction),
@@ -1176,11 +1266,13 @@ public class CtrmapMainframe {
 		BATTLE_FACILITY(Area.ZONE, "Custom battle facility here...", "Custom battle facility",
 				"Build a custom battle facility here: INDEPENDENT script-driven battles with your own trainers"
 				+ " (vanilla untouched), or clone a retail facility's full engine (shared opponent pools)."
-				+ " Tower, dojo, gauntlet - whatever the zone should host.", CtrmapMainframe::setupFacilityAction);
+				+ " Tower, dojo, gauntlet - whatever the zone should host.", CtrmapMainframe::setupFacilityAction),
+		OBJ_TO_COLLISIONS(Area.COLLISION, "OBJ to collisions", "OBJ to collisions",
+				"Build a region's collision triangles from a Wavefront OBJ.", CtrmapMainframe::objToCollisionsAction);
 
 		/** Which area's toolbar row the action's button is on. */
 		public enum Area {
-			MAP, ZONE
+			MAP, ZONE, COLLISION
 		}
 
 		public final Area area;
@@ -1281,7 +1373,7 @@ public class CtrmapMainframe {
 		zoneBrowser = browser;
 		zoneColumn = new JPanel(new BorderLayout());
 		zoneColumn.add(browser, BorderLayout.CENTER);
-		tab.add(zoneColumn, BorderLayout.EAST);
+		tab.add(workspaceOps().around(zoneColumn), BorderLayout.EAST);
 		if (zonePanel instanceof ZoneLoadingPanel) {
 			ZoneLoadingPanel loading = (ZoneLoadingPanel) zonePanel;
 			loading.useBrowser(browser);
@@ -1300,6 +1392,11 @@ public class CtrmapMainframe {
 		return tab;
 	}
 
+	/** The Collision Editor's actions row: each button is an {@link AreaAction}, and so is in a menu too. */
+	private JToolBar buildCollisionActionsBar() {
+		return areaBar(" Collision:  ", AreaAction.Area.COLLISION);
+	}
+
 	/** The Zone Loader's actions row: each button is an {@link AreaAction}, and so is in the Zone menu too. */
 	private JToolBar buildZoneActionsBar() {
 		return areaBar(" Zone actions:  ", AreaAction.Area.ZONE);
@@ -1309,7 +1406,7 @@ public class CtrmapMainframe {
 
 	/** The Extras tab: the seldom-used tools, and whichever one is open. */
 	private JPanel buildExtrasTab() {
-		return buildExtrasTab(new ExtrasPanel(loadedZone).withUndo(), mBuilder);
+		return buildExtrasTab(new ExtrasPanel(loadedZone).withUndo(), mBuilder.withUndo());
 	}
 
 	/**
@@ -1350,6 +1447,12 @@ public class CtrmapMainframe {
 	 * tileset editor's whole File menu with it and say nothing.
 	 */
 	private void showInExtras(String title, JComponent tool) {
+		showInExtras(title, tool, tool instanceof ctrmap.humaninterface.FormPanel
+			? ((ctrmap.humaninterface.FormPanel) tool).getJMenuBar() : null);
+	}
+
+	/** The same, with the tool's menu given - a tool shown inside its Undo and Redo is no FormPanel itself. */
+	private void showInExtras(String title, JComponent tool, javax.swing.JMenuBar menu) {
 		if (extrasHost == null || tool == null) {
 			return;
 		}
@@ -1359,9 +1462,8 @@ public class CtrmapMainframe {
 		back.setFloatable(false);
 		back.add(barButton("Back to Extras", "Leave " + title + ".",
 			CtrmapMainframe.this::closeExtrasTool));
-		if (tool instanceof ctrmap.humaninterface.FormPanel
-			&& ((ctrmap.humaninterface.FormPanel) tool).getJMenuBar() != null) {
-			back.add(((ctrmap.humaninterface.FormPanel) tool).getJMenuBar());
+		if (menu != null) {
+			back.add(menu);
 		}
 		box.add(back, BorderLayout.NORTH);
 		box.add(new javax.swing.JScrollPane(tool), BorderLayout.CENTER);
@@ -1454,7 +1556,7 @@ public class CtrmapMainframe {
 			frame, game, loadedZone, () -> {
 				closeZoneColumnTool();
 				reopenIfWritten(); //a link writes both ends through containers of its own (F234)
-			}));
+			}, workspaceOps(), CtrmapMainframe.this::readTheWorkspaceAgain));
 	}
 
 	/**
@@ -1470,7 +1572,8 @@ public class CtrmapMainframe {
 	/** The fog and lighting editor, in the World Editor's tool column. */
 	private void fogAndLightingAction() {
 		JComponent editor = ctrmap.humaninterface.AreaLightingDialog.panel(frame, loadedZone,
-			worldTextures(), () -> showWorldEditor(), CtrmapMainframe.this::refreshSceneFog);
+			worldTextures(), () -> showWorldEditor(), CtrmapMainframe.this::refreshSceneFog, workspaceOps(),
+			CtrmapMainframe.this::readTheWorkspaceAgain);
 		if (editor == null) {
 			return;                        //it has already said why
 		}
@@ -1576,6 +1679,29 @@ public class CtrmapMainframe {
 		return jfc;
 	}
 
+	/**
+	 * A folder dialog that starts at {@code start}. THE ONE OTHER CHOOSER (census L.31): with openDialog it is
+	 * the only place this window makes one, so a dialog cannot be written without the memory.
+	 */
+	private static JFileChooser folderDialog(String start, String title) {
+		JFileChooser jfc = new JFileChooser(start);
+		jfc.setDialogTitle(title);
+		jfc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+		return jfc;
+	}
+
+	/** Shows {@code jfc} to save; the file named, its folder remembered under {@code prefKey}, or null. */
+	private File pickedToSave(JFileChooser jfc, String prefKey) {
+		if (ctrmap.Ui.choose(frame, jfc, true) == null) {
+			return null;
+		}
+		File f = jfc.getSelectedFile();
+		if (f != null) {
+			fileDialogPrefs().put(prefKey, f.getParent());
+		}
+		return f;
+	}
+
 	/** Shows {@code jfc}; the file picked, remembered under {@code prefKey}, or null. */
 	private File picked(JFileChooser jfc, String prefKey) {
 		if (ctrmap.Ui.choose(frame, jfc, false) == null) {
@@ -1599,8 +1725,18 @@ public class CtrmapMainframe {
 			//here for the same reason openChosenMapMatrix is: behind this chooser
 			//nothing can drive it, so the only thing saying the ask happened was a
 			//comment. What is left here is the part that needs the panels.
+			//READ FIRST, ASK SECOND (census M.100): the file was read after every open editor had been asked to
+			//save, so a file that is not a map region cost the user the prompts - and then its refusal reached
+			//nobody but the catch-all. Opening the container reads its header and table, and writes nothing
+			GR mainGR;
+			try {
+				mainGR = new GR(f, game);
+			} catch (RuntimeException notARegion) {
+				Ui.error(frame, f.getName() + " cannot be opened as a map region:\n" + Ui.reason(notARegion)
+						+ "\n\nNothing was changed.", "Open GR Mapfile");
+				return;
+			}
 			openChosenGr(openEditors, () -> {
-				GR mainGR = new GR(f, game);
 				frame.setTitle("GfMap Editor - " + mainGR.getOriginFile().getName());
 				mTileMapPanel.loadTileMap(mainGR); //the collision editor too, from the one read of it
 				mTileMapPanel.scaleImage(1);
@@ -1684,7 +1820,16 @@ public class CtrmapMainframe {
 			//LoadedZone.open(int, Zone) documents for a zone that came from a file,
 			//and it is also what the three operations that work on a table slot -
 			//append, clone and repurpose - already test for before they run.
-			Zone opened = new Zone(new ZO(f, game), Workspace.game());
+			//REFUSED IN WORDS (census M.100, its sibling): a mini-pack whose table is damaged threw past this action
+			//to the catch-all, as Open GR Mapfile's did
+			Zone opened;
+			try {
+				opened = new Zone(new ZO(f, game), Workspace.game());
+			} catch (RuntimeException notAZone) {
+				Ui.error(f.getName() + " cannot be opened as a zone:\n" + Ui.reason(notAZone) + "\n\nNothing was changed.",
+						"Open ZO file");
+				return;
+			}
 			mZonePnl.loadZone(opened);
 			loadedZone.open(-1, opened);
 		}
@@ -1692,7 +1837,19 @@ public class CtrmapMainframe {
 
 	/** File > Save: every editor stores what it holds, without asking. */
 	private void saveAllAction() {
-		openEditors.saveAll(false);
+		//SAID WHEN NOT EVERYTHING WAS SAVED (census M.101): the answer was dropped, so Ctrl+S over a file that could
+		//not be written answered with nothing at all
+		boolean saved;
+		try {
+			saved = openEditors.saveAll(false);
+		} catch (RuntimeException failed) {
+			Ui.error(frame, "Not everything was saved:\n" + Ui.reason(failed), "Save");
+			return;
+		}
+		if (!saved) {
+			Ui.error(frame, "Not everything was saved: an editor could not write what it holds, and its own message"
+					+ " says why.", "Save");
+		}
 	}
 
 	// ------------------------------------------------------------- Map menu
@@ -1761,8 +1918,13 @@ public class CtrmapMainframe {
 	/** The tileset editor, in the Extras tab - it was a window for no better reason
 	 *  than having been drawn in the form designer. */
 	private void tilesetEditorAction() {
-		showInExtras("Tileset editor", new TileDBWriter());
+		TileDBWriter editor = new TileDBWriter();
+		tileset = editor;
+		showInExtras("Tileset editor", editor.withUndo(), editor.getJMenuBar());
 	}
+
+	/** The tileset editor last opened in the Extras tab, whose history is settled around gestures; null before. */
+	private TileDBWriter tileset;
 
 	// --------------------------------------------------------- Options menu
 
@@ -1851,8 +2013,12 @@ public class CtrmapMainframe {
 			} else {
 				m3DDebugPanel.setFog(fog[0], fog[1], fog[2], env.fogNear, env.fogFar);
 			}
-		} catch (Exception ex) {
+		} catch (Exception unread) {
+			//SAID, NOT SHOWN AS NO FOG (census L.55): an area whose atmosphere could not be read looked like one with
+			//none, and nothing said otherwise
 			m3DDebugPanel.clearFog();
+			java.util.logging.Logger.getLogger(CtrmapMainframe.class.getName()).warning(
+					"The 3D view shows no fog: this zone's atmosphere could not be read - " + Ui.reason(unread));
 		}
 	}
 
@@ -1885,28 +2051,66 @@ public class CtrmapMainframe {
 	/** Where an open Game Data editor lives. */
 	private JPanel gameDataHost;
 
+	/**
+	 * The workspace's own operations - forks, clones, renames, removals, imports, resizes - each kept so it can be
+	 * taken back and put again (F209c). The session's history, not the open zone's: most of them change which
+	 * zones there are. Its Undo and Redo sit under the Zone Loader's column, beside the zone list.
+	 */
+	private ctrmap.humaninterface.SaveHistory workspaceOps;
+
+	/** The workspace's history, made when first asked for: on the event thread, where the window is built (F220). */
+	private ctrmap.humaninterface.SaveHistory workspaceOps() {
+		if (workspaceOps == null) {
+			workspaceOps = new ctrmap.humaninterface.SaveHistory(
+					() -> java.util.Collections.<Object>singletonList(Workspace.session()));
+		}
+		return workspaceOps;
+	}
+
+	/** After an operation is put back or put again: the zone list read again, and the open zone if its files moved. */
+	private void readTheWorkspaceAgain() {
+		if (mZonePnl != null) {
+			mZonePnl.loadEverything(mZonePnl::reopenIfChangedOnDisk);
+		}
+	}
+
+	/**
+	 * The saves made in the Game Data tab, each kept so it can be taken back and put again (F209c): Undo and
+	 * Redo sit under whichever editor is open, and Ctrl+Z there takes back the last save made in the tab.
+	 */
+	private ctrmap.humaninterface.SaveHistory gameDataSaves;
+
+	/** The Game Data tab's history, made when first asked for: on the event thread, where the window is built (F220). */
+	private ctrmap.humaninterface.SaveHistory gameDataSaves() {
+		if (gameDataSaves == null) {
+			gameDataSaves = new ctrmap.humaninterface.SaveHistory(
+					() -> java.util.Collections.<Object>singletonList(Workspace.session()));
+		}
+		return gameDataSaves;
+	}
+
 	/** Opens the trainer editor in the Game Data tab, and goes there. */
 	private void openTrainers() {
 		inGameData("Trainer editor", ctrmap.humaninterface.TrainerEditDialog.panelForSelection(
-			frame, selectedNpcScript(), CtrmapMainframe.this::clearGameData));
+			frame, selectedNpcScript(), CtrmapMainframe.this::clearGameData, gameDataSaves()));
 	}
 
 	/** Opens the battle-facility opponent editor in the Game Data tab. */
 	private void openFacilityOpponents() {
 		inGameData("Facility opponents", ctrmap.humaninterface.MaisonEditDialog.panel(
-			frame, CtrmapMainframe.this::clearGameData, CtrmapMainframe.this::showGameData));
+			frame, CtrmapMainframe.this::clearGameData, CtrmapMainframe.this::showGameData, gameDataSaves()));
 	}
 
 	/** Opens the shop editor in the Game Data tab. */
 	private void openShops() {
 		inGameData("Shop inventories", ctrmap.humaninterface.ShopEditDialog.panel(
-			frame, CtrmapMainframe.this::clearGameData));
+			frame, CtrmapMainframe.this::clearGameData, gameDataSaves()));
 	}
 
 	/** Opens the item editor in the Game Data tab. */
 	private void openItems() {
 		inGameData("Item editor", ctrmap.humaninterface.ItemEditDialog.panel(
-			frame, CtrmapMainframe.this::clearGameData));
+			frame, CtrmapMainframe.this::clearGameData, gameDataSaves()));
 	}
 
 	/**
@@ -1935,7 +2139,7 @@ public class CtrmapMainframe {
 	 */
 	private void openEncounters() {
 		JComponent editor = ctrmap.humaninterface.EncounterEditDialog.panel(
-			frame, loadedZone, CtrmapMainframe.this::clearGameData);
+			frame, loadedZone, CtrmapMainframe.this::clearGameData, gameDataSaves());
 		if (editor == null) {
 			return;                        //it has already said why
 		}
@@ -1963,7 +2167,7 @@ public class CtrmapMainframe {
 		}
 		JPanel box = new JPanel(new BorderLayout());
 		box.setBorder(javax.swing.BorderFactory.createTitledBorder(title));
-		box.add(editor, BorderLayout.CENTER);
+		box.add(gameDataSaves().around(editor), BorderLayout.CENTER);
 		gameDataHost.removeAll();
 		gameDataHost.add(box, BorderLayout.CENTER);
 		gameDataHost.revalidate();
@@ -2093,7 +2297,7 @@ public class CtrmapMainframe {
 		//archives that pack is rewriting, so it is handed to the repair to run when
 		//the pack has finished rather than started beside it. A workspace with
 		//nothing to repair runs all of this straight through, exactly as before.
-		PaddingZoneRepair.repairOnOpen(frame, Workspace::packWorkspace, () -> {
+		PaddingZoneRepair.repairOnOpen(frame, opened, Workspace::packWorkspace, workspaceOps()::keep, () -> {
 			mZonePnl.loadEverything();
 			mTextEditor.loadGarc();
 			showZoneLoadingHint();
@@ -2143,7 +2347,7 @@ public class CtrmapMainframe {
 	 */
 	private void showZoneLoadingHint() {
 		tabs.setSelectedComponent(zoneTabPnl);
-		Preferences hintPrefs = Preferences.userRoot().node(CtrmapMainframe.class.getName());
+		Preferences hintPrefs = fileDialogPrefs();   //the window's one node (census L.31)
 		if (!hintPrefs.getBoolean("ZONE_HINT_SHOWN", false)) {
 			hintPrefs.putBoolean("ZONE_HINT_SHOWN", true);
 			Ui.message("Workspace loaded.\n\n"
@@ -2166,36 +2370,30 @@ public class CtrmapMainframe {
 		final javax.swing.JComboBox<String> titleField = new javax.swing.JComboBox<>(ModDeployer.titleChoices(titleId));
 		titleField.setEditable(true);
 		final javax.swing.JTextField folderField = new javax.swing.JTextField(azahar != null ? azahar.getAbsolutePath() : "");
-		titleField.addActionListener(ev -> {
-			File picked = ModDeployer.azaharModRoot(ModDeployer.titleIdIn(titleField.getSelectedItem()));
-			if (picked != null) {
-				folderField.setText(picked.getAbsolutePath());
-			}
-		});
+		titleField.addActionListener(ev -> folderField.setText(ModDeployer.folderForTitle(titleField.getSelectedItem(), folderField.getText())));
 		javax.swing.JButton browse = new javax.swing.JButton("Browse...");
 		browse.addActionListener((java.awt.event.ActionEvent ev) -> {
-			JFileChooser fc = new JFileChooser(folderField.getText());
-			fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-			fc.setDialogTitle("Mod folder (Azahar mods\\<title>, or your SD luma\\titles\\<title>)");
-			if (ctrmap.Ui.choose(frame, fc, false) != null) {
-				folderField.setText(fc.getSelectedFile().getAbsolutePath());
-			}
+			JFileChooser fc = folderDialog(folderField.getText(), "Mod folder (Azahar mods\\<title>, or your SD luma\\titles\\<title>)");
+			fillWith(folderField, ctrmap.Ui.choose(frame, fc, false) != null ? fc.getSelectedFile() : null);
 		});
 		final javax.swing.JTextField ipsField = new javax.swing.JTextField("");
 		javax.swing.JButton ipsBrowse = new javax.swing.JButton("Browse...");
-		ipsBrowse.addActionListener((java.awt.event.ActionEvent ev) -> {
-			JFileChooser fc = new JFileChooser();
-			fc.setDialogTitle("Optional: pick a code.ips (from Add zones) to install");
-			if (ctrmap.Ui.choose(frame, fc, false) != null) {
-				ipsField.setText(fc.getSelectedFile().getAbsolutePath());
-			}
-		});
+		ipsBrowse.addActionListener((java.awt.event.ActionEvent ev) ->
+				fillWith(ipsField, picked(openDialog("LAST_DIR_IPS", "Optional: pick a code.ips (from Add zones) to install"), "LAST_DIR_IPS")));
 		javax.swing.JPanel folderRow = new javax.swing.JPanel(new java.awt.BorderLayout());
 		folderRow.add(folderField, java.awt.BorderLayout.CENTER);
 		folderRow.add(browse, java.awt.BorderLayout.EAST);
+		//MADE AGAIN HERE, where it is asked for (census H.2): Add zones was the patch's only producer and runs once
+		//per stock base, so one lost to a cancelled save could never be made again
+		javax.swing.JButton ipsMake = new javax.swing.JButton("Make zone-limit patch...");
+		ipsMake.setToolTipText("Make the zone-limit code patch again for the zones this game holds now");
+		ipsMake.addActionListener((java.awt.event.ActionEvent ev) -> fillWith(ipsField, mZonePnl.makeZoneLimitPatch()));
+		javax.swing.JPanel ipsButtons = new javax.swing.JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 4, 0));
+		ipsButtons.add(ipsMake);
+		ipsButtons.add(ipsBrowse);
 		javax.swing.JPanel ipsRow = new javax.swing.JPanel(new java.awt.BorderLayout());
 		ipsRow.add(ipsField, java.awt.BorderLayout.CENTER);
-		ipsRow.add(ipsBrowse, java.awt.BorderLayout.EAST);
+		ipsRow.add(ipsButtons, java.awt.BorderLayout.EAST);
 		//The mod can be switched off without deleting anything, so the user can
 		//play the untouched retail game (to get a starter, to compare against
 		//vanilla, to check whether a bug is theirs or ours) and switch back after.
@@ -2207,7 +2405,7 @@ public class CtrmapMainframe {
 			" ",
 			"Title ID:", titleField,
 			"Mod folder (Azahar auto-detected; Browse to your SD card for a 3DS/Luma):", folderRow,
-			"Code patch to install (optional - the code.ips from 'Add zones'):", ipsRow,
+			"Code patch to install (optional - the code.ips from 'Add zones', or Make one for the zones this game holds):", ipsRow,
 			" ",
 			parked
 			? "The mod is currently OFF - the game boots completely stock."
@@ -2215,8 +2413,8 @@ public class CtrmapMainframe {
 			+ " stock. Nothing is deleted and your save is untouched; switch it back any time."
 		};
 		String[] choices = {"Deploy", offOn, "Cancel"};
-		int pick = JOptionPane.showOptionDialog(frame, form, "Deploy to emulator (LayeredFS mod)",
-				JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null, choices, choices[0]);
+		int pick = ctrmap.Ui.formOption(frame, form, "Deploy to emulator (LayeredFS mod)",
+				JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, choices, choices[0]);
 		if (pick != 0 && pick != 1) {
 			return;
 		}
@@ -2262,10 +2460,44 @@ public class CtrmapMainframe {
 	 * with no screen and reads back what was said.
 	 */
 	private void deployAfterPack(File modRoot, File ips) {
-		//the catch is the point of this method - see above
+		//OFF THE EVENT THREAD (census M.63): the pack's done() hands this the event thread, and the deploy ran
+		//on it - minutes of archive reads with the window frozen and nothing on screen. It runs in a worker now,
+		//behind its own progress dialog, and is reported on the event thread when it is done. A caller already
+		//off it - a suite - is answered in place
+		if (!java.awt.EventQueue.isDispatchThread()) {
+			reportDeploy(modRoot, () -> ModDeployer.deploy(modRoot, ips));
+			return;
+		}
+		final String gameDir = Workspace.GAMEDIR_PATH;   //read here, on the event thread that writes it
+		ctrmap.humaninterface.LoadingDialog progress = ctrmap.humaninterface.LoadingDialog.makeDialog("Deploying to the emulator");
+		javax.swing.SwingWorker<ModDeployer.Result, Void> worker = new javax.swing.SwingWorker<ModDeployer.Result, Void>() {
+			@Override
+			protected ModDeployer.Result doInBackground() {
+				return ModDeployer.deploy(modRoot, ips, gameDir);
+			}
+
+			@Override
+			protected void done() {
+				progress.close();
+				reportDeploy(modRoot, () -> {
+					try {
+						return get();
+					} catch (InterruptedException | java.util.concurrent.ExecutionException failed) {
+						Throwable cause = failed.getCause() != null ? failed.getCause() : failed;
+						throw cause instanceof RuntimeException ? (RuntimeException) cause : new IllegalStateException(cause);
+					}
+				});
+			}
+		};
+		worker.execute();
+		progress.showDialog();
+	}
+
+	/** Says what a deploy did, or that it was refused and why - the catch is why deployAfterPack exists (above). */
+	private void reportDeploy(File modRoot, java.util.function.Supplier<ModDeployer.Result> deploy) {
 		ModDeployer.Result res;
 		try {
-			res = ModDeployer.deploy(modRoot, ips);
+			res = deploy.get();
 		} catch (RuntimeException refused) {
 			Ui.error(frame, "Cannot deploy:\n\n" + ctrmap.util.Bytes.reason(refused), "Deploy to emulator");
 			return;
@@ -2440,27 +2672,34 @@ public class CtrmapMainframe {
 			"Each copy starts identical and is made only when the zone still shares;",
 			"the zone is repointed at it. Pure data, no code patch."
 		};
-		if (javax.swing.JOptionPane.showConfirmDialog(frame, form, INDEPENDENT_TITLE, javax.swing.JOptionPane.OK_CANCEL_OPTION, javax.swing.JOptionPane.PLAIN_MESSAGE) != javax.swing.JOptionPane.OK_OPTION) {
+		if (!ctrmap.Ui.form(frame, form, INDEPENDENT_TITLE)) {
 			return;
 		}
 		int zoneIndex = (Integer) idSpinner.getValue();
 		ZoneIndependence done;
 		try {
-			done = ZoneIndependence.make(zoneIndex, ownMap.isSelected(), ownArea.isSelected());
+			done = WorkspaceOps.independence(game, zoneIndex, ownMap.isSelected(), ownArea.isSelected(), workspaceOps(),
+					CtrmapMainframe.this::readTheWorkspaceAgain);
 		} catch (Exception ex) {
 			Ui.error(frame, "Zone " + zoneIndex + " was not made independent - nothing was changed:\n"
 					+ Ui.reason(ex), INDEPENDENT_TITLE);
 			return;
 		}
-		//keep the loaded zone's live header on the area it now owns, as the area prompt does
-		Zone open = loadedZone == null ? null : loadedZone.open();
-		if (done.area != null && done.area.forked && open != null && open.header != null
-				&& loadedZone.index() == zoneIndex) {
-			open.header.areadataID = done.area.newArea;
-		}
+		afterIndependence(done);
+	}
+
+	/**
+	 * What follows a zone made independent: what was done, said, and a fork packed and read again. Out of the action,
+	 * whose form is a dialog no suite gets past, so the 2026-10-12 sweep found this test asserted by nothing.
+	 */
+	private void afterIndependence(ZoneIndependence done) {
 		Ui.message(frame, done.report(), INDEPENDENT_TITLE, javax.swing.JOptionPane.INFORMATION_MESSAGE);
-		//a new area lands in the archive before anything reads it from there, as the prompt does
-		ctrmap.humaninterface.AreaForkPrompt.packIfForked(done.area, null);
+		//NOT REPOINTED IN MEMORY (F255): setting the open zone's area id left its area container, the map view's prop
+		//registry and the camera form on the old area. What was forked lands in the archives, and the zone is read
+		//again from there - a map fork as much as an area one, whose matrix the open zone held the same way
+		if ((done.area != null && done.area.forked) || (done.map != null && done.map.forked)) {
+			Workspace.packWorkspace(CtrmapMainframe.this::readTheWorkspaceAgain);
+		}
 	}
 
 	/**
@@ -2544,7 +2783,12 @@ public class CtrmapMainframe {
 		if (!editors.saveAll(true)) {
 			return;
 		}
-		loadChosen.run();
+		try {
+			loadChosen.run();
+		} catch (RuntimeException notShown) {
+			//SAID HERE, under the action's name (census M.100), not by the catch-all as something unhandled
+			Ui.error(null, "The map region could not be shown:\n" + Ui.reason(notShown), "Open GR Mapfile");
+		}
 	}
 
 	/**
@@ -2584,7 +2828,7 @@ public class CtrmapMainframe {
 			"New name:",
 			nameField
 		};
-		if (javax.swing.JOptionPane.showConfirmDialog(frame, form, "Rename zone", javax.swing.JOptionPane.OK_CANCEL_OPTION, javax.swing.JOptionPane.PLAIN_MESSAGE) != javax.swing.JOptionPane.OK_OPTION) {
+		if (!ctrmap.Ui.form(frame, form, "Rename zone")) {
 			return;
 		}
 		int idx = (Integer) idSpinner.getValue();
@@ -2596,7 +2840,7 @@ public class CtrmapMainframe {
 		try {
 			ZoneManager.RenameResult r;
 			try {
-				r = ZoneManager.renameZone(game, idx, name);
+				r = WorkspaceOps.rename(game, idx, name, false, workspaceOps(), CtrmapMainframe.this::readTheWorkspaceAgain);
 			} catch (ZoneManager.SharedNameOnly shared) {
 				//THE PROMISE KEPT (F233): no free name line - ask before renaming every zone on the shared one
 				if (Ui.confirm(frame, ctrmap.util.Bytes.reason(shared) + "\n\nRename \"" + shared.oldName + "\" to \"" + name
@@ -2604,7 +2848,7 @@ public class CtrmapMainframe {
 						JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
 					return;
 				}
-				r = ZoneManager.renameZone(game, idx, name, true);
+				r = WorkspaceOps.rename(game, idx, name, true, workspaceOps(), CtrmapMainframe.this::readTheWorkspaceAgain);
 			}
 			ctrmap.formats.text.LocationNames.loadFromGarc(game); // refresh the dropdown name cache
 			//Both halves of this line were improved independently and both are
@@ -2661,29 +2905,42 @@ public class CtrmapMainframe {
 			ctrmap.vault.VaultUi.restoreEverything(frame, entry, dump, Workspace.session());
 			return;
 		}
-		//the example comes from the loaded game's profile, not from a literal:
-		//archive paths differ per game, and SourceSeamTest exists to stop one
-		//game's path being written into code every game shares. It also means
-		//the dialog shows the RIGHT path for whatever is loaded.
-		//through Workspace, not through gamedef: the seam does not reach back
-		//into the workspace global to find out which game is open. Guarded on
-		//isValid() because Workspace.profile() has no profile to hand back
-		//before a workspace validates, and this dialog can be opened then.
-		ctrmap.gamedef.GameProfile prof = Workspace.isValid() ? Workspace.profile() : null;
-		String example = prof == null ? null
-				: prof.archivePath(ArchiveType.ZONE_DATA);
-		Object rel = Ui.input(frame,
-				"Which file should be put back?\n\n"
-				+ (example == null
-						? "Archives are named the way the game names them. Everything else in\n"
-						: "Archives are named the way the game names them, e.g. " + example
-						+ " is\nthis game's zone table. Everything else in\n")
-				+ "the game folder is left alone.",
-				"Restore one archive", JOptionPane.QUESTION_MESSAGE, null, example);
-		if (rel == null || String.valueOf(rel).trim().isEmpty()) {
+		//PICKED FROM WHAT THE BACKUP HOLDS, NOT TYPED (census M.147): the user whose game is damaged had to type
+		//an archive path like a game's own, from memory or one example, and a typo was a refusal. Each file is
+		//named for its archive where the loaded game's profile knows it - through Workspace, guarded on
+		//isValid(), because Workspace.profile() has no profile to hand back before a workspace validates
+		java.util.List<String> held;
+		try {
+			held = ctrmap.vault.Vault.heldFiles(entry);
+		} catch (java.io.IOException damaged) {
+			Ui.error(frame, ctrmap.util.Bytes.reason(damaged) + "\n\nIts files are still in " + entry + ".", "Backup damaged");
 			return;
 		}
-		ctrmap.vault.VaultUi.restoreOne(frame, entry, String.valueOf(rel).trim(), dump, Workspace.session());
+		if (held.isEmpty()) {
+			Ui.error(frame, "The backup lists no files, so there is nothing to put back.", "Nothing to restore");
+			return;
+		}
+		ctrmap.gamedef.GameProfile prof = Workspace.isValid() ? Workspace.profile() : null;
+		java.util.Map<String, String> byLabel = new java.util.LinkedHashMap<>();
+		for (String file : held) {
+			String what = null;
+			for (ArchiveType t : prof == null ? new ArchiveType[0] : ArchiveType.values()) {
+				String at = prof.archivePath(t);
+				if (at != null && file.equals(ctrmap.vault.Vault.key(at))) {
+					what = t.name().toLowerCase(java.util.Locale.ROOT).replace('_', ' ');
+				}
+			}
+			byLabel.put(what == null ? file : file + "   (" + what + ")", file);
+		}
+		Object[] choices = byLabel.keySet().toArray();
+		Object rel = Ui.input(frame,
+				"Which file should be put back?\n\nThese are the files the backup holds. Everything else in\n"
+				+ "the game folder is left alone.",
+				"Restore one archive", JOptionPane.QUESTION_MESSAGE, choices, choices[0]);
+		if (rel == null || !byLabel.containsKey(String.valueOf(rel))) {
+			return;
+		}
+		ctrmap.vault.VaultUi.restoreOne(frame, entry, byLabel.get(String.valueOf(rel)), dump, Workspace.session());
 	}
 
 	/**
@@ -2729,7 +2986,8 @@ public class CtrmapMainframe {
 		java.util.List<String> refs = ZoneRemover.referencesToAdded(Workspace.session());   //the workspace's zones, unpacked edits included (F225)
 		StringBuilder refWarn = new StringBuilder();
 		if (!refs.isEmpty()) {
-			refWarn.append("\n\nWARNING - these base-zone warps lead into zones being removed and will dangle:");
+			refWarn.append("\n\nWARNING - these warps and script map changes lead into zones being removed and will\n"
+					+ "dangle, or could not be checked:");
 			for (int i = 0; i < Math.min(8, refs.size()); i++) {
 				refWarn.append("\n  ").append(refs.get(i));
 			}
@@ -2753,7 +3011,8 @@ public class CtrmapMainframe {
 				try {
 					//the zones out, their cached entries dropped, the archive re-read and their area
 					//ids given back to the 8-bit budget - one operation (F043)
-					ZoneRemover.Removed done = ZoneRemover.remove(Workspace.session());
+					ZoneRemover.Removed done = WorkspaceOps.removeAddedZones(Workspace.session(), workspaceOps(),
+							CtrmapMainframe.this::readTheWorkspaceAgain);
 					final int removed = done.zones;
 					final java.util.List<Integer> areasBack = done.areasBack;
 					mZonePnl.clearForkDeclinesFrom(ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES); //those slots no longer exist
@@ -2795,7 +3054,7 @@ public class CtrmapMainframe {
 			return;
 		}
 		try {
-			int left = ctrmap.formats.codepatch.CodeIps.strip(ips, ctrmap.formats.codepatch.ZoneLimitPatch.owned());
+			int left = WorkspaceOps.stripZoneLimit(game, ips, workspaceOps());
 			Ui.message(frame, "The zone-limit patch was taken out of " + ips.getName() + (left == 0
 					? ". Nothing else was in it, so it now patches nothing and may be deleted."
 					: "; the " + left + " patched byte(s) of the shop and item-icon patches in it were kept.")
@@ -2840,13 +3099,13 @@ public class CtrmapMainframe {
 			idSpinner
 		};
 		Object[] opts = {"Empty it", "Cancel"};
-		if (javax.swing.JOptionPane.showOptionDialog(frame, form, "Empty zone", javax.swing.JOptionPane.OK_CANCEL_OPTION,
-				javax.swing.JOptionPane.WARNING_MESSAGE, null, opts, opts[1]) != 0) {
+		if (ctrmap.Ui.formOption(frame, form, "Empty zone", javax.swing.JOptionPane.OK_CANCEL_OPTION,
+				javax.swing.JOptionPane.WARNING_MESSAGE, opts, opts[1]) != 0) {
 			return;
 		}
 		int idx = (Integer) idSpinner.getValue();
 		try {
-			int removed = ZoneManager.clearZone(game, idx);
+			int removed = WorkspaceOps.clearZone(game, idx, workspaceOps(), CtrmapMainframe.this::readTheWorkspaceAgain);
 			Ui.message(frame,
 					"Zone " + idx + " emptied - removed " + removed + " placed object(s).\n\n"
 					+ "Run File > Deploy to emulator (it packs first) to apply.",
@@ -2900,48 +3159,15 @@ public class CtrmapMainframe {
 		}.execute();
 	}
 
-	/** The reusable-zone list, and the zones the scan could not read (F225). */
+	/** The reusable-zone list, and the zones the scan could not read (F225), shown. */
 	private void showReusableZones(ZoneRepurposeScanner.Scan scan) {
-		java.util.List<ZoneRepurposeScanner.Candidate> cands = scan.candidates;
-		int t0 = 0, t1 = 0;
-		for (ZoneRepurposeScanner.Candidate c : cands) {
-			if (c.tier == 0) {
-				t0++;
-			} else if (c.tier == 1) {
-				t1++;
-			}
-		}
-		StringBuilder sb = new StringBuilder();
-		sb.append("Base zones (index < " + ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES + ") CAN run scripts - build interactive custom areas\n");
-		sb.append("(talking NPCs, signs, triggers) here. Appended zones (" + ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES + "+) can't run scripts.\n\n");
-		sb.append(t0).append(" SAFEST (placeholder/blank name, empty, no incoming warps),  ")
-		  .append(t1).append(" likely-free.\n\n");
-		if (!scan.unreadable.isEmpty()) {
-			sb.append(scan.unreadable.size()).append(" zone(s) could not be read - none is listed, and a warp\n")
-					.append("from them into a zone below is NOT counted:\n");
-			for (int i = 0; i < Math.min(5, scan.unreadable.size()); i++) {
-				sb.append("  ").append(scan.unreadable.get(i)).append('\n');
-			}
-			sb.append('\n');
-		}
-		sb.append("Map changes made by SCRIPTS (_MapChangeCore and kin) are not read, so a zone a\n");
-		sb.append("script sends the player to can be listed here (F225: which argument names the zone\n");
-		sb.append("has not been measured yet).\n");
-		sb.append("VERIFY a pick in-game first: some empty, unreferenced zones are dungeon\n");
-		sb.append("interiors reached on foot, and named ones are real areas you'd be replacing.\n\n");
-		sb.append(String.format("%-5s %-26s %-4s %-5s %-4s %s%n", "zone", "name", "NPCs", "warp", "trg", "status"));
-		sb.append("---------------------------------------------------------------------------\n");
-		for (ZoneRepurposeScanner.Candidate c : cands) {
-			String nm = c.name.length() > 25 ? c.name.substring(0, 25) : c.name;
-			sb.append(String.format("%-5d %-26s %-4d %-5d %-4d %s%n", c.index, nm, c.npcs, c.warpsOut, c.triggers, c.tierLabel()));
-		}
-		sb.append("\nWorkflow: pick a zone -> Empty zone -> Clone your template map into it\n");
-		sb.append("(keep 'own map' checked) -> Rename zone -> add your NPCs. Scripts will work.");
-		javax.swing.JTextArea ta = new javax.swing.JTextArea(sb.toString(), 28, 76);
+		javax.swing.JTextArea ta = new javax.swing.JTextArea(ZoneRepurposeScanner.report(scan), 28, 76);
 		ta.setEditable(false);
 		ta.setFont(new java.awt.Font(java.awt.Font.MONOSPACED, java.awt.Font.PLAIN, 12));
 		ta.setCaretPosition(0);
-		JOptionPane.showMessageDialog(frame, new javax.swing.JScrollPane(ta), "Find reusable base zones", JOptionPane.INFORMATION_MESSAGE);
+		//it arrives when the scan of every zone finishes, not on the click: it waits for the owner (Ui.untilInUse)
+		Ui.untilInUse();
+		ctrmap.Ui.show(frame, new javax.swing.JScrollPane(ta), ta.getText(), "Find reusable base zones", JOptionPane.INFORMATION_MESSAGE);
 	}
 
 	/**
@@ -2954,22 +3180,41 @@ public class CtrmapMainframe {
 	 * carries an ownership grid that is a DIFFERENT zone - so this offered Mossdeep
 	 * City an export of Route 125, and an import back would have written over it.
 	 * A wrong default here is not a wrong default; it is somebody else's map edited.
+	 *
+	 * <p>-1 IS AN ANSWER, NOT A FAILURE (census L.56): no zone open, or a zone whose matrix
+	 * names no region. A matrix that cannot be read is thrown, with its cause - it used to
+	 * be the same -1, and the blank canvas told such a zone it owned no map region.
 	 */
-	private int defaultRegionForLoadedZone() {
+	private int defaultRegionForLoadedZone() throws java.io.IOException {
+		if (loadedZone == null || loadedZone.open() == null) {
+			return -1;
+		}
+		int matrixId = loadedZone.open().header.mapmatrixID;
+		File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, matrixId);
+		if (mmFile == null) {
+			return -1;
+		}
+		byte[] mm;
 		try {
-			if (loadedZone == null || loadedZone.open() == null) {
-				return -1;
-			}
-			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, loadedZone.open().header.mapmatrixID);
-			if (mmFile == null) {
-				return -1;
-			}
-			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
-			int[][] mine = ctrmap.formats.mapmatrix.MapMatrix.regionsOwnedBy(mm, loadedZone.index());
-			return mine.length > 0 ? mine[0][0]
-				: ctrmap.formats.mapmatrix.MapMatrix.firstRegionId(mm);
-		} catch (Exception ex) {
-			//fall through - the spinner just starts at 0
+			mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
+			ctrmap.formats.mapmatrix.MapMatrix.Grid.of(mm);   //a damaged grid is refused here, in words, not read as empty
+		} catch (java.io.IOException | IllegalArgumentException unread) {
+			throw new java.io.IOException("This zone's map matrix " + matrixId + " could not be read - "
+				+ ctrmap.util.Bytes.reason(unread), unread);
+		}
+		return ctrmap.formats.mapmatrix.MapMatrix.ownRegionId(mm, loadedZone.index());
+	}
+
+	/**
+	 * defaultRegionForLoadedZone for an OBJ form, which can do without one: the region, or
+	 * -1 with the reason in {@code why[0]} when the matrix could not be read - so the form
+	 * says why it has no default instead of quietly starting at region 0, another zone's map.
+	 */
+	private int formDefaultRegion(String[] why) {
+		try {
+			return defaultRegionForLoadedZone();
+		} catch (java.io.IOException unread) {
+			why[0] = "No default region: " + ctrmap.util.Bytes.reason(unread);
 			return -1;
 		}
 	}
@@ -2981,25 +3226,27 @@ public class CtrmapMainframe {
 			return;
 		}
 		int fieldCount = Workspace.getArchive(ArchiveType.FIELD_DATA).length;
-		int def = defaultRegionForLoadedZone();
+		String[] unread = {null};
+		int def = formDefaultRegion(unread);
 		javax.swing.JSpinner idSpinner = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(def >= 0 ? def : 0, 0, fieldCount - 1, 1));
 		Object[] form = {
 			"Export a map region's 3D model as a Wavefront OBJ for Blender.",
-			(def >= 0 ? "(Defaulted to the loaded zone's map region.)" : "Find the ID per cell in the Matrix Editor."),
+			unread[0] != null ? unread[0]
+				: def >= 0 ? "(Defaulted to the loaded zone's map region.)" : "Find the ID per cell in the Matrix Editor.",
 			"FieldData region ID:",
 			idSpinner,
 			" ",
 			"Edit it in Blender, keep the group names (mesh<N>_...) intact, then use",
 			"Map > Import OBJ into map region (Blender) to bring the changes back."
 		};
-		if (JOptionPane.showConfirmDialog(frame, form, "Export map to OBJ", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+		if (!ctrmap.Ui.form(frame, form, "Export map to OBJ")) {
 			return;
 		}
 		int id = (Integer) idSpinner.getValue();
-		JFileChooser fc = new JFileChooser();
-		fc.setDialogTitle("Save OBJ");
-		fc.setSelectedFile(new File("region" + id + ".obj"));
-		if (ctrmap.Ui.choose(frame, fc, true) == null) {
+		//the OBJ round trip remembers one folder, both ways (census L.31): it started from the default every time
+		JFileChooser fc = openDialog("LAST_DIR_OBJ", "Save OBJ");
+		fc.setSelectedFile(new File(fc.getCurrentDirectory(), "region" + id + ".obj"));
+		if (pickedToSave(fc, "LAST_DIR_OBJ") == null) {
 			return;
 		}
 		try {
@@ -3010,13 +3257,11 @@ public class CtrmapMainframe {
 				return;
 			}
 			ctrmap.formats.h3d.BchMapModel bmm = new ctrmap.formats.h3d.BchMapModel(model);
-			java.io.Writer w = new java.io.BufferedWriter(new java.io.FileWriter(fc.getSelectedFile()));
-			java.util.List<Integer> skipped;
-			try {
-				skipped = ctrmap.formats.h3d.MapModelObj.export(bmm, w);
-			} finally {
-				w.close();
-			}
+			//THE FILE IS AN EXPORT, written where every export is (F209d): built in memory, in the charset the
+			//FileWriter it replaces used, and written whole
+			java.io.StringWriter w = new java.io.StringWriter();
+			java.util.List<Integer> skipped = ctrmap.formats.h3d.MapModelObj.export(bmm, w);
+			Exports.write(fc.getSelectedFile(), w.toString().getBytes(java.nio.charset.Charset.defaultCharset()));
 			Ui.message(frame,
 					"Exported region " + id + " (" + bmm.meshes.size() + " meshes) to\n" + fc.getSelectedFile().getAbsolutePath()
 					+ (skipped.isEmpty() ? "" : "\n\n" + skipped.size() + " mesh(es) use an exotic vertex format and were skipped;\nthey stay untouched on import."),
@@ -3039,11 +3284,13 @@ public class CtrmapMainframe {
 			return;
 		}
 		int fieldCount = Workspace.getArchive(ArchiveType.FIELD_DATA).length;
-		int def = defaultRegionForLoadedZone();
+		String[] unread = {null};
+		int def = formDefaultRegion(unread);
 		javax.swing.JSpinner idSpinner = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(def >= 0 ? def : 0, 0, fieldCount - 1, 1));
 		Object[] form = {
 			"Import a Blender-edited OBJ back into a map region.",
 			"Use the SAME region you exported from" + (def >= 0 ? " (defaulted to the loaded zone's)." : "."),
+			unread[0] != null ? unread[0] : " ",
 			"FieldData region ID:",
 			idSpinner,
 			" ",
@@ -3051,13 +3298,12 @@ public class CtrmapMainframe {
 			"the mesh whose material matches their usemtl. Textures follow the",
 			"nearest original surface automatically."
 		};
-		if (JOptionPane.showConfirmDialog(frame, form, "Import OBJ", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+		if (!ctrmap.Ui.form(frame, form, "Import OBJ")) {
 			return;
 		}
 		int id = (Integer) idSpinner.getValue();
-		JFileChooser fc = new JFileChooser();
-		fc.setDialogTitle("Pick the edited OBJ");
-		if (ctrmap.Ui.choose(frame, fc, false) == null) {
+		JFileChooser fc = openDialog("LAST_DIR_OBJ", "Pick the edited OBJ");
+		if (picked(fc, "LAST_DIR_OBJ") == null) {
 			return;
 		}
 		try {
@@ -3102,15 +3348,8 @@ public class CtrmapMainframe {
 					//BOUNDED BY THE REGION'S MESHES (F226): this was 0-999, and a number past the template's
 					//meshes skipped every new-material group with an out-of-bounds text
 					javax.swing.JLabel tMeshes = new javax.swing.JLabel();
-					Runnable boundToRegion = () -> {
-						int meshes = templateMeshes(((Number) tRegion.getValue()).intValue());
-						javax.swing.SpinnerNumberModel m = (javax.swing.SpinnerNumberModel) tMesh.getModel();
-						m.setMaximum(Math.max(0, meshes - 1));
-						if (((Number) tMesh.getValue()).intValue() > Math.max(0, meshes - 1)) {
-							tMesh.setValue(Math.max(0, meshes - 1));
-						}
-						tMeshes.setText(meshes == 0 ? "(this region has no map model)" : "(" + meshes + " mesh(es): 0-" + (meshes - 1) + ")");
-					};
+					Runnable boundToRegion = () -> boundMeshSpinner(tMesh, tMeshes,
+							templateMeshes(((Number) tRegion.getValue()).intValue()));
 					boundToRegion.run();
 					tRegion.addChangeListener(changed -> boundToRegion.run());
 					Object[] tForm = {
@@ -3124,17 +3363,14 @@ public class CtrmapMainframe {
 						" ",
 						"Cancel imports only the groups whose materials already exist."
 					};
-					if (JOptionPane.showConfirmDialog(frame, tForm, "New materials", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) == JOptionPane.OK_OPTION) {
+					if (ctrmap.Ui.form(frame, tForm, "New materials")) {
 						GR tgr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, (Integer) tRegion.getValue()), game);
 						byte[] tm = tgr.getFile(1);
 						if (ctrmap.formats.h3d.BchMapModel.isMapModel(tm)) {
-							int meshes = new ctrmap.formats.h3d.BchMapModel(tm).meshCount;
-							if (((Number) tMesh.getValue()).intValue() >= meshes) {
-								Ui.error(frame, "Region " + tRegion.getValue() + "'s map model has " + meshes + " mesh(es), numbered"
-										+ " 0-" + (meshes - 1) + "; mesh " + tMesh.getValue() + " is not one of them. Nothing was imported.",
-										"Import OBJ");
-								return;
-							}
+							//NO SECOND BOUND (2026-10-16): a mesh past the template's was refused here when the spinner
+							//ran 0-999; since F226 boundMeshSpinner holds it to this region's meshes, counted the same
+							//way, and the spinner refuses a number typed past its top - no input reached this refusal
+							//(the assembly, CtrmapMainframe 3336, SURVIVED), so it is gone
 							templateModel = tm;
 							templateMesh = (Integer) tMesh.getValue();
 						} else {
@@ -3152,13 +3388,13 @@ public class CtrmapMainframe {
 				return;
 			}
 			try {
-				gr.storeFile(1, edited);
+				WorkspaceOps.storeMapModel(game, "Import OBJ into region " + id, grFile, gr, edited, workspaceOps(),
+					CtrmapMainframe.this::readTheWorkspaceAgain);
 			} catch (RuntimeException notWritten) {
 				Ui.error(frame, "Could not write the model into the workspace:\n"
 					+ Ui.reason(notWritten), "Import OBJ");
 				return;
 			}
-			Workspace.addPersist(grFile);
 			StringBuilder sb = new StringBuilder("Imported into region " + id + ":\n");
 			for (ctrmap.formats.h3d.MapModelObjImporter.Outcome oc : outcomes) {
 				sb.append("  ").append(oc.group).append(": ").append(oc.action)
@@ -3267,7 +3503,7 @@ public class CtrmapMainframe {
 			" ",
 			"This packs the workspace when done."
 		};
-		if (JOptionPane.showConfirmDialog(frame, form, "Blank map canvas", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+		if (!ctrmap.Ui.form(frame, form, "Blank map canvas")) {
 			return;
 		}
 		final int groundMesh = meshIds.get(matPicker.getSelectedIndex());
@@ -3276,7 +3512,8 @@ public class CtrmapMainframe {
 		//not be emptied are named in the report rather than called blank (F072)
 		final GeometryForker.Canvas canvas;
 		try {
-			canvas = GeometryForker.blankCanvas(zoneIndex, groundMesh);
+			canvas = WorkspaceOps.blankCanvas(game, zoneIndex, groundMesh, workspaceOps(),
+					CtrmapMainframe.this::readTheWorkspaceAgain);
 		} catch (Exception ex) {
 			Ui.error(frame, "Blank map canvas did not run, and nothing was changed:\n" + Ui.reason(ex),
 					"Blank map canvas");
@@ -3398,9 +3635,8 @@ public class CtrmapMainframe {
 			return;
 		}
 		try {
-			ctrmap.ZoneCloner.cloneIntoSlot(srcIndex, dstIndex);
 			mZonePnl.clearForkDecline(dstIndex); //the slot holds a new zone now
-			GeometryForker.ensurePrivate(dstIndex);
+			WorkspaceOps.cloneWithOwnMap(game, srcIndex, dstIndex, workspaceOps(), CtrmapMainframe.this::readTheWorkspaceAgain);
 			Workspace.packWorkspace(new Runnable() {
 				@Override
 				public void run() {
@@ -3471,11 +3707,12 @@ public class CtrmapMainframe {
 			"EXPERIMENTAL: multi-region retail maps prove the engine path, but a resized",
 			"custom map, grown or shrunk, has not been booted in-game yet. This packs when done."
 		};
-		if (JOptionPane.showConfirmDialog(frame, form, "Resize map", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+		if (!ctrmap.Ui.form(frame, form, "Resize map")) {
 			return;
 		}
 		try {
-			final MapResizer.ResizeResult r = MapResizer.resize(game, zoneIndex, (Integer) wSpin.getValue(), (Integer) hSpin.getValue());
+			final MapResizer.ResizeResult r = WorkspaceOps.resize(game, zoneIndex, ((Number) wSpin.getValue()).intValue(),
+					((Number) hSpin.getValue()).intValue(), workspaceOps(), CtrmapMainframe.this::readTheWorkspaceAgain);
 			Workspace.packWorkspace(new Runnable() {
 				@Override
 				public void run() {
@@ -3528,21 +3765,16 @@ public class CtrmapMainframe {
 			"The .bch must be a valid ORAS field map model (e.g. exported from a",
 			"3D tool and converted with SPICA). This does NOT edit geometry in-app."
 		};
-		if (javax.swing.JOptionPane.showConfirmDialog(frame, form, "Import map model", javax.swing.JOptionPane.OK_CANCEL_OPTION, javax.swing.JOptionPane.PLAIN_MESSAGE) != javax.swing.JOptionPane.OK_OPTION) {
+		if (!ctrmap.Ui.form(frame, form, "Import map model")) {
 			return;
 		}
 		int id = (Integer) idSpinner.getValue();
 
-		Preferences prefs = Preferences.userRoot().node(CtrmapMainframe.class.getName());
-		JFileChooser jfc = new JFileChooser(prefs.get("LAST_DIR", new File(".").getAbsolutePath()));
-		jfc.setDialogTitle("Open map model .bch");
-		jfc.setFileSelectionMode(JFileChooser.FILES_ONLY);
-		jfc.setMultiSelectionEnabled(false);
-		if (ctrmap.Ui.choose(frame, jfc, false) == null || jfc.getSelectedFile() == null) {
+		//THROUGH THE HELPERS (census L.31): this was the same memory written out again, under a key no other dialog used
+		File chosen = picked(openDialog("LAST_DIR_BCH", "Open map model .bch"), "LAST_DIR_BCH");
+		if (chosen == null) {
 			return;
 		}
-		File chosen = jfc.getSelectedFile();
-		prefs.put("LAST_DIR", chosen.getParent());
 
 		byte[] bch;
 		try {
@@ -3584,13 +3816,13 @@ public class CtrmapMainframe {
 				return;
 			}
 			try {
-				gr.storeFile(1, bch);
+				WorkspaceOps.storeMapModel(game, "Import a map model into region " + id, grFile, gr, bch, workspaceOps(),
+					CtrmapMainframe.this::readTheWorkspaceAgain);
 			} catch (RuntimeException notWritten) {
 				Ui.error(frame, "Could not write the model into the workspace:\n"
 					+ Ui.reason(notWritten), "Import map model");
 				return;
 			}
-			Workspace.addPersist(grFile);
 		} catch (RuntimeException ex) {
 			Ui.error(frame, "Import failed:\n" + ctrmap.util.Bytes.reason(ex), "Import map model");
 			return;

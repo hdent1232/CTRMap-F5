@@ -353,7 +353,7 @@ public class BchModelAppender {
         List<RE> tre=decode(t,T);
         List<int[]> outTrios=new ArrayList<>();  // encoded words, CMD-source
         List<Integer> outRest=new ArrayList<>();
-        int newContentsAddr=C, newStringsAddr=C+newC.length;
+        int newStringsAddr=C+newC.length;
         int newCommandsAddr=ctrmap.util.Bytes.align(newStringsAddr+newStrings.length,0x10);
         // old entries
         for (RE e : tre){

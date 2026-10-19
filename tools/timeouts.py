@@ -57,8 +57,70 @@ MIN_GATES = 3
 #: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("GATE_DIRS", "IMPORT_DIRS", "MIN_GATES")
 
+#: The settings that ship OFF, at the value they ship at. A project turns them on; the bundle's
+#: own tests turn them off again for their run (`bundle_hooks.settings_off`).
+SHIPPED_OFF = {"GATE_DIRS": ()}
+
 WAITS = ("run", "check_output", "check_call", "call")
 CEILING = 0
+
+#: THE ONE IMPLEMENTATION of a deadline that ends a child's whole tree (tools/bounded.py, and its copies
+#: beside the hooks and the tests). `bounded.run` is bounded the way subprocess's waits are, and is the
+#: only way a deadline may be handed to a child's wait.
+BOUNDED = "bounded"
+
+
+def kills_only_the_child(source):
+    """[line] of every one of subprocess's own waits that SOURCE hands a deadline.
+
+    A DEADLINE SUBPROCESS TAKES ENDS ONLY THE CHILD IT STARTED. PAID FOR 2026-10-09 on the project this
+    bundle was installed into first: a test handed `bash -c` a 120-second deadline; bash died on it, and the
+    python launcher bash had started and the hook that launcher ran were still alive seven hours later, the
+    hook blocked reading a stdin nobody would close. That project then counted 98 such calls in 37 files, all
+    bounded as `unbounded` asks and none ending what its child had started. `bounded.run` is subprocess.run
+    with the tree ended on the deadline - moving a call is changing its name. Asked by shape, every alias and
+    from-import resolved as `unbounded` resolves them; `Popen(...).communicate(timeout=)` - stopping the WAIT,
+    which a harness that restores a file in its own `finally` needs - is not one of subprocess's waits."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return [0]
+    modules, waits = {"subprocess"}, set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "subprocess":
+                    modules.add(alias.asname or alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module == "subprocess":
+            for alias in node.names:
+                if alias.name in WAITS:
+                    waits.add(alias.asname or alias.name)
+    out = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not any(k.arg == "timeout" for k in node.keywords):
+            continue
+        attr = getattr(node.func, "attr", None)
+        owner = getattr(getattr(node.func, "value", None), "id", None)
+        bare = getattr(node.func, "id", None)
+        if (attr in WAITS and owner in modules) or bare in waits:
+            out.append(node.lineno)
+    return sorted(set(out))
+
+
+def tree_offenders():
+    """[(rel, line)] of every deadline handed to one of subprocess's waits, in EVERY Python file the tree
+    holds - a gate or not, because the seven-hour survivors came out of a test - or None when the tree
+    cannot be listed: a tree nobody could list is not a clean one. bounded.py itself is asked like any
+    file: it stops its waits with `Popen(...).communicate(timeout=)`, which is not one of subprocess's."""
+    import counted_roots
+    files = counted_roots.python_files(ROOT)
+    if files is None:
+        return None
+    out = []
+    for rel in files:
+        with io.open(os.path.join(ROOT, rel), encoding="utf-8", errors="replace") as handle:
+            out.extend((rel, line) for line in kills_only_the_child(handle.read()))
+    return out
 
 
 def unbounded(source):
@@ -75,7 +137,7 @@ def unbounded(source):
         tree = ast.parse(source)
     except SyntaxError:
         return [0]
-    modules, oses, waits, shells = {"subprocess"}, {"os"}, set(), set()
+    modules, oses, waits, shells, bounded_mods = {"subprocess"}, {"os"}, set(), set(), {BOUNDED}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -83,6 +145,8 @@ def unbounded(source):
                     modules.add(alias.asname or alias.name)
                 elif alias.name == "os":
                     oses.add(alias.asname or alias.name)
+                elif alias.name == BOUNDED:
+                    bounded_mods.add(alias.asname or alias.name)
         elif isinstance(node, ast.ImportFrom) and node.module in ("subprocess", "os"):
             for alias in node.names:
                 if node.module == "subprocess" and alias.name in WAITS:
@@ -97,7 +161,8 @@ def unbounded(source):
         owner = getattr(getattr(node.func, "value", None), "id", None)
         bare = getattr(node.func, "id", None)
         timed = any(keyword.arg == "timeout" for keyword in node.keywords)
-        if (attr in WAITS and owner in modules) or bare in waits or attr == "communicate":
+        if (attr in WAITS and owner in modules) or bare in waits or attr == "communicate" \
+                or (attr == "run" and owner in bounded_mods):
             if not timed:
                 out.append(node.lineno)
         elif attr == "wait":
@@ -167,19 +232,26 @@ _GATES = []
 
 
 def findings_in(rel, source):
-    """[findings] for ONE file's proposed source, when that file is one a commit runs."""
+    """[findings] for ONE file's proposed source: in any Python file, a deadline that ends only the child;
+    in a file a commit runs, a child started with no deadline at all."""
     rel = str(rel).replace(os.sep, "/")
     if not rel.endswith(".py"):
         return []
+    out = []
+    for line in kills_only_the_child(source):
+        out.append("0: the file does not parse, so whether it hands subprocess a deadline is UNKNOWN"
+                   if line == 0 else
+                   "%d: a deadline handed to subprocess ends only the child it started - its children run"
+                   " on; call bounded.run, which ends the whole tree" % line)
     if not _GATES:
         _GATES.append(set(gates()))
     if rel not in _GATES[0]:
-        return []
+        return out
     try:
-        return ["%d: a child started with no timeout, in a file a commit runs" % line
-                for line in unbounded(source)]
+        return out + ["%d: a child started with no timeout, in a file a commit runs" % line
+                      for line in unbounded(source)]
     except SyntaxError:
-        return []
+        return out
 
 
 def offenders():
@@ -192,6 +264,11 @@ def offenders():
 
 
 def main(argv):
+    import cli_words      # a word this does not read refuses the run, before anything runs
+    why = cli_words.refused(argv[1:], most=0)
+    if why:
+        print(why)
+        return 2
     found = gates()
     if len(found) < MIN_GATES:
         # NOTHING WALKED IS NOT A CLEAN TREE. A derivation that finds almost no gate looked in the
@@ -202,9 +279,19 @@ def main(argv):
     bad = offenders()
     sys.stdout.write("%d gate file(s); %d unbounded subprocess call(s), ceiling %d%s"
                      % (len(found), len(bad), CEILING, LF))
-    if len(bad) > CEILING:
+    tree = tree_offenders()
+    if tree is None:
+        sys.stdout.write("REFUSING: the tree could not be listed, so whether a deadline ends only a child is UNKNOWN%s"
+                         % LF)
+        return 1
+    sys.stdout.write("%d deadline(s) handed to subprocess that end only the child, ceiling %d%s"
+                     % (len(tree), CEILING, LF))
+    if len(bad) > CEILING or len(tree) > CEILING:
         for rel, line in bad:
             sys.stdout.write("  REFUSING: %s:%d starts a child with no timeout%s" % (rel, line, LF))
+        for rel, line in tree:
+            sys.stdout.write("  REFUSING: %s:%d hands subprocess a deadline that ends only the child - call"
+                             " bounded.run%s" % (rel, line, LF))
         return 1
     return 0
 

@@ -143,16 +143,19 @@ public final class PaintedMaterials {
 	/** The mesh a ground brush resolves to natively, or -1 when nothing matches
 	 *  and the brush must import a donor instead. Exposed for the corpus sweep
 	 *  in {@link ctrmap.tests.GroundResolveTest}. */
+	@ctrmap.util.ForSuites("SEAM: GroundResolveTest's corpus sweep asks which mesh a ground brush resolves to on every retail region, without building one")
 	public static int resolvedGroundMesh(BchMapModel model, TilePalette t) {
 		return resolveMesh(model, t, -1, true);
 	}
 
 	/** @see #flatFraction */
+	@ctrmap.util.ForSuites("SEAM: GroundResolveTest's corpus sweep asks how flat a retail mesh is, to see which ground meshes a brush may resolve to")
 	public static double meshFlatness(BchMapModel model, int meshIndex) {
 		return flatFraction(model, meshIndex);
 	}
 
 	/** @see #measureUvScale */
+	@ctrmap.util.ForSuites("SEAM: UvScaleTest asks the texture scale measured on a retail mesh, to hold painted ground to it")
 	public static float[] uvScaleOf(GameFiles files, BchMapModel model, int meshIndex) {
 		return measureUvScale(files, model, model.geometry().get(meshIndex));
 	}
@@ -269,17 +272,30 @@ public final class PaintedMaterials {
 	 * broken build, and is said as one.
 	 */
 	public static synchronized Set<String> spriteMaterials() {
-		if (spriteMaterials != null) {
-			return spriteMaterials;
+		if (spriteMaterials == null) {
+			spriteMaterials = spriteMaterials(() -> ctrmap.resources.ResourceAccess.getStream("oras_ground_materials.tsv"));
 		}
-		try (java.io.InputStream in = ctrmap.resources.ResourceAccess.getStream("oras_ground_materials.tsv")) {
-			spriteMaterials = java.util.Collections.unmodifiableSet(readSpriteTable(in));
+		return spriteMaterials;
+	}
+
+	/** Where a ground-material table is read from: the build's own, or one a suite hands over. */
+	public interface TableSource {
+		java.io.InputStream open() throws java.io.IOException;
+	}
+
+	/**
+	 * The sprite set of the table {@code source} opens, or refused in words when it cannot be opened or read -
+	 * asked by {@link #spriteMaterials()} of the shipped table, and by a suite of one that fails, which the
+	 * shipped one never does (measured by the 2026-10-14 shared sweep: line 281's refusal, dropped, SURVIVED).
+	 */
+	public static Set<String> spriteMaterials(TableSource source) {
+		try (java.io.InputStream in = source.open()) {
+			return java.util.Collections.unmodifiableSet(readSpriteTable(in));
 		} catch (java.io.IOException | IllegalStateException ex) {
 			throw new IllegalStateException("The ground-material table could not be read, so the painter cannot tell"
 					+ " a sprite atlas from a floor (painting with one draws a black hole): "
 					+ ctrmap.util.Bytes.reason(ex), ex);
 		}
-		return spriteMaterials;
 	}
 
 	/**

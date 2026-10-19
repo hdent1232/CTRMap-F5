@@ -80,6 +80,16 @@ final class TestWindow {
 		return write(F_mCamEditForm, value);
 	}
 
+	private static final Field F_mScriptPnl = field("mScriptPnl", ctrmap.humaninterface.ScriptEditor.class);
+
+	static ctrmap.humaninterface.ScriptEditor mScriptPnl() {
+		return read(F_mScriptPnl);
+	}
+
+	static ctrmap.humaninterface.ScriptEditor mScriptPnl(ctrmap.humaninterface.ScriptEditor value) {
+		return write(F_mScriptPnl, value);
+	}
+
 	private static final Field F_mCamScrollPane = field("mCamScrollPane", javax.swing.JScrollPane.class);
 
 	static javax.swing.JScrollPane mCamScrollPane() {
@@ -252,6 +262,12 @@ final class TestWindow {
 
 	static javax.swing.JPanel buildGameDataTab(javax.swing.JComponent a0) {
 		return TestWindow.<javax.swing.JPanel>invoke(M_buildGameDataTab, a0);
+	}
+
+	private static final Method M_buildCollisionActionsBar = method("buildCollisionActionsBar", javax.swing.JToolBar.class);
+
+	static javax.swing.JToolBar buildCollisionActionsBar() {
+		return TestWindow.<javax.swing.JToolBar>invoke(M_buildCollisionActionsBar);
 	}
 
 	private static final Method M_buildMapActionsBar = method("buildMapActionsBar", javax.swing.JToolBar.class);

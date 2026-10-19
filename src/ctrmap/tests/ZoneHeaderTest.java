@@ -83,7 +83,7 @@ public class ZoneHeaderTest {
 		Files.write(f.toPath(), HandedGameTest.container("ZO", hb, entities, amx));
 		Zone z = new Zone(new ZO(f, ws), GameType.ORAS);
 		ZoneLoadingPanel tab = new ZoneLoadingPanel(new LoadedZone(), MatrixEditFormGuardsTest.TOOLS, MatrixEditFormGuardsTest.EDITORS,
-				MatrixEditFormGuardsTest.ZONE_EDITORS, MatrixEditFormGuardsTest.NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+				MatrixEditFormGuardsTest.ZONE_EDITORS, MatrixEditFormGuardsTest.NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		ctrmap.Ui.record();
 		tab.loadZone(z);
 		javax.swing.JLabel label = (javax.swing.JLabel) field(tab, "uFlabel");
@@ -156,7 +156,7 @@ public class ZoneHeaderTest {
 		Zone z = new Zone(new ZO(f, ws), GameType.ORAS);
 		LoadedZone lz = new LoadedZone();
 		ZoneLoadingPanel tab = new ZoneLoadingPanel(lz, MatrixEditFormGuardsTest.TOOLS, MatrixEditFormGuardsTest.EDITORS,
-				MatrixEditFormGuardsTest.ZONE_EDITORS, MatrixEditFormGuardsTest.NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+				MatrixEditFormGuardsTest.ZONE_EDITORS, MatrixEditFormGuardsTest.NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		ctrmap.Ui.record();
 		tab.loadZone(z);
 		check(loaded(tab), "the zone loads into the tab, a weather and a type its boxes cannot all show included");
@@ -241,7 +241,7 @@ public class ZoneHeaderTest {
 		Files.write(f.toPath(), HandedGameTest.container("ZO", withFlags(1 << 1), entities, amx));
 		Zone z = new Zone(new ZO(f, ws), GameType.ORAS);
 		ZoneLoadingPanel tab = new ZoneLoadingPanel(new LoadedZone(), MatrixEditFormGuardsTest.TOOLS, MatrixEditFormGuardsTest.EDITORS,
-				MatrixEditFormGuardsTest.ZONE_EDITORS, MatrixEditFormGuardsTest.NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+				MatrixEditFormGuardsTest.ZONE_EDITORS, MatrixEditFormGuardsTest.NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		ctrmap.Ui.record();
 		tab.loadZone(z);
 		javax.swing.JCheckBox flash = (javax.swing.JCheckBox) field(tab, "flash");
@@ -294,7 +294,7 @@ public class ZoneHeaderTest {
 		String said = "(nothing was thrown)";
 		try {
 			new ZoneLoadingPanel(lz, MatrixEditFormGuardsTest.TOOLS, MatrixEditFormGuardsTest.EDITORS,
-					MatrixEditFormGuardsTest.ZONE_EDITORS, MatrixEditFormGuardsTest.NAVI, () -> { }, () -> { }, null);
+					MatrixEditFormGuardsTest.ZONE_EDITORS, MatrixEditFormGuardsTest.NAVI, () -> { }, () -> { }, null, new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		} catch (RuntimeException refused) {
 			said = refused.getClass().getSimpleName() + ": " + refused.getMessage();
 		}
@@ -303,7 +303,7 @@ public class ZoneHeaderTest {
 		int[] npc = {0};
 		ctrmap.humaninterface.UndoHistory zone = UndoHistoryTest.overOneNumber(npc);
 		ZoneLoadingPanel tab = new ZoneLoadingPanel(lz, MatrixEditFormGuardsTest.TOOLS, MatrixEditFormGuardsTest.EDITORS,
-				MatrixEditFormGuardsTest.ZONE_EDITORS, MatrixEditFormGuardsTest.NAVI, () -> { }, () -> { }, zone);
+				MatrixEditFormGuardsTest.ZONE_EDITORS, MatrixEditFormGuardsTest.NAVI, () -> { }, () -> { }, zone, new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		ctrmap.Ui.record();
 		tab.loadZone(z);
 		zone.settle();

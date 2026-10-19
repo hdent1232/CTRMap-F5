@@ -172,16 +172,16 @@ public class GauntletScriptWizard {
 						+ "inject the vanilla one first (the talking-NPC flow offers it), or emit without messages.");
 			}
 		}
-		int nCore = FacilityScriptWizard.findOrAddNative(script, GfHash.hashForName("_CallTrainerBattleCore"));
-		int nResult = FacilityScriptWizard.findOrAddNative(script, GfHash.hashForName("_BattleGetResult"));
-		int nWorkGet = FacilityScriptWizard.findOrAddNative(script, GfHash.hashForName("WorkGet"));
-		int nWorkSet = FacilityScriptWizard.findOrAddNative(script, GfHash.hashForName("WorkSet"));
-		int nGetBP = FacilityScriptWizard.findOrAddNative(script, GfHash.hashForName("PlayerGetBP"));
-		int nSetBP = FacilityScriptWizard.findOrAddNative(script, GfHash.hashForName("PlayerSetBP"));
+		int nCore = PawnEmitter.findOrAddNative(script, GfHash.hashForName("_CallTrainerBattleCore"));
+		int nResult = PawnEmitter.findOrAddNative(script, GfHash.hashForName("_BattleGetResult"));
+		int nWorkGet = PawnEmitter.findOrAddNative(script, GfHash.hashForName("WorkGet"));
+		int nWorkSet = PawnEmitter.findOrAddNative(script, GfHash.hashForName("WorkSet"));
+		int nGetBP = PawnEmitter.findOrAddNative(script, GfHash.hashForName("PlayerGetBP"));
+		int nSetBP = PawnEmitter.findOrAddNative(script, GfHash.hashForName("PlayerSetBP"));
 		int nLose = cfg.loseWhiteout
-				? FacilityScriptWizard.findOrAddNative(script, GfHash.hashForName("CallTrainerLose")) : -1;
+				? PawnEmitter.findOrAddNative(script, GfHash.hashForName("CallTrainerLose")) : -1;
 
-		Emitter e = new Emitter(script);
+		PawnEmitter e = new PawnEmitter(script);
 		e.ins(PawnInstruction.Commands.PROC, 0);
 		if (cfg.introLine >= 0) {
 			emitMsg(e, msgWrapper, cfg.introLine);
@@ -291,7 +291,7 @@ public class GauntletScriptWizard {
 
 	/** The talker-shaped message call: push -1, 1, line, 12; CALL the wrapper.
 	 *  Returns the first instruction of the call (a branch join point). */
-	private static PawnInstruction emitMsg(Emitter e, PawnInstruction wrapper, int line) {
+	private static PawnInstruction emitMsg(PawnEmitter e, PawnInstruction wrapper, int line) {
 		PawnInstruction first = e.ins(PawnInstruction.Commands.PUSH_P_C, -1);
 		e.ins(PawnInstruction.Commands.PUSH_P_C, 1);
 		e.ins(PawnInstruction.Commands.PUSH_P_C, line);
@@ -303,7 +303,7 @@ public class GauntletScriptWizard {
 	}
 
 	/** The proven BP frame: PRI = GetBP; ALT = amount; ADD; SetBP(PRI). */
-	private static void emitBp(Emitter e, int nGetBP, int nSetBP, int amount) {
+	private static void emitBp(PawnEmitter e, int nGetBP, int nSetBP, int amount) {
 		e.sysreq(nGetBP, 0);
 		e.ins(PawnInstruction.Commands.CONST_ALT, amount);
 		e.ins(PawnInstruction.Commands.ADD, 0);
@@ -317,47 +317,4 @@ public class GauntletScriptWizard {
 		}
 	}
 
-	/** Builds the provisional body, tracking pointers by real encoded sizes. */
-	private static final class Emitter {
-
-		final List<PawnInstruction> body = new ArrayList<>();
-		int ptr;
-
-		Emitter(GFLPawnScript script) {
-			PawnInstruction last = script.instructions.get(script.instructions.size() - 1);
-			ptr = last.pointer + 4 + (last.hasCompressedArgument ? 0 : last.argumentCount * 4);
-		}
-
-		PawnInstruction ins(PawnInstruction.Commands cmd, int arg) {
-			PawnInstruction i = new PawnInstruction(ptr, cmd.ordinal(), "");
-			if (i.argumentCells.length > 0) {
-				i.argumentCells[0] = arg;
-			}
-			i.updateDisassembly();
-			body.add(i);
-			ptr += 4 + (i.hasCompressedArgument ? 0 : i.argumentCount * 4);
-			return i;
-		}
-
-		PawnInstruction sysreq(int nativeIndex, int argBytes) {
-			PawnInstruction i = new PawnInstruction(ptr, PawnInstruction.Commands.SYSREQ_N.ordinal(), "");
-			i.argumentCells[0] = nativeIndex;
-			i.argumentCells[1] = argBytes;
-			i.updateDisassembly();
-			body.add(i);
-			ptr += 12;
-			return i;
-		}
-
-		/** A CASETBL for n cases; argument cells are filled by the caller. */
-		PawnInstruction caseTbl(int n) {
-			PawnInstruction i = new PawnInstruction(ptr, PawnInstruction.Commands.CASETBL.ordinal(), "");
-			i.argumentCells = new int[2 + 2 * n];
-			i.argumentCount = i.argumentCells.length;
-			i.updateDisassembly();
-			body.add(i);
-			ptr += 4 + (2 + 2 * n) * 4;
-			return i;
-		}
-	}
 }

@@ -40,7 +40,9 @@ ADAPT = ("PREFIX",)
 #: `CLAUDE_CODE_SESSION_ID` is the harness naming the session a command runs in, which is how the
 #: request ledger's verbs find the transcript they account for. `JAVA_HOME` is the JDK's own,
 #: where the write-time Java parse finds `javac` when it is not on the PATH.
-FOREIGN = ("CLAUDE_PROJECT_DIR", "CLAUDE_CODE_SESSION_ID", "JAVA_HOME")
+#: `CLAUDE_CONFIG_DIR` is the harness's own Claude folder, which `guard_owner_files` keeps the
+#: owner's.
+FOREIGN = ("CLAUDE_PROJECT_DIR", "CLAUDE_CODE_SESSION_ID", "JAVA_HOME", "CLAUDE_CONFIG_DIR")
 
 
 def name(suffix):

@@ -41,6 +41,8 @@ public class TilesetFileTest {
 			theReaderClosesWhatItReads();
 			aWorkspaceTilesetThatDoesNotReadIsSaid();
 			theEditorWritesWhatItShowsAndSaysWhenItCannot();
+			theEditorsEditsAndSavesAreTakenBack();
+			theOpenButtonOpensOnlyWhatWasChosen();
 		} finally {
 			ctrmap.Ui.stopRecording();
 			Workspace.TILESET_DEFAULT = wasDefault;
@@ -177,6 +179,78 @@ public class TilesetFileTest {
 				&& said.get(0).contains("could not be read") && said.get(0).contains("ends inside tile"),
 				"a half-written tileset is said, with why, and the 77-tile default is used: " + said);
 		ctrmap.Ui.stopRecording();
+	}
+
+	/** A tile edited and a save made in the tileset editor are each taken back by its Undo and put again (F209c). */
+	static void theEditorsEditsAndSavesAreTakenBack() throws Exception {
+		System.out.println("--- the tileset editor's edits and saves are taken back and put again (F209c)");
+		File dir = Scratch.dir("ctrmap_tileset_undo");
+		File in = new File(dir, "in.mets");
+		Files.write(in.toPath(), EditorTileset.write(two()));
+		ctrmap.TileDBWriter form = new ctrmap.TileDBWriter();
+		form.withUndo();
+		java.lang.reflect.Method open = ctrmap.TileDBWriter.class.getDeclaredMethod("open", File.class);
+		java.lang.reflect.Method save = ctrmap.TileDBWriter.class.getDeclaredMethod("save", File.class);
+		java.lang.reflect.Method commit = ctrmap.TileDBWriter.class.getDeclaredMethod("commitCurrent");
+		open.setAccessible(true);
+		save.setAccessible(true);
+		commit.setAccessible(true);
+		JTextField name = (JTextField) MatrixEditFormGuardsTest.field(form, "name");
+		open.invoke(form, in);
+		ctrmap.humaninterface.UndoHistory history = form.history();
+		history.settle();   //what the file holds, before any gesture
+		name.setText("Grass");
+		commit.invoke(form);
+		history.settle();   //the gesture's end
+		check(history.canUndo(), "control: renaming a tile is an edit the history holds");
+		history.undo();
+		check(firstName(form).equals("Gräs") && name.getText().equals("Gräs"),
+				"Undo puts the tile's name back, and shows it: " + firstName(form) + ", " + name.getText());
+		history.redo();
+		check(firstName(form).equals("Grass") && name.getText().equals("Grass"), "and Redo renames it again: " + firstName(form));
+
+		File out = new File(dir, "out.mets");
+		check((Boolean) save.invoke(form, out) && out.isFile(), "control: it saves");
+		history.undo();
+		check(!out.exists() && firstName(form).equals("Grass"),
+				"Undo takes the save back - a file that was not there is gone - and leaves the tiles as they are");
+		history.redo();
+		check(out.isFile() && EditorTileset.read(Files.readAllBytes(out.toPath())).get(0).name.equals("Grass"),
+				"and Redo writes it again");
+		open.invoke(form, in);
+		history.settle();
+		check(!history.canUndo(), "another tileset opened starts the history again: nothing of the last one is taken back");
+	}
+
+	/**
+	 * The tileset editor's Open opens the file the chooser answered, and nothing on a cancel.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (TileDBWriter 383, negated, SURVIVED): nothing pressed Open. Inverted, a
+	 * file chosen was never opened - the button did nothing the owner could see - and a cancel went on to open
+	 * whatever the chooser still held.
+	 */
+	static void theOpenButtonOpensOnlyWhatWasChosen() throws Exception {
+		System.out.println("--- the tileset editor's Open opens the file chosen, and nothing on a cancel");
+		File in = new File(Scratch.dir("ctrmap_tileset_open"), "chosen.mets");
+		Files.write(in.toPath(), EditorTileset.write(two()));
+		ctrmap.TileDBWriter form = new ctrmap.TileDBWriter();
+		JTextField name = (JTextField) MatrixEditFormGuardsTest.field(form, "name");
+		String before = name.getText();
+		List<String> said = ctrmap.Ui.record();   //nobody answers the chooser: a cancel
+		MatrixEditFormGuardsTest.invoke(form, "openfileActionPerformed");
+		check(said.size() == 1 && said.get(0).startsWith("Open file: ") && name.getText().equals(before)
+				&& MatrixEditFormGuardsTest.field(form, "f") == null,
+				"a cancelled Open asks once and opens nothing: " + said + ", \"" + name.getText() + "\"");
+		said = ctrmap.Ui.record(in);
+		MatrixEditFormGuardsTest.invoke(form, "openfileActionPerformed");
+		check(said.size() == 1 && name.getText().equals("Gräs") && in.equals(MatrixEditFormGuardsTest.field(form, "f")),
+				"and Open with a file chosen opens that file, on its first tile: \"" + name.getText() + "\" " + said);
+		ctrmap.Ui.stopRecording();
+	}
+
+	/** The first tile's name, as the editor holds it. */
+	static String firstName(ctrmap.TileDBWriter form) throws Exception {
+		return ((EditorTileset.Record) ((List<?>) MatrixEditFormGuardsTest.field(form, "tiles")).get(0)).name;
 	}
 
 	static void theEditorWritesWhatItShowsAndSaysWhenItCannot() throws Exception {

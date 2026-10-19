@@ -46,12 +46,11 @@ public final class EnPack {
 		}
 		int count = ContainerBytes.count(en);
 		int tableEnd = tableEnd(count);
-		if (en.length < tableEnd) {
-			throw new IllegalArgumentException("EN pack too short for its offset table (" + en.length + " < " + tableEnd + ").");
-		}
+		//ONE refusal for a table that does not fit: offsets answers null exactly when the file is shorter than
+		//tableEnd, so a second check after the first could never be reached (the 2026-10-14 shared sweep)
 		int[] offs = ContainerBytes.offsets(en);
 		if (offs == null) {
-			throw new IllegalArgumentException("EN pack too short for its offset table.");
+			throw new IllegalArgumentException("EN pack too short for its offset table (" + en.length + " < " + tableEnd + ").");
 		}
 		for (int i = 0; i <= count; i++) {
 			if (i == 0 && offs[0] != tableEnd) {

@@ -50,10 +50,12 @@ public class PropRegistrationTest {
 		aModelTheAreaHasIsNotRegisteredTwice();
 		aModelWithNoEntryToCopyGetsABareOneAndSaysSo();
 		theDonorIsReadFromDisk();
+		aTextureNoAreaHoldsIsRefusedBeforeAnythingIsWritten();
 		aStagedAreaTellsTheDatabaseOnlyWhenWritten();
 		noFreeReferenceRefusesBeforeThePackGrows();
 		aMergedPackIsVerifiedBeforeItIsWritten();
 		everyCallerRegistersThroughTheOneWay();
+		aRegistrationFromTheFormIsOneEdit();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		System.exit(fails == 0 ? 0 : 1);
 	}
@@ -312,6 +314,34 @@ public class PropRegistrationTest {
 				"an entry that will not read is registered bare too, and said: " + voice2.notes);
 	}
 
+	/**
+	 * A model drawing with a texture no area holds is refused before anything is written: placed without it, the area
+	 * hardlocks the game when it loads.
+	 *
+	 * <p>Measured by the 2026-10-14 shared sweep (PropRegistration 151, dropped, SURVIVED): every model this suite
+	 * registered had a donor for what it lacked. Dropped, the registration went on with no donor to import from.
+	 */
+	static void aTextureNoAreaHoldsIsRefusedBeforeAnythingIsWritten() throws Exception {
+		System.out.println("--- a model drawing with a texture no area holds is refused before anything is written (F107)");
+		FakeGameFiles g = game(TARGET, DONOR);
+		PropDatabase db = db(g);
+		byte[] before = onDisk(g, TARGET);
+		Heard voice = new Heard(true);
+		String refused;
+		try {
+			PropRegistration.Registered r = PropRegistration.register(g, db, db.getModel(1), names("tex_nowhere"),
+					new Written(g, TARGET, 0), voice);
+			refused = "it registered " + (r == null ? "nothing" : "reference " + r.reference);
+		} catch (RuntimeException ex) {
+			refused = ex.getMessage();
+		}
+		check(String.valueOf(refused).endsWith("draws with textures this area does not have [tex_nowhere], and no single area"
+				+ " holds them all to import from. Placed without them it would hardlock the game when the area loads."),
+				"a texture no area holds is refused, naming it and why: " + refused);
+		check(Arrays.equals(before, onDisk(g, TARGET)) && g.edited().isEmpty() && voice.asked.isEmpty(),
+				"with nothing written and nobody asked");
+	}
+
 	static void theDonorIsReadFromDisk() throws Exception {
 		System.out.println("--- the donor is read as the workspace holds it, not as the database remembers it (F107)");
 		FakeGameFiles g = game(TARGET, DONOR);
@@ -385,6 +415,37 @@ public class PropRegistrationTest {
 
 	// ------------------------------------------------------------ the callers
 
+	/**
+	 * A registration from the prop form is ONE edit of the zone's history (F209): the textures written into
+	 * the area and the registry entry it adds. The registry is saved into the same area file the textures went
+	 * into, so the Undo is of the textures' SUBFILE: a save of the registry between them leaves it standing.
+	 */
+	static void aRegistrationFromTheFormIsOneEdit() throws Exception {
+		System.out.println("--- a registration from the prop form is one edit of the zone's history, and outlives a save (F209)");
+		FakeGameFiles g = game(TARGET, DONOR);
+		PropDatabase db = db(g);
+		AD ad = new AD(g.staged(ArchiveType.AREA_DATA, TARGET), g);
+		ADPropRegistry reg = new ADPropRegistry(ad);
+		Object scope = new Object();
+		ctrmap.humaninterface.UndoHistory h = new ctrmap.humaninterface.UndoHistory(() -> java.util.Collections.singletonList(scope),
+				() -> java.util.Collections.<ctrmap.humaninterface.UndoHistory.Document<?>>singletonList(
+						ctrmap.humaninterface.ZoneDocuments.propRegistry(reg, () -> {
+						})));
+		h.settle();
+		byte[] packBefore = ad.getFile(1);
+		PropRegistration.Area area = new ctrmap.humaninterface.PropEditForm.ThroughHistory(h, ad, TARGET, 0, reg, db);
+		PropRegistration.Registered r = PropRegistration.register(g, db, db.getModel(1), names("tex_a", "tex_b"), area, new Heard(true));
+		check(r != null && h.settle() && "the area's prop textures and 1 more".equals(h.undoName()),
+				"the textures written and the registry entry added are one edit: " + h.undoName());
+		reg.write();   //Save props: the registry is stored into subfile 0 of the same area file
+		check(h.undo() && Arrays.equals(ad.getFile(1), packBefore) && !reg.entries.containsKey(1),
+				"Undo after the registry was saved takes back both: the pack as it was, the entry gone");
+		check(!db.areaTextureNames.get(TARGET).contains("tex_a"),
+				"and the database's names for the area are its pack's again: " + db.areaTextureNames.get(TARGET));
+		check(h.redo() && PropDatabase.getTexturePackTextureNames(ad.getFile(1)).containsAll(names("tex_a", "tex_b"))
+				&& reg.entries.containsKey(1), "and Redo puts both again");
+	}
+
 	static String source(String path) throws Exception {
 		return SourceSeamTest.stripComments(new String(Files.readAllBytes(new File(path).toPath()), StandardCharsets.UTF_8));
 	}
@@ -397,10 +458,16 @@ public class PropRegistrationTest {
 		String here = CollisionReadTest.body(pef, "private PropRegistration.Registered registerHere(");
 		check(palette != null && palette.contains("registerHere(pm, true)"), "the palette registers through it, asking");
 		check(typed != null && typed.contains("registerHere(pm, false)"), "a typed model number through it, not asking");
-		check(here != null && here.contains("PropRegistration.register(") && here.indexOf("refuseSharedArea(") >= 0
-				&& here.indexOf("refuseSharedArea(") < here.indexOf("ctrmap.Ui.confirm("),
+		//the question is the form's named voice since 2026-10-15 (PropEditForm.FormVoice), asked by itself in
+		//PropEditFormGuardsTest; read here as the one registerHere hands the registration
+		String voice = CollisionReadTest.body(pef, "public boolean importFrom(int donorArea, List<String> textures) {");
+		check(here != null && here.contains("PropRegistration.register(") && here.contains("new FormVoice(this, ask,")
+				&& voice != null && voice.indexOf("refuseSharedArea(") >= 0
+				&& voice.indexOf("refuseSharedArea(") < voice.indexOf("ctrmap.Ui.confirm("),
 				"and the form's question refuses a shared area before it is asked");
-		String tpf = source("src/ctrmap/MapPainter.java");
+		check(here != null && here.contains("new ThroughHistory(history,"),
+				"and the prop form hands its registrations' area the zone's history, so each is an edit of it (F209)");
+		String tpf =source("src/ctrmap/MapPainter.java");
 		String door = CollisionReadTest.body(tpf, "public static int ensureDoorPropRegistered(");
 		check(door != null && door.contains("PropRegistration.register("), "the painter's doors through it");
 		String commit = CollisionReadTest.body(tpf, "void commit(");

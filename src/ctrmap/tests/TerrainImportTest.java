@@ -198,7 +198,7 @@ public class TerrainImportTest {
 				touched[y][x] = true;
 			}
 		}
-		byte[] out = PaintedRegionBuilder.buildModelOnly(model, null, null, grid, null, null, touched,
+		byte[] out = PaintedRegionBuilder.buildModelOnly(null, model, null, null, grid, null, null, touched,
 				TerrainLighting.daytime(), false);
 		BchMapModel m = new BchMapModel(out);
 		List<String> errs = m.validate();

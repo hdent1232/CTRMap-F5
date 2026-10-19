@@ -43,6 +43,10 @@ import javax.swing.SwingWorker;
  * testable; a caller reading these statics cannot. {@code
  * ctrmap.tests.WorkspaceSessionTest} counts the files still reading them.</li>
  * </ul>
+ *
+ * <p>No undo: its one edit of its own is cleaning the workspace, which deletes the files extracted and changed
+ * there; {@link #cleanAfterAsking} asks first, counts the edits in the question, offers to pack them into the
+ * game before, and cleans nothing when that pack does not finish.
  */
 public class Workspace {
 
@@ -431,12 +435,14 @@ public class Workspace {
 
 	/** Directory holding the one-time pristine copy of the moddable archives,
 	 *  used by {@link ModDeployer} to ship only what actually changed. */
+	@ctrmap.util.ForSuites("SEAM: the static facade over the current session that the suites drive; the application asks the session it holds")
 	public static File originalSnapshotDir() {
 		File ws = configuredWorkspaceDir();
 		return ws == null ? null : WorkspaceSession.originalSnapshotDir(ws);
 	}
 
 	/** Records which game folder a pristine snapshot was taken from. */
+	@ctrmap.util.ForSuites("SEAM: the static facade over the current session that the suites drive; the application asks the session it holds")
 	public static File originalSnapshotStamp() {
 		File ws = configuredWorkspaceDir();
 		return ws == null ? null : WorkspaceSession.originalSnapshotStamp(ws);
@@ -452,6 +458,7 @@ public class Workspace {
 	}
 
 	/** True when the configured workspace holds a pristine snapshot of a DIFFERENT game folder than the one configured. */
+	@ctrmap.util.ForSuites("SEAM: the static facade over the current session that the suites drive; the application asks the session it holds")
 	public static boolean snapshotIsForeign() {
 		return snapshotIsForeign(GAMEDIR_PATH);
 	}
@@ -466,7 +473,7 @@ public class Workspace {
 	}
 
 	/** Deletes the pristine snapshot so the next load re-takes it from the current game folder. */
-	public static void discardSnapshot() {
+	public static void discardSnapshot() throws IOException {
 		File ws = configuredWorkspaceDir();
 		if (ws != null) {
 			WorkspaceSession.discardSnapshot(ws);
@@ -474,6 +481,7 @@ public class Workspace {
 	}
 
 	/** Archives the snapshot is supposed to hold but does not; empty with no session. */
+	@ctrmap.util.ForSuites("SEAM: the static facade over the current session that the suites drive; the application asks the session it holds")
 	public static java.util.List<String> snapshotMissingArchives() {
 		return current == null ? new ArrayList<String>() : current.snapshotMissingArchives();
 	}
@@ -506,6 +514,7 @@ public class Workspace {
 	}
 
 	/** Lets a suite exercise more than one snapshot problem in one JVM. */
+	@ctrmap.util.ForSuites("SEAM: lets a suite exercise more than one snapshot problem in one JVM")
 	public static void resetSnapshotProblemReporting() {
 		snapshotProblemShown = false;
 	}
@@ -545,6 +554,7 @@ public class Workspace {
 	 * went wrong in front of the user. Returns the archives it refused to
 	 * capture, as {@link WorkspaceSession#snapshotOriginals} does.
 	 */
+	@ctrmap.util.ForSuites("SEAM: the static facade over the current session that the suites drive; the application asks the session it holds")
 	public static java.util.List<String> snapshotOriginals() {
 		if (current == null) {
 			return new ArrayList<>();
@@ -590,10 +600,16 @@ public class Workspace {
 		return report.refused;
 	}
 
-	public static void reloadGARC(ArchiveType arc) {
-		if (current != null) {
-			current.reloadGARC(arc);
-		}
+	/**
+	 * Text file {@code entry}'s lines as the workspace holds it - or none, with why said into {@code unread}, for
+	 * an editor that shows numbers where names are missing and says so (census M.55). The one door: five
+	 * editors each read their names through a private copy that answered no lines, said nothing, for any failure.
+	 */
+	public static String[] textLines(int entry, java.util.List<String> unread) {
+		return ctrmap.formats.text.GameTextLines.orSaid(() -> {
+			File f = getWorkspaceFile(ArchiveType.GAMETEXT, entry);
+			return f == null ? null : java.nio.file.Files.readAllBytes(f.toPath());
+		}, entry, unread);
 	}
 
 	/** The extracted copy of one entry, or null with no session or no such entry. */
@@ -612,6 +628,7 @@ public class Workspace {
 	}
 
 	/** Packs the current session's edits back into the game; see {@link WorkspaceSession#packArchives}. */
+	@ctrmap.util.ForSuites("SEAM: the static facade over the current session that the suites drive; the application asks the session it holds")
 	public static java.util.List<String> packArchives(PackProgress progress) throws IOException {
 		if (current == null) {
 			throw new IllegalStateException("no workspace is open");
@@ -731,6 +748,7 @@ public class Workspace {
 	 * @return RETAIL when no game folder is configured at all - a caller with
 	 * nothing to probe is not looking at a demo
 	 */
+	@ctrmap.util.ForSuites("SEAM: the static facade over the current session that the suites drive; the application asks the session it holds")
 	public static ctrmap.gamedef.GameProfile.Variant variant() {
 		if (current != null) {
 			return current.variant();

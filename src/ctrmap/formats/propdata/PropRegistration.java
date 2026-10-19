@@ -106,10 +106,7 @@ public final class PropRegistration {
 			throw new IllegalStateException("BuildingModels entry " + pm.modelIndex + " cannot be read, so the textures it"
 					+ " draws with cannot be checked");
 		}
-		Set<String> drawnWith = PropDatabase.getMaterialTextureNames(model);
-		//textures the model carries itself: none in retail, but they need no import
-		drawnWith.removeAll(PropDatabase.getTexturePackTextureNames(model));
-		return register(files, db, pm, drawnWith, area, voice);
+		return register(files, db, pm, PropDatabase.requiredTextureNames(model), area, voice);
 	}
 
 	/** The same, handed the names the model draws with: what a suite with no model to parse hands it. */
@@ -125,13 +122,7 @@ public final class PropRegistration {
 		//THE ENTRY AND ITS REFERENCE FIRST, so nothing is written for a registration that cannot finish
 		List<String> bare = new ArrayList<>(1);
 		ADPropRegistry.ADPropRegistryEntry entry = entryFor(pm, name, bare);
-		int reference = Math.max(0, pm.modelIndex);
-		while (reg.entries.containsKey(reference)) {
-			reference++;
-		}
-		if (reference > 0xFFFF) {
-			throw new IllegalStateException("no prop reference is free from " + pm.modelIndex + " up: references are 16-bit");
-		}
+		int reference = reg.freeReference(pm.modelIndex);
 
 		byte[] targetPack = area.file(1);
 		Set<String> held = PropDatabase.getTexturePackTextureNames(targetPack);

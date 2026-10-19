@@ -81,6 +81,7 @@ public final class RecordPool {
 	}
 
 	/** How many records could not be read. */
+	@ctrmap.util.ForSuites("SEAM: a suite counts the records the pool could not read, to see each is said rather than skipped")
 	public int unreadableCount() {
 		int n = 0;
 		for (String u : unreadable) {

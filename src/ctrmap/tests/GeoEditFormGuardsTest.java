@@ -94,13 +94,16 @@ public class GeoEditFormGuardsTest {
 		ScratchGame.open(dump);
 		ctrmap.formats.text.LocationNames.loadFromGarc(Workspace.session());
 		TestWindow.mTilemapScrollPane(new javax.swing.JScrollPane());
-		TestWindow.mZonePnl(new ZoneLoadingPanel(LOADED, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0})));
+		TestWindow.mZonePnl(new ZoneLoadingPanel(LOADED, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList())));
 
 		theRegionIsTheOneTheseChecksDescribe();
 		aSelectionNamesItsRegionAndCountsWhatIsInIt();
 		aSelectionIsClampedToOneCell();
 		anOffsetOfZeroIsRefusedAndSaysSo();
 		moveWritesAllThreeLayers();
+		aMoveThatFailsPartWaySaysSo();
+		aDiscardPutsTheMovedTilesBack();
+		aSaveThatCannotWriteSaysSo();
 		undoPutsAllThreeLayersBack();
 		deleteVoidsTheTilesItCovers();
 		theCheckboxesAreObeyed();
@@ -170,6 +173,82 @@ public class GeoEditFormGuardsTest {
 	}
 
 	/**
+	 * A move that fails part way - here on collision bytes that are not collision - says so on the status line, never
+	 * a status left on the last edit (the 2026-10-14 shared sweep, GeoEditForm 555, drop-report, SURVIVED: every move a
+	 * suite made went through).
+	 */
+	static void aMoveThatFailsPartWaySaysSo() throws Exception {
+		Fixture f = open();
+		f.form.setSelection(T0, T0, T1, T1);
+		spinner(f.form, "dx").setValue((double) STEP);
+		@SuppressWarnings("unchecked")
+		java.util.Map<Integer, byte[]> coll = (java.util.Map<Integer, byte[]>) field(f.form, "currentColl");
+		coll.put(2, "not collision".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+		String said;
+		try {
+			click(f, "btnMove");
+			said = label(f.form, "status");
+		} catch (RuntimeException threw) {
+			said = "threw " + threw;
+		}
+		check(said.startsWith("Failed: "), "a move that fails part way says so on the status line: \"" + said + "\"");
+		check(Arrays.equals(f.gr.getFile(1), f.model0), "and nothing is on disk");
+	}
+
+	/**
+	 * Discarding a move puts the tiles it moved back as they were saved, and leaves the tilemap unmarked when nothing
+	 * else changed it (F106; the 2026-10-14 shared sweep, GeoEditForm 658, negate-if, SURVIVED: no suite discarded a
+	 * move that moved tiles). The discard is the one the form's question runs, asked through reflection.
+	 */
+	static void aDiscardPutsTheMovedTilesBack() throws Exception {
+		Fixture f = open();
+		f.form.setSelection(T0, T0, T1, T1);
+		spinner(f.form, "dx").setValue((double) STEP);
+		click(f, "btnMove");
+		ctrmap.formats.tilemap.Tilemap tm = (ctrmap.formats.tilemap.Tilemap) field(f.form, "tilesIn");
+		boolean moved = tm != null && !Arrays.equals(tm.assembleTilemap(), f.gr.getFile(0));
+		check(moved, "control: the move moved tiles, so the tilemap differs from what is saved");
+		java.lang.reflect.Method discard = ctrmap.humaninterface.GeoEditForm.class.getDeclaredMethod("discard");
+		discard.setAccessible(true);
+		String said;
+		try {
+			discard.invoke(f.form);
+			said = label(f.form, "status");
+		} catch (java.lang.reflect.InvocationTargetException threw) {
+			said = "threw " + threw.getCause();
+		}
+		check(tm != null && Arrays.equals(tm.assembleTilemap(), f.gr.getFile(0)) && !tm.modified && "Discarded.".equals(said),
+				"a discard puts the moved tiles back as saved and leaves the tilemap unmarked: " + said + ", modified "
+				+ (tm != null && tm.modified));
+	}
+
+	/**
+	 * A save that cannot write says so on the status line, and the edit is still there to save (the 2026-10-15 shared
+	 * sweep, GeoEditForm 789, drop-report, SURVIVED: every save a suite pressed was written). The region's scratch file
+	 * is made a folder after the move, which no save can write.
+	 */
+	static void aSaveThatCannotWriteSaysSo() throws Exception {
+		Fixture f = open();
+		f.form.setSelection(T0, T0, T1, T1);
+		spinner(f.form, "dx").setValue((double) STEP);
+		click(f, "btnMove");
+		File onDisk = f.gr.getOriginFile();
+		java.nio.file.Files.delete(onDisk.toPath());
+		check(onDisk.mkdir(), "control: the region's file is a folder now, which no save can write");
+		String said;
+		try {
+			click(f, "btnSave");
+			said = label(f.form, "status");
+		} catch (Exception threw) {
+			said = "threw " + threw;
+		} finally {
+			Scratch.deleteTree(onDisk);
+		}
+		check(said.startsWith("Nothing was saved: ") && button(f.form, "btnSave").isEnabled(),
+				"a save that cannot write says so on the status line, and the edit is still there to save: " + said);
+	}
+
+	/**
 	 * The whole point of the form: one edit, three layers, and the bytes are
 	 * the ones the validated primitives produce from the bytes that were read.
 	 */
@@ -211,7 +290,10 @@ public class GeoEditFormGuardsTest {
 		spinner(f.form, "dx").setValue((double) STEP);
 		click(f, "btnMove");
 		click(f, "btnUndo");
-		check(label(f.form, "status").startsWith("Undone: the geometry of region "), "Undo says what it took back: " + label(f.form, "status"));
+		//WHAT IT TOOK BACK, BY REGION: the undo round's history names the documents an edit changed - "the tiles
+		//of region (0, 0) and 1 more" - where this pinned the old sentence, "the geometry of region"
+		check(label(f.form, "status").startsWith("Undone: ") && label(f.form, "status").contains("region ("),
+				"Undo says what it took back, and of which region: " + label(f.form, "status"));
 		check(!button(f.form, "btnUndo").isEnabled() && !button(f.form, "btnSave").isEnabled(),
 				"there is nothing left to undo and nothing left to save");
 		check(Arrays.equals((byte[]) field(f.form, "currentModel"), f.model0), "the model in hand is the one that was read");
@@ -347,6 +429,84 @@ public class GeoEditFormGuardsTest {
 		byte[] stamped = f.gr.getFile(1);
 		check(!Arrays.equals(stamped, f.model0), "and the saved model is not the one that was read");
 		check(new BchMapModel(Arrays.copyOf(stamped, stamped.length)).validate().isEmpty(), "and still parses clean");
+
+		//saved as a file only where the user approved one (the 2026-10-14 shared sweep, GeoEditForm 255, negate-if,
+		//SURVIVED: no suite said yes to the file): a cancelled chooser writes nothing, not even its preselected name
+		File preselected = new File("GuardPrefabCancelled.ctrprefab");
+		boolean wasThere = preselected.exists();
+		said = ctrmap.Ui.record("GuardPrefabCancelled", JOptionPane.YES_OPTION);   //and the chooser: nobody approves
+		try {
+			click(f, "btnCopyPrefab");
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		boolean written = !wasThere && preselected.exists();
+		if (written) {
+			preselected.delete();
+		}
+		check(!wasThere && !written, "a prefab whose file chooser was cancelled is written nowhere - not to its preselected "
+				+ preselected.getName() + " (" + (wasThere ? "it was there before" : written ? "written" : "not written") + ")");
+		File chosen = new File(java.nio.file.Files.createTempDirectory("prefab-chosen").toFile(), "kept.ctrprefab");
+		said = ctrmap.Ui.record("GuardPrefabKept", JOptionPane.YES_OPTION, chosen);
+		try {
+			click(f, "btnCopyPrefab");
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(chosen.isFile() && chosen.length() > 0, "and one whose file was chosen is written there: " + chosen + " ("
+				+ chosen.length() + " bytes)");
+
+		//Stamp prefab's "No = load a file instead" (the 2026-10-14 shared sweep, GeoEditForm 302, negate-if, SURVIVED: no
+		//suite loaded one): a chooser cancelled loads and stamps nothing, a file chosen is loaded and stamped
+		String before = label(f.form, "status");
+		said = ctrmap.Ui.record(JOptionPane.NO_OPTION);   //and the chooser: nobody approves
+		try {
+			click(f, "btnStampPrefab");
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(before.equals(label(f.form, "status")), "a prefab file chooser cancelled loads and stamps nothing: \""
+				+ label(f.form, "status") + "\"");
+		said = ctrmap.Ui.record(JOptionPane.NO_OPTION, chosen);
+		try {
+			click(f, "btnStampPrefab");
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(label(f.form, "status").startsWith("Stamped "), "and a prefab file chosen is loaded and stamped: \""
+				+ label(f.form, "status") + "\"");
+		//a chosen file that is no prefab (the 2026-10-14 shared sweep, GeoEditForm 309, drop-report, SURVIVED: every
+		//file a suite loaded was one) - said on the status line, nothing stamped
+		File junk = new File(chosen.getParentFile(), "not-a-prefab.ctrprefab");
+		java.nio.file.Files.write(junk.toPath(), "not a prefab".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+		said = ctrmap.Ui.record(JOptionPane.NO_OPTION, junk);
+		try {
+			click(f, "btnStampPrefab");
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(label(f.form, "status").startsWith("Could not load the prefab: "),
+				"and a chosen file that is no prefab is said on the status line, nothing stamped: \"" + label(f.form, "status") + "\"");
+		junk.delete();
+		//a prefab whose stamp throws part way (the 2026-10-14 shared sweep, GeoEditForm 400, drop-report, SURVIVED: every
+		//prefab a suite stamped stamped) - said on the status line, never a status left on the last stamp
+		ctrmap.formats.h3d.MapPrefab broken = new ctrmap.formats.h3d.MapPrefab();
+		broken.name = "broken";
+		ctrmap.formats.h3d.MapPrefab.Piece piece = new ctrmap.formats.h3d.MapPrefab.Piece();
+		piece.material = "no such material";
+		piece.stride = 12;   //and no vertex bytes: a piece the stamp cannot read
+		broken.pieces.add(piece);
+		String stampSaid;
+		try {
+			f.form.stampHere(broken);
+			stampSaid = label(f.form, "status");
+		} catch (RuntimeException threw) {
+			stampSaid = "threw " + threw;
+		}
+		check(stampSaid.startsWith("Stamp failed: "), "and a stamp that throws part way is said on the status line: \""
+				+ stampSaid + "\"");
+		chosen.delete();
+		chosen.getParentFile().delete();
 	}
 
 	/** Nothing can be pressed before there is a selection, or after it is cleared. */

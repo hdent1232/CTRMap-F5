@@ -1,16 +1,10 @@
 package ctrmap.humaninterface;
 
-import ctrmap.Workspace;
-import ctrmap.formats.containers.MM;
-import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.npcreg.NPCRegistry;
-import ctrmap.gamedef.ArchiveType;
-import java.io.File;
 import java.util.ArrayList;
 import java.util.Map;
 import javax.swing.DefaultListModel;
 import javax.swing.JFormattedTextField;
-import javax.swing.event.ListSelectionEvent;
 import javax.swing.text.NumberFormatter;
 
 /**
@@ -68,7 +62,7 @@ public class NPCRegistryEditor extends ctrmap.humaninterface.FormPanel {
 			}
 		}
 		entryCountLabel.setText("Entry count: " + model.getSize());
-		entryList.addListSelectionListener((ListSelectionEvent e) -> {
+		ctrmap.util.Selections.onSettled(entryList, () -> {
 			if (entryList.getSelectedValue() == null || entryList.getSelectedIndex() == -1) {
 				return;
 			}
@@ -96,14 +90,10 @@ public class NPCRegistryEditor extends ctrmap.humaninterface.FormPanel {
 		item.setSelected(entry.isItOb == 0);
 		dummy.setSelected(entry.isDummy == 1);
 		e = entry;
-		File bchFile = Workspace.getWorkspaceFile(ArchiveType.MOVE_MODELS, entry.model);
-		if (bchFile.exists()) {
-			BCHFile mdlBch = new BCHFile(new MM(bchFile, Workspace.session()).getFile(0));
-			mdlBch.models.get(0).setMaterialTextures(mdlBch.textures);
-			customH3DPreview1.loadModel(mdlBch.models.get(0));
-		} else {
-			customH3DPreview1.loadModel(null);
-		}
+		//THROUGH THE REGISTRY (census M.58): this decoded the MoveModels BCH itself, from the global workspace,
+		//with none of the registry loader's guards - an entry with no mesh threw out of the list's listener - and
+		//against the open game rather than the registry's own
+		customH3DPreview1.loadModel(reg.loadFreshModel(entry.uid));
 	}
 
 	public boolean saveEntry(boolean dialog) {
@@ -391,6 +381,11 @@ public class NPCRegistryEditor extends ctrmap.humaninterface.FormPanel {
 
     private void btnRemoveActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnRemoveActionPerformed
 		int index = entryList.getSelectedIndex();
+		//NOTHING SELECTED REMOVES NOTHING (census M.77): -1 threw out of this listener and the button looked dead
+		if (index < 0 || index >= dict.size()) {
+			return;
+		}
+		e = null;   //and the entry removed is no longer the one shown: moving the selection saved it back
 		reg.remove(dict.get(index));
 		model.removeElementAt(index);
 		dict.remove(index);
@@ -403,6 +398,9 @@ public class NPCRegistryEditor extends ctrmap.humaninterface.FormPanel {
     }//GEN-LAST:event_btnRemoveActionPerformed
 
     private void shadowActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_shadowActionPerformed
+		if (e == null) {
+			return;   //no entry shown yet: nothing to set the shadow of (census L.44)
+		}
 		if (shadow.isSelected()) {
 			if (e.shadowEnabled != 0) {
 				shadowType.setValue(e.shadowEnabled);

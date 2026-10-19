@@ -57,7 +57,7 @@ public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
 		gameField.setText(Workspace.GAMEDIR_PATH);
 		spicaField.setText(Workspace.ESPICA_PATH);
 		tilesetPath.setText(Workspace.TILESET_PATH);
-		tilesetPath.setEnabled(!Workspace.TILESET_DEFAULT);
+		ctrmap.Ui.offer(tilesetPath, Workspace.TILESET_DEFAULT ? "The default tileset is in use - choose Custom to pick a tileset file" : null);
 		btnTilesetDefault.setSelected(Workspace.TILESET_DEFAULT);
 		btnTilesetCustom.setSelected(!Workspace.TILESET_DEFAULT); //otherwise both remain unselected if custom
 		originWSPath = wsPathField.getText();
@@ -208,7 +208,12 @@ public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
 		if (r != JOptionPane.YES_OPTION) {
 			return false;
 		}
-		Workspace.discardSnapshot();
+		try {
+			Workspace.discardSnapshot();
+		} catch (java.io.IOException kept) {
+			Ui.error(parent, "The game path was left as it was: " + ctrmap.util.Bytes.reason(kept), "Backup not replaced");
+			return false;
+		}
 		return true;
 	}
 
@@ -422,7 +427,8 @@ public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
     }//GEN-LAST:event_btnSetTilesetActionPerformed
 
     private void btnSetSpicaActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnSetSpicaActionPerformed
-		JFileChooser jfc = new JFileChooser(tilesetPath.getText());
+		//IN ESPICA'S FOLDER (census L.46): it opened in the tileset's
+		JFileChooser jfc = new JFileChooser(new File(spicaField.getText()).getAbsoluteFile().getParentFile());
 		jfc.setMultiSelectionEnabled(false);
 		jfc.setDialogTitle("Locate ESPICA executable");
 		jfc.setFileSelectionMode(JFileChooser.FILES_ONLY);
@@ -436,7 +442,7 @@ public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
 
 	public void setCustom(boolean forceDialog) {
 		if (btnTilesetDefault.isSelected()) {
-			tilesetPath.setEnabled(false);
+			ctrmap.Ui.offer(tilesetPath, "The default tileset is in use - choose Custom to pick a tileset file");
 		} else {
 			tilesetPath.setEnabled(true);
 			File f = new File(tilesetPath.getText());
@@ -446,7 +452,7 @@ public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
 					tilesetPath.setText(newFile.getPath());
 				} else {
 					btnTilesetDefault.setSelected(true);
-					tilesetPath.setEnabled(false);
+					ctrmap.Ui.offer(tilesetPath, "The default tileset is in use - choose Custom to pick a tileset file");
 					btnSetTileset.setEnabled(true);
 				}
 			}

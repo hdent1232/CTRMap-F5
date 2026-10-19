@@ -26,6 +26,9 @@ import java.util.List;
  */
 public class MapPreview3D extends GLJPanel implements GLEventListener {
 
+	/** What this view draws its models with: the drawing left the format classes (F214). */
+	final ctrmap.render.ModelRenderer draw = new ctrmap.render.ModelRenderer();
+
 	private H3DModel model;
 	private final ShownLoop animator;
 	private float yaw = 0.6f;      // radians, orbit around Y
@@ -128,7 +131,7 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 	 * before" is not.
 	 *
 	 * <p>THE MODEL IT REPLACES IS RETIRED, NOT DROPPED. Each model uploads vertex
-	 * buffers on first draw and {@link H3DModel#destroyAllBOs} frees them; nothing
+	 * buffers on first draw and {@link ctrmap.render.ModelRenderer#destroy} frees them; nothing
 	 * called it, so every swap leaked a map's worth of GPU buffers - unnoticeable
 	 * in a dialog opened once, and a browser is a dialog you scroll. They cannot be
 	 * freed here (this runs on the caller's thread, and GL belongs to the render
@@ -218,7 +221,7 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 		synchronized (this) {
 			for (H3DModel old : retired) {
 				try {
-					old.destroyAllBOs(gl);
+					draw.destroy(gl, old);
 				} catch (RuntimeException alreadyGone) {
 					//a model that never drew has nothing to free
 				}
@@ -230,9 +233,8 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 				model.makeAllBOs();
 			}
 			for (int i = 0; i < model.meshes.size(); i++) {
-				model.meshes.get(i).uploadVBO(gl);
-				model.meshes.get(i).render(gl, model.materials.size() > model.meshes.get(i).materialId
-						? model.materials.get(model.meshes.get(i).materialId) : null);
+				draw.upload(gl, model.meshes.get(i));
+				draw.render(gl, model.meshes.get(i), ctrmap.render.ModelRenderer.materialOf(model, i));
 			}
 		}
 		gl.glFlush();
@@ -263,7 +265,7 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 					continue;
 				}
 				try {
-					old.destroyAllBOs(gl);
+					draw.destroy(gl, old);
 				} catch (RuntimeException alreadyGone) {
 					//nothing to free
 				}

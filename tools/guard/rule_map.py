@@ -135,7 +135,7 @@ def bodies_in(text):
     and the count could not show it. Two statements of one rule are two sets of obligations,
     not a collision to resolve by writing the second over the first.
     """
-    found = [(" ".join(m.group(1).split()).strip(" ."), m.start(), m.end())
+    found = [(" ".join(m.group(1).split()).strip().rstrip(" ."), m.start(), m.end())
              for m in _HEADLINE.finditer(text)]
     #: ...and the headline is NOT cut at its first full stop. "DO THE WORK MECHANICALLY. AGENT
     #: SWEEPS ARE THE LAST RESORT" was audited as "DO THE WORK MECHANICALLY", so the ledger
@@ -284,6 +284,12 @@ def summary(root):
 
 
 def main(argv):
+    #a word this does not read refuses the run, before anything runs (cli_words, 2026-10-10)
+    import _cli
+    unread_words = _cli.refused(argv[1:], most=1)
+    if unread_words:
+        print(unread_words)
+        return 2
     root = argv[1] if len(argv) > 1 else "."
     why = findings(root)
     total, enforced, unenforced = summary(root)

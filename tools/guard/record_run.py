@@ -28,6 +28,7 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console window for 
 LF = chr(10)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 ROOT = _tree_root.require(__file__)
 LAST_RUN = os.path.join(ROOT, ".last-suite-run")
 SCRIPT = os.path.join(ROOT, "test.ps1")
@@ -134,7 +135,7 @@ def run(quick=False, anyway=None):
     written = {os.path.relpath(magnitude.SERIES, ROOT).replace(os.sep, "/")}
     before = commit_guard.source_digest(ROOT, exclude=written)
     began = time.time()
-    done = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=7200, creationflags=NO_WINDOW)
+    done = bounded.run(command, cwd=ROOT, capture_output=True, text=True, timeout=7200, creationflags=NO_WINDOW)
     after = commit_guard.source_digest(ROOT, exclude=written)
     if before is None or after is None:
         sys.stderr.write(
@@ -148,8 +149,8 @@ def run(quick=False, anyway=None):
         #: hashes - and the first time this refusal fired, the answer was its own output.
         moved = ""
         try:
-            listing = subprocess.run(["git", "-C", ROOT, "status", "--porcelain"],
-                                     capture_output=True, text=True, timeout=120, creationflags=NO_WINDOW)
+            listing = bounded.run(["git", "-C", ROOT, "status", "--porcelain"],
+                                  capture_output=True, text=True, timeout=120, creationflags=NO_WINDOW)
             moved = (listing.stdout or "").strip()
         except (OSError, subprocess.SubprocessError):
             moved = "(git could not say which - which is not the same as none)"
@@ -204,10 +205,14 @@ def run(quick=False, anyway=None):
         "suites_partly_skipped": partly,
         "complete": not skipped and not partly,
         "ran": len(passed),
+        #: WHAT `ran` COUNTED (census M.85): the commit gate checks a claim only in this word, so "N suites"
+        #: is checked against it and "N tests" is refused - five battery-size claims went into git log
+        #: unchecked while the gate read only "tests".
+        "unit": "suites",
         "slackRatchets": slack_ratchets(text),
         "quick": bool(quick),
-        "_why": ("`ran` is what a commit message may claim as `N tests`, and for this battery "
-                 "that is the number of SUITES that passed. test.ps1 echoes only the last two "
+        "_why": ("`ran` is what a commit message may claim as `N suites` (`unit`): for this battery "
+                 "it is the number of SUITES that passed. test.ps1 echoes only the last two "
                  "lines of each suite, so the per-suite check counts are not in its output at "
                  "all and summing whatever digits appear there would invent a number. A claim "
                  "this cannot verify is worse than one it refuses."),
@@ -240,6 +245,12 @@ def slack_ratchets(text):
 
 
 def main(argv):
+    #a word this does not read refuses the run, before anything runs (cli_words, 2026-10-10)
+    import _cli
+    unread_words = _cli.refused(argv[1:], flags=("--anyway", "--quick", "--magnitude"), valued=("--anyway",), rest=("--magnitude",), most=0)
+    if unread_words:
+        print(unread_words)
+        return 2
     anyway = None
     if "--anyway" in argv:
         at = argv.index("--anyway")

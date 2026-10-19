@@ -321,7 +321,7 @@ public class GarcSniffTest {
 		check(stored != null && stored.length < LZ11.minimumStoredLength(declared),
 				"it declares " + declared + ", which no stream of " + (stored == null ? -1 : stored.length)
 				+ " bytes can produce (at least " + LZ11.minimumStoredLength(declared) + " needed)");
-		check(stored != null && !LZ11.prefixDecodes(stored, 64),
+		check(stored != null && !LZ11.prefixDecodes(stored, 64, (stored).length),
 				"and its first token does not decode as LZ11 either");
 		check(out != null && stored != null && out.length == stored.length,
 				"so it comes back as its raw stored bytes, not inflated"
@@ -351,19 +351,19 @@ public class GarcSniffTest {
 			plain[i] = (byte) (i * 7 + (i >> 5));
 		}
 		byte[] packed = LZ11.compress(plain);
-		check(LZ11.prefixDecodes(packed, 64), "the first 64 bytes of a stream we compressed decode strictly");
-		check(LZ11.prefixDecodes(packed, packed.length), "and so does all of it");
+		check(LZ11.prefixDecodes(packed, 64, (packed).length), "the first 64 bytes of a stream we compressed decode strictly");
+		check(LZ11.prefixDecodes(packed, packed.length, (packed).length), "and so does all of it");
 		byte[] cut = java.util.Arrays.copyOf(packed, 40);
-		check(!LZ11.prefixDecodes(cut, 64), "cut short at 40 bytes, the stream runs out before its declared length: refused");
+		check(!LZ11.prefixDecodes(cut, 64, (cut).length), "cut short at 40 bytes, the stream runs out before its declared length: refused");
 		//a back-reference into bytes never written: flag 0x80, token 0x00 0x00 0x00
 		//= a 17-byte run at displacement 1 with nothing yet written
 		byte[] bad = {0x11, 0x20, 0x00, 0x00, (byte) 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-		check(!LZ11.prefixDecodes(bad, 64), "a first token that references bytes not yet written: refused");
+		check(!LZ11.prefixDecodes(bad, 64, (bad).length), "a first token that references bytes not yet written: refused");
 		byte[] zero = {0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-		check(!LZ11.prefixDecodes(zero, 64), "a declared length of 0 is not a stream");
+		check(!LZ11.prefixDecodes(zero, 64, (zero).length), "a declared length of 0 is not a stream");
 		//the real thing: #122's sixteen bytes
 		byte[] e122 = new GARC(trclass).getStoredEntry(NOT_COMPRESSED_ENTRY);
-		check(e122 != null && e122.length == 16 && !LZ11.prefixDecodes(e122, 64),
+		check(e122 != null && e122.length == 16 && !LZ11.prefixDecodes(e122, 64, (e122).length),
 				"a/0/3/7 #122's own 16 bytes fault on their first token");
 	}
 

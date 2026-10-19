@@ -30,9 +30,6 @@ public class PICACommandReader {
 	ArrayList<ArrayList<Float>> floatUniform = new ArrayList<>(96);
 	List<Float> uniform = new ArrayList<>();
 
-	float[] lookUpTable = new float[256];
-	int lutIndex;
-
 	/** The last value written to each register the block wrote; a register it never wrote reads 0. */
 	private final Map<Integer, Long> commands = new HashMap<>();
 	long currentUniform;
@@ -56,8 +53,6 @@ public class PICACommandReader {
 				currentUniform = parameter & 0x7fffffff;
 			} else if (id == PICACommand.vertexShaderFloatUniformData) {
 				uniform.add(toFloat((int) getParameter(id)));
-			} else if (id == PICACommand.fragmentShaderLookUpTableData) {
-				lookUpTable[lutIndex++] = getParameter(id);
 			}
 			for (int i = 0; i < extraParameters; i++) {
 				if (consecutiveWriting) {
@@ -73,8 +68,6 @@ public class PICACommandReader {
 
 				if (id > PICACommand.vertexShaderFloatUniformConfig && id < PICACommand.vertexShaderFloatUniformData + 8) {
 					uniform.add(toFloat((int) getParameter(id)));
-				} else if (id == PICACommand.fragmentShaderLookUpTableData) {
-					lookUpTable[lutIndex++] = getParameter(id);
 				}
 			}
 
@@ -85,8 +78,6 @@ public class PICACommandReader {
 				floatUniform.get((int) currentUniform).addAll(uniform);
 				uniform.clear();
 			}
-			lutIndex = 0;
-
 			if (!ignoreAlign) {
 				while ((input.position() & 7) != 0) {
 					input.readInt(); //Ignore 0x0 padding Words

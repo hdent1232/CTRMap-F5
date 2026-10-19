@@ -53,6 +53,7 @@ if __name__ == "__main__":
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bundle_env        # noqa: E402  - one PREFIX renames every override
+import bundle_rules      # noqa: E402  - the ONE reader of a lock; which checkout a call is in
 import bundle_shell      # noqa: E402  - the command, found by shape, at any depth
 
 LOCK = ".mutation-in-flight"
@@ -103,7 +104,7 @@ def touched_paths(paths, locked, root):
         full = os.path.normcase(os.path.abspath(os.path.join(root, candidate)))
         if full != base and not full.startswith(base + os.sep):
             continue
-        rel = os.path.relpath(full, base).replace(os.sep, "/").rstrip("/")
+        rel = bundle_shell.relative(full, base).rstrip("/")
         target = os.path.normcase(locked).replace(os.sep, "/")
         if rel in (".", "") or rel == target or target.startswith(rel + "/"):
             found.append(raw)
@@ -116,12 +117,94 @@ def locked_module(root):
     An empty or unreadable lock reads as NO lock rather than as an unnamed one: this hook may
     never be the reason a turn cannot proceed on a file nobody is mutating.
 
-    ITS FIRST LINE, through `bundle_shell.lock_names` - the reading every hook outside the judge
-    shares. This read the WHOLE file as the path, and every writer of the lock writes more than
-    one line, so a `cat` of the mutated file itself was let through under every real lock (CTRMap
-    F171); only a grep of its directory was still refused.
+    THE FIRST LINE, BY THE ONE READER. This read the WHOLE file as the path, and every lock
+    writer writes more than one line - the bundle's own `take_lock` writes the path, then a nonce
+    - so the path never matched and a read of the mutated file went through under every real
+    lock (reported by the CTRMap session 2026-10-07, confirmed against `take_lock`). Two readers
+    of one file is one rule written twice; `bundle_rules.locked` is the reader every judge uses.
     """
-    return bundle_shell.lock_names(root, LOCK) or None
+    return bundle_rules.locked(root, LOCK) or None
+
+
+def places(payload, root):
+    """[(checkout, its commands are read against it)] for every checkout of this repository this
+    call can read: the project, where the call RUNS, and where each path it names lands.
+
+    A LINKED WORKTREE HOLDS ITS OWN LOCK. A mutation run started there plants into the worktree's
+    files and writes the worktree's `.mutation-in-flight`, while the hooks run from the project
+    and read only the project's - measured 2026-10-07 on DF Engine, a plant drive in a worktree
+    the harness made, while the same session read that worktree's modules. A command is
+    read against the lock where it runs (and the project's, as it always was); a path against the
+    lock of the checkout it lands in.
+    """
+    acting = bundle_rules.acting_in(payload, root)
+    out = [(root, True)]
+    if acting != root:
+        out.append((acting, True))
+    for one in bundle_shell.paths(payload):
+        if not isinstance(one, str) or not one.strip():
+            continue
+        place = bundle_rules.landing(root, one if os.path.isabs(one) else os.path.join(acting, one))
+        if place is not None and all(place != held for held, _runs in out):
+            out.append((place, False))
+    return out
+
+
+#: A command that moves where it runs: a relative path after it is not followed here.
+_MOVES = re.compile(r"^\s*(?:cd|chdir|pushd|popd|Set-Location|sl|Push-Location|Pop-Location)\b",
+                    re.I)
+
+
+def _same(a, b):
+    return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+
+
+def _home(word, root, acting, shell):
+    """The checkout of this repository the file `word` lives in, read the way the running shell
+    reads a path - or None when that cannot be told, or two readings disagree."""
+    found = bundle_shell.readings(word, acting, shell)
+    if not found or any(path is None for path in found):
+        return None
+    homes = {bundle_rules.landing(root, path) for path in found}
+    if len(homes) != 1:
+        return None
+    return homes.pop()
+
+
+def tool_homes(command, root, acting, shell=None):
+    """[checkout, or None where it cannot be told] for every audit tool this command runs by an
+    interpreter - where the tool's FILE lives, which is the tree it reads.
+
+    A TOOL READS THE CHECKOUT IT LIVES IN. Each takes its root from its own file, so a linked
+    worktree's `tools/audit/tiers.py` reads the worktree whatever the main tree is doing. This read
+    every command against the project's lock as well as the lock where it runs, and measured
+    2026-10-10 on DF Engine, another session's plant drive in the main checkout refused that tool,
+    run for a worktree whose own lock was absent, for about fifteen minutes. The other way round
+    it was blind: run from the main tree by its path, a worktree's tool was never read against the
+    worktree's lock. A `cd` anywhere before a tool makes it unplaceable here, and an unplaceable
+    tool is judged as it always was, against every lock."""
+    homes, moved = [], False
+    for one in bundle_shell.split_commands(command or ""):
+        if _MOVES.match(one):
+            moved = True
+            continue
+        for words, _background in bundle_shell.runs(one):
+            if not words:
+                continue
+            program = bundle_shell.program_of(words[0][0])
+            if not re.fullmatch(r"py|pythonw?[0-9.]*|uv|coverage", program):
+                continue
+            args = [(t if t is not None else w) for w, t in words[1:]]
+            module = next((args[at + 1] for at, a in enumerate(args[:-1]) if a == "-m"), "")
+            script = next((a for a in args if a.endswith(".py")), "")
+            if AUDIT_TOOL.search(script.replace(chr(92), "/")):
+                word = script
+            elif re.match(r"tools\.audit\.", module):
+                word = "."                      # a module runs from where the call runs
+            else:
+                continue
+            homes.append(None if moved else _home(word, root, acting, shell))
+    return homes
 
 
 def readers_of(command, locked):
@@ -195,7 +278,7 @@ def _module_names(locked):
     return [".".join(parts[n:]) for n in range(len(parts) - 1)]
 
 
-def reads_by_running(command, locked):
+def reads_by_running(command, locked, tools_elsewhere=False):
     """Why one command READS the locked module by what it RUNS, or ''.
 
     WHAT RUNS, NOT THE FIRST WORD TYPED - `bundle_shell.runs`, with `cd` followed. Measured
@@ -220,7 +303,8 @@ def reads_by_running(command, locked):
                 script = next((a for a in args if a.endswith(".py")), "")
                 tool = AUDIT_TOOL.search(script.replace(chr(92), "/")) or re.match(
                     r"tools\.audit\.([A-Za-z_][A-Za-z0-9_]*)$", module)
-                if tool and not module.startswith(("ruff", "pyflakes", "flake8")):
+                if tool and not tools_elsewhere and not module.startswith(
+                        ("ruff", "pyflakes", "flake8")):
                     return "runs %s, which reads the tree it answers about" % tool.group(0)
                 code = " ".join(args)
                 for name in _module_names(locked):
@@ -242,11 +326,13 @@ def reads_by_running(command, locked):
     return ""
 
 
-def verdict(command, locked):
-    """(deny?, reason). Pure, so a test can drive it without a lock file or a hook runner."""
+def verdict(command, locked, tools_elsewhere=False):
+    """(deny?, reason). Pure, so a test can drive it without a lock file or a hook runner.
+    `tools_elsewhere`: every audit tool the command runs certainly lives in another checkout
+    (`tool_homes`), so running one does not read the tree this lock is in."""
     if not locked:
         return False, None
-    by_running = reads_by_running(command, locked)
+    by_running = reads_by_running(command, locked, tools_elsewhere)
     if by_running:
         return True, (
             bundle_shell.policy(__file__) + "\n"
@@ -279,7 +365,7 @@ def verdict(command, locked):
                 "deliberately when a restore fails, and it names the file to `git checkout`.\n"
                 % (locked, ", ".join(named), locked))
         tool = AUDIT_TOOL.search(segment)
-        if tool and runs_it(segment, tool):
+        if tool and not tools_elsewhere and runs_it(segment, tool):
             return True, (
                 bundle_shell.policy(__file__) + "\n"
                 "A mutation run is holding %s open, and `%s.py` reads the tree to answer a "
@@ -288,6 +374,82 @@ def verdict(command, locked):
                 "not only a wrong answer on screen, it is a wrong answer recorded.\n\n"
                 "Wait for the run to finish, then run it again.\n"
                 % (locked, tool.group(1)))
+    return False, None
+
+
+def runs_elsewhere(command, root, start, shell=None):
+    """Does every program this command runs CERTAINLY run outside every checkout of `root`'s
+    repository, naming nothing inside one?
+
+    Measured 2026-10-09 on DF Engine: under a plant drive's lock, `cd <a clone in the scratchpad>
+    && python -m pytest ... ruff check tools/audit/x.py` was refused as reading the mutant - the
+    clone's own copy of the tool, in a repository no lock was held in. Only a certain answer
+    excuses: the command moves with `cd` to a folder `bundle_shell.lands` can place and
+    `bundle_rules.landing` puts in no checkout, every later program runs there, and no word any of
+    them carries can be read as a path into one. A second cd back, a variable, a glob, a word
+    that lands here - each is read against the lock as before."""
+    here, moved = start, False
+    for one in bundle_shell.split_commands(command):
+        cd = _CD.match(one)
+        if cd:
+            here = bundle_shell.lands(next(g for g in cd.groups() if g), here, shell)
+            if here is None or bundle_rules.landing(root, here) is not None:
+                return False
+            moved = True
+            continue
+        if not moved:
+            return False
+        for words, _background in bundle_shell.runs(one):
+            if not words:
+                return False
+            for word, typed in words:
+                found = bundle_shell.readings(typed or word, here, shell)
+                if not found or any(path is None or bundle_rules.landing(root, path) is not None
+                                    for path in found):
+                    return False
+    return moved
+
+
+#: A command that only moves: `cd` and its spellings, to one folder, quoted or not.
+_CD = re.compile(r"""^\s*(?:cd|chdir|pushd|Set-Location|sl)\s+(?:"([^"]+)"|'([^']+)'|(\S+))\s*$""",
+                 re.I)
+
+
+def judged(payload, root):
+    """(deny?, reason) for one call, against the lock of every checkout it can read - and of every
+    checkout an audit tool it runs lives in (`tool_homes`)."""
+    shell = bundle_shell.shell_of(payload.get("tool_name"))
+    acting = bundle_rules.acting_in(payload, root)
+    command = bundle_shell.text(payload) if bundle_shell.commands(payload) else ""
+    homes = tool_homes(command, root, acting, shell)
+    held = places(payload, root)
+    for home in homes:
+        if home is not None and all(not _same(home, place) for place, _runs in held):
+            held.append((home, True))
+    for place, runs_here in held:
+        locked = locked_module(place)
+        if not locked:
+            continue
+        if runs_here and command and not runs_elsewhere(command, place, acting, shell):
+            # THE SAME TEXT THE GATE LOOKED AT - see guard_heredoc.py.
+            elsewhere = bool(homes) and all(home is not None and not _same(home, place)
+                                            for home in homes)
+            deny, reason = verdict(command, locked, elsewhere)
+            if deny:
+                return deny, reason
+        named = touched_paths(bundle_shell.paths(payload), locked, place)
+        if named:
+            return True, (
+                bundle_shell.policy(__file__) + "\n"
+                "A mutation run is holding %s open%s, and this call names %s. What is on disk "
+                "right now is `ast.unparse` output with one operator deliberately wrong - a "
+                "Read or Grep answers about THAT, and an Edit writes over a mutant the run's "
+                "`finally` will then overwrite.\n\n"
+                "This hook once let every non-shell call through, in a comment calling that the "
+                "same answer the old name check gave. It was the same hole.\n\n"
+                "To read the committed content meanwhile:\n"
+                "    git show HEAD:%s\n" % (locked, "" if place == root else " in the worktree at "
+                                           + place, ", ".join(named), locked))
     return False, None
 
 
@@ -308,26 +470,7 @@ def main():
     if bundle_env.allowed("ALLOW_MUTATION_READ"):
         sys.exit(0)
     root = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
-    locked = locked_module(root)
-    if not locked:
-        sys.exit(0)
-    deny, reason = False, None
-    if bundle_shell.commands(payload):
-        # THE SAME TEXT THE GATE LOOKED AT - see guard_heredoc.py.
-        deny, reason = verdict(bundle_shell.text(payload), locked)
-    if not deny:
-        named = touched_paths(bundle_shell.paths(payload), locked, root)
-        if named:
-            deny, reason = True, (
-                bundle_shell.policy(__file__) + "\n"
-                "A mutation run is holding %s open, and this call names %s. What is on disk "
-                "right now is `ast.unparse` output with one operator deliberately wrong - a "
-                "Read or Grep answers about THAT, and an Edit writes over a mutant the run's "
-                "`finally` will then overwrite.\n\n"
-                "This hook once let every non-shell call through, in a comment calling that the "
-                "same answer the old name check gave. It was the same hole.\n\n"
-                "To read the committed content meanwhile:\n"
-                "    git show HEAD:%s\n" % (locked, ", ".join(named), locked))
+    deny, reason = judged(payload, root)
     if deny:
         json.dump({"hookSpecificOutput": {
             "hookEventName": "PreToolUse",

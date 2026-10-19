@@ -71,6 +71,7 @@ public final class ToolSelection {
 	 * application never does it; a suite does, to assert what a class does
 	 * when no tool is up.
 	 */
+	@ctrmap.util.ForSuites("SEAM: a suite puts the held tool down without telling it, to assert what a class does when no tool is up; the application never does")
 	public void drop() {
 		held = null;
 	}

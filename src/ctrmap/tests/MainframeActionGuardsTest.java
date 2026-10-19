@@ -84,7 +84,12 @@ public class MainframeActionGuardsTest {
 		theModSwitchDecidesFromTheFolderItWasGiven();
 		theModSwitchSaysSoWhenItCannotMove();
 		restoreRoutesToTheChoiceThatWasMade();
+		theWindowsSweptBranchesAreAsserted();
+		anUndoShowsThePickedTileAgain();
+		aForkMadeIndependentIsPacked();
+		theGuideAndTheSaveChooserAreAsserted();
 		openingAGrMapfileAsksBeforeItDiscards();
+		theWindowsStepsOutOfItAreAsked();
 
 		if (!dump.isDirectory()) {
 			Skip.section("no dump at " + dump
@@ -96,6 +101,8 @@ public class MainframeActionGuardsTest {
 			facilitySetupRefusesAnAppendedZone();
 			facilitySetupOffersBothWaysAndActsOnNeitherUnasked();
 			theObjToolsDefaultToTheLoadedZonesRegion();
+			aClosedFormOrChooserStopsItsAction();
+			aNewMaterialsFormClosedImportsOnlyWhatExists();
 		}
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -394,39 +401,29 @@ public class MainframeActionGuardsTest {
 			check(said.size() == 1 && str(new File(game, "a/0/1/3")).equals("EDITED"),
 					"Cancel asks nothing further and restores nothing: " + said.size() + " message(s)");
 
-			//one archive, then no filename
+			//one archive, then no file picked
 			said = restore("Restore ONE archive", null);
-			check(said.size() == 2 && said.get(1).startsWith("Restore one archive:"),
-					"picking one archive asks which: " + (said.size() > 1 ? first2(said) : said.toString()));
-			check(said.size() == 2 && said.get(1).contains(
-					Workspace.profile().archivePath(ArchiveType.ZONE_DATA)),
-					"naming THIS game's zone table as the example, not a literal one: " + (said.size() > 1 ? said.get(1) : ""));
+			check(said.size() == 2 && said.get(1).startsWith("Restore one archive:") && said.get(1).contains("the files the backup holds"),
+					"picking one archive asks which, from the files the backup holds: " + (said.size() > 1 ? first2(said) : said.toString()));
 			check(str(new File(game, "a/0/1/3")).equals("EDITED"),
-					"and a cancelled filename restores nothing");
+					"and a question left unanswered restores nothing");
 
-			//one archive, the name the vault actually holds
-			said = restore("Restore ONE archive", "a/0/1/3");
+			//PICKED, NOT TYPED (census M.147): each file is offered under its archive's name, from this game's profile
+			String zoneTable = ctrmap.vault.Vault.key(Workspace.profile().archivePath(ArchiveType.ZONE_DATA));
+			said = restore("Restore ONE archive", zoneTable + "   (zone data)");
 			check(str(new File(game, "a/0/1/3")).equals("pristine zone data"),
-					"a named archive is put back byte for byte");
+					"the zone table picked by its name is put back byte for byte");
 			check(said.size() == 3 && said.get(2).startsWith("Restored a/0/1/3:"),
 					"and the user is told which file came back: " + said);
 			check(str(new File(game, "a/0/4/0")).equals("pristine map matrix"),
 					"and nothing else in the game folder was touched");
 
-			//THE DIALOG'S OWN SUGGESTION RESTORES (F155): it was refused, the backup keying the path
-			//without the leading slash the suggestion carries
+			//a path typed instead of picked is not one of the choices, and restores nothing (the F155 typed paths are
+			//gone with the text box they were typed in)
 			write(new File(game, "a/0/1/3"), "EDITED AGAIN");
-			String offered = Workspace.profile().archivePath(ArchiveType.ZONE_DATA);
-			said = restore("Restore ONE archive", offered);
-			check(offered.startsWith("/") && said.size() == 3 && said.get(2).startsWith("Restored a/0/1/3:"),
-					"accepting the path the dialog itself offered restores it: " + (said.size() > 2 ? said.get(2) : said.toString()));
-			check(str(new File(game, "a/0/1/3")).equals("pristine zone data"),
-					"and the archive is put back");
-			write(new File(game, "a/0/1/3"), "EDITED ONCE MORE");
 			said = restore("Restore ONE archive", "a\\0\\1\\3");
-			check(said.size() == 3 && said.get(2).startsWith("Restored a/0/1/3:") && str(new File(game, "a/0/1/3")).equals("pristine zone data"),
-					"as is the same path typed the Windows way: " + (said.size() > 2 ? said.get(2) : said.toString()));
-			write(new File(game, "a/0/1/3"), "EDITED AGAIN");
+			check(said.size() == 2 && str(new File(game, "a/0/1/3")).equals("EDITED AGAIN"),
+					"an answer that is not one of the offered files restores nothing: " + said);
 
 			//the whole game, with the confirmation unanswered
 			said = restore("Restore the WHOLE game");
@@ -491,7 +488,7 @@ public class MainframeActionGuardsTest {
 		//a panel with no zone selected is the same situation, and must read the
 		//same way: zoneIndex is -1 until the dropdown has been used
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		TestWindow.mZonePnl(pnl);
 		TestWindow.bindLoadedZone(lz);
 		check(lz.index() == -1 && lz.open() == null, "a fresh zone panel holds no zone");
@@ -513,7 +510,7 @@ public class MainframeActionGuardsTest {
 	static void facilitySetupRefusesAnAppendedZone() throws Exception {
 		System.out.println("--- a facility refuses an appended zone, and says where to put it instead");
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		int baseZones = Workspace.getArchive(ArchiveType.ZONE_DATA).length - 2;
 		lz.open(baseZones + 4, null);
 		TestWindow.mZonePnl(pnl);
@@ -556,7 +553,7 @@ public class MainframeActionGuardsTest {
 	static void facilitySetupOffersBothWaysAndActsOnNeitherUnasked() throws Exception {
 		System.out.println("--- the facility action offers two paths and acts on neither unasked");
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		lz.open(100, null); //a base zone, well under the stock bound
 		TestWindow.mZonePnl(pnl);
 		TestWindow.bindLoadedZone(lz);
@@ -609,6 +606,157 @@ public class MainframeActionGuardsTest {
 	}
 
 	/**
+	 * The window's steps no suite reached inside it, asked out of it (the 2026-10-16 assembly, CtrmapMainframe 710, 837,
+	 * 2324, 2332, 2345 and 3313, SURVIVED: no suite builds the window or reaches into its forms): the histories a
+	 * gesture settles with no tileset editor open, the collision view's input with no OpenGL, a path field filled only
+	 * with an answer, and the new-materials mesh spinner held to its region's meshes.
+	 */
+	static void theWindowsStepsOutOfItAreAsked() throws Exception {
+		System.out.println("--- the window's steps no suite reached inside it, asked out of it");
+		ctrmap.humaninterface.UndoHistory a = UndoHistoryTest.overOneNumber(new int[]{0});
+		ctrmap.humaninterface.UndoHistory b = UndoHistoryTest.overOneNumber(new int[]{0});
+		ctrmap.humaninterface.UndoHistory c = UndoHistoryTest.overOneNumber(new int[]{0});
+		ctrmap.humaninterface.UndoHistory d = UndoHistoryTest.overOneNumber(new int[]{0});
+		Method settled = CtrmapMainframe.class.getDeclaredMethod("settledHistories", ctrmap.humaninterface.UndoHistory.class,
+				ctrmap.humaninterface.UndoHistory.class, ctrmap.humaninterface.UndoHistory.class,
+				ctrmap.humaninterface.UndoHistory.class, ctrmap.TileDBWriter.class);
+		settled.setAccessible(true);
+		Method collision = CtrmapMainframe.class.getDeclaredMethod("collisionInput", ctrmap.humaninterface.GLPanel.class);
+		collision.setAccessible(true);
+		Method fill = CtrmapMainframe.class.getDeclaredMethod("fillWith", javax.swing.JTextField.class, File.class);
+		fill.setAccessible(true);
+		Method bound = CtrmapMainframe.class.getDeclaredMethod("boundMeshSpinner", javax.swing.JSpinner.class,
+				javax.swing.JLabel.class, int.class);
+		bound.setAccessible(true);
+		String histories;
+		String noGl;
+		String filled;
+		String spun;
+		try {
+			histories = String.valueOf(settled.invoke(null, a, b, c, d, null)).equals(java.util.Arrays.asList(a, b, c, d).toString())
+					? "the four" : "not the four: " + settled.invoke(null, a, b, c, d, null);
+		} catch (InvocationTargetException threw) {
+			histories = "threw " + threw.getCause();
+		}
+		try {
+			collision.invoke(null, (Object) null);
+			noGl = "nothing wired";
+		} catch (InvocationTargetException threw) {
+			noGl = "threw " + threw.getCause();
+		}
+		javax.swing.JTextField field = new javax.swing.JTextField("as it was");
+		try {
+			fill.invoke(null, field, null);
+			filled = field.getText();
+			fill.invoke(null, field, new File("chosen"));
+			filled += " / " + field.getText();
+		} catch (InvocationTargetException threw) {
+			filled = "threw " + threw.getCause();
+		}
+		javax.swing.JSpinner mesh = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(5, 0, 999, 1));
+		javax.swing.JLabel count = new javax.swing.JLabel();
+		try {
+			bound.invoke(null, mesh, count, 3);
+			spun = mesh.getValue() + " of max " + ((javax.swing.SpinnerNumberModel) mesh.getModel()).getMaximum() + ", "
+					+ count.getText();
+			bound.invoke(null, mesh, count, 0);
+			spun += " / " + mesh.getValue() + ", " + count.getText();
+		} catch (InvocationTargetException threw) {
+			spun = "threw " + threw.getCause();
+		}
+		check("the four".equals(histories), "with no tileset editor open, a gesture settles the four histories: " + histories);
+		check("nothing wired".equals(noGl), "with no OpenGL there is no collision view to wire, and nothing throws: " + noGl);
+		check(("as it was / " + new File("chosen").getAbsolutePath()).equals(filled),
+				"a path field is filled with an answer, and left as it was with none: " + filled);
+		check("2 of max 2, (3 mesh(es): 0-2) / 0, (this region has no map model)".equals(spun),
+				"the new-materials mesh number is held to its region's meshes, and said: " + spun);
+		//and an update the launcher could not install, said at the start - nothing when there was none (the 2026-10-16
+		//final measurement, CtrmapMainframe 967)
+		Method notInstalled = CtrmapMainframe.class.getDeclaredMethod("sayAnUpdateNotInstalled", java.awt.Component.class,
+				String.class);
+		notInstalled.setAccessible(true);
+		List<String> started = Ui.record();
+		String failedSaid;
+		try {
+			notInstalled.invoke(null, null, null);
+			failedSaid = started.size() + " said";
+			notInstalled.invoke(null, null, "the disk was full");
+			failedSaid += ", then " + started;
+		} catch (InvocationTargetException threw) {
+			failedSaid = "threw " + threw.getCause();
+		} finally {
+			Ui.stopRecording();
+		}
+		check(failedSaid.startsWith("0 said, then [Update: The update could not be installed") && failedSaid.contains("the disk was full"),
+				"a start after an update that could not be installed says so with its reason, and a start after none says nothing: "
+				+ failedSaid);
+	}
+
+	/**
+	 * An OBJ import whose groups use a material the map lacks asks whether to make it new from a template; the question
+	 * closed imports only what has a material, the rest said skipped (the 2026-10-16 assembly, CtrmapMainframe 3331,
+	 * negate-if, SURVIVED: no suite imported an OBJ). Inverted, a closed question made the new material anyway, from the
+	 * region's first mesh, and OK made none. One triangle grouped under a material no map has, into the open zone's
+	 * region.
+	 */
+	static void aNewMaterialsFormClosedImportsOnlyWhatExists() throws Exception {
+		System.out.println("--- an OBJ import's new-materials question, closed, makes no new material");
+		File obj = new File(Scratch.dir("ctrmap_obj_newmat"), "edited.obj");
+		java.nio.file.Files.write(obj.toPath(), ("o brand_new_group\nv 0 0 0\nv 1 0 0\nv 0 0 1\nusemtl brand_new_mat\nf 1 2 3\n")
+				.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+		List<String> said = record("importMapObjAction", JOptionPane.OK_OPTION, obj, JOptionPane.CANCEL_OPTION);
+		String last = said.isEmpty() ? "" : said.get(said.size() - 1);
+		check(said.size() == 4 && said.get(2).startsWith("New materials") && last.contains("No OBJ group could be applied")
+				&& !last.contains("new material brand_new_mat"),
+				"an OBJ import's new-materials question, closed, makes no new material - its one group had none to go in: "
+				+ said);
+		said = record("importMapObjAction", JOptionPane.OK_OPTION, obj, JOptionPane.OK_OPTION);
+		last = said.isEmpty() ? "" : said.get(said.size() - 1);
+		check(said.size() == 4 && last.contains(": new material brand_new_mat (from template)"),
+				"and answered OK, the group is made a new material from the template: " + said);
+	}
+
+	/**
+	 * Each action whose form or file chooser is closed stops there, asking and writing nothing more (the 2026-10-16
+	 * assembly, CtrmapMainframe 2633, 2789, 3200, 3207, 3264, 3474, 3678, 3736 and 3743, negate-if, SURVIVED: no suite
+	 * reached one of these forms). Inverted, a closed form went on to do its work - a rename, a canvas, a resize - and a
+	 * cancelled chooser went on with no file. Over the real game with a zone open, each action answered up to the step
+	 * asked and that step closed.
+	 */
+	static void aClosedFormOrChooserStopsItsAction() throws Exception {
+		System.out.println("--- an action whose form or chooser is closed stops there, asking and writing nothing more");
+		LoadedZone lz = new LoadedZone();
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { },
+				UndoHistoryTest.overOneNumber(new int[]{0}),
+				new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
+		TestWindow.mZonePnl(pnl);
+		TestWindow.bindLoadedZone(lz);
+		int zoneIndex = 15; //Mauville: its map matrix is its own in the retail game
+		lz.open(zoneIndex, new ctrmap.formats.zone.Zone(new ctrmap.formats.containers.ZO(
+				temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(zoneIndex)), Workspace.session()),
+				Workspace.game()));
+		Object[][] steps = {
+			{"makeZoneIndependentAction", "form", new Object[0]},
+			{"renameZoneAction", "form", new Object[0]},
+			{"exportMapObjAction", "form", new Object[0]},
+			{"exportMapObjAction", "chooser", new Object[]{JOptionPane.OK_OPTION}},
+			{"importMapObjAction", "chooser", new Object[]{JOptionPane.OK_OPTION}},
+			{"blankCanvasAction", "form", new Object[0]},
+			{"resizeMapAction", "form", new Object[0]},
+			{"importMapModelAction", "form", new Object[0]},
+			{"importMapModelAction", "chooser", new Object[]{JOptionPane.OK_OPTION}}};
+		List<String> wrote = new java.util.ArrayList<>(Workspace.persistPaths());
+		for (Object[] s : steps) {
+			Object[] answers = (Object[]) s[2];
+			List<String> said = record((String) s[0], answers);
+			check(said.size() == answers.length + 1 && !said.toString().contains("THREW")
+					&& Workspace.persistPaths().equals(wrote),
+					s[0] + " with its " + s[1] + " closed stops there, asking nothing more: asked " + said.size() + " - "
+					+ said);
+		}
+	}
+
+	/**
 	 * The OBJ tools default their region spinner to the loaded zone's own map,
 	 * so a user never has to know region numbers.
 	 *
@@ -625,7 +773,7 @@ public class MainframeActionGuardsTest {
 		check(defaultRegion() == -1, "with no zone owner at all the default is -1, not a guess");
 
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		TestWindow.mZonePnl(pnl);
 		TestWindow.bindLoadedZone(lz);
 		check(defaultRegion() == -1, "with an owner holding no zone it is still -1");
@@ -643,10 +791,35 @@ public class MainframeActionGuardsTest {
 		check(defaultRegion() == expected,
 				"and that is what the OBJ tools offer (got " + defaultRegion() + ")");
 
-		//a header naming a matrix the archive does not have must fall back, not throw
-		lz.open().header.mapmatrixID = Workspace.getArchive(ArchiveType.MAP_MATRIX).length + 40;
-		check(defaultRegion() == -1,
-				"a header naming a matrix that does not exist falls back to -1 rather than throwing");
+		//census L.56: a header naming a matrix the archive does not have answered the same -1 as a zone that owns no
+		//region, and the blank canvas told the user so; it is said now, with its cause, and each caller says it
+		int missing = Workspace.getArchive(ArchiveType.MAP_MATRIX).length + 40;
+		lz.open().header.mapmatrixID = missing;
+		try {
+			check(false, "a header naming a matrix that does not exist is said, not answered as owning no region ("
+					+ defaultRegion() + ")");
+		} catch (InvocationTargetException said) {
+			Throwable why = said.getCause();
+			check(why instanceof java.io.IOException && why.getMessage().contains("map matrix " + missing + " could not be read"),
+					"a header naming a matrix that does not exist is said, not answered as owning no region: " + why);
+		}
+		String main = new String(java.nio.file.Files.readAllBytes(new File("src/ctrmap/CtrmapMainframe.java").toPath()),
+				java.nio.charset.StandardCharsets.UTF_8);
+		for (String action : new String[]{"private void exportMapObjAction()", "private void importMapObjAction()"}) {
+			String body = CollisionReadTest.body(main, action);
+			check(body != null && body.contains("formDefaultRegion(unread)") && body.contains("unread[0] != null ? unread[0]"),
+					action + " shows why it has no default when the matrix could not be read");
+		}
+		String helper = CollisionReadTest.body(main, "private int formDefaultRegion(String[] why)");
+		check(helper != null && helper.contains("why[0] = ") && helper.contains("Bytes.reason(unread)"),
+				"and the form's default says the reason it was not read");
+		//a matrix that is there but damaged is the same answer: the suite's workspace is not its to damage, so the read
+		//through the Grid - whose refusal is in words - is read in the source
+		String reads = CollisionReadTest.body(SourceSeamTest.stripComments(main), "private int defaultRegionForLoadedZone()");
+		int grid = reads == null ? -1 : reads.indexOf("MapMatrix.Grid.of(mm);");
+		int caught = reads == null ? -1 : reads.indexOf("catch (java.io.IOException | IllegalArgumentException unread)");
+		check(grid > 0 && caught > grid, "a damaged matrix is refused in words, not read as one naming no region ("
+				+ grid + ", " + caught + ")");
 	}
 
 	// ---- plumbing ----------------------------------------------------------
@@ -696,6 +869,207 @@ public class MainframeActionGuardsTest {
 		check(said.size() == 1 && said.get(0).equals(expected),
 				action + " -> " + expected + (said.size() == 1 && said.get(0).equals(expected)
 						? "" : "   (got " + said + ")"));
+	}
+
+	/**
+	 * The window's branches the 2026-10-12 mutation sweep found asserted by nothing - each line was broken in a way
+	 * that still compiled and every suite stayed green. Each is driven here the way the window takes it.
+	 */
+	static void theWindowsSweptBranchesAreAsserted() throws Exception {
+		System.out.println("--- the window's branches the sweep found unasserted, each driven");
+		Workspace.reset();
+		Method report = CtrmapMainframe.class.getDeclaredMethod("reportDeploy", File.class, java.util.function.Supplier.class);
+		report.setAccessible(true);
+		ctrmap.ModDeployer.Result none = new ctrmap.ModDeployer.Result();
+		List<String> said = Ui.record();
+		try {
+			report.invoke(TestWindow.W, new File("mod"), (java.util.function.Supplier<ctrmap.ModDeployer.Result>) () -> none);
+		} finally {
+			Ui.stopRecording();
+		}
+		check(said.toString().contains("Nothing to deploy"), "a deploy that shipped and took back nothing says so: " + said);
+		ctrmap.ModDeployer.Result back = new ctrmap.ModDeployer.Result();
+		back.removed.add("the zone archive (parked)");
+		said = Ui.record();
+		try {
+			report.invoke(TestWindow.W, new File("mod"), (java.util.function.Supplier<ctrmap.ModDeployer.Result>) () -> back);
+		} finally {
+			Ui.stopRecording();
+		}
+		check(!said.toString().contains("Nothing to deploy") && said.toString().contains("Back to retail, so taken out of the mod")
+				&& said.toString().contains("the zone archive (parked)"), "and one that took a copy back names it, and is not 'nothing': " + said);
+		ctrmap.ZoneRepurposeScanner.Scan scan = new ctrmap.ZoneRepurposeScanner.Scan();
+		check(!ctrmap.ZoneRepurposeScanner.report(scan).contains("could not be read"),
+				"the reusable-zone report says nothing of unreadable zones when there are none");
+		for (int i = 0; i < 3; i++) {
+			scan.unreadable.add("zone " + i + ": unreadable");
+		}
+		String three = ctrmap.ZoneRepurposeScanner.report(scan);
+		check(three.contains("3 zone(s) or script(s) could not be read") && three.contains("zone 2: unreadable") && !three.contains("more"),
+				"and names each of three it could not read, with no 'more'");
+		for (int i = 3; i < 7; i++) {
+			scan.unreadable.add("zone " + i + ": unreadable");
+		}
+		String seven = ctrmap.ZoneRepurposeScanner.report(scan);
+		check(seven.contains("zone 4: unreadable") && !seven.contains("zone 5: unreadable") && seven.contains("...and 2 more"),
+				"and of seven names five and says how many more");
+		said = record("stripZoneLimit", new Object[]{null});
+		check(said.toString().contains("No code.ips was changed"), "taking the zone-limit patch out, cancelled, says nothing was changed: " + said);
+		Method picked = CtrmapMainframe.class.getDeclaredMethod("picked", javax.swing.JFileChooser.class, String.class);
+		picked.setAccessible(true);
+		File chosen = File.createTempFile("ctrmap-picked", ".obj");
+		chosen.deleteOnExit();
+		Ui.record(new Object[]{null});
+		Object cancelled;
+		try {
+			cancelled = picked.invoke(TestWindow.W, new javax.swing.JFileChooser(), "LAST_DIR_SWEEP_PROBE");
+		} finally {
+			Ui.stopRecording();
+		}
+		Ui.record(chosen);
+		Object approved;
+		try {
+			approved = picked.invoke(TestWindow.W, new javax.swing.JFileChooser(), "LAST_DIR_SWEEP_PROBE");
+		} finally {
+			Ui.stopRecording();
+		}
+		check(cancelled == null && chosen.equals(approved), "a chooser cancelled answers no file, and one approved answers its file: " + approved);
+		java.nio.file.Files.write(chosen.toPath(), "v 0 0 0\nv 1 0 0\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+		ctrmap.humaninterface.CollEditPanel coll = TestWindow.mCollEditPanel();
+		ctrmap.humaninterface.CollEditPanel panel = new ctrmap.humaninterface.CollEditPanel(new ctrmap.humaninterface.tools.ToolSelection(),
+				UndoHistoryTest.overOneNumber(new int[]{0}));
+		panel.coll = ctrmap.formats.gfcollision.GRCollisionFile.blank(null);
+		TestWindow.mCollEditPanel(panel);
+		try {
+			said = record("objToCollisionsAction", chosen);
+		} finally {
+			TestWindow.mCollEditPanel(coll);
+		}
+		check(said.toString().contains("holds no faces this can use"), "an OBJ with no faces replaces no collision, and says so: " + said);
+		said = record("openZoneAction", javax.swing.JOptionPane.OK_OPTION, chosen);
+		check(said.toString().contains("is not a zone mini-pack"), "a file that is not a zone pack is refused as one: " + said);
+		check("kept".equals(ctrmap.ModDeployer.folderForTitle("no title at all", "kept")),
+				"a title naming no id leaves the folder the user had");
+		String named = ctrmap.ModDeployer.folderForTitle("000400000011C400", "kept");
+		File root = ctrmap.ModDeployer.azaharModRoot("000400000011C400");
+		check(root == null ? "kept".equals(named) : root.getAbsolutePath().equals(named),
+				"and one naming a title shows that title's folder on this machine: " + named);
+	}
+
+	/**
+	 * The quick-start guide and the save chooser: the final sweep of 2026-10-12 negated their tests and every suite
+	 * stayed green. The guide is looked for where there is none - the working folder pointed at an empty one, the
+	 * suites running from loose classes have no install folder - so nothing is ever opened: a guide that is found is
+	 * handed to the desktop's own program, which a suite must never start on anybody's screen.
+	 */
+	static void theGuideAndTheSaveChooserAreAsserted() throws Exception {
+		System.out.println("--- a guide that is nowhere is said, and a save chooser answers what was picked");
+		File empty = java.nio.file.Files.createTempDirectory("ctrmap-no-guide").toFile();
+		String home = System.getProperty("user.dir");
+		List<String> said;
+		System.setProperty("user.dir", empty.getPath());
+		try {
+			said = record("quickStartAction");
+		} finally {
+			System.setProperty("user.dir", home);
+			empty.delete();
+		}
+		String where = new File(empty, "QUICKSTART.md").getAbsoluteFile().getPath();
+		check(said.size() == 1 && said.get(0).contains("QUICKSTART.md is not beside the program") && said.get(0).contains(where),
+				"a quick-start guide that is nowhere is said, naming where it was looked for: " + said);
+		Method toSave = CtrmapMainframe.class.getDeclaredMethod("pickedToSave", javax.swing.JFileChooser.class, String.class);
+		toSave.setAccessible(true);
+		File chosen = new File(empty, "saved.obj");
+		Ui.record(new Object[]{null});
+		Object cancelled;
+		try {
+			cancelled = toSave.invoke(TestWindow.W, new javax.swing.JFileChooser(), "LAST_DIR_SWEEP_PROBE");
+		} finally {
+			Ui.stopRecording();
+		}
+		Ui.record(chosen);
+		Object approved;
+		try {
+			approved = toSave.invoke(TestWindow.W, new javax.swing.JFileChooser(), "LAST_DIR_SWEEP_PROBE");
+		} finally {
+			Ui.stopRecording();
+		}
+		check(cancelled == null && chosen.equals(approved),
+				"a save chooser cancelled answers no file, and one approved answers the file named: " + approved);
+	}
+
+	/**
+	 * An undo draws the map again and shows the picked tile again in the tile inspector - and, with no tile picked,
+	 * leaves the inspector alone. The 2026-10-12 sweep negated that test and every suite stayed green.
+	 */
+	static void anUndoShowsThePickedTileAgain() throws Exception {
+		System.out.println("--- an undo shows the picked tile again, and no tile when none is picked");
+		ctrmap.humaninterface.tools.ToolSelection tools = new ctrmap.humaninterface.tools.ToolSelection();
+		ctrmap.humaninterface.TileMapPanel oldMap = TestWindow.mTileMapPanel();
+		ctrmap.humaninterface.TileEditForm oldForm = TestWindow.mTileEditForm();
+		int sx = ctrmap.humaninterface.Selector.selTileX, sy = ctrmap.humaninterface.Selector.selTileY;
+		ctrmap.humaninterface.TileMapPanel map = new ctrmap.humaninterface.TileMapPanel(new LoadedZone(), tools,
+				PropEditFormGuardsTest.SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(tools,
+				UndoHistoryTest.overOneNumber(new int[]{0})), null);
+		ctrmap.humaninterface.TileEditForm form = new ctrmap.humaninterface.TileEditForm(tools, () -> {
+		}, map);
+		TestWindow.mTileMapPanel(map);
+		TestWindow.mTileEditForm(form);
+		Method redraw = CtrmapMainframe.class.getDeclaredMethod("redrawRegions");
+		redraw.setAccessible(true);
+		java.lang.reflect.Field label = ctrmap.humaninterface.TileEditForm.class.getDeclaredField("tileId");
+		label.setAccessible(true);
+		Object shown = label.get(form);
+		Method text = shown.getClass().getMethod("getText");
+		try {
+			form.setTileLabel("before");
+			ctrmap.humaninterface.Selector.selTileX = -1;
+			redraw.invoke(TestWindow.W);
+			check("before".equals(text.invoke(shown)), "an undo with no tile picked leaves the inspector as it was: " + text.invoke(shown));
+			ctrmap.humaninterface.Selector.selTileX = 3;
+			ctrmap.humaninterface.Selector.selTileY = 4;
+			redraw.invoke(TestWindow.W);
+			check(String.valueOf(text.invoke(shown)).startsWith("Tile 3x4"),
+					"and one with a tile picked shows that tile again: " + text.invoke(shown));
+		} finally {
+			ctrmap.humaninterface.Selector.selTileX = sx;
+			ctrmap.humaninterface.Selector.selTileY = sy;
+			TestWindow.mTileMapPanel(oldMap);
+			TestWindow.mTileEditForm(oldForm);
+		}
+	}
+
+	/**
+	 * A zone made independent packs what it forked and is read again (F255), and packs nothing when nothing was forked.
+	 * The 2026-10-12 sweep negated that test and every suite stayed green. With no workspace open, the pack's own
+	 * refusal is what shows it was asked for.
+	 */
+	static void aForkMadeIndependentIsPacked() throws Exception {
+		System.out.println("--- a zone made independent packs what it forked, and nothing when nothing was");
+		Workspace.reset();
+		Method after = CtrmapMainframe.class.getDeclaredMethod("afterIndependence", ctrmap.ZoneIndependence.class);
+		after.setAccessible(true);
+		ctrmap.AreaForker.ForkResult forked = new ctrmap.AreaForker.ForkResult();
+		forked.forked = true;
+		forked.oldArea = 3;
+		forked.newArea = 229;
+		List<String> said = Ui.record();
+		try {
+			after.invoke(TestWindow.W, new ctrmap.ZoneIndependence(15, null, forked));
+		} finally {
+			Ui.stopRecording();
+		}
+		check(said.toString().contains("Pack workspace: Load a workspace first"), "an area forked is packed: " + said);
+		ctrmap.AreaForker.ForkResult kept = new ctrmap.AreaForker.ForkResult();
+		kept.oldArea = 3;
+		said = Ui.record();
+		try {
+			after.invoke(TestWindow.W, new ctrmap.ZoneIndependence(15, null, kept));
+		} finally {
+			Ui.stopRecording();
+		}
+		check(!said.toString().contains("Pack workspace") && said.toString().contains("already has its own area"),
+				"and a zone that already owned its area packs nothing: " + said);
 	}
 
 	/** Drives one no-argument action, answering its questions in order. */
@@ -842,6 +1216,32 @@ public class MainframeActionGuardsTest {
 			String body = (at >= 0 && end > at) ? text.substring(at, end) : "";
 			check(body.contains("openChosenGr(openEditors,"),
 					"and File > Open GR Mapfile is what runs that decision, not a second copy of it");
+			//census M.100: the file was read after the editors had been asked to save, and its refusal reached nobody
+			int read = body.indexOf("mainGR = new GR(f, game);");
+			int asks = body.indexOf("openChosenGr(openEditors,");
+			check(read > 0 && asks > read && body.substring(read, asks).contains("\"Open GR Mapfile\""),
+					"and the chosen file is read as a map region, and refused in words, before any editor is asked (" + read + ", " + asks + ")");
+			int zoneAt = text.indexOf("private void openZoneAction()");
+			int zoneEnd = text.indexOf("private void saveAllAction()", zoneAt);
+			String zone = zoneAt >= 0 && zoneEnd > zoneAt ? text.substring(zoneAt, zoneEnd) : "";
+			int built = zone.indexOf("opened = new Zone(new ZO(f, game), Workspace.game());");
+			check(built > 0 && zone.lastIndexOf("try {", built) > 0 && zone.indexOf("\"Open ZO file\");", built) > built,
+					"and Open ZO file refuses a mini-pack it cannot read in words too, not to the catch-all (" + built + ")");
 		}
+		editors.allow = true;
+		java.util.List<String> said = Ui.record();
+		Throwable escaped = null;
+		try {
+			TestWindow.openChosenGr(editors, () -> {
+				throw new IllegalStateException("planted: region.gr is truncated");
+			});
+		} catch (RuntimeException e) {
+			escaped = e;
+		} finally {
+			Ui.stopRecording();
+		}
+		check(escaped == null && said.size() == 1 && said.get(0).startsWith("Open GR Mapfile: ")
+				&& said.get(0).contains("planted: region.gr is truncated"),
+				"a region that cannot be shown after the ask is said under the action's name, not thrown: " + said + " " + escaped);
 	}
 }

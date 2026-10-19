@@ -64,6 +64,7 @@ public final class ItemData {
 	}
 
 	/** The bytes, ready to write back. Always {@link #SIZE} long. */
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public byte[] toBytes() {
 		byte[] out = new byte[SIZE];
 		System.arraycopy(b, 0, out, 0, SIZE);
@@ -74,10 +75,6 @@ public final class ItemData {
 		return b[off] & 0xFF;
 	}
 
-	private void u8(int off, int v) {
-		b[off] = (byte) v;
-	}
-
 	private int u16(int off) {
 		return LittleEndian.u16(b, off);
 	}
@@ -85,11 +82,13 @@ public final class ItemData {
 	// ---- the fields --------------------------------------------------------
 
 	/** Raw stored price. The shop pays {@link #buyPrice()}; see there. */
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int priceRaw() {
 		return u16(0x00);
 	}
 
 	/** What the mart charges: the stored value times ten. */
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int buyPrice() {
 		return priceRaw() * 10;
 	}
@@ -100,6 +99,7 @@ public final class ItemData {
 	}
 
 	/** The magnitude the held effect uses - Life Orb is 30. Mirrored into healing for healers. */
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int heldArgument() {
 		return u8(0x03);
 	}
@@ -112,10 +112,12 @@ public final class ItemData {
 		return u8(0x05);
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int flingPower() {
 		return u8(0x06);
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int naturalGiftPower() {
 		return u8(0x07);
 	}
@@ -125,14 +127,17 @@ public final class ItemData {
 		return u16(0x08);
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int naturalGiftType() {
 		return packed() & 0x1F;
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int fieldPocket() {
 		return (packed() >> 7) & 0xF;
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int battlePocket() {
 		return packed() >> 11;
 	}
@@ -148,15 +153,18 @@ public final class ItemData {
 	}
 
 	/** 0-3 battle, 4 balls, 5 mail. */
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int classification() {
 		return u8(0x0D);
 	}
 
 	/** Low nibble consumed on use, high nibble not consumed. */
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int consumable() {
 		return u8(0x0E);
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int sortIndex() {
 		return u8(0x0F);
 	}
@@ -169,59 +177,73 @@ public final class ItemData {
 	 * returned raw and named for the ambiguity on purpose, so a caller has to
 	 * decide which it is holding rather than assume.
 	 */
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int cureMaskOrBallIndex() {
 		return u8(0x10);
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public boolean isBall() {
 		return classification() == 4;
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public boolean revives() {
 		return (u8(0x11) & 1) == 0;
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public boolean revivesAll() {
 		return ((u8(0x11) >> 1) & 1) == 1;
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public boolean levelsUp() {
 		return ((u8(0x11) >> 2) & 1) == 1;
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public boolean isEvoStone() {
 		return ((u8(0x11) >> 3) & 1) == 1;
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int boostAtk() {
 		return u8(0x11) >> 4;
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int boostDef() {
 		return u8(0x12) & 0xF;
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int boostSpa() {
 		return u8(0x12) >> 4;
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int boostSpd() {
 		return u8(0x13) & 0xF;
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int boostSpe() {
 		return u8(0x13) >> 4;
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int boostAcc() {
 		return u8(0x14) & 0xF;
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int boostCrit() {
 		return u8(0x14) >> 4;
 	}
 
 	/** EV deltas, SIGNED - some items take EVs away. Order: HP ATK DEF SPE SPA SPD. */
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int ev(int i) {
 		if (i < 0 || i > 5) {
 			throw new IllegalArgumentException("there are six EV stats, not index " + i);
@@ -229,15 +251,18 @@ public final class ItemData {
 		return b[0x17 + i];               // signed on purpose
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int healAmount() {
 		return u8(0x1D);
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int ppGain() {
 		return u8(0x1E);
 	}
 
 	/** Three friendship deltas, signed, applied at low/mid/high friendship. */
+	@ctrmap.util.ForSuites("ORACLE: ItemData's own reading of the item record, kept apart from the schema the item editor edits through; RecordSchemaTest and ItemDataTest hold the schema's fields to it")
 	public int friendship(int i) {
 		if (i < 0 || i > 2) {
 			throw new IllegalArgumentException("there are three friendship deltas, not index " + i);

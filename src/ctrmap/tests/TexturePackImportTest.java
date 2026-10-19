@@ -43,6 +43,10 @@ import static ctrmap.util.LittleEndian.u16;
  */
 public class TexturePackImportTest {
 
+	static List<String> missingTextures(byte[] bch, Set<String> avail) {
+		return PropDatabaseTest.missingTextures(bch, avail);
+	}
+
 	private static final String AD_GARC_PATH = "../RomFS_original_garcs/a/0/1/4";
 	private static final String BM_GARC_PATH = "../RomFS_original_garcs/a/0/2/3";
 
@@ -155,7 +159,7 @@ public class TexturePackImportTest {
 			int donorArea = battle01.donorAreas.get(0);
 			byte[] modelBch = ctrmap.formats.containers.ContainerBytes.subfile(bm.getDecompressedEntry(battle01.modelIndex), 0);
 			Set<String> required = PropDatabase.getMaterialTextureNames(modelBch);
-			List<String> missing = PropDatabase.getMissingTextureNames(modelBch, db.areaTextureNames.get(0));
+			List<String> missing = missingTextures(modelBch, db.areaTextureNames.get(0));
 			System.out.println("battle01_bm_object01: donor area " + donorArea + " (Battle Resort), requires "
 					+ required + ", missing in area 0: " + missing);
 			if (required.isEmpty()) {
@@ -172,7 +176,7 @@ public class TexturePackImportTest {
 			for (String nm : missing) {
 				ok &= checkImport("battle01->area0 [" + nm + "]", target, donor, nm, merged, missing.size());
 			}
-			if (!PropDatabase.getMissingTextureNames(modelBch, PropDatabase.getTexturePackTextureNames(merged)).isEmpty()) {
+			if (!missingTextures(modelBch, PropDatabase.getTexturePackTextureNames(merged)).isEmpty()) {
 				fail("battle01_bm_object01 still texture-missing in area 0 after import");
 				ok = false;
 			}
@@ -214,7 +218,7 @@ public class TexturePackImportTest {
 				fail("every area already contains texture " + fmtTexName + " (format " + wantFormat + ") - no import target");
 				continue;
 			}
-			byte[] fmtMerged = BchTexturePack.importTexture(packs.get(fmtTarget), packs.get(fmtDonor), fmtTexName);
+			byte[] fmtMerged = BchTexturePack.importTextures(packs.get(fmtTarget), packs.get(fmtDonor), java.util.Collections.singletonList(fmtTexName));
 			pairsRun++;
 			boolean fmtOk = checkImport("format" + wantFormat + " area" + fmtDonor + "->area" + fmtTarget + " [" + fmtTexName + "]",
 					packs.get(fmtTarget), packs.get(fmtDonor), fmtTexName, fmtMerged, 1);
@@ -263,7 +267,7 @@ public class TexturePackImportTest {
 			if (pick == null) {
 				continue; //donor has nothing this target lacks
 			}
-			byte[] merged = BchTexturePack.importTexture(packs.get(tArea), packs.get(dArea), pick);
+			byte[] merged = BchTexturePack.importTextures(packs.get(tArea), packs.get(dArea), java.util.Collections.singletonList(pick));
 			pairsRun++;
 			if (checkImport("area" + dArea + "->area" + tArea + " [" + pick + "]",
 					packs.get(tArea), packs.get(dArea), pick, merged, 1)) {
@@ -304,7 +308,7 @@ public class TexturePackImportTest {
 			}
 			if (existing == null) {
 				fail("area " + tArea + " and area " + areas.get(1) + " disagree about every shared texture name");
-			} else if (BchTexturePack.importTexture(target, donor, existing) != target) {
+			} else if (BchTexturePack.importTextures(target, donor, java.util.Collections.singletonList(existing)) != target) {
 				fail("importing already-present texture must return the target unchanged (no-op semantics)");
 			} else {
 				System.out.println("IDEMPOTENCE: already-present import is a no-op (same array returned)");
@@ -315,7 +319,7 @@ public class TexturePackImportTest {
 		{
 			boolean threw = false;
 			try {
-				BchTexturePack.importTexture(packs.get(areas.get(0)), packs.get(areas.get(1)), "no_such_texture_xyz");
+				BchTexturePack.importTextures(packs.get(areas.get(0)), packs.get(areas.get(1)), java.util.Collections.singletonList("no_such_texture_xyz"));
 			} catch (IllegalArgumentException ex) {
 				threw = true;
 			}

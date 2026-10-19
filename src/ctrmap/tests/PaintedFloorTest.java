@@ -58,6 +58,7 @@ public class PaintedFloorTest {
 	static int fails = 0;
 
 	public static void main(String[] args) throws Exception {
+		aCornerIsDarkenedOnlyByWhatStandsOverIt();
 		File garc = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs/a/0/3/9");
 		if (!garc.isFile()) {
 			Skip.suite("no FieldData GARC at " + garc);
@@ -133,7 +134,7 @@ public class PaintedFloorTest {
 	 * at "the floor plus the level" instead of the borrowed ground misses by
 	 * those 7 units and is caught.
 	 */
-	static void rampFootOnUnsampledNeighbour(byte[] donor) {
+	static void rampFootOnUnsampledNeighbour(byte[] donor) throws Exception {
 		//a flat floor at Y=0 under every tile but (20,21), and a pit at (2,2)
 		List<float[]> floor = new ArrayList<>();
 		for (int ty = 0; ty < DIM; ty++) {
@@ -165,7 +166,7 @@ public class PaintedFloorTest {
 		}
 		int[][] ramp = PaintedHeights.noRamps();
 		ramp[20][20] = 2;
-		RegionFactory.BlankContent c = PaintedRegionBuilder.buildComposite(donor, coll, tm, grid, h, ramp, touched, L, false);
+		RegionFactory.BlankContent c = PaintedRegionBuilder.buildComposite(null, donor, coll, tm, grid, h, ramp, touched, L, false);
 		GfColl out = new GfColl(c.collision);
 		float n = surface(out, 20.5f, 20.02f), s = surface(out, 20.5f, 20.98f);
 		check(walls(out, 20, 20, 2) == 0, "composite ramp toward an unsampled tile: no wall across its foot");
@@ -174,6 +175,26 @@ public class PaintedFloorTest {
 		float[] seen = slopeSpan(new BchMapModel(c.model), 20, 20);
 		check(seen[1] > 2 * STEP - STEP * 0.1f && Math.abs(seen[0]) < STEP * 0.1f,
 				"composite ramp toward an unsampled tile: the slope you can see reaches that ground too (" + seen[0] + ".." + seen[1] + ")");
+		//and the walls along its sides follow THAT slope down: a skirt laid to a second reckoning of the foot -
+		//one step down, where the floor fell two - stopped a step short of the floor (2026-10-18). Asked over the
+		//painted block and its rim only: everywhere else the drawn ground is the donor's, not this fixture's floor.
+		//Which side is a triangle's front is the painter's own writing, read off ground it paints flat - Route
+		//101's model holds two flat triangles of its own facing down in this very patch.
+		int[] upDown = new int[2];
+		PaintSealTest.front = PaintSealTest.frontOf(PaintSealTest.paint(BchSectionsTest.resource(
+				"ctrmap/resources/DummyBCH3DModel.bch"), new int[DIM][DIM], PaintedHeights.noRamps()).tris, upDown);
+		List<float[]> drawn = new ArrayList<>();
+		for (float[] t : PaintSealTest.triangles(new BchMapModel(c.model))) {
+			float cx = ((t[0] + t[3] + t[6]) / 3f - ORIGIN) / TILE, cz = ((t[2] + t[5] + t[8]) / 3f - ORIGIN) / TILE;
+			if (cx > 17f && cx < 24f && cz > 17f && cz < 23f) {
+				drawn.add(t);
+			}
+		}
+		PaintSealTest.Seal sides = PaintSealTest.seal(drawn, out, 18, 18, 22, 21);
+		check(PaintSealTest.front != 0f && sides.cast > 20 && sides.holes == 0,
+				"composite ramp toward an unsampled tile: every one of " + sides.cast + " sight lines across a step of the"
+				+ " painted block meets the terrain facing it (painted ground drawn " + upDown[0] + " up, " + upDown[1] + " down)"
+				+ (sides.holes == 0 ? "" : " - " + sides.holes + " see through, first at " + sides.first));
 	}
 
 	/** A three-step north-south run up to a plateau, then the east-west brushes. */
@@ -316,7 +337,7 @@ public class PaintedFloorTest {
 			TilePalette[][] grid = grid(TilePalette.GRASS);
 			boolean[][] touched = new boolean[DIM][DIM];
 			touched[fy][fx] = true;
-			RegionFactory.BlankContent c = PaintedRegionBuilder.buildComposite(model, coll, tm, grid, h, null, touched, L, false);
+			RegionFactory.BlankContent c = PaintedRegionBuilder.buildComposite(null, model, coll, tm, grid, h, null, touched, L, false);
 			float got = surface(new GfColl(c.collision), fx + 0.5f, fy + 0.5f);
 			check(Math.abs(got - expected) < 0.5f, "region " + reg + ": one grass tile painted at (" + fx + "," + fy
 					+ ") with no ground under it lands beside the path you can walk at Y=" + expected
@@ -460,6 +481,39 @@ public class PaintedFloorTest {
 			Arrays.fill(row, fill);
 		}
 		return g;
+	}
+
+	/**
+	 * A floor corner's shade counts the four tiles around it: a wall, a missing tile or taller ground darkens it by a
+	 * quarter each, open ground of its own height not at all. Measured by the 2026-10-14 shared sweep (PaintedHeights
+	 * 414, negated, SURVIVED): no suite read a shade, so open corners darkened and walls lit up unnoticed.
+	 */
+	static void aCornerIsDarkenedOnlyByWhatStandsOverIt() throws Exception {
+		System.out.println("--- a floor corner is shaded by the walls and taller ground around it, and only by them");
+		java.lang.reflect.Method ao = PaintedHeights.class.getDeclaredMethod("cornerAO", TilePalette[][].class, int[][].class,
+				int.class, int.class, int.class);
+		ao.setAccessible(true);
+		TilePalette[][] grid = new TilePalette[PaintedGeometry.DIM][PaintedGeometry.DIM];
+		for (TilePalette[] row : grid) {
+			Arrays.fill(row, TilePalette.GRASS);
+		}
+		int[][] height = new int[PaintedGeometry.DIM][PaintedGeometry.DIM];
+		float open = (Float) ao.invoke(null, grid, height, 5, 5, 0);
+		grid[4][4] = TilePalette.ROCK;
+		float wall = (Float) ao.invoke(null, grid, height, 5, 5, 0);
+		grid[4][4] = null;
+		float none = (Float) ao.invoke(null, grid, height, 5, 5, 0);
+		grid[4][4] = TilePalette.GRASS;
+		height[4][5] = 2;
+		float taller = (Float) ao.invoke(null, grid, height, 5, 5, 0);
+		float level = (Float) ao.invoke(null, grid, height, 5, 5, 2);
+		height[4][5] = 0;
+		float edge = (Float) ao.invoke(null, grid, height, 0, 0, 0);
+		check(open == 1f, "control: a corner in open ground of its own height is not darkened (" + open + ")");
+		check(wall == 0.75f && none == 0.75f && taller == 0.75f,
+				"a wall, a missing tile or taller ground beside it darkens it by a quarter each: " + wall + ", " + none + ", " + taller);
+		check(level == 1f, "and ground no taller than the corner's own tile does not - 3 of 4 lower, 1 level: " + level);
+		check(edge == 1f, "a map corner counts only the tiles that are there (" + edge + ")");
 	}
 
 	static void check(boolean ok, String what) {

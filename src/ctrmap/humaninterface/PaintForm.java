@@ -71,6 +71,14 @@ public class PaintForm extends JPanel {
 	 */
 	private final UndoHistory history;
 
+	/**
+	 * The workspace's history (F209c): the Apply, the water ripple and the area fork before either are each kept
+	 * there - they change which area or map the zone is on, which the zone's own history does not outlive.
+	 */
+	private final SaveHistory ops;
+	/** What reads the open zone again once a fork is packed, and on Undo and Redo of one (F255). */
+	private final Runnable reread;
+
 	// ---- live 3D preview state (the painted cell is swapped into the main
 	// map scene, so the F3 3D view and the 2D view's GL composite show edits
 	// as they happen - no separate preview window) ---------------------------
@@ -129,11 +137,17 @@ public class PaintForm extends JPanel {
 	private final TileMapPanel map;
 
 	public PaintForm(LoadedZone loadedZone, OpenEditors openEditors, ZoneList zoneList,
-			TileMapPanel map, UndoHistory history) {
+			TileMapPanel map, UndoHistory history, SaveHistory ops, Runnable reread) {
 		this.map = map;
 		if (history == null) {
 			throw new IllegalArgumentException("PaintForm must be handed the zone's history its canvas is a document of");
 		}
+		if (ops == null || reread == null) {
+			throw new IllegalArgumentException("PaintForm must be handed the workspace's history and what reads the zone"
+					+ " again");
+		}
+		this.ops = ops;
+		this.reread = reread;
 		this.history = history;
 		//the canvas is one of the zone's documents from now on: it is watched, not recorded by hand
 		history.watch(() -> java.util.Collections.<UndoHistory.Document<?>>singletonList(canvas()));
@@ -323,9 +337,6 @@ public class PaintForm extends JPanel {
 		add(left(new JLabel("<html><small>Only tiles you touch are rebuilt - the rest<br>of the map keeps its existing look.<br>Ramp: the arrow points down the slope;<br>click again to turn it, right-click to clear.<br>Right-click a placed building to remove it.<br>Apply writes the real map, then Deploy<br>to walk on it.</small></html>")));
 		setPreferredSize(new Dimension(250, 780));
 		regenTimer.setRepeats(false);
-	}
-
-	private static class JComponentHolder {
 	}
 
 	private javax.swing.JComponent left(javax.swing.JComponent c) {
@@ -545,7 +556,14 @@ public class PaintForm extends JPanel {
 		donorColl = null;
 		donorTilemap = null;
 		if (region >= 0) {
-			MapPainter.loadFromRegion(region, grid);
+			String terrain = null;
+			try {
+				MapPainter.loadFromRegion(region, grid);
+			} catch (RuntimeException unread) {
+				//SAID (census M.4): a region whose terrain could not be read started as all grass, without a word
+				terrain = "Region " + region + "'s terrain could not be read (" + ctrmap.Ui.reason(unread)
+						+ "), so the canvas starts as grass";
+			}
 			try {
 				GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, region), Workspace.session());
 				byte[] m = gr.getFile(1);
@@ -568,6 +586,9 @@ public class PaintForm extends JPanel {
 						+ " could not be read (" + ctrmap.Ui.reason(unread) + "): no edge blending, and heights"
 						+ " start at 0</small></html>");
 			}
+			if (terrain != null) {
+				zoneLabel.setText("<html>Painting zone " + seededZone + "<br><small>" + terrain + "</small></html>");
+			}
 		}
 		originalModel = donorModel;
 		boolean canEdge = donorModel != null && PaintedMaterials.donorSupportsEdges(donorModel);
@@ -576,8 +597,19 @@ public class PaintForm extends JPanel {
 		edgeBlend = canEdge;
 	}
 
+	/**
+	 * Whether the painted document is the OPEN zone's: seeded, the zone open, and the same one (census H.50). Asked
+	 * by every door that writes the zone or reads its header through the document. Apply asked only whether a
+	 * document was seeded, so after a failed load - the zone closed, the painter never told - it threw on the
+	 * missing header, or wrote the previous zone's paint over the region the matrix's first cell belongs to.
+	 * Strokes only mark the document and ask the index alone.
+	 */
+	public boolean paintsTheOpenZone() {
+		return seededZone >= 0 && loadedZone.isOpen() && seededZone == loadedZone.index();
+	}
+
 	private void syncWater() {
-		if (seededZone < 0) {
+		if (!paintsTheOpenZone()) {
 			return;
 		}
 		boolean ripples = MapPainter.zoneWaterScrolls(loadedZone, loadedZone.open().header.areadataID);
@@ -590,18 +622,11 @@ public class PaintForm extends JPanel {
 	}
 
 	private void rippleAction() {
-		if (seededZone < 0) {
+		if (!paintsTheOpenZone()) {
+			notTheOpenZone();
 			return;
 		}
-		//animations live in the AREA - fork a shared one first so the ripple
-		//cannot reach other zones (this is what made the water splice a
-		//game-wide edit before)
-		ctrmap.AreaForker.ForkResult fork = AreaForkPrompt.ensurePrivate(loadedZone, this, loadedZone.index(),
-				loadedZone.open().header.areadataID, "adding the water animation");
-		if (fork == null) {
-			return;
-		}
-		int areaId = fork.newArea;
+		//ASKED FIRST: the fork below is a change of its own, so it is not made for a ripple then declined
 		int rsl = ctrmap.Ui.confirm(this,
 				"Add GameFreak's sea-scroll animation for this zone's map cells?\n\n"
 				+ "This is the exact animation retail water routes use. Safe to do\n"
@@ -610,10 +635,24 @@ public class PaintForm extends JPanel {
 		if (rsl != JOptionPane.OK_OPTION) {
 			return;
 		}
+		//animations live in the AREA - fork a shared one first so the ripple
+		//cannot reach other zones (this is what made the water splice a
+		//game-wide edit before)
+		ctrmap.AreaForker.ForkResult fork = AreaForkPrompt.ensurePrivate(loadedZone, this, loadedZone.index(),
+				"adding the water animation", ops, reread);
+		if (fork == null) {
+			return;
+		}
 		try {
-			int changed = MapPainter.enableWaterScroll(loadedZone, areaId);
+			int changed;
+			//KEPT (F209c): the ripple is a change of the workspace's history, taken back with the banner read again
+			try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Water ripple in area " + fork.newArea,
+					Workspace.session())) {
+				changed = MapPainter.enableWaterScroll(loadedZone, fork.newArea);
+				ctrmap.WorkspaceUnit.inMemory(this::syncWater, this::syncWater);
+				ops.keep(unit.commitKeeping());
+			}
 			syncWater();
-			AreaForkPrompt.packIfForked(fork, null);
 			ctrmap.Ui.message(this, changed > 0
 					? "Sea-scroll animation added for " + changed + " map cell(s)."
 					: "No map cells needed changes (the scroll was already bound).",
@@ -621,6 +660,8 @@ public class PaintForm extends JPanel {
 		} catch (Exception ex) {
 			ctrmap.Ui.error(this, "Could not add the animation:\n" + ctrmap.util.Bytes.reason(ex),
 					"Make water ripple");
+		} finally {
+			AreaForkPrompt.packIfForked(fork, reread);   //a fork made is packed and the zone read again, whatever else did
 		}
 	}
 
@@ -914,6 +955,31 @@ public class PaintForm extends JPanel {
 		regenTimer.restart();
 	}
 
+	/** One area's donor textures, or a throw saying why they could not be loaded. */
+	public interface AreaTextures {
+
+		java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> of(int area) throws Exception;
+	}
+
+	/**
+	 * Loads the donor textures of every area into {@code into}, and answers the note under Apply when one area's could
+	 * not be loaded - naming it and why - or null when every one was. Out of the preview's worker, which no suite can
+	 * wait on, so the note is asked here (the 2026-10-15 shared sweep, PaintForm 1039, negate-if, SURVIVED).
+	 */
+	public static String loadDonorTextures(Iterable<Integer> areas, java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> into,
+			AreaTextures load) {
+		java.util.List<String> unloaded = new java.util.ArrayList<>();
+		for (int area : areas) {
+			try {
+				into.addAll(load.of(area));
+			} catch (Exception ex) {
+				unloaded.add("area " + area + " (" + ctrmap.Ui.reason(ex) + ")");
+			}
+		}
+		return unloaded.isEmpty() ? null : "the textures of placed buildings from " + String.join(", ", unloaded)
+				+ " could not be loaded, so they show untextured here";
+	}
+
 	/** One regen result: the stamped model plus its extra donor textures. */
 	private static final class RegenResult {
 
@@ -967,6 +1033,7 @@ public class PaintForm extends JPanel {
 					byte[] src = MapPainter.importBrushMaterials(donor, g2, t2, null);
 					byte[] model = PaintedRegionBuilder.buildModelOnly(Workspace.session(), src, coll, tmap, g2, h2, r2, t2, l2, edgesNow);
 					java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> extra = null;
+					String untextured = null;
 					if (!p2.isEmpty()) {
 						ctrmap.formats.h3d.RegionFactory.BlankContent bc = new ctrmap.formats.h3d.RegionFactory.BlankContent();
 						bc.model = model;
@@ -987,20 +1054,9 @@ public class PaintForm extends JPanel {
 						for (Placed pl : p2) {
 							areas.add(pl.e.donorArea);
 						}
-						java.util.List<String> unloaded = new java.util.ArrayList<>();
-						for (int area : areas) {
-							try {
-								extra.addAll(BuildingPaletteDialog.donorTextures(area));
-							} catch (Exception ex) {
-								unloaded.add("area " + area + " (" + ctrmap.Ui.reason(ex) + ")");
-							}
-						}
-						if (!unloaded.isEmpty()) {
-							return new RegenResult(model, extra, "the textures of placed buildings from "
-									+ String.join(", ", unloaded) + " could not be loaded, so they show untextured here");
-						}
+						untextured = loadDonorTextures(areas, extra, BuildingPaletteDialog::donorTextures);
 					}
-					return new RegenResult(model, extra, null);
+					return new RegenResult(model, extra, untextured);
 				} catch (Exception ex) {
 					//F211: this answered null, the last preview stayed up and looked current. It still
 					//stays up - painting goes on - but the note under Apply says it is stale and why
@@ -1134,8 +1190,17 @@ public class PaintForm extends JPanel {
 
 	// ---- apply ------------------------------------------------------------
 
+	/** Said by a door that writes when the painted document is not the open zone's; nothing when none was seeded. */
+	private void notTheOpenZone() {
+		if (seededZone >= 0) {
+			ctrmap.Ui.error(this, "Nothing was changed: the painted map is zone " + seededZone + "'s, and that zone is"
+					+ " not the one open. Load it again in the Zone Loader tab first.", "Map Builder");
+		}
+	}
+
 	private void applyAction() {
-		if (seededZone < 0) {
+		if (!paintsTheOpenZone()) {
+			notTheOpenZone();
 			return;
 		}
 		int touchedCount = 0;
@@ -1174,7 +1239,15 @@ public class PaintForm extends JPanel {
 		try {
 			regenTimer.stop();
 			regenEpoch++; // an in-flight regen must not re-arm across the apply
-			MapPainter.applyToZone(loadedZone, zoneIndex, grid, height, ramp, lighting, edgeBlend, placed, touched, new Prompts(zoneList));
+			//KEPT (F209c): the whole Apply - the forks, the regions, the area, the doors and signs it wires - is one
+			//change of the workspace's history, and Undo and Redo read the zone again
+			try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Apply the painted map to zone " + zoneIndex,
+					Workspace.session())) {
+				MapPainter.applyToZone(loadedZone, zoneIndex, grid, height, ramp, lighting, edgeBlend, placed, touched,
+						new Prompts(zoneList, ops, reread));
+				ctrmap.WorkspaceUnit.inMemory(reread, reread);
+				ops.keep(unit.commitKeeping());
+			}
 			// only a SUCCESSFUL apply reaches here: the pack + reload rebuilds
 			// the scene from the applied bytes, so the preview swap is gone
 			previewInScene = false;
@@ -1218,15 +1291,22 @@ public class PaintForm extends JPanel {
 	public static final class Prompts implements MapPainter.Host {
 
 		private final ZoneList zones;
+		private final SaveHistory ops;
+		private final Runnable reread;
 
-		/** Asks in the editor's window, and after the pack lands on the painted zone in {@code zones}. */
-		public Prompts(ZoneList zones) {
+		/**
+		 * Asks in the editor's window, and after the pack lands on the painted zone in {@code zones}; a fork asked for
+		 * outside a change is kept in {@code ops}, Undo and Redo of it calling {@code reread}.
+		 */
+		public Prompts(ZoneList zones, SaveHistory ops, Runnable reread) {
 			this.zones = zones;
+			this.ops = ops;
+			this.reread = reread;
 		}
 
 		@Override
-		public AreaForker.ForkResult ownArea(LoadedZone loaded, int zoneIndex, int area, String why) {
-			return AreaForkPrompt.ensurePrivate(loaded, ctrmap.Ui.parent(), zoneIndex, area, why);
+		public AreaForker.ForkResult ownArea(LoadedZone loaded, int zoneIndex, String why) {
+			return AreaForkPrompt.ensurePrivate(loaded, ctrmap.Ui.parent(), zoneIndex, why, ops, reread);
 		}
 
 		@Override
@@ -1265,8 +1345,7 @@ public class PaintForm extends JPanel {
 			panel.add(new javax.swing.JScrollPane(ta));
 			panel.add(new JLabel("Sign style:"));
 			panel.add(typeBox);
-			if (JOptionPane.showConfirmDialog(ctrmap.Ui.parent(), panel, "Sign text",
-					JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+			if (!ctrmap.Ui.form(ctrmap.Ui.parent(), panel, "Sign text")) {
 				return null;
 			}
 			return new MapPainter.SignText(ta.getText(), typeBox.getSelectedIndex());
@@ -1288,11 +1367,11 @@ public class PaintForm extends JPanel {
 		}
 
 		@Override
-		public void applied(int zoneIndex, String report) {
-			zones.rebuild(() -> {
+		public void pack(int zoneIndex, String report) {
+			Workspace.packWorkspace(() -> zones.rebuild(() -> {
 				zones.open(zoneIndex);
 				ctrmap.Ui.message(report, "Tile painter", JOptionPane.INFORMATION_MESSAGE);
-			});
+			}));
 		}
 	}
 }

@@ -66,6 +66,7 @@ public class DiscardRevertsTest {
 		everyQuestionSaysWhatNoDoes();
 		noKeepQuestionIsAskedAroundTheSeam();
 		aTilemapGoesBack();
+		aShortTilemapIsNotOpened();
 		aMatrixGoesBackInPlace();
 		aMatrixsPropsAreReadInOnePlace();
 		aZoneHeaderAndItsEntitiesGoBack();
@@ -306,6 +307,38 @@ public class DiscardRevertsTest {
 			}
 		}
 		return b;
+	}
+
+	/**
+	 * Census M.27: a tilemap shorter than its own size is refused, never read as walkable zeros. Each short read
+	 * was dropped, so the missing tiles became {0,0,0,0} and the next save wrote those over the movement data.
+	 */
+	static void aShortTilemapIsNotOpened() throws Exception {
+		System.out.println("--- a tilemap shorter than its own size is not opened (census M.27)");
+		byte[] cut = java.util.Arrays.copyOf(tilemap(), 4 + 10 * 4);
+		FakeGameFiles fake = new FakeGameFiles().plant(ArchiveType.FIELD_DATA, 0,
+				MapResizeTest.container(0x4752, cut, new byte[4]));
+		File file = fake.staged(ArchiveType.FIELD_DATA, 0);
+		String refused = null;
+		try {
+			new Tilemap(new GR(file, fake));
+		} catch (RuntimeException said) {   //any failure is judged by what it says, not only a refusal
+			refused = said.getMessage();
+		}
+		check(refused != null && refused.contains("subfile 0") && refused.contains("needs 6404"),
+				"a 40 by 40 tilemap holding 10 tiles is refused, saying how short: " + refused);
+		//nor one too short to hold its own size (the 2026-10-14 shared sweep, Tilemap 100, dropped, SURVIVED: every
+		//tilemap asked held its 4-byte header, so dropped, 3 bytes read past their end and said nothing of the region)
+		FakeGameFiles headless = new FakeGameFiles().plant(ArchiveType.FIELD_DATA, 0,
+				MapResizeTest.container(0x4752, java.util.Arrays.copyOf(tilemap(), 3), new byte[4]));
+		String tooShort = null;
+		try {
+			new Tilemap(new GR(headless.staged(ArchiveType.FIELD_DATA, 0), headless));
+		} catch (RuntimeException said) {
+			tooShort = said.getMessage();
+		}
+		check("This region's tilemap (subfile 0) is only 3 bytes, so it is not opened and nothing will be saved over it."
+				.equals(tooShort), "a tilemap too short to hold its own size is refused, saying so: " + tooShort);
 	}
 
 	static void aTilemapGoesBack() throws Exception {
@@ -564,9 +597,30 @@ public class DiscardRevertsTest {
 			ctrmap.Ui.stopRecording();
 		}
 		check(ok && said.size() == 1 && said.get(0).contains("Text file 0 has been modified"), "No was asked through the one question: " + said);
-		check("hello".equals(model.getValueAt(0, 1)) && !((Boolean) MatrixEditFormGuardsTest.field(te, "modified")),
+		check("hello".equals(model.getValueAt(0, 1)) && !((Boolean) MatrixEditFormGuardsTest.field(model, "modified")),
 				"and the table shows the file again, unmarked: " + model.getValueAt(0, 1));
 		check(Arrays.equals(onDisk, Files.readAllBytes(f.toPath())), "and nothing was written");
+
+		System.out.println("--- the text editor's save, and a line typed and not saved, are taken back (F209c)");
+		ctrmap.humaninterface.UndoHistory history = ctrmap.humaninterface.UndoHistory.of(te.withUndo(), null);
+		check(history == te.history(), "the tab is the editor under its history's Undo and Redo, where Ctrl+Z finds it");
+		history.settle();
+		model.setValueAt("typed", 0, 1);
+		history.settle();
+		check(history.undo() && "hello".equals(model.getValueAt(0, 1)), "Undo puts back a line typed and not saved");
+		check(history.redo() && "typed".equals(model.getValueAt(0, 1)), "and Redo types it again");
+		said = ctrmap.Ui.record(JOptionPane.YES_OPTION);
+		try {
+			ok = te.store(true);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		byte[] saved = Files.readAllBytes(f.toPath());
+		check(ok && !Arrays.equals(saved, onDisk), "control: Save writes the typed line: " + said);
+		check(history.undo() && Arrays.equals(Files.readAllBytes(f.toPath()), onDisk) && "hello".equals(model.getValueAt(0, 1)),
+				"Undo puts the file back byte for byte, and the editor shows it read again");
+		check(history.redo() && Arrays.equals(Files.readAllBytes(f.toPath()), saved) && "typed".equals(model.getValueAt(0, 1)),
+				"and Redo writes it again, shown again");
 	}
 
 	static String source(String path) throws Exception {

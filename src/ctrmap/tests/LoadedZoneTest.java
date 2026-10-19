@@ -475,8 +475,8 @@ public class LoadedZoneTest {
 		try {
 			LoadedZone a = new LoadedZone();
 			LoadedZone b = new LoadedZone();
-			ZoneLoadingPanel panelA = new ZoneLoadingPanel(a, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
-			ZoneLoadingPanel panelB = new ZoneLoadingPanel(b, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+			ZoneLoadingPanel panelA = new ZoneLoadingPanel(a, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
+			ZoneLoadingPanel panelB = new ZoneLoadingPanel(b, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 
 			//the offer walks the whole table, so give both owners a table of the same
 			//first forty zones - reading all 536 would cost the suite a minute and prove
@@ -650,50 +650,73 @@ public class LoadedZoneTest {
 		for (int i = 0; i < types.length; i++) {
 			if (types[i] == LoadedZone.class) {
 				args[i] = owner;
-			} else if (types[i] == java.util.function.Consumer.class) {
-				//the tool column a form shows a pane in: the prop and NPC registry editors
-				//were windows and are panes now, so their forms are handed somewhere to put
-				//one. A recorder would be better; nothing here reads it back yet.
-				args[i] = (java.util.function.Consumer<javax.swing.JComponent>) pane -> {
-				};
-			} else if (types[i] == ctrmap.humaninterface.tools.ToolSelection.class) {
-				args[i] = new ctrmap.humaninterface.tools.ToolSelection();
-			} else if (types[i] == ctrmap.humaninterface.Redraw.class) {
-				args[i] = new Redraws();
-			} else if (types[i] == ctrmap.humaninterface.OpenEditors.class) {
-				args[i] = new RecordingEditors();
-			} else if (types[i] == ctrmap.humaninterface.ZoneEditors.class) {
-				args[i] = new ZoneEditorsSpy();
-			} else if (types[i] == ctrmap.humaninterface.Navigator.class) {
-				args[i] = new RecordingNavi();
-			} else if (types[i] == ctrmap.humaninterface.ViewportCentre.class) {
-				args[i] = new RecordingCentre();
-			} else if (types[i] == ctrmap.humaninterface.MatrixCanvas.class) {
-				args[i] = new ctrmap.humaninterface.MapMatrixPanel();
-			} else if (types[i] == ctrmap.humaninterface.ZoneList.class) {
-				args[i] = new RecordingZoneList();
-			} else if (types[i] == ctrmap.humaninterface.ZoneSaver.class
-				|| types[i] == ctrmap.humaninterface.ScriptView.class) {
-				args[i] = new RecordingZoneSaver();
-			} else if (types[i] == ctrmap.formats.tilemap.Tilemap.TileColors.class) {
-				args[i] = null;   //no palette: a headless holder paints no picture, as before
-			} else if (types[i] == ctrmap.humaninterface.TileMapPanel.class) {
-				args[i] = null;   //the map view a reader draws on; none of these needs one to be BUILT
-			} else if (types[i] == ctrmap.humaninterface.TileInspector.class) {
-				args[i] = new RecordingInspector();
-			} else if (types[i] == ctrmap.humaninterface.Scene3D.class) {
-				args[i] = new RecordingScene();
-			} else if (types[i] == javax.swing.JScrollPane.class) {
-				args[i] = new javax.swing.JScrollPane();
-			} else if (types[i] == ctrmap.humaninterface.CollEditPanel.class) {
-				args[i] = new ctrmap.humaninterface.CollEditPanel(new ctrmap.humaninterface.tools.ToolSelection(), UndoHistoryTest.overOneNumber(new int[]{0}));
-			} else {
+				continue;
+			}
+			args[i] = collaborator(types[i]);
+			if (args[i] == UNKNOWN) {
 				throw new IllegalStateException(ctor.getDeclaringClass().getName()
 						+ " is handed a " + types[i].getName()
-						+ ", which this suite does not know how to build - teach it here");
+						+ ", which this suite does not know how to build - teach it in collaborator()");
 			}
 		}
 		return args;
+	}
+
+	/** What {@link #collaborator} answers for a type it does not know how to build. */
+	static final Object UNKNOWN = new Object();
+
+	/**
+	 * A fresh one of what an editor is handed beside its owner, or {@link #UNKNOWN}: the one table of them, which
+	 * HandedRefusalsTest builds every handed class and method over too.
+	 */
+	static Object collaborator(Class<?> type) {
+		if (type == java.util.function.Consumer.class) {
+			//the tool column a form shows a pane in: the prop and NPC registry editors
+			//were windows and are panes now, so their forms are handed somewhere to put
+			//one. A recorder would be better; nothing here reads it back yet.
+			return (java.util.function.Consumer<javax.swing.JComponent>) pane -> {
+			};
+		} else if (type == ctrmap.humaninterface.tools.ToolSelection.class) {
+			return new ctrmap.humaninterface.tools.ToolSelection();
+		} else if (type == ctrmap.humaninterface.Redraw.class) {
+			return new Redraws();
+		} else if (type == ctrmap.humaninterface.OpenEditors.class) {
+			return new RecordingEditors();
+		} else if (type == ctrmap.humaninterface.ZoneEditors.class) {
+			return new ZoneEditorsSpy();
+		} else if (type == ctrmap.humaninterface.Navigator.class) {
+			return new RecordingNavi();
+		} else if (type == ctrmap.humaninterface.ViewportCentre.class) {
+			return new RecordingCentre();
+		} else if (type == ctrmap.humaninterface.MatrixCanvas.class) {
+			return new ctrmap.humaninterface.MapMatrixPanel();
+		} else if (type == ctrmap.humaninterface.ZoneList.class) {
+			return new RecordingZoneList();
+		} else if (type == ctrmap.humaninterface.ZoneSaver.class || type == ctrmap.humaninterface.ScriptView.class) {
+			return new RecordingZoneSaver();
+		} else if (type == ctrmap.formats.tilemap.Tilemap.TileColors.class) {
+			return null;   //no palette: a headless holder paints no picture, as before
+		} else if (type == ctrmap.humaninterface.TileMapPanel.class) {
+			return null;   //the map view a reader draws on; none of these needs one to be BUILT
+		} else if (type == ctrmap.humaninterface.TileInspector.class) {
+			return new RecordingInspector();
+		} else if (type == ctrmap.humaninterface.Scene3D.class) {
+			return new RecordingScene();
+		} else if (type == javax.swing.JScrollPane.class) {
+			return new javax.swing.JScrollPane();
+		} else if (type == ctrmap.humaninterface.CollEditPanel.class) {
+			return new ctrmap.humaninterface.CollEditPanel(new ctrmap.humaninterface.tools.ToolSelection(), UndoHistoryTest.overOneNumber(new int[]{0}));
+		} else if (type == Runnable.class) {
+			return (Runnable) () -> { };   //what a tab is told to show - the map, the atmosphere
+		} else if (type == ctrmap.humaninterface.UndoHistory.class) {
+			return UndoHistoryTest.overOneNumber(new int[]{0});
+		} else if (type == ctrmap.humaninterface.SaveHistory.class) {
+			//the workspace's history a clone, an append and a fork are kept in (F209)
+			return new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList());
+		} else if (type == ctrmap.gamedef.GameProfile.class) {
+			return ctrmap.gamedef.GameProfile.of(ctrmap.gamedef.GameType.ORAS);   //the game a text index answers for
+		}
+		return UNKNOWN;
 	}
 
 	/** The one LoadedZone field of a reader, whatever it called it. */

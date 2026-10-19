@@ -351,6 +351,21 @@ public class ZoneHeader {
 		}
 		npcreg = new NPCRegistry(files.staged(ArchiveType.NPC_REGISTRIES, areadataID), files);
 		mapmatrix = new MM(files.staged(ArchiveType.MAP_MATRIX, mapmatrixID), files);
+		fetchedArea = areadataID;
+		fetchedMatrix = mapmatrixID;
+	}
+
+	/** The area and map ids the containers above were opened for. */
+	private int fetchedArea = -1, fetchedMatrix = -1;
+
+	/**
+	 * Whether this header names an area or map other than the ones its containers were opened for (F255). The Zone
+	 * tab's boxes move either id, and what was read for the old ones - the area container, the map view's prop
+	 * registry, the camera form - goes on taking edits for them until the zone is read again. False when nothing is
+	 * open.
+	 */
+	public boolean repointed() {
+		return areadata != null && (areadataID != fetchedArea || mapmatrixID != fetchedMatrix);
 	}
 
 	public void freeArchives() {

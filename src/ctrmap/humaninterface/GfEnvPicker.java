@@ -4,7 +4,6 @@ import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.area.AreaEnv;
 import ctrmap.formats.garc.GARC;
-import ctrmap.formats.text.GFMessageFile;
 import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -47,6 +46,38 @@ import static ctrmap.formats.containers.ContainerBytes.subfile;
  */
 public class GfEnvPicker {
 
+	/**
+	 * What the picker says, in red under its list, of where its atmospheres came from when that was not the game's
+	 * untouched copy; null when there is nothing to say. Out of the picker so a suite reaches it: the picker is a modal
+	 * window (the 2026-10-14 shared sweep, GfEnvPicker 196, negate-if, SURVIVED).
+	 */
+	public static javax.swing.JLabel sourceNotes(List<String> notes) {
+		if (notes.isEmpty()) {
+			return null;
+		}
+		return new javax.swing.JLabel("<html><body style='width:270px'><font color='#b00000'>"
+				+ ctrmap.Ui.html(String.join(" ", notes)) + "</font></body></html>");
+	}
+
+	/**
+	 * The picker's left side: the search box over the list, and under them what {@link #sourceNotes} says, when it
+	 * says anything. Out of the picker so a suite reaches it (the 2026-10-16 assembly, GfEnvPicker 210, negate-if,
+	 * SURVIVED: the picker is modal). Inverted, the notes were never shown, and a picker with nothing to say added a
+	 * null where they go.
+	 */
+	public static JPanel listPane(java.awt.Component search, JList<String> list, List<String> notes) {
+		JPanel left = new JPanel(new BorderLayout(0, 4));
+		left.add(search, BorderLayout.NORTH);
+		JScrollPane sp = new JScrollPane(list);
+		sp.setPreferredSize(new Dimension(280, 340));
+		left.add(sp, BorderLayout.CENTER);
+		javax.swing.JLabel noted = sourceNotes(notes);
+		if (noted != null) {
+			left.add(noted, BorderLayout.SOUTH);
+		}
+		return left;
+	}
+
 	/** Returned by {@link #pick} when the user asked for the custom-settings form. */
 	public static final byte[] CUSTOM = new byte[0];
 
@@ -78,7 +109,9 @@ public class GfEnvPicker {
 					+ " archive is not open, so there are no atmospheres to pick from.", "Atmosphere");
 			return null;
 		}
-		String[] locs = locationNames();
+		java.util.List<String> unread = new java.util.ArrayList<>();
+		String[] locs = Workspace.textLines(ctrmap.formats.text.LocationNames.gametextIndex(Workspace.session()), unread);
+		ctrmap.Ui.saidUnread(parent, unread, "Atmosphere");
 
 		// zone list: id, location name, area id
 		final List<int[]> zones = new ArrayList<>();   // {zoneId, areaId}
@@ -92,11 +125,19 @@ public class GfEnvPicker {
 			ctrmap.Ui.error(parent, ctrmap.Ui.reason(unmeasured), "Atmosphere");
 			return null;
 		}
+		//ONE TABLE, NOT EVERY ZONE (census M.70): this inflated all 536 zone containers - header, entities and
+		//script - on the event thread to read two numbers from each header, every time the dialog opened. The
+		//master zone-header table holds every zone's header in one entry; measured on the ORAS dump, its row
+		//agrees with the zone's own header on the area and the parent map for 536 of 536 zones
+		ctrmap.MasterTable master;
+		try {
+			master = ctrmap.MasterTable.detached(zoG.getDecompressedEntry(zoneCount), zoneCount);
+		} catch (java.io.IOException noTable) {
+			ctrmap.Ui.error(parent, "The zone list could not be read: " + ctrmap.Ui.reason(noTable), "Atmosphere");
+			return null;
+		}
 		for (int z = 0; z < zoneCount; z++) {
-			byte[] hdr = subfile(zoG.getDecompressedEntry(z), 0);
-			if (hdr == null || hdr.length < 0x20) {
-				continue;
-			}
+			byte[] hdr = master.row(z);
 			int area = u16(hdr, 2);
 			int loc = ctrmap.formats.zone.ZoneHeader.parentMapOf(hdr);
 			String nm = loc < locs.length ? locs[loc] : "";
@@ -109,7 +150,7 @@ public class GfEnvPicker {
 
 		// live preview: the USER'S CURRENT zone geometry, re-fogged per selection,
 		// so they see each atmosphere on their own map. Falls back to a card.
-		final byte[] curModel = currentZoneModel(loaded);
+		final byte[] curModel = currentZoneModel(loaded, sourceNotes);
 		final List<ctrmap.formats.h3d.texturing.H3DTexture> curTex = worldTextures;
 		//and the card alone where OpenGL cannot start (F077), as where there is no zone
 		final MapPreview3D view3d = (curModel != null && GlSupport.available()) ? new MapPreview3D() : null;
@@ -155,7 +196,7 @@ public class GfEnvPicker {
 				rebuild.run();
 			}
 		});
-		list.addListSelectionListener(e -> {
+		ctrmap.util.Selections.onSettled(list, () -> {
 			int vi = list.getSelectedIndex();
 			if (vi < 0 || vi >= visible.size()) {
 				return;
@@ -176,18 +217,10 @@ public class GfEnvPicker {
 		});
 
 		final JDialog dlg = new JDialog(parent, "GameFreak atmospheres", Dialog.ModalityType.APPLICATION_MODAL);
+		dlg.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);   //the title bar's X lets it go (census L.53)
 		dlg.setLayout(new BorderLayout(8, 8));
 		((JPanel) dlg.getContentPane()).setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
-		JPanel left = new JPanel(new BorderLayout(0, 4));
-		left.add(search, BorderLayout.NORTH);
-		JScrollPane sp = new JScrollPane(list);
-		sp.setPreferredSize(new Dimension(280, 340));
-		left.add(sp, BorderLayout.CENTER);
-		if (!sourceNotes.isEmpty()) {
-			left.add(new javax.swing.JLabel("<html><body style='width:270px'><font color='#b00000'>"
-					+ ctrmap.Ui.html(String.join(" ", sourceNotes)) + "</font></body></html>"), BorderLayout.SOUTH);
-		}
-		dlg.add(left, BorderLayout.WEST);
+		dlg.add(listPane(search, list, sourceNotes), BorderLayout.WEST);
 		if (view3d != null) {
 			// your zone in 3D (top), with the atmosphere's values card (bottom)
 			JPanel center = new JPanel(new BorderLayout(0, 6));
@@ -254,23 +287,36 @@ public class GfEnvPicker {
 		return result[0];
 	}
 
-	/** The loaded zone's first region map model (for the live atmosphere preview), or null. */
-	private static byte[] currentZoneModel(LoadedZone loaded) {
+	/**
+	 * The loaded zone's OWN region's map model, for the live atmosphere preview - or null, with the reason
+	 * added to {@code notes} when there was a zone to show and it could not be.
+	 *
+	 * <p>ITS OWN REGION (census M.54): this took the matrix's first filled cell, which on the 94 retail zones
+	 * that share a matrix is a neighbour's - the user judged the fog against somebody else's map. It read
+	 * the region from the extraction folder by name, which holds nothing until something extracts it, and
+	 * every failure went into one catch that answered null - the card, without a word.
+	 */
+	private static byte[] currentZoneModel(LoadedZone loaded, List<String> notes) {
+		if (!loaded.isOpen()) {
+			return null;
+		}
 		try {
-			if (loaded.open() == null) {
-				return null;
-			}
-			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, loaded.open().header.mapmatrixID);
-			int region = ctrmap.formats.mapmatrix.MapMatrix.firstRegionId(java.nio.file.Files.readAllBytes(mmFile.toPath()));
-			if (region < 0) {
-				return null;
+			int[] cell = ctrmap.MapPainter.firstRegionCell(loaded);
+			if (cell == null) {
+				return null;   //the zone's map holds no region: there is nothing of its own to show
 			}
 			ctrmap.formats.containers.GR gr = new ctrmap.formats.containers.GR(
-					new File(Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA), String.valueOf(region)),
-					Workspace.session());
+					Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, cell[0]), Workspace.session());
 			byte[] model = gr.getFile(1);
-			return ctrmap.formats.h3d.BchMapModel.isMapModel(model) ? model : null;
-		} catch (Exception ex) {
+			if (!ctrmap.formats.h3d.BchMapModel.isMapModel(model)) {
+				notes.add("Your zone's region " + cell[0] + " holds no map model this preview can draw, so it shows"
+						+ " the card.");
+				return null;
+			}
+			return model;
+		} catch (RuntimeException unread) {
+			notes.add("Your zone's map could not be read for the preview (" + ctrmap.Ui.reason(unread)
+					+ "), so it shows the card.");
 			return null;
 		}
 	}
@@ -315,17 +361,6 @@ public class GfEnvPicker {
 			return s4 != null && s4.length == AreaEnv.SUB4_LEN ? s4 : null;
 		} catch (Exception ex) {
 			return null;
-		}
-	}
-
-	private static String[] locationNames() {
-		try {
-			File f = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT,
-					ctrmap.formats.text.LocationNames.gametextIndex(Workspace.session()));
-			List<String> lines = GFMessageFile.getStrings(java.nio.file.Files.readAllBytes(f.toPath()));
-			return lines.toArray(new String[0]);
-		} catch (Exception ex) {
-			return new String[0];
 		}
 	}
 

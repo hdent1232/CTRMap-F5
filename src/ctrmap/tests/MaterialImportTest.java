@@ -45,6 +45,12 @@ public class MaterialImportTest {
 			String said = refusal(() -> TerrainCatalog.ensureCliffMaterial(broken, model));
 			check(said.contains("Could not import") && said.contains("not a map model"),
 					"the cliff import whose donor region holds no map model refuses, saying why: " + said);
+			//a donor region the snapshot does not hold at all (the 2026-10-14 shared sweep, TerrainCatalog 433,
+			//drop-throw, SURVIVED: every snapshot here held every region, so the refusal was never reached)
+			WorkspaceSession shortOne = game("short", 1);
+			String missing = refusal(() -> TerrainCatalog.ensureCliffMaterial(shortOne, model));
+			check(missing.contains("Could not import") && missing.contains("the pristine copy holds no region "),
+					"a cliff donor region the snapshot does not hold is refused, naming it: " + missing);
 			ctrmap.formats.h3d.BchMapModel probe = new ctrmap.formats.h3d.BchMapModel(model);
 			//the lookup both importers ask before cutting, and after (F092): each mesh's own material
 			//finds the FIRST mesh drawing it, and a name the model lacks finds none
@@ -112,6 +118,12 @@ public class MaterialImportTest {
 
 	/** A bare ORAS session; with a snapshot whose FieldData holds 654 regions with no map model in them. */
 	static WorkspaceSession game(String name, boolean snapshot) throws Exception {
+		return game(name, snapshot ? 654 : -1);
+	}
+
+	/** A bare ORAS session; with a snapshot of {@code regions} regions with no map model in them, or none when -1. */
+	static WorkspaceSession game(String name, int regionCount) throws Exception {
+		boolean snapshot = regionCount >= 0;
 		File root = Scratch.dir("ctrmap_matimport_" + name);
 		File ws = new File(root, "workspace");
 		ws.mkdirs();
@@ -121,7 +133,7 @@ public class MaterialImportTest {
 			File snap = WorkspaceSession.originalSnapshotDir(ws);
 			File garc = new File(snap.getAbsolutePath() + GameProfile.of(GameType.ORAS).archivePath(ArchiveType.FIELD_DATA));
 			garc.getParentFile().mkdirs();
-			byte[][] regions = new byte[654][];
+			byte[][] regions = new byte[regionCount][];
 			Arrays.fill(regions, MapResizeTest.region("not a map model"));
 			HandedGameTest.writeGarc(garc, regions);
 		}

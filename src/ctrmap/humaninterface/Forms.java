@@ -37,21 +37,32 @@ public final class Forms {
 	}
 
 	/**
-	 * The number in a formatted field, as a float - 0 for anything that is not
-	 * one, including an empty field and a lone minus sign, and taking a comma
-	 * for a decimal point because that is what a European keyboard types.
+	 * The number in a formatted field, as a float - or null when the field does not hold a finite one:
+	 * empty, a lone minus sign, half a number, NaN or Infinity. A comma is taken for a decimal point,
+	 * because that is what a European keyboard types.
+	 *
+	 * <p>NOT A NUMBER IS NOT 0 (census M.10). This answered 0 for every one of those, and the collision
+	 * editor wrote it into the vertex on every keystroke: clearing a field to retype it snapped the corner
+	 * to the region's origin, a triangle stretched across the map, marked modified and saved.
 	 */
-	public static float getFloatFromDocument(JFormattedTextField docOwner) {
+	public static Float typedFloat(JFormattedTextField docOwner) {
+		String val;
 		try {
-			String val = docOwner.getDocument().getText(0, docOwner.getDocument().getLength()).replace(',', '.');
-			if (val.length() > 0 && !val.equals("-")) {
-				return Float.valueOf(val);
-			} else {
-				return 0f;
-			}
-		} catch (BadLocationException | NumberFormatException ex) {
-			return 0f;
+			val = docOwner.getDocument().getText(0, docOwner.getDocument().getLength()).replace(',', '.').trim();
+		} catch (BadLocationException cannot) {
+			return null;   //the document's own length: a range it refuses is not text to read
 		}
+		try {
+			float f = Float.parseFloat(val);
+			return Float.isNaN(f) || Float.isInfinite(f) ? null : f;
+		} catch (NumberFormatException notANumber) {
+			return null;
+		}
+	}
+
+	/** Shows whether what a field holds was taken: its text red while it is not a number that was written. */
+	public static void markTaken(JFormattedTextField field, boolean taken) {
+		field.setForeground(taken ? javax.swing.UIManager.getColor("FormattedTextField.foreground") : java.awt.Color.RED);
 	}
 
 	/**

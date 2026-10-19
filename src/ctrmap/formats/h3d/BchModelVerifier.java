@@ -25,6 +25,7 @@ public class BchModelVerifier {
 
     private void chk(boolean c,String w){ if(!c) fails.add(w); }
 
+    @ctrmap.util.ForSuites("ORACLE: a structural check of a BCH map model apart from the reader's own - sections, pointers, buffers, bounds - that the suites hold every model the editor writes to")
     public static List<String> verify(byte[] bch){
         return new BchModelVerifier().run(bch);
     }
@@ -171,6 +172,14 @@ public class BchModelVerifier {
         for (int j2=0;j2<M;j2++){
             int f0=(m.reloc[j2*3]>>>25)&0x7F, f1=(m.reloc[j2*3+1]>>>25)&0x7F, f2=(m.reloc[j2*3+2]>>>25)&0x7F;
             chk(f0==0x2E&&f1==0x26&&(f2==0x27||f2==0x28),"trio "+j2);
+        }
+        // bounds (F075): every vertex inside its mesh's OBBox, and the header's centre the box's - true of
+        // all 14,112 retail meshes whose positions decode, so a writer that moves vertices keeps it true
+        for (int mi = 0; mi < m.meshes.size(); mi++) {
+            String problem = m.boundsProblem(mi);
+            if (problem != null) {
+                fails.add("mesh " + mi + ": " + problem);
+            }
         }
         return fails;
     }

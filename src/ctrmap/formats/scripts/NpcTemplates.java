@@ -54,6 +54,7 @@ public class NpcTemplates {
 		}
 
 		/** The game the answer was given for. */
+		@ctrmap.util.ForSuites("SEAM: a suite asks which game a template's answer was given for, to see a template refuse one it was not measured on")
 		public GameType game() {
 			return game;
 		}
@@ -295,19 +296,25 @@ public class NpcTemplates {
 	 * Appends a vanilla-shaped give-item script (PROC; PUSH mode(1);
 	 * PUSH count; PUSH item; PUSH 12; CALL giveWrapper; ZERO_PRI; RETN - the
 	 * decoded give call-site shape) to the zone script and registers it in
-	 * the dispatch. The giver is repeatable: the vanilla one-shot flag guard
-	 * is not templated yet.
+	 * the dispatch.
+	 *
+	 * <p>Given ONCE when {@code onceFlag} is an event flag: retail's one-time guard (see
+	 * {@link PawnEmitter}, measured over the 155 retail give sites) around the give - FlagGet, JNZ
+	 * past, give, FlagSet - so a second talk gives nothing (F085). -1 gives on every talk, byte for
+	 * byte the script it always was. The flag is not chosen here: {@code ctrmap.ScriptFlags} says
+	 * which ones a game's scripts already name.
 	 *
 	 * @param measured the game the zone is from, already asked (measuredOn)
 	 * @param script a decompressThis()'d zone script, modified in place
 	 * @param itemId the item to give (1..the game's itemIdMax)
 	 * @param count how many to give (1..99)
+	 * @param onceFlag the event flag that makes it give once, or -1 to give on every talk
 	 * @return the newly allocated local script ID (dispatch case key)
 	 * @throws IllegalStateException if the zone script has no give-item
 	 * wrapper or the TalkerScriptWizard machinery refuses; the script is not
 	 * modified in that case
 	 */
-	public static int addItemGiverScript(Measured measured, GFLPawnScript script, int itemId, int count) {
+	public static int addItemGiverScript(Measured measured, GFLPawnScript script, int itemId, int count, int onceFlag) {
 		int max = asked(measured).profile().itemIdMax();
 		if (itemId < 1 || itemId > max) {
 			throw new IllegalStateException("Item ID " + itemId + " is out of range 1.." + max + ".");
@@ -320,7 +327,20 @@ public class NpcTemplates {
 		if (wrapper == null) {
 			throw new IllegalStateException("The zone script has no give-item routine (present in 120 of " + ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES + " vanilla zones).");
 		}
-		return TalkerScriptWizard.cloneCallerSub(measured, script, wrapper, new int[]{GIVE_MODE, count, itemId, GIVE_ARG_BYTES});
+		if (onceFlag < 0) {
+			return TalkerScriptWizard.cloneCallerSub(measured, script, wrapper, new int[]{GIVE_MODE, count, itemId, GIVE_ARG_BYTES});
+		}
+		PawnEmitter e = new PawnEmitter(script);
+		e.ins(PawnInstruction.Commands.PROC, 0);
+		PawnInstruction once = e.openOnce(script, onceFlag);
+		for (int push : new int[]{GIVE_MODE, count, itemId, GIVE_ARG_BYTES}) {
+			e.ins(PawnInstruction.Commands.PUSH_P_C, push);
+		}
+		e.call(wrapper);
+		e.closeOnce(script, once, onceFlag);
+		e.ins(PawnInstruction.Commands.ZERO_PRI, 0);
+		e.ins(PawnInstruction.Commands.RETN, 0);
+		return TalkerScriptWizard.installCase(measured, script, e.body);
 	}
 
 	/**
@@ -330,6 +350,7 @@ public class NpcTemplates {
 	 * @return the matched sign, or null if the case is not a vanilla-shaped
 	 * sign
 	 */
+	@ctrmap.util.ForSuites("ORACLE: recognises retail's sign case shape; NpcTemplatesTest finds every retail sign with it and holds the scripts the templates write to the same shape")
 	public static SignPattern findSignPattern(GFLPawnScript script, int caseKey) {
 		ZoneScriptAnalyzer.CallerPattern cp = ZoneScriptAnalyzer.findCallerPattern(script, caseKey, 3);
 		if (cp == null || cp.pushConsts[2] != SIGN_ARG_BYTES) {
@@ -355,6 +376,7 @@ public class NpcTemplates {
 	 * @return the matched giver, or null if the case is not a vanilla-shaped
 	 * item giver
 	 */
+	@ctrmap.util.ForSuites("ORACLE: recognises retail's give-item case shape; NpcTemplatesTest finds every retail giver with it and holds the scripts the templates write to the same shape")
 	public static GiverPattern findGiverPattern(GFLPawnScript script, int caseKey) {
 		ZoneScriptAnalyzer.CallerPattern cp = ZoneScriptAnalyzer.findCallerPattern(script, caseKey, 4);
 		if (cp == null || cp.pushConsts[0] != GIVE_MODE || cp.pushConsts[3] != GIVE_ARG_BYTES) {

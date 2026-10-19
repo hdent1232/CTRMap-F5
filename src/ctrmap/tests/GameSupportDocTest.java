@@ -107,9 +107,18 @@ public class GameSupportDocTest {
 		return out;
 	}
 
+	/**
+	 * A doc's text as this suite reads it. LINE ENDINGS ARE NOT CONTENT: git's autocrlf hands a file to a Windows
+	 * checkout with CRLF, and read byte for byte the README's table never equalled the one the profiles give -
+	 * measured 2026-10-09, red on a README whose table lines each carried a carriage return and read identically.
+	 */
+	static String read(File doc) throws java.io.IOException {
+		return new String(Files.readAllBytes(doc.toPath()), StandardCharsets.UTF_8).replace("\r\n", "\n");
+	}
+
 	public static void main(String[] args) throws Exception {
 		File readme = new File("README.md");
-		String text = new String(Files.readAllBytes(readme.toPath()), StandardCharsets.UTF_8);
+		String text = read(readme);
 		int open = text.indexOf(OPEN);
 		int close = text.indexOf(CLOSE);
 		if (args.length > 0 && args[0].equals("--write") && open >= 0 && close > open) {
@@ -124,6 +133,10 @@ public class GameSupportDocTest {
 		check(GameProfile.of(GameType.ORAS).supports(GameProfile.Feature.AREA_FORK)
 				&& !GameProfile.of(GameType.XY).supports(GameProfile.Feature.AREA_FORK) && table().contains(" yes | no |"),
 				"control: the table tells a game that has a feature from one that does not");
+		File crlf = new File(Scratch.dir("ctrmap_doc_crlf"), "README.md");
+		Files.write(crlf.toPath(), text.replace("\n", "\r\n").getBytes(StandardCharsets.UTF_8));
+		check(read(crlf).equals(text),
+				"control: a checkout that ends the README's lines with CRLF reads as the same text");
 		String shown = open >= 0 && close > open ? text.substring(open + OPEN.length(), close).trim() : null;
 		check(shown != null && shown.equals(table().trim()), "the README holds the table the profiles give"
 				+ (shown == null ? " - it has no table at all" : shown.equals(table().trim()) ? ""
@@ -135,7 +148,7 @@ public class GameSupportDocTest {
 				"control: the README's old claim is seen, and a qualified one is not");
 		List<String> found = new ArrayList<>();
 		for (String doc : new String[]{"README.md", "QUICKSTART.md"}) {
-			found.addAll(unqualified(doc, new String(Files.readAllBytes(new File(doc).toPath()), StandardCharsets.UTF_8)));
+			found.addAll(unqualified(doc, read(new File(doc))));
 		}
 		check(found.isEmpty(), "README and QUICKSTART name no partly supported game without saying it: " + found);
 

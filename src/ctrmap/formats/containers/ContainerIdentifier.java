@@ -44,6 +44,36 @@ public class ContainerIdentifier {
 		}
 	}
 
+	/**
+	 * Why {@code candidate} cannot replace the container at {@code current}, or null when it can: it must be a
+	 * container, of the same kind. Asked BEFORE the copy (census H.40): the Builder copied the chosen file over the
+	 * workspace's container first and identified it after, so a file that was no container - or a container of
+	 * another kind - was kept and packed into the game.
+	 */
+	public static String whyNotReplaceable(File current, File candidate) {
+		byte[] want = magic(current);
+		byte[] got = magic(candidate);
+		if (got == null || !ctrmap.util.Bytes.isUTF8Capital(got[0]) || !ctrmap.util.Bytes.isUTF8Capital(got[1])) {
+			return candidate.getName() + " is not a container: it does not start with a container's two-letter magic.";
+		}
+		if (want != null && (want[0] != got[0] || want[1] != got[1])) {
+			return candidate.getName() + " is a " + new String(got, java.nio.charset.StandardCharsets.US_ASCII)
+					+ " container, and the one it would replace is a "
+					+ new String(want, java.nio.charset.StandardCharsets.US_ASCII) + ".";
+		}
+		return null;
+	}
+
+	/** The first two bytes of {@code f}; null when it holds fewer or cannot be read. */
+	private static byte[] magic(File f) {
+		try (InputStream in = new FileInputStream(f)) {
+			byte[] magic = new byte[2];
+			return in.read(magic) == 2 ? magic : null;
+		} catch (IOException unread) {
+			return null;
+		}
+	}
+
 	/** The container at {@code f}, its magic read from the file, reporting its writes to {@code files}. */
 	public static AbstractGamefreakContainer makeAGFC(File f, GameFiles files) {
 		try (InputStream in = new FileInputStream(f)) {

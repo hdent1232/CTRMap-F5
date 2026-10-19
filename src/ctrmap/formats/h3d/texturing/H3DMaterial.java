@@ -1,6 +1,5 @@
 package ctrmap.formats.h3d.texturing;
 
-import com.jogamp.opengl.GL2;
 import ctrmap.formats.h3d.BCHHeader;
 import ctrmap.formats.h3d.PICACommandReader;
 import ctrmap.formats.h3d.RandomAccessBAIS;
@@ -42,8 +41,8 @@ public class H3DMaterial {
 		in.readInt(); //TODO
 		in.readInt();
 		in.readInt();
-		int textureCommandsOffset = in.readInt();
-		int textureCommandsWordCount = in.readInt();
+		in.readInt();   //texture commands offset
+		in.readInt();   //texture commands word count
 
 		int materialMapperOffset;
 		if (properties.backwardCompatibility < 0x21) {
@@ -99,25 +98,12 @@ public class H3DMaterial {
 
 		/**
 		 * The wrap mode {@code raw} names, or repeat for one the port did not list (F079): repeat is
-		 * what {@link #getGlTextureWrap} has always drawn for an unlisted mode, and a texture drawn
-		 * repeating is a better answer than a model that does not open.
+		 * what the renderer has always drawn for an unlisted mode, and a texture drawn repeating is a
+		 * better answer than a model that does not open. Which GL wrap each draws as is the
+		 * renderer's ({@code ctrmap.render.ModelRenderer.glWrap}, F214).
 		 */
 		static TextureWrap wrapOf(int raw) {
 			return Bytes.enumOf(TextureWrap.values(), raw, TextureWrap.repeat);
-		}
-
-		public static int getGlTextureWrap(TextureWrap wrap) {
-			switch (wrap) {
-				default:
-				case repeat:
-					return GL2.GL_REPEAT;
-				case mirroredRepeat:
-					return GL2.GL_MIRRORED_REPEAT;
-				case clampToEdge:
-					return GL2.GL_CLAMP_TO_EDGE;
-				case clampToBorder:
-					return GL2.GL_CLAMP_TO_BORDER;
-			}
 		}
 
 		public enum TextureWrap {
@@ -139,29 +125,6 @@ public class H3DMaterial {
 		public boolean isTestEnabled;
 		public TestFunction testFunction;
 		public int testReference;
-
-		public int getGlTestFunc() {
-			switch (testFunction) {
-				case never:
-					return GL2.GL_NEVER;
-				case always:
-					return GL2.GL_ALWAYS;
-				case equal:
-					return GL2.GL_EQUAL;
-				case notEqual:
-					return GL2.GL_NOTEQUAL;
-				case less:
-					return GL2.GL_LESS;
-				case lessOrEqual:
-					return GL2.GL_LEQUAL;
-				case greater:
-					return GL2.GL_GREATER;
-				case greaterOrEqual:
-					return GL2.GL_GEQUAL;
-				default:
-					return GL2.GL_ALWAYS;
-			}
-		}
 	}
 
 	public enum TestFunction {

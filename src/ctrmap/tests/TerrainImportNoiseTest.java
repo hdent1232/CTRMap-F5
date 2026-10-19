@@ -177,10 +177,10 @@ public class TerrainImportNoiseTest {
 			return;
 		}
 		int dim = PaintedGeometry.DIM;
-		PaintedRegionBuilder.build(donor, PaintedRegionTest.grid(TilePalette.GRASS),
-				new int[dim][dim], TerrainLighting.daytime());
-		PaintedRegionBuilder.build(donor, PaintedRegionTest.grid(TilePalette.GRASS),
-				PaintedRegionTest.plateau(), TerrainLighting.daytime());
+		PaintedRegionBuilder.build(null, donor, PaintedRegionTest.grid(TilePalette.GRASS),
+				new int[dim][dim], null, TerrainLighting.daytime(), true);
+		PaintedRegionBuilder.build(null, donor, PaintedRegionTest.grid(TilePalette.GRASS),
+				PaintedRegionTest.plateau(), null, TerrainLighting.daytime(), true);
 		System.out.println("built");
 	}
 

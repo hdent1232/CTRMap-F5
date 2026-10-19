@@ -197,11 +197,63 @@ def repairs_a_guard(payload):
     return False
 
 
+def crash_files(error):
+    """Every file a crashed check's traceback ran through - where its repair is.
+
+    A GUARD THAT CANNOT RUN MUST NAME WHAT IT COULD NOT RUN (OUTSTANDING, 2026-09-22). Measured
+    twice: a half-finished edit left `tools/guard/hooks_wired.py` raising NameError on 2026-09-22
+    and again on 2026-10-09, `guard_all` runs it on every call, and every call was refused - the
+    Read that would have shown the line and the Edit or `git checkout` that would have fixed it
+    included. The refusal named no file, so nothing could key a repair on it, and both times the
+    owner had to restore the file from their own terminal.
+    """
+    import traceback
+    out = []
+    held = getattr(error, "__traceback__", None)
+    for frame in (traceback.extract_tb(held) if held is not None else []):
+        path = os.path.abspath(frame.filename)
+        if os.path.isfile(path) and path not in out:
+            out.append(path)
+    return out
+
+
+def repairs_the_crash(payload, files, any_read=False):
+    """True when this call can only be the way OUT of a check that crashed in `files`.
+
+    It writes nothing but those files - an Edit of the line, a `git checkout` naming it - or it
+    only reads, and the read is of one of them (or of anything, with `any_read`, for a check that
+    refuses no read). Every other guard is still asked about it.
+    """
+    if not files:
+        return False
+    where = str((payload or {}).get("cwd") or os.getcwd())
+    keys = {os.path.normcase(os.path.abspath(f)) for f in files}
+
+    def one_of(path):
+        path = str(path).strip("'" + chr(34))
+        return bool(path) and os.path.normcase(os.path.abspath(os.path.join(where, path))) in keys
+    written = shellin.writes_something(payload)
+    if written:
+        return all(one_of(path) for path in written)
+    if any_read:
+        return True
+    tool_input = (payload or {}).get("tool_input")
+    named = [tool_input.get(key) for key in shellin.PATH_KEYS
+             if isinstance(tool_input, dict) and isinstance(tool_input.get(key), str)]
+    named += [word for command in shellin.commands(payload) for word in command.split()]
+    return any(one_of(path) for path in named)
+
+
 def _broken(name, what, error, payload=None):
     detail = "" if error is None else " (%s: %s)" % (type(error).__name__, error)
     if payload is not None and repairs_a_guard(payload):
         sys.stderr.write("guard %s is broken: %s%s - allowed because this call repairs a "
                          "guard\n" % (name, what, detail))
+        return False, None
+    files = [os.path.join(HERE, name)] + crash_files(error)
+    if payload is not None and repairs_the_crash(payload, files):
+        sys.stderr.write("guard %s is broken: %s%s - allowed because this call only touches "
+                         "the files it broke in\n" % (name, what, detail))
         return False, None
     if os.environ.get(BROKEN_OK) == "1":
         sys.stderr.write("guard %s is broken: %s%s - allowed by %s=1\n"
@@ -308,11 +360,19 @@ def wiring(payload):
         #: at or above it, and handing it `.claude` made it look one directory too deep.
         why = module.findings(session)
     except Exception as cannotCheck:
+        files = crash_files(cannotCheck) or [checker]
+        if repairs_the_crash(payload, files, any_read=True):
+            sys.stderr.write("the wiring check could not run (%s: %s) - this call only reads, or "
+                             "only touches %s, so it goes on to the other guards\n"
+                             % (type(cannotCheck).__name__, cannotCheck, ", ".join(files)))
+            return False, None
         return True, (
             "BLOCKED BY PROJECT POLICY (.claude/hooks/guard_all.py).\n"
             "The wiring check could not run (%s: %s), so whether every installed guard is "
-            "reachable is UNKNOWN.\n\nFix it, or set %s=1 for this session.\n"
-            % (type(cannotCheck).__name__, cannotCheck, BROKEN_OK))
+            "reachable is UNKNOWN. It broke in:\n\n  - %s\n\nA read, and a write or `git "
+            "checkout` of those files, still go through - that is the repair. Or set %s=1 for "
+            "this session.\n"
+            % (type(cannotCheck).__name__, cannotCheck, "\n  - ".join(files), BROKEN_OK))
     if not why:
         return False, None
     #: ...and only NOW can the exemption be asked, because it is about THESE findings. Asking

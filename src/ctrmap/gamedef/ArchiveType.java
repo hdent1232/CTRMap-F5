@@ -35,5 +35,20 @@ public enum ArchiveType {
 	MOVE_DATA,
 	/** Item records - 776 x 36 bytes in Gen 6, id == entry index. */
 	ITEM_DATA,
-	SOUND_BCSAR
+	SOUND_BCSAR,
+	/**
+	 * The scripts no one zone owns, each entry a bare Pawn script (read-only here). They send the player
+	 * to zones too, so a scan for zones nothing reaches must read them (F225).
+	 */
+	SHARED_SCRIPTS;
+
+	/**
+	 * Whether CTRMap can make a new, empty entry of this archive - a map matrix of one cell, a blank region.
+	 * The type's own answer (census M.136): the raw browser's Add new file knew two types by name and did
+	 * nothing at all, saying nothing, for the other nineteen. A type added later answers no until someone
+	 * writes how to make one.
+	 */
+	public boolean canMakeNewEntry() {
+		return this == MAP_MATRIX || this == FIELD_DATA;
+	}
 }

@@ -120,6 +120,8 @@ public class PlacementGuardsTest {
 
 		partialStampRefused();
 		paintKeptUnderDonorBehaviour();
+		aCutPrefabIsKeptForTheNextAsk();
+		aRowArrowedPastIsNotBuilt();
 		collisionCrossingTheBoxIsKept();
 		facesCrossingTheBoxAreCounted();
 		cutLossSurvivesSaveAndReload();
@@ -141,13 +143,52 @@ public class PlacementGuardsTest {
 		RegionFactory.BlankContent bc = paintedPath();
 		byte[] model = bc.model, coll = bc.collision, tiles = bc.tilemap.clone();
 		try {
-			ctrmap.MapPainter.stampPlaced(bc, at(e, 5, 5), new int[DIM][DIM], null);
+			ctrmap.MapPainter.stampPlaced(bc, at(e, 5, 5), new int[DIM][DIM], null, null);
 			check(false, "a building that lost 33 of 36 pieces was applied as if it were whole");
 		} catch (IllegalStateException ex) {
 			check(ex.getMessage().contains("of 36"), "the partial stamp is refused and says how much was lost: " + ex.getMessage());
 		}
 		check(bc.model == model && bc.collision == coll && Arrays.equals(bc.tilemap, tiles),
 				"a refused building leaves the map untouched");
+	}
+
+	/**
+	 * The palette's preview builds only the row still asked for: one arrowed past before its turn is not built, and no
+	 * grass base is made for it (F206; the 2026-10-14 shared sweep, BuildingPaletteDialog 373, negate-if, SURVIVED: the
+	 * worker lived in the modal palette). Asked over the dump, region 1's tileset the grass donor.
+	 */
+	static void aRowArrowedPastIsNotBuilt() {
+		System.out.println("--- the palette builds a preview only for the row still asked for");
+		BuildingCatalog.Entry e = entry("cycling road slab", 186, 28, 0, 1, 21, 17, -9);
+		byte[][] grass = {null};
+		ctrmap.humaninterface.BuildingPaletteDialog.Preview stale = ctrmap.humaninterface.BuildingPaletteDialog.preview(
+				ctrmap.Workspace.session(), e, () -> false, grass, tileset, null);
+		check(stale.model == null && grass[0] == null && " ".equals(stale.note), "a row arrowed past is not built, and no"
+				+ " grass base is made for it: model " + (stale.model == null ? "none" : stale.model.length + " bytes")
+				+ ", note \"" + stale.note + "\"");
+		ctrmap.humaninterface.BuildingPaletteDialog.Preview built = ctrmap.humaninterface.BuildingPaletteDialog.preview(
+				ctrmap.Workspace.session(), e, () -> true, grass, tileset, null);
+		check(built.model != null && grass[0] != null && built.note.startsWith("  cycling road slab - "),
+				"and the row still asked for is built, on a grass base made for it: model "
+				+ (built.model == null ? "none" : built.model.length + " bytes") + ", note \"" + built.note + "\"");
+	}
+
+	/**
+	 * A catalog entry's cut prefab is kept for the next ask - the palette's preview and the Map Builder ask for the same
+	 * entry again and again.
+	 *
+	 * <p>Measured by the 2026-10-14 shared sweep (BuildingCatalog 316, negate-if, SURVIVED): nothing asked for one entry
+	 * twice. Inverted, the bound cleared the cache on every ask under it, so every preview cut its building again from
+	 * the pristine archive.
+	 */
+	static void aCutPrefabIsKeptForTheNextAsk() {
+		System.out.println("--- a cut prefab is kept for the next ask of the same entry");
+		BuildingCatalog.Entry e = entry("cycling road slab", 186, 28, 0, 1, 21, 17, -9);
+		MapPrefab first = BuildingCatalog.prefab(ctrmap.Workspace.session(), e);
+		MapPrefab again = BuildingCatalog.prefab(ctrmap.Workspace.session(), e);
+		check(first != null, "control: the Cycling Road slab cuts a prefab from the pristine copy");
+		check(first != null && again == first, "a cut prefab is kept for the next ask of the same entry - the second ask"
+				+ " answered " + (again == first ? "the same cut" : "a cut made again"));
 	}
 
 	/** Only the donor's solid tiles may replace the user's paint; everything else is reported as kept. */
@@ -163,7 +204,7 @@ public class PlacementGuardsTest {
 			RegionFactory.BlankContent bc = paintedPath();
 			byte[] before = bc.tilemap.clone();
 			MapPrefab p = ctrmap.formats.h3d.BuildingCatalog.prefab(ctrmap.Workspace.session(), e);
-			String note = ctrmap.MapPainter.stampPlaced(bc, at(e, 5, 5), new int[DIM][DIM], null);
+			String note = ctrmap.MapPainter.stampPlaced(bc, at(e, 5, 5), new int[DIM][DIM], null, null);
 			int walls = 0, objects = 0, solidLost = 0;
 			Map<String, Integer> leaked = new TreeMap<>();
 			for (int y = 0; y < DIM; y++) {
@@ -264,7 +305,7 @@ public class PlacementGuardsTest {
 		for (BuildingCatalog.Entry e : raised) {
 			RegionFactory.BlankContent bc = paintedPath();
 			int before = new GfColl(bc.collision).uniqueTris.size();
-			String note = ctrmap.MapPainter.stampPlaced(bc, at(e, 5, 5), new int[DIM][DIM], null);
+			String note = ctrmap.MapPainter.stampPlaced(bc, at(e, 5, 5), new int[DIM][DIM], null, null);
 			int added = new GfColl(bc.collision).uniqueTris.size() - before;
 			check(added > 0, e.name + ": placement adds walkable collision (+" + added + ")");
 			check(note.contains(added + " collision"), e.name + ": Apply reports the collision it added: " + note.trim());
@@ -501,7 +542,7 @@ public class PlacementGuardsTest {
 		String fenceManifest = pf == null ? "" : pf.manifest(pf.stampGeometry(base.model, 5, 5, 9), fence.baseY);
 		check(fenceManifest.contains("sea/water"), "the palette names the fence's sea plane: " + fenceManifest);
 		//Apply's own account repeats it
-		String note = ctrmap.MapPainter.stampPlaced(paintedPath(), at(room, 5, 5), new int[DIM][DIM], null);
+		String note = ctrmap.MapPainter.stampPlaced(paintedPath(), at(room, 5, 5), new int[DIM][DIM], null, null);
 		check(note.contains(tris + " triangles") && note.contains("rides along") && note.contains("shadow"),
 				"Apply's account of a placed building repeats the count and names the passengers: " + note.trim());
 		//and the confirmation before it lists the same manifest
@@ -514,7 +555,7 @@ public class PlacementGuardsTest {
 				"leaving the passengers behind drops exactly them (" + riders + " of " + p.pieces.size() + " pieces)");
 		java.util.List<ctrmap.MapPainter.Placed> alone = new ArrayList<>();
 		alone.add(new ctrmap.MapPainter.Placed(room, 5, 5, false));
-		String left = ctrmap.MapPainter.stampPlaced(paintedPath(), alone, new int[DIM][DIM], null);
+		String left = ctrmap.MapPainter.stampPlaced(paintedPath(), alone, new int[DIM][DIM], null, null);
 		check(left.contains((p.pieces.size() - riders) + " piece(s)") && left.contains("left behind") && left.contains("shadow"),
 				"a building placed without its passengers stamps the structure alone and says what stayed: " + left.trim());
 	}
@@ -553,7 +594,7 @@ public class PlacementGuardsTest {
 		with.add(new ctrmap.MapPainter.Placed(sea, 5, 5, true));
 		RegionFactory.BlankContent kept = paintedPath();
 		byte[] beforeModel = kept.model;
-		String note = ctrmap.MapPainter.stampPlaced(kept, with, new int[DIM][DIM], null);
+		String note = ctrmap.MapPainter.stampPlaced(kept, with, new int[DIM][DIM], null, null);
 		check(kept.model != beforeModel && note.contains(p.triangleCount() + " triangles"),
 				"placed WITH its passengers the sea patch stamps its " + p.triangleCount()
 				+ " triangles: " + note.trim());
@@ -564,7 +605,7 @@ public class PlacementGuardsTest {
 		RegionFactory.BlankContent bc = paintedPath();
 		byte[] model = bc.model, coll = bc.collision, tiles = bc.tilemap.clone();
 		try {
-			String applied = ctrmap.MapPainter.stampPlaced(bc, without, new int[DIM][DIM], null);
+			String applied = ctrmap.MapPainter.stampPlaced(bc, without, new int[DIM][DIM], null, null);
 			check(false, "a building with every piece left behind was placed anyway: " + applied.trim());
 		} catch (IllegalStateException ex) {
 			String m = String.valueOf(ex.getMessage());

@@ -62,9 +62,6 @@ _TRUNCATES = re.compile(r"(?:^|\s)-(?:last|first|l|f)\b", re.I)
 #: the pipe is refused whether or not the command was backgrounded, because SIGPIPE does not wait
 #: to be asked. THE FALLBACK - the project's own list lives in `destructive_scripts.txt`.
 DESTRUCTIVE_IF_INTERRUPTED = ("tools/audit/mutate.py", "tools/audit/weigh.py")
-#: What actually starts a python program here. `sh`/`bash` are included because a script
-#: run through them ends up executing the same driver.
-INTERPRETERS = ("python", "python3", "python.exe", "py", "sh", "bash")
 
 #: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("DESTRUCTIVE_IF_INTERRUPTED",)
@@ -203,11 +200,18 @@ def segments(command):
 
 
 def verdict(command, background):
-    """(deny?, reason). Separated from the I/O so it can be tested without a subprocess."""
-    for segment in segments(command):
-        deny, why = _verdict_for(segment, background)
-        if deny:
-            return deny, why
+    """(deny?, reason). Separated from the I/O so it can be tested without a subprocess.
+
+    EVERY COMMAND A SHELL IS HANDED, TOO. This judged the call's text once, so `bash -c 'python
+    tools/mutate2.py x | head -3'` in the background was allowed while the same pipe unwrapped was
+    refused (reported by the CTRMap session 2026-10-07, confirmed here) - the wrapper class
+    `guard_command_rules` closed for git. `bundle_shell.texts` is the one reader of what a shell or
+    `eval` is handed, to any depth."""
+    for text_ in bundle_shell.texts(command):
+        for segment in segments(text_):
+            deny, why = _verdict_for(segment, background)
+            if deny:
+                return deny, why
     return False, None
 
 

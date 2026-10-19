@@ -157,6 +157,24 @@ public class Updater {
 	}
 
 	/**
+	 * Where a file that ships beside the program is looked for, in order: beside the installed program, then the
+	 * working folder - the same folder only once. Census L.13: the Quick start guide looked in the working folder
+	 * twice under two spellings, so a Start-menu or desktop shortcut, whose working folder is not the install,
+	 * opened onto an error.
+	 */
+	public static java.util.List<File> besideTheProgram(String name, File installDir, File workingDir) {
+		java.util.List<File> out = new java.util.ArrayList<>();
+		if (installDir != null) {
+			out.add(new File(installDir, name).getAbsoluteFile());
+		}
+		File here = new File(workingDir, name).getAbsoluteFile();
+		if (!out.contains(here)) {
+			out.add(here);
+		}
+		return out;
+	}
+
+	/**
 	 * The folder CTRMap is installed in, or null when running from loose classes
 	 * (a source checkout), where there is nothing to update and the user should
 	 * pull and rebuild instead.
@@ -203,6 +221,8 @@ public class Updater {
 	 * downloading, because failing on permissions after fetching seventy
 	 * megabytes is a waste of the user's time and bandwidth.
 	 */
+	@ctrmap.util.NotAnEdit("it asks whether an update could be written here by making and deleting an empty file of"
+		+ " its own, and touches nothing else")
 	public static boolean isWritable(File dir) {
 		if (dir == null || !dir.isDirectory()) {
 			return false;
@@ -250,6 +270,8 @@ public class Updater {
 	 * message fit to show the user; on any failure the staging folder is left
 	 * with no READY marker, so nothing will be applied.
 	 */
+	@ctrmap.util.NotAnEdit("it downloads, verifies and unpacks a release of the program into its own staging"
+		+ " folder, applied at the next launch: the program's files, never the user's")
 	public static void stage(UpdateChecker.Release rel, File installDir, Progress pr) throws IOException {
 		if (installDir == null) {
 			throw new IOException("CTRMap is running from a source checkout, not an installed copy.\n"
@@ -263,7 +285,10 @@ public class Updater {
 					+ "Refusing to install an update that cannot be verified.");
 		}
 		File root = stageRoot(installDir);
-		deleteTree(new File(root, STAGED));
+		if (!ctrmap.util.Bytes.deleteTree(new File(root, STAGED))) {
+			throw new IOException("The last staged update could not be cleared, so this one was not staged over it: "
+					+ new File(root, STAGED));
+		}
 		new File(root, READY).delete();
 		root.mkdirs();
 		hide(root);
@@ -290,9 +315,9 @@ public class Updater {
 		Flavour mine = flavour();
 		Flavour stagedShape = shapeOf(stagedPayload(installDir));
 		if (mine != null && stagedShape != mine) {
-			deleteTree(staged);
+			boolean discarded = ctrmap.util.Bytes.deleteTree(staged);
 			throw new IOException("That download is the wrong kind of package for this"
-					+ " installation, so it was discarded.\n"
+					+ (discarded ? " installation, so it was discarded.\n" : " installation; it could not be removed: " + staged + "\n")
 					+ "Nothing on your machine was changed. Please download the update"
 					+ " from the releases page instead.");
 		}
@@ -315,16 +340,31 @@ public class Updater {
 		if (!isUpdateStaged(installDir)) {
 			return;
 		}
+		install(stagedPayload(installDir), installDir);
+		//applied: drop the marker so the launcher stops trying. The staged tree
+		//is left for the app to sweep, because on Windows the applying JVM is
+		//still running out of it and cannot delete itself.
+		new File(stageRoot(installDir), READY).delete();
+	}
+
+	/**
+	 * Copies {@code payload} over {@code installDir}, backing up every file it replaces; when a copy fails,
+	 * every file already replaced is put back and the failure thrown. THE ONE INSTALL (census M.143): the
+	 * launcher's apply had this rollback and the app image's did not, so a copy failing half way there left
+	 * the program part old and part new, and it never came back up.
+	 */
+	static void install(File payload, File installDir) throws IOException {
 		File root = stageRoot(installDir);
-		File staged = stagedPayload(installDir);
 		File backup = new File(root, BACKUP);
-		deleteTree(backup);
+		if (!ctrmap.util.Bytes.deleteTree(backup)) {
+			throw new IOException("The previous update's backup could not be cleared, so nothing was installed: " + backup);
+		}
 		backup.mkdirs();
 
 		List<String[]> done = new ArrayList<>(); //{relative path} of files replaced
 		List<File> asides = new ArrayList<>();
 		try {
-			copyOver(staged, installDir, backup, "", done, asides);
+			copyOver(payload, installDir, backup, "", done, asides);
 		} catch (IOException ex) {
 			//put back everything already replaced, so a half-applied update
 			//never leaves the user with a program that will not start
@@ -344,10 +384,29 @@ public class Updater {
 		} finally {
 			remember(installDir, asides);
 		}
-		//applied: drop the marker so the launcher stops trying. The staged tree
-		//is left for the app to sweep, because on Windows the applying JVM is
-		//still running out of it and cannot delete itself.
-		new File(root, READY).delete();
+	}
+
+	/** Where an app-image install that failed leaves its reason, for the next start to say (census M.143). */
+	static final String APPLY_FAILED = "apply-failed.txt";
+
+	/**
+	 * The reason the last app-image install failed, taken - said once, by the start after it - or null when
+	 * it did not. Its output went to a log in a hidden folder, and the program was simply not there.
+	 */
+	@ctrmap.util.NotAnEdit("it reads and removes the updater's own note that the last update could not be applied, so the"
+		+ " start after it says so once: the program's files, never the user's")
+	public static String takeApplyFailure(File installDir) {
+		File note = installDir == null ? null : new File(stageRoot(installDir), APPLY_FAILED);
+		if (note == null || !note.isFile()) {
+			return null;
+		}
+		try {
+			return new String(Files.readAllBytes(note.toPath()), java.nio.charset.StandardCharsets.UTF_8);
+		} catch (IOException unread) {
+			return "The last update could not be installed, and why could not be read: " + ctrmap.util.Bytes.reason(unread);
+		} finally {
+			note.delete();
+		}
 	}
 
 	/**
@@ -355,11 +414,25 @@ public class Updater {
 	 * startup; does nothing while an update is still pending.
 	 */
 	public static void sweep(File installDir) {
+		sweep(installDir, System.out);
+	}
+
+	/**
+	 * {@link #sweep(File)}, saying what it could not remove to {@code said} - HANDED, so a suite reads it without
+	 * taking over the process's own stream, which no suite may (SourceSeamTest): the 2026-10-15 shared sweep
+	 * (Updater 424, drop-report) SURVIVED, the line read by nobody.
+	 */
+	@ctrmap.util.NotAnEdit("it deletes an applied update's staging folder and the program files that update set"
+		+ " aside: the program's files, never the user's")
+	public static void sweep(File installDir, java.io.PrintStream said) {
 		if (installDir == null || isUpdateStaged(installDir)) {
 			return;
 		}
 		File root = stageRoot(installDir);
-		deleteTree(new File(root, STAGED));
+		if (!ctrmap.util.Bytes.deleteTree(new File(root, STAGED))) {
+			said.println("CTRMap: an applied update's staging folder could not be removed yet - the next update"
+					+ " refuses to stage over it until it is: " + new File(root, STAGED));
+		}
 		new File(root, DOWNLOAD).delete();
 		sweepAsides(installDir);
 	}
@@ -383,8 +456,7 @@ public class Updater {
 				if (line.trim().isEmpty() || !isAside(f.getName()) || !f.getCanonicalPath().startsWith(inside)) {
 					continue;
 				}
-				deleteTree(f);
-				if (f.exists()) {
+				if (!ctrmap.util.Bytes.deleteTree(f)) {
 					left.add(f.getAbsolutePath());
 				}
 			}
@@ -461,6 +533,8 @@ public class Updater {
 	 * poll because polling gives the wrong answer here: a jar held open by a live
 	 * JVM still grants a write handle while refusing to be replaced.
 	 */
+	@ctrmap.util.NotAnEdit("it opens the program's own run-lock file in its staging folder and holds it while the"
+		+ " program runs, so a staged update waits: the program's files, never the user's")
 	public static void holdRunLock(File installDir) {
 		if (installDir == null || runLock != null) {
 			return;
@@ -478,6 +552,27 @@ public class Updater {
 	/** True when this process was started to install a staged update. */
 	public static boolean isApplyInvocation(String[] args) {
 		return args != null && args.length >= 2 && APPLY_FLAG.equals(args[0]);
+	}
+
+	/**
+	 * The argument the editor is started with when {@link #runApply} reopens it after an update, rather
+	 * than the owner starting it. Frozen: both sides parse it.
+	 */
+	public static final String REOPENED_FLAG = "--reopened-after-update";
+
+	/**
+	 * How the main window first shows: maximized, as it always has - and when the updater reopened it,
+	 * minimized to the taskbar, restoring maximized when the owner clicks it.
+	 *
+	 * <p>THE EDITOR COMES BACK, NOT UP (owner, 2026-10-12: "stop all of the pop ups going to my
+	 * foreground"). An update staged when the editor closes installs, and the editor is started again
+	 * (census M.143 - it used to simply not come back). That start is nobody's click: the owner closed
+	 * the editor up to a minute before, and a maximized window opening then came up over whatever they
+	 * had moved on to. Minimized, it is back where they can reach it and in front of nothing.
+	 */
+	public static int firstWindowState(String[] args) {
+		boolean reopened = args != null && args.length >= 1 && REOPENED_FLAG.equals(args[0]);
+		return reopened ? (java.awt.Frame.ICONIFIED | java.awt.Frame.MAXIMIZED_BOTH) : java.awt.Frame.MAXIMIZED_BOTH;
 	}
 
 	/**
@@ -514,6 +609,8 @@ public class Updater {
 	 * Runs inside the STAGED copy: waits for the old CTRMap to exit, installs
 	 * this version over it, and starts it again. Never shows a window.
 	 */
+	@ctrmap.util.NotAnEdit("it installs a staged release of the program over the program's own files at launch,"
+		+ " and starts it again: the program's files, never the user's")
 	public static void runApply(String[] args) {
 		File target = new File(args[1]);
 		System.out.println("CTRMap: waiting for the previous version to close...");
@@ -521,36 +618,51 @@ public class Updater {
 			System.out.println("CTRMap: it is still running - leaving the update staged.");
 			return;
 		}
-		try {
-			File payload = new File(System.getProperty("user.dir"));
-			if (shapeOf(payload) != Flavour.APP_IMAGE) {
-				System.out.println("CTRMap: staged copy does not look right - nothing changed.");
-				return;
-			}
-			File backup = new File(stageRoot(target), BACKUP);
-			deleteTree(backup);
-			backup.mkdirs();
-			List<String[]> done = new ArrayList<>();
-			List<File> asides = new ArrayList<>();
-			try {
-				copyOver(payload, target, backup, "", done, asides);
-			} finally {
-				remember(target, asides);
-			}
-			new File(stageRoot(target), READY).delete();
-			System.out.println("CTRMap: update applied.");
-		} catch (IOException ex) {
-			System.out.println("CTRMap: could not apply the update: " + ctrmap.util.Bytes.reason(ex));
+		if (!applyOver(new File(System.getProperty("user.dir")), target, System.out)) {
 			return;
 		}
 		try {
 			File exe = launcherIn(target);
 			if (exe != null) {
-				new ProcessBuilder(exe.getAbsolutePath()).directory(target).start();
+				new ProcessBuilder(exe.getAbsolutePath(), REOPENED_FLAG).directory(target).start();
 			}
 		} catch (IOException ex) {
 			//the update is installed; the user can start it themselves
 		}
+	}
+
+	/**
+	 * The apply's middle: installs {@code payload} over {@code target} and says what happened to {@code said},
+	 * answering whether the program should be started again - false only when the staged copy does not look like
+	 * one, and nothing was changed. A failed install has put the previous version back, and its reason is kept for
+	 * the next start (census M.143). Apart from runApply, which waits for the old program and starts the new one, so
+	 * a suite can ask it: the 2026-10-15 shared sweep (Updater 604, drop-report) SURVIVED - the line went to a log
+	 * nobody read.
+	 */
+	@ctrmap.util.NotAnEdit("it installs a staged release of the program over the program's own files: the program's"
+		+ " files, never the user's")
+	static boolean applyOver(File payload, File target, java.io.PrintStream said) {
+		try {
+			if (shapeOf(payload) != Flavour.APP_IMAGE) {
+				said.println("CTRMap: staged copy does not look right - nothing changed.");
+				return false;
+			}
+			install(payload, target);
+			new File(stageRoot(target), READY).delete();
+			said.println("CTRMap: update applied.");
+		} catch (IOException ex) {
+			//PUT BACK, SAID, AND STARTED AGAIN (census M.143): install has restored the previous version, so it
+			//is started like the new one would have been, and says why at its start - this went to a log and the
+			//program simply did not come back
+			said.println("CTRMap: could not apply the update: " + ctrmap.util.Bytes.reason(ex));
+			try {
+				ctrmap.util.Bytes.replaceFile(new File(stageRoot(target), APPLY_FAILED), ctrmap.util.Bytes.reason(ex)
+						.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+			} catch (IOException unwritten) {
+				said.println("CTRMap: and the reason could not be kept for the next start: " + ctrmap.util.Bytes.reason(unwritten));
+			}
+		}
+		return true;
 	}
 
 	/** Blocks until the run lock in {@code target} can be taken, i.e. nobody holds it. */
@@ -765,19 +877,6 @@ public class Updater {
 				}
 			}
 		}
-	}
-
-	private static void deleteTree(File f) {
-		if (f == null || !f.exists()) {
-			return;
-		}
-		File[] kids = f.listFiles();
-		if (kids != null) {
-			for (File k : kids) {
-				deleteTree(k);
-			}
-		}
-		f.delete();
 	}
 
 	private static void hide(File dir) {

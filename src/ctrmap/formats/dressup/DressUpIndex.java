@@ -141,6 +141,7 @@ public class DressUpIndex {
 			this.textures = textures;
 		}
 
+		@ctrmap.util.ForSuites("CAPABILITY: the dress-up index, read against the retail wardrobe by DressUpIndexTest; a dress-up editor would offer it, and none exists yet")
 		public boolean isUsed() {
 			return items.length > 0;
 		}
@@ -217,6 +218,7 @@ public class DressUpIndex {
 	// ---------------------------------------------------------------- queries
 
 	/** Dress-up slot of an item, or -1 when the master table never lists it. */
+	@ctrmap.util.ForSuites("CAPABILITY: the dress-up index, read against the retail wardrobe by DressUpIndexTest; a dress-up editor would offer it, and none exists yet")
 	public int categoryOfItem(int item) {
 		return (item >= 0 && item < itemCategory.length) ? itemCategory[item] : -1;
 	}
@@ -227,6 +229,7 @@ public class DressUpIndex {
 	 * assembled default player model). Usually one; a combined mesh - shoes
 	 * with the socks baked in - can occupy two.
 	 */
+	@ctrmap.util.ForSuites("CAPABILITY: the dress-up index, read against the retail wardrobe by DressUpIndexTest; a dress-up editor would offer it, and none exists yet")
 	public int[] categoriesOfPart(int partModel) {
 		if (partModel < 0 || partModel >= parts.length) {
 			return new int[0];
@@ -242,6 +245,7 @@ public class DressUpIndex {
 	}
 
 	/** Part-model indices that render anything in a slot, in archive order. */
+	@ctrmap.util.ForSuites("CAPABILITY: the dress-up index, read against the retail wardrobe by DressUpIndexTest; a dress-up editor would offer it, and none exists yet")
 	public int[] partModelsInCategory(int category) {
 		List<Integer> out = new ArrayList<>();
 		for (int p = 0; p < parts.length; p++) {
@@ -256,6 +260,7 @@ public class DressUpIndex {
 	}
 
 	/** Every slot ordinal the master table uses, ascending. */
+	@ctrmap.util.ForSuites("CAPABILITY: the dress-up index, read against the retail wardrobe by DressUpIndexTest; a dress-up editor would offer it, and none exists yet")
 	public int[] categories() {
 		Set<Integer> out = new LinkedHashSet<>();
 		for (MasterRow r : master) {
@@ -277,23 +282,13 @@ public class DressUpIndex {
 	 * containers, or a section does not parse - never a silently empty result
 	 */
 	public static DressUpIndex read(byte[] c) {
-		if (c == null || c.length < 16) {
-			throw new IllegalArgumentException("dress-up container too short");
+		String not = whyNotContainer(c);
+		if (not != null) {
+			throw new IllegalArgumentException(not);
 		}
 		String mg = "" + (char) (c[0] & 0xFF) + (char) (c[1] & 0xFF);
-		if (!isContainer(c)) {
-			throw new IllegalArgumentException("not a dress-up index container: magic '" + mg + "'");
-		}
 		int sections = ContainerBytes.count(c);
 		int[] off = ContainerBytes.offsets(c);
-		if (off == null) {
-			throw new IllegalArgumentException("dress-up container section table is cut short");
-		}
-		for (int i = 0; i <= sections; i++) {
-			if (off[i] < 0 || off[i] > c.length || (i > 0 && off[i] < off[i - 1])) {
-				throw new IllegalArgumentException("dress-up container section table is not monotonic");
-			}
-		}
 		byte[][] sec = new byte[sections][];
 		for (int i = 0; i < sections; i++) {
 			sec[i] = Arrays.copyOfRange(c, off[i], off[i + 1]);
@@ -324,26 +319,44 @@ public class DressUpIndex {
 
 	/** True when the blob looks like one of these containers - magic and a sane section table. */
 	public static boolean isContainer(byte[] c) {
+		return whyNotContainer(c) == null;
+	}
+
+	/**
+	 * Why the blob is not one of these containers, or null when it is: the magic, a table of 8 sections the blob holds
+	 * whole, every section inside it and in order, the last ending where the blob does.
+	 *
+	 * <p>ONE ANSWER FOR {@link #isContainer} AND {@link #read}. read asked isContainer and then repeated two of its
+	 * checks in its own words, which could never be reached once isContainer had passed - measured by the 2026-10-14
+	 * shared sweep, which found nothing able to notice line 295's refusal gone. A blob with the right magic and a table
+	 * cut short was told it had the wrong magic.
+	 */
+	static String whyNotContainer(byte[] c) {
 		if (c == null || c.length < 16) {
-			return false;
+			return "dress-up container too short";
 		}
 		String mg = "" + (char) (c[0] & 0xFF) + (char) (c[1] & 0xFF);
 		if (!"DB".equals(mg) && !"DA".equals(mg)) {
-			return false;
+			return "not a dress-up index container: magic '" + mg + "'";
 		}
 		int sections = ContainerBytes.count(c);
+		if (sections != 8) {
+			return "a dress-up index container holds 8 sections, and this one declares " + sections;
+		}
 		int[] off = ContainerBytes.offsets(c);
-		if (sections != 8 || off == null) {
-			return false;
+		if (off == null) {
+			return "dress-up container section table is cut short";
 		}
-		int prev = -1;
-		for (int o : off) {
-			if (o < 0 || o > c.length || o < prev) {
-				return false;
+		for (int i = 0; i <= sections; i++) {
+			if (off[i] < 0 || off[i] > c.length || (i > 0 && off[i] < off[i - 1])) {
+				return "dress-up container section table is not monotonic";
 			}
-			prev = o;
 		}
-		return off[sections] == c.length;
+		if (off[sections] != c.length) {
+			return "the dress-up container's sections end at " + off[sections] + ", and the blob is " + c.length
+					+ " bytes";
+		}
+		return null;
 	}
 
 	private static MasterRow[] readMaster(byte[] b) {

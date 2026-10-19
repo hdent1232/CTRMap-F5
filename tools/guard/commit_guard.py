@@ -930,7 +930,146 @@ def check_mutation_baseline(message):
     return 1
 
 
+#: -------- A COMMIT MADE PAST THE GATE IS PAID FOR BY THE NEXT ONE ----------------------------
+#: The record of what the gate did not drive for a commit made with --no-verify: every plant it
+#: would have driven (the project's and the bundle's, new and held) and the files whose mutation
+#: scores it left stale. Written from the gate's own functions when the owner allows one such
+#: commit, and cleared only by tools/guard/drive_owed.py.
+GATE_OWED = "tools/guard/gate_owed.json"
+
+
+def owed_in(record):
+    """Everything a gate_owed record still owes: plant ids, bundle plant keys, mutation files."""
+    return ([p.get("id") for p in record.get("plants") or []]
+            + list(record.get("bundle_plants") or []) + list(record.get("mutation_sweep_owed") or []))
+
+
+def retired_at_parent():
+    """The ids the PARENT commit's own plant ledger had retired, each with its reason - an empty set
+    when the project declares no ledger of its own or HEAD holds none, CannotAsk when it cannot be read.
+
+    A PLANT THE PARENT HAD RETIRED IS NOT OWED (2026-10-09). The record written at afa1204 owed 4
+    plants that commit's own ledger retired ("the code this claim was about is gone"): the held-plant
+    list was read from the commit before, where they were live. Nothing can drive a retired plant, so
+    no tree could ever meet the rule. Read from HEAD through git, never from the record and never from
+    the commit being made: a plant retired only NOW is still owed, or retiring would be the cheapest
+    way past."""
+    own = gate().project_ledger()
+    if not own:
+        return set()
+    path, key, _prove = own
+    if not _git_out(["ls-tree", "--name-only", "HEAD", "--", path]).strip():
+        return set()
+    shown = gate()._git(["show", "HEAD:" + path], text=False)
+    if shown.returncode != 0:
+        raise CannotAsk("`git show HEAD:%s` exited %d" % (path, shown.returncode))
+    try:
+        import json
+        held = json.loads(shown.stdout.decode("utf-8"))
+    except ValueError as exc:
+        raise CannotAsk("HEAD's %s is not JSON (%s)" % (path, exc))
+    if not isinstance(held, dict):
+        raise CannotAsk("HEAD's %s is not a ledger" % path)
+    return {e.get(key) for e in held.get("retired") or []
+            if isinstance(e, dict) and isinstance(e.get(key), str) and str(e.get("retired") or "").strip()}
+
+
+def gate_owed_problems(parent, staged, subject, stale, retired=frozenset()):
+    """The refusals for a commit whose PARENT's record owed `parent`'s items, staging `staged`.
+
+    `subject` is the digest of the tree being committed, the record itself left out; `stale` is
+    the parent's owed mutation files still scored against other bytes; `retired` the plants the
+    parent's own ledger had retired (`retired_at_parent`), which nothing can drive. Each other plant
+    the parent owed must be in the staged record's `driven`, red, against THIS tree - a verdict from
+    another tree is a measurement of something else, and a record edited by hand is the cheapest way
+    past."""
+    problems = []
+    still = [s for s in owed_in(staged) if s not in retired]
+    if still:
+        problems.append("%d item(s) the gate was skipped for are still owed in %s, e.g. %s"
+                        % (len(still), GATE_OWED, ", ".join(str(s) for s in still[:3])))
+    owed_plants = ([p.get("id") for p in parent.get("plants") or [] if p.get("id") not in retired]
+                   + list(parent.get("bundle_plants") or []))
+    driven = staged.get("driven") or {}
+    unproven = [k for k in owed_plants if not (driven.get(k) or {}).get("red")]
+    if unproven:
+        problems.append("%d plant(s) the parent commit owed were never driven red here, e.g. %s"
+                        % (len(unproven), ", ".join(unproven[:3])))
+    elsewhere = [k for k in owed_plants if k not in unproven and driven[k].get("subject") != subject]
+    if elsewhere:
+        problems.append("%d plant(s) were driven red against another tree than this one (%s), e.g. %s"
+                        % (len(elsewhere), subject, ", ".join(elsewhere[:3])))
+    if stale:
+        problems.append("%d file(s) the parent commit left owing a mutation sweep are still scored"
+                        " against other bytes, e.g. %s" % (len(stale), ", ".join(stale[:3])))
+    return problems
+
+
+def _record_at(spec):
+    """The record as the parent ("HEAD:") or the index (":") holds it - {} when that tree has none.
+    CannotAsk when git cannot say or the record is not JSON: an unread record is not an empty one."""
+    if spec == "HEAD:":
+        head = gate()._git(["rev-parse", "--verify", "-q", "HEAD"])
+        if head.returncode == 1:
+            return {}   #an initial commit has no parent to owe anything
+        if head.returncode != 0:
+            raise CannotAsk("`git rev-parse --verify HEAD` exited %d" % head.returncode)
+        if not _git_out(["ls-tree", "--name-only", "HEAD", "--", GATE_OWED]).strip():
+            return {}
+    elif not _git_out(["ls-files", "--", GATE_OWED]).strip():
+        return {}
+    shown = gate()._git(["show", spec + GATE_OWED], text=False)
+    if shown.returncode != 0:
+        raise CannotAsk("`git show %s%s` exited %d" % (spec, GATE_OWED, shown.returncode))
+    try:
+        import json
+        record = json.loads(shown.stdout.decode("utf-8"))
+    except ValueError as exc:
+        raise CannotAsk("%s%s is not JSON (%s)" % (spec, GATE_OWED, exc))
+    if not isinstance(record, dict):
+        raise CannotAsk("%s%s is not a record" % (spec, GATE_OWED))
+    return record
+
+
+def check_gate_owed(message):
+    """A COMMIT MADE PAST THE GATE IS PAID FOR BY THE NEXT ONE, and there is no line that excuses it.
+
+    THE DEFECT. The gate drives the plants a commit ADDS and the held plants in the files it
+    changes. A commit made with --no-verify adds its plants without driving them, and at the next
+    commit they are neither new nor, mostly, held: nothing would ever drive them. That happened on
+    2026-10-08 with 1117 of the project's plants and 465 of the bundle's, on the owner's one-time
+    permission and the instruction that the next commit run them: "The tests are there for a
+    reason I do not want you making a habit of asking to skip them." So this has no escape marker
+    on purpose - the only way past it is the owner's own --no-verify again. A plant the PARENT's own
+    ledger had retired is not owed (`retired_at_parent`): nothing can drive it."""
+    parent = _record_at("HEAD:")
+    staged = _record_at(":")
+    if not owed_in(parent) and not owed_in(staged):
+        return 0
+    subject = source_digest(exclude=(GATE_OWED,))
+    if subject is None:
+        raise CannotAsk("which tree this commit holds cannot be digested")
+    found = gate_owed_problems(parent, staged, subject,
+                               sorted(stale_scores(list(parent.get("mutation_sweep_owed") or []))),
+                               retired_at_parent())
+    if not found:
+        return 0
+    sys.stderr.write(
+        "".join("REFUSING THE COMMIT: %s%s" % (problem, LF) for problem in found)
+        + "  A commit made past the gate owes everything the gate did not drive for it, and the" + LF
+        + "  next commit is where it is paid. Drive them - each one red, against this tree:" + LF
+        + "    python -B tools/guard/drive_owed.py" + LF
+        + "  and re-sweep the mutation baseline for the files it names. Nothing here excuses it." + LF)
+    return 1
+
+
 def main(argv):
+    #a word this does not read refuses the run, before anything runs (cli_words, 2026-10-10)
+    import _cli
+    unread_words = _cli.refused(argv[1:], flags=("--subject",), most=1)
+    if unread_words:
+        print(unread_words)
+        return 2
     if len(argv) > 1 and argv[1] == "--subject":
         #: So a recorder - and the suite that drives this file - asks THIS implementation
         #: what tree it is looking at, instead of growing a second digest that agrees with
@@ -951,7 +1090,7 @@ def main(argv):
     if not message.strip():
         return 0
     try:
-        for check in (check_fix_has_a_guard, check_guard_class, check_test_claim,
+        for check in (check_gate_owed, check_fix_has_a_guard, check_guard_class, check_test_claim,
                       check_known_hole, check_blanket_claim, check_extraction_is_tested,
                       check_detangle, check_in_game_claim, check_zero_claim,
                       check_cheapest_evasion, check_menu_item, check_undo, check_mutation_baseline):

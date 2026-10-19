@@ -61,7 +61,8 @@ public final class PawnClosure {
 
 	private static final int OP_PROC = PawnInstruction.Commands.PROC.ordinal();
 	private static final int OP_CALL = PawnInstruction.Commands.CALL.ordinal();
-	private static final int OP_SWITCH = PawnInstruction.Commands.SWITCH.ordinal();
+	//no OP_SWITCH: checkJmp holds SWITCH (0x81), so "checkJmp(ins) || cmd == SWITCH" asked it twice - measured
+	//2026-10-14, the second half dropped and MsgWrapperInjectTest's leaving SWITCH still refused as a branch
 	private static final int OP_CASETBL = PawnInstruction.Commands.CASETBL.ordinal();
 	private static final int OP_HALT_P = PawnInstruction.Commands.HALT_P.ordinal();
 	private static final int OP_RETN = PawnInstruction.Commands.RETN.ordinal();
@@ -94,9 +95,6 @@ public final class PawnClosure {
 	 * 8-byte {0, nameHash} records of this width.
 	 */
 	private static final int EXPECTED_DEFSIZE = 8;
-
-	/** Cells of the yield-frame stub at 0x4, in every donor. */
-	private static final int STUB_CELL_COUNT = 11;
 
 	/**
 	 * Supplier of parsed zone scripts by ZoneData index for donor selection (a GARC in
@@ -244,7 +242,7 @@ public final class PawnClosure {
 		}
 		for (PawnInstruction ins : t.instructions) {
 			int cmd = ins.getCommand();
-			if (PawnInstruction.checkJmp(ins) || cmd == OP_SWITCH) {
+			if (PawnInstruction.checkJmp(ins)) {
 				if (ins.argumentCells.length < 1 || ins.pointer + ins.argumentCells[0] <= 4) {
 					throw new Refused("A branch at 0x" + Integer.toHexString(ins.pointer)
 							+ " targets the code head.");
@@ -388,9 +386,9 @@ public final class PawnClosure {
 				|| donor.natives.get(stubNatIdx).data[1] != YIELD_NATIVE_HASH) {
 			throw new Refused("The donor stub does not call the yield native.");
 		}
-		if (d.subCells.get(4).length != STUB_CELL_COUNT) {
-			throw new Refused("The donor yield stub is not " + STUB_CELL_COUNT + " cells.");
-		}
+		//THE STUB'S LENGTH IS THE SUB CHECK'S (2026-10-14): the stub is sub stubDfsIndex, asked above, and its cells
+		//were checked against spec.subCells[stubDfsIndex] - 11 in both specs - so a check of them against 11 here
+		//could never refuse anything the loop had not
 		requireSelfContained(donor, d);
 		spec.readData(donor, d);
 		//content fingerprint: the shape checks above cannot see altered
@@ -430,11 +428,9 @@ public final class PawnClosure {
 					if (ins.argumentCells.length != 1) {
 						throw new Refused("Donor CALL at 0x" + Integer.toHexString(ins.pointer) + " is malformed.");
 					}
-					int tgt = ins.pointer + ins.argumentCells[0];
-					if (!d.subCells.containsKey(tgt)) {
-						throw new Refused("Donor CALL at 0x" + Integer.toHexString(ins.pointer) + " leaves the closure.");
-					}
-				} else if (PawnInstruction.checkJmp(ins) || cmd == OP_SWITCH) {
+					//INSIDE BY CONSTRUCTION (2026-10-14): dfsClosure walks every well-formed CALL in every sub it
+					//collects, so the target of this one is a sub of the closure or the walk has already refused it
+				} else if (PawnInstruction.checkJmp(ins)) {
 					int tgt = ins.pointer + ins.argumentCells[0];
 					if (tgt < entryPtr || tgt >= endPtr) {
 						throw new Refused("Donor branch at 0x" + Integer.toHexString(ins.pointer) + " leaves its sub.");
@@ -629,6 +625,19 @@ public final class PawnClosure {
 	}
 
 	/**
+	 * Refuses a transplant that rewrote other than the spec's count of buffer-address cells. Through {@link #inject}
+	 * it cannot fire for a donor {@link #buildDonor} passed - the sites are pinned by their measured shape and the
+	 * closure by its fingerprint, so the count is the spec's constant - and it is kept as the check that a spec and
+	 * its sites still agree. Apart from inject so a suite can ask it: the 2026-10-15 shared sweep (PawnClosure 809,
+	 * drop-throw) SURVIVED, nothing able to reach the line.
+	 */
+	static void requireRewrites(Spec<?> spec, int performed) {
+		if (performed != spec.rewrites()) {
+			throw new Refused("Expected " + spec.rewrites() + " buffer-address rewrites, performed " + performed + ".");
+		}
+	}
+
+	/**
 	 * Injects the donor's closure into the target script (in memory; the caller decides where the
 	 * bytes go):
 	 *
@@ -805,9 +814,7 @@ public final class PawnClosure {
 				}
 			}
 		}
-		if (rewrites != spec.rewrites()) {
-			throw new Refused("Expected " + spec.rewrites() + " buffer-address rewrites, performed " + rewrites + ".");
-		}
+		requireRewrites(spec, rewrites);
 		int[] all = new int[base / 4 + block.length];
 		System.arraycopy(block, 0, all, base / 4, block.length);
 		int ci = 0;

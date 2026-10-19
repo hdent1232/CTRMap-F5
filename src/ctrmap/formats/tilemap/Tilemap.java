@@ -4,10 +4,8 @@ import ctrmap.formats.containers.GR;
 import java.awt.Color;
 import java.awt.Graphics;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 
 import ctrmap.util.LittleEndianDataOutputStream;
 import ctrmap.util.LittleEndian;
@@ -88,31 +86,41 @@ public class Tilemap {
 		this(mapFile, width, height, null);
 	}
 
+	/**
+	 * The tiles, every one read whole.
+	 *
+	 * @throws IllegalStateException when the subfile is shorter than its own size says (census M.27): each short
+	 * read was dropped, so the missing tiles became {0,0,0,0} and a save wrote those over the real movement data.
+	 * Measured 2026-10-12: all 857 regions of the ORAS dump hold a whole tilemap, so no region the game ships is
+	 * refused.
+	 */
 	private byte[][][] getTileData() {
-		try {
-			byte[] file = mapFile.getFile(0);
-			width = (short) LittleEndian.u16(file, 0);
-			height = (short) LittleEndian.u16(file, 2);
-			InputStream in = new ByteArrayInputStream(file, 4, file.length - 4);
-			byte[][][] b = new byte[width][height][4];
-			for (int y = 0; y < height; y++) {
-				for (int x = 0; x < width; x++) {
-					in.read(b[x][y]);
-				}
-			}
-			in.close();
-			return b;
-		} catch (IOException e) {
-			e.printStackTrace();
+		byte[] file = mapFile.getFile(0);
+		if (file.length < 4) {
+			throw new IllegalStateException("This region's tilemap (subfile 0) is "
+					+ "only " + file.length + " bytes" + ", so it is not opened and nothing"
+					+ " will be saved over it.");
 		}
-		return null;
+		width = (short) LittleEndian.u16(file, 0);
+		height = (short) LittleEndian.u16(file, 2);
+		int needed = 4 + width * height * 4;
+		if (file.length < needed) {
+			throw new IllegalStateException("This region's tilemap (subfile 0) holds " + file.length + " bytes, and a "
+					+ width + " by " + height + " tilemap needs " + needed + ", so it is not opened and nothing will be"
+					+ " saved over it.");
+		}
+		byte[][][] b = new byte[width][height][4];
+		int at = 4;
+		for (int y = 0; y < height; y++) {
+			for (int x = 0; x < width; x++) {
+				System.arraycopy(file, at, b[x][y], 0, 4);
+				at += 4;
+			}
+		}
+		return b;
 	}
 
 	public byte[] assembleTilemap() {
-		//GF likes their files to start at offsets ending with either 00 or 80
-		//even though we can disrespect that and the games run just fine, it's prettier and easier for debugging
-		//so we fill the remaining data till that offset with zeros. the tile data starts at 0x80 but we'll rather do it programatically.
-		int startingOffset = mapFile.getOffset(0);
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		LittleEndianDataOutputStream dos = new LittleEndianDataOutputStream(baos);
 		try {
@@ -130,27 +138,35 @@ public class Tilemap {
 			//bytes (0x80 alignment); whether the game tolerates a truncated one is
 			//untested - preserve the original padded length
 			byte[] orig = mapFile.getFile(0);
-			if (orig != null && orig.length > out.length) {
+			if (orig.length > out.length) {
 				out = java.util.Arrays.copyOf(out, orig.length);
 			}
 			return out;
 		} catch (IOException e) {
-			e.printStackTrace();
-			return null;
+			//THROWN, NOT NULL (census L.2): the null went into storeFile on every tilemap save
+			throw new IllegalStateException("the tilemap could not be assembled: " + ctrmap.util.Bytes.reason(e), e);
 		}
 	}
 
-	/** Repaints the picture from the tiles, in the handed colours; nothing to paint with means no picture. */
+	/**
+	 * Repaints the whole picture from the tiles, in the handed colours - for colours that changed; nothing to paint
+	 * with means no picture. An edit does not need it: {@link #setTileData} paints the tile it changed (census L.39).
+	 */
 	public void updateImage() {
+		for (int x = 0; x < 40; x++) {
+			for (int y = 0; y < 40; y++) {
+				paintTile(x, y);
+			}
+		}
+	}
+
+	/** Paints one tile of the picture in the handed colours; nothing to paint with means no picture. */
+	private void paintTile(int x, int y) {
 		if (colors == null) {
 			return;
 		}
-		for (int x = 0; x < 40; x++) {
-			for (int y = 0; y < 40; y++) {
-				g.setColor(colors.colorOf(ctrmap.util.Bytes.ba2int(rawTileData[x][y])));
-				g.fillRect(x * 10, y * 10, 10, 10);
-			}
-		}
+		g.setColor(colors.colorOf(ctrmap.util.Bytes.ba2int(rawTileData[x][y])));
+		g.fillRect(x * 10, y * 10, 10, 10);
 	}
 
 	/**
@@ -168,9 +184,14 @@ public class Tilemap {
 		return tilemapImage;
 	}
 
+	/**
+	 * Sets one tile and paints it. ITS OWN TILE (census L.39): the Set tool repainted all 1,600 tiles, each through
+	 * a scan of the tileset, on every mouse-drag event, for the one it changed.
+	 */
 	public void setTileData(int x, int y, byte[] tiledata) {
 		modified = true;
 		rawTileData[x][y] = tiledata.clone();
+		paintTile(x, y);
 	}
 
 	public byte[] getTileData(int x, int y) {

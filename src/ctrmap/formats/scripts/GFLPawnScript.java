@@ -222,8 +222,8 @@ public class GFLPawnScript {
 			write(new LittleEndianDataOutputStream(baos));
 			return baos.toByteArray();
 		} catch (IOException ex) {
-			Logger.getLogger(GFLPawnScript.class.getName()).log(Level.SEVERE, null, ex);
-			return null;
+			//THROWN, NOT NULL (census L.2): the null went into storeFile on every zone save
+			throw new IllegalStateException("the zone script could not be assembled: " + ctrmap.util.Bytes.reason(ex), ex);
 		}
 	}
 

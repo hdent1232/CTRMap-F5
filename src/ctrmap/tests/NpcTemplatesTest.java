@@ -42,11 +42,12 @@ public class NpcTemplatesTest {
 		}
 		GARC garc = new GARC(garcFile);
 		List<String> failures = new ArrayList<>();
+		int noSignZone = -1, noGiveZone = -1, giveZone = -1;
 
 		//--- census + sign/giver dry-runs -------------------------------------
 		int zoZones = 0, signWrapperZones = 0, giveWrapperZones = 0;
 		int vanillaSignsDetected = 0, vanillaGiversDetected = 0;
-		int signRun = 0, signOk = 0, giveRun = 0, giveOk = 0;
+		int signRun = 0, signOk = 0, giveRun = 0, giveOk = 0, onceRun = 0, onceOk = 0;
 
 		for (int i = 0; i < ZONE_COUNT; i++) {
 			GFLPawnScript s = getZoneScript(garc, i);
@@ -80,6 +81,15 @@ public class NpcTemplatesTest {
 				}
 			}
 
+			if (!hasSign && noSignZone < 0) {
+				noSignZone = i;
+			}
+			if (!hasGive && noGiveZone < 0) {
+				noGiveZone = i;
+			}
+			if (hasGive && giveZone < 0) {
+				giveZone = i;
+			}
 			//sign template dry-run
 			if (hasSign) {
 				signRun++;
@@ -99,8 +109,66 @@ public class NpcTemplatesTest {
 				} else {
 					failures.add("give zone " + i + ": " + err);
 				}
+				//and given ONCE (F085): the same template inside retail's one-time guard
+				onceRun++;
+				String once = dryRunOnceGiver(getZoneScript(garc, i), 4, 1, ONCE_FLAG);
+				if (once == null) {
+					onceOk++;
+				} else {
+					failures.add("once-give zone " + i + ": " + once);
+				}
 			}
 		}
+		System.out.println("one-time give template: " + onceOk + "/" + onceRun + " zones injected and read back as retail's guard");
+		//WHAT A TEMPLATE CANNOT GO INTO IS REFUSED, the script left as it was (the 2026-10-14 shared sweep, NpcTemplates
+		//290, dropped, SURVIVED: the dry-runs above ask only zones that hold the routine, and in-range items)
+		int itemMax = ctrmap.gamedef.GameProfile.of(ctrmap.gamedef.GameType.ORAS).itemIdMax();
+		Object[][] refusals = {
+			{"a sign in a zone with no sign routine", noSignZone, (TemplateCall) s -> NpcTemplates.addSignScript(
+					NpcScriptGateTest.ORAS, s, FAKE_LINE, NpcTemplates.SIGN_TYPES[0]), "The zone script has no sign display routine"},
+			{"an item giver in a zone with no give routine", noGiveZone, (TemplateCall) s -> NpcTemplates.addItemGiverScript(
+					NpcScriptGateTest.ORAS, s, 4, 1, -1), "The zone script has no give-item routine"},
+			{"item 0", giveZone, (TemplateCall) s -> NpcTemplates.addItemGiverScript(NpcScriptGateTest.ORAS, s, 0, 1, -1),
+				"Item ID 0 is out of range 1.." + itemMax + "."},
+			{"item " + (itemMax + 1), giveZone, (TemplateCall) s -> NpcTemplates.addItemGiverScript(NpcScriptGateTest.ORAS, s,
+					itemMax + 1, 1, -1), "Item ID " + (itemMax + 1) + " is out of range 1.." + itemMax + "."},
+			{"a count of 0", giveZone, (TemplateCall) s -> NpcTemplates.addItemGiverScript(NpcScriptGateTest.ORAS, s, 4, 0, -1),
+				"Item count 0 is out of range 1..99."},
+			{"a count of 100", giveZone, (TemplateCall) s -> NpcTemplates.addItemGiverScript(NpcScriptGateTest.ORAS, s, 4, 100,
+					-1), "Item count 100 is out of range 1..99."},
+			//nor a once-flag no packed argument holds (PawnEmitter 95, dropped, SURVIVED the same sweep)
+			{"a giver once by flag 0", giveZone, (TemplateCall) s -> NpcTemplates.addItemGiverScript(NpcScriptGateTest.ORAS, s,
+					4, 1, 0), "Event flag 0 does not fit a packed argument (1..32767)."},
+			{"a giver once by flag 32768", giveZone, (TemplateCall) s -> NpcTemplates.addItemGiverScript(NpcScriptGateTest.ORAS,
+					s, 4, 1, 32768), "Event flag 32768 does not fit a packed argument (1..32767)."}};
+		for (Object[] r : refusals) {
+			int zone = (Integer) r[1];
+			if (zone < 0) {
+				failures.add(r[0] + " is refused: no zone of that kind to ask it of");
+				continue;
+			}
+			GFLPawnScript s = getZoneScript(garc, zone);
+			s.decompressThis();
+			byte[] before = s.getScriptBytes();
+			String said;
+			try {
+				said = "it added case " + ((TemplateCall) r[2]).add(s);
+			} catch (IllegalStateException | IllegalArgumentException refused) {
+				said = refused.getMessage();
+			} catch (RuntimeException other) {
+				said = "it failed some other way: " + other;
+			}
+			boolean kept = java.util.Arrays.equals(before, s.getScriptBytes());
+			if (!said.startsWith((String) r[3]) || !kept) {
+				failures.add(r[0] + " is refused, the script left as it was: " + said + (kept ? "" : " (and the script was changed)"));
+			} else {
+				System.out.println("  ok: " + r[0] + " is refused, the script left as it was: " + said);
+			}
+		}
+		if (onceRun == 0 || onceOk != onceRun) {
+			failures.add("the one-time giver was built in " + onceOk + " of " + onceRun + " give-wrapper zones");
+		}
+		failures.addAll(scriptFlagsReadTheGameAsItStands(garc));
 
 		//--- record templates (trainer / scripted NPC / sign furniture) -------
 		String recErr = recordRoundTrips(garc);
@@ -171,6 +239,203 @@ public class NpcTemplatesTest {
 		return verifyPreserved(fresh, preCases, prePublics, newId);
 	}
 
+	/** A flag for the one-time dry runs: the template takes any; ScriptFlags is what chooses (F085). */
+	static final int ONCE_FLAG = 3076;
+
+	/**
+	 * The one-time giver, injected and read back (F085): its case runs retail's guard - PUSH flag;
+	 * FlagGet; JNZ past; the four give pushes; CALL the zone's give wrapper; PUSH flag; FlagSet - and the
+	 * JNZ lands on what follows the FlagSet, so a second talk gives nothing. Every other case and public
+	 * as it was.
+	 */
+	private static String dryRunOnceGiver(GFLPawnScript s, int itemId, int count, int flag) {
+		Map<Integer, Integer> preCases = snapshotCases(s);
+		int[] prePublics = snapshotPublics(s);
+		int newId;
+		try {
+			newId = NpcTemplates.addItemGiverScript(NpcScriptGateTest.ORAS, s, itemId, count, flag);
+		} catch (RuntimeException ex) {
+			return "addItemGiverScript(once) threw: " + ex.getMessage();
+		}
+		GFLPawnScript fresh = reparse(s);
+		if (fresh == null) {
+			return "getScriptBytes() returned null";
+		}
+		PawnInstruction entry = ZoneScriptAnalyzer.findCaseSubEntry(fresh, newId);
+		int at = entry == null ? -1 : fresh.instructions.indexOf(entry);
+		if (at < 0 || at + 13 > fresh.instructions.size()) {
+			return "new case " + newId + " leads to no subroutine";
+		}
+		List<PawnInstruction> b = fresh.instructions.subList(at, at + 13);
+		PawnInstruction.Commands[] want = {PawnInstruction.Commands.PROC, PawnInstruction.Commands.PUSH_P_C,
+			PawnInstruction.Commands.SYSREQ_N, PawnInstruction.Commands.JNZ, PawnInstruction.Commands.PUSH_P_C,
+			PawnInstruction.Commands.PUSH_P_C, PawnInstruction.Commands.PUSH_P_C, PawnInstruction.Commands.PUSH_P_C,
+			PawnInstruction.Commands.CALL, PawnInstruction.Commands.PUSH_P_C, PawnInstruction.Commands.SYSREQ_N,
+			PawnInstruction.Commands.ZERO_PRI, PawnInstruction.Commands.RETN};
+		for (int k = 0; k < want.length; k++) {
+			if (b.get(k).getCommand() != want[k].ordinal()) {
+				return "instruction " + k + " of the one-time giver is " + PawnInstruction.getDisassembly(b.get(k))
+						+ ", not " + want[k];
+			}
+		}
+		if (b.get(1).argumentCells[0] != flag || b.get(9).argumentCells[0] != flag) {
+			return "the guard pushes flags " + b.get(1).argumentCells[0] + " and " + b.get(9).argumentCells[0] + ", not " + flag;
+		}
+		if (nativeHash(fresh, b.get(2)) != ctrmap.scripts.GfHash.hashForName("FlagGet")
+				|| nativeHash(fresh, b.get(10)) != ctrmap.scripts.GfHash.hashForName("FlagSet")) {
+			return "the guard does not ask FlagGet before the give and FlagSet after it";
+		}
+		if (b.get(4).argumentCells[0] != NpcTemplates.GIVE_MODE || b.get(5).argumentCells[0] != count
+				|| b.get(6).argumentCells[0] != itemId || b.get(7).argumentCells[0] != NpcTemplates.GIVE_ARG_BYTES) {
+			return "the give inside the guard does not push mode, count " + count + ", item " + itemId + " and the argument bytes";
+		}
+		if (fresh.lookupInstructionByPtr(b.get(8).pointer + b.get(8).argumentCells[0]) != ZoneScriptAnalyzer.findGiveWrapper(fresh)) {
+			return "the give inside the guard does not call the zone's give wrapper";
+		}
+		if (fresh.lookupInstructionByPtr(b.get(3).pointer + b.get(3).argumentCells[0]) != b.get(11)) {
+			return "the guard's JNZ does not land past the FlagSet, so a second talk would give again";
+		}
+		return verifyPreserved(fresh, preCases, prePublics, newId);
+	}
+
+	private static int nativeHash(GFLPawnScript s, PawnInstruction sysreq) {
+		int n = sysreq.argumentCells[0];
+		return n >= 0 && n < s.natives.size() && s.natives.get(n).data.length >= 2 ? s.natives.get(n).data[1] : 0;
+	}
+
+	/**
+	 * Which event flags the game's zone scripts name, read as the game holds them (F085). Known answers
+	 * MEASURED 2026-10-09 over the retail ZoneData: 536 scripts, 621 distinct flags pushed before a flag
+	 * native, the highest 3080, and 72 flag calls whose flag is computed. Then a zone given a one-time giver
+	 * on the offered flag, staged as an edit, makes that flag named - the giver after it is refused it.
+	 */
+	static List<String> scriptFlagsReadTheGameAsItStands(GARC garc) throws Exception {
+		System.out.println("--- which flags the scripts use, read as the game holds them (F085)");
+		List<String> out = new ArrayList<>();
+		FakeGameFiles game = new FakeGameFiles().open(ctrmap.gamedef.ArchiveType.ZONE_DATA, garc);
+		ctrmap.ScriptFlags f = ctrmap.ScriptFlags.of(game);
+		//AN INDEPENDENT WALK, as the oracle: every zone's script, each call to a flag native, the constant
+		//pushed just before it - its own count of scripts and computed calls the control that it walked
+		java.util.Set<Integer> hashes = new java.util.HashSet<>();
+		for (String n : new String[]{"FlagGet", "FlagSet", "FlagSetReq", "FlagReset"}) {
+			hashes.add(ctrmap.scripts.GfHash.hashForName(n));
+		}
+		java.util.SortedSet<Integer> named = new java.util.TreeSet<>();
+		int scripts = 0, computed = 0;
+		for (int z = 0; z < 536; z++) {
+			GFLPawnScript zs = getZoneScript(garc, z);
+			scripts++;
+			for (int k = 0; k < zs.instructions.size(); k++) {
+				PawnInstruction a = zs.instructions.get(k);
+				if (a.getCommand() != PawnInstruction.Commands.SYSREQ_N.ordinal() || a.argumentCells.length == 0
+						|| a.argumentCells[0] < 0 || a.argumentCells[0] >= zs.natives.size()
+						|| !hashes.contains(zs.natives.get(a.argumentCells[0]).data[1])) {
+					continue;
+				}
+				PawnInstruction b = k > 0 ? zs.instructions.get(k - 1) : null;
+				if (b != null && (b.getCommand() == PawnInstruction.Commands.PUSH_C.ordinal()
+						|| b.getCommand() == PawnInstruction.Commands.PUSH_P_C.ordinal())) {
+					named.add(b.argumentCells[0]);
+				} else {
+					computed++;
+				}
+			}
+		}
+		if (scripts != 536 || named.size() != 621 || computed != 72) {
+			out.add("control: the walk measured " + scripts + " scripts, " + named.size() + " flags, " + computed
+					+ " computed - not the 536, 621 and 72 measured");
+		}
+		if (!f.named.equals(named) || f.highest() != 3080) {
+			out.add("the flag reader names " + f.named.size() + " flags up to " + f.highest() + ", the walk " + named.size()
+					+ " - not the same 621 up to 3080");
+		}
+		if (f.refusal(105) == null || f.refusal(3081) == null || f.refusal(0) == null) {
+			out.add("flag 105 (zone 8's one-time giver's), 3081 (past the highest) or 0 was offered to a new giver");
+		}
+		int free = f.suggestion();
+		if (free < 1 || f.named.contains(free) || f.refusal(free) != null) {
+			out.add("the offered flag " + free + " is one a script uses, or is refused");
+		}
+		System.out.println("  " + scripts + " scripts name " + f.named.size() + " flags up to " + f.highest() + " (" + computed
+				+ " computed); offered: " + free);
+		//THE GAME AS IT STANDS: an earlier one-time giver's flag is a flag a script uses
+		int zone = 8;
+		GFLPawnScript s = getZoneScript(garc, zone);
+		NpcTemplates.addItemGiverScript(NpcScriptGateTest.ORAS, s, 4, 1, free);
+		File staged = game.plant(ctrmap.gamedef.ArchiveType.ZONE_DATA, zone, garc.getDecompressedEntry(zone))
+				.staged(ctrmap.gamedef.ArchiveType.ZONE_DATA, zone);
+		new ctrmap.formats.containers.ZO(staged, game).storeFile(2, s.getScriptBytes());
+		game.edited(staged);
+		ctrmap.ScriptFlags after = ctrmap.ScriptFlags.of(game);
+		if (!after.named.contains(free) || after.refusal(free) == null) {
+			out.add("a zone staged with a one-time giver on flag " + free + " was read without it - the next giver would be offered it again");
+		}
+		//measured by the 2026-10-12 sweep (ScriptFlags 67, dropped, SURVIVED): nothing asked a zone that holds no
+		//script. Dropped, the read went on into the parser with none, and the zone was called unreadable because of
+		//a null pointer instead of because there is no script in it
+		FakeGameFiles noScript = new FakeGameFiles().open(ctrmap.gamedef.ArchiveType.ZONE_DATA, garc);
+		File junk = noScript.plant(ctrmap.gamedef.ArchiveType.ZONE_DATA, 3, new byte[4]).staged(ctrmap.gamedef.ArchiveType.ZONE_DATA, 3);
+		noScript.edited(junk);
+		String said;
+		try {
+			ctrmap.ScriptFlags read = ctrmap.ScriptFlags.of(noScript);
+			said = read == null ? "it answered no flag reader at all" : "it read " + read.named.size() + " flags";
+		} catch (java.io.IOException refused) {
+			said = refused.getMessage();
+		}
+		System.out.println("  a zone staged with no script in it: " + said);
+		if (!"zone 3's script could not be read, so which flags it names is unknown".equals(said)) {
+			out.add("a zone staged with no script in it was not refused with that reason: " + said);
+		}
+		//measured by the 2026-10-12 sweep (ScriptFlags 96, dropped, SURVIVED): nothing asked a game whose zone
+		//scripts name no flag at all. Dropped, the read answered an empty set, and the first question asked of it -
+		//the highest flag - failed on an empty set instead of saying the read found none. The game: the first two
+		//retail zones whose scripts name no flag, then the retail master table and encounter pack
+		List<byte[]> flagless = new ArrayList<>();
+		for (int z = 0; z < 536 && flagless.size() < 2; z++) {
+			if (!namesAFlag(getZoneScript(garc, z), hashes)) {
+				flagless.add(garc.getDecompressedEntry(z));
+			}
+		}
+		if (flagless.size() < 2) {
+			out.add("CONTROL: the retail ZoneData holds " + flagless.size() + " zone(s) whose script names no flag, not 2");
+		} else {
+			File none = new File(Scratch.dir("ctrmap_flagless_zones"), "zonedata.garc");
+			HandedGameTest.writeGarc(none, flagless.get(0), flagless.get(1), garc.getDecompressedEntry(536),
+					garc.getDecompressedEntry(537));
+			FakeGameFiles noFlags = new FakeGameFiles().open(ctrmap.gamedef.ArchiveType.ZONE_DATA, new GARC(none));
+			try {
+				ctrmap.ScriptFlags read = ctrmap.ScriptFlags.of(noFlags);
+				said = read == null ? "it answered no flag reader at all" : "it read " + read.named.size() + " flags";
+			} catch (java.io.IOException refused) {
+				said = refused.getMessage();
+			}
+			System.out.println("  a game whose zone scripts name no flag: " + said);
+			if (!"no zone script of 2 names a flag - a read that found none is not a game with none".equals(said)) {
+				out.add("a game whose zone scripts name no flag was not refused with that reason: " + said);
+			}
+		}
+		return out;
+	}
+
+	/** Whether {@code zs} pushes a constant just before a call to one of the flag natives - the oracle walk's test. */
+	private static boolean namesAFlag(GFLPawnScript zs, java.util.Set<Integer> hashes) {
+		for (int k = 1; k < zs.instructions.size(); k++) {
+			PawnInstruction a = zs.instructions.get(k);
+			if (a.getCommand() != PawnInstruction.Commands.SYSREQ_N.ordinal() || a.argumentCells.length == 0
+					|| a.argumentCells[0] < 0 || a.argumentCells[0] >= zs.natives.size()
+					|| !hashes.contains(zs.natives.get(a.argumentCells[0]).data[1])) {
+				continue;
+			}
+			PawnInstruction b = zs.instructions.get(k - 1);
+			if (b.getCommand() == PawnInstruction.Commands.PUSH_C.ordinal()
+					|| b.getCommand() == PawnInstruction.Commands.PUSH_P_C.ordinal()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private static String dryRunGiver(GFLPawnScript s, int itemId, int count) {
 		Map<Integer, Integer> preCases = snapshotCases(s);
 		int[] prePublics = snapshotPublics(s);
@@ -178,7 +443,7 @@ public class NpcTemplatesTest {
 
 		int newId;
 		try {
-			newId = NpcTemplates.addItemGiverScript(NpcScriptGateTest.ORAS, s, itemId, count);
+			newId = NpcTemplates.addItemGiverScript(NpcScriptGateTest.ORAS, s, itemId, count, -1);
 		} catch (RuntimeException ex) {
 			return "addItemGiverScript threw: " + ex.getMessage();
 		}
@@ -364,5 +629,10 @@ public class NpcTemplatesTest {
 			return null;
 		}
 		return ctrmap.formats.containers.ContainerBytes.subfile(zo, sub);
+	}
+
+	/** One template put into a zone's script, answering the case id it added. */
+	interface TemplateCall {
+		int add(GFLPawnScript s);
 	}
 }

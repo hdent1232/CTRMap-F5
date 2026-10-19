@@ -69,6 +69,8 @@ public final class ForkDeclines {
 	 * alone. Written whole to a temporary file and moved over the old, so a failed write leaves
 	 * the last good set. Throws when it cannot be kept - the caller says so.
 	 */
+	@ctrmap.util.NotAnEdit("it records which zones' private-map offers the user declined, so the question is not"
+		+ " asked again: the user's answers to a question, kept beside the workspace, not the game's data")
 	public static void write(File workspaceDir, String gameDir, Set<Integer> zones) throws IOException {
 		if (workspaceDir == null || gameDir == null || gameDir.trim().isEmpty()) {
 			throw new IOException("no workspace or no game folder to keep the declines against");

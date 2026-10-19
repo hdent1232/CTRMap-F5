@@ -29,6 +29,12 @@ again. Each has a bill attached, from that project's history:
   held plants         every plant HEAD already held whose planted file or named test this commit
                       changes is DRIVEN again, on every commit, fix or not. A plant proven once can
                       be emptied by the next edit to its own file, and nothing else drives it.
+  a plant leaving     a plant HEAD held live leaves `plants` only into a record the commit can
+                      ask again: `withdrawn` needs a flush-left `Withdraws: <key> -- <reason>` line
+                      (80+), a change to the test file it named, and that test GONE from what the
+                      commit records; `retired` is driven and its test must run to a pass; and a
+                      plant that simply vanishes is refused. Deleting a guard's test and its plants
+                      is the cheapest way past the whole ledger.
   Deferred-gap:       a message that ADMITS work outstanding ("still owed", "not done", "I have
                       not") carries `Deferred-gap: <80+ characters why the run could not close
                       it>`. README section 14, FIND IT AND FILE IT. Admissions only, measured: the
@@ -68,6 +74,7 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 
 ROOT = _tree_root.require(__file__)
 
@@ -79,7 +86,8 @@ ROOT = _tree_root.require(__file__)
 #: this list - allowed it. The hook folders are added by `guard_paths`.
 GUARD_PATHS = ("src/ctrmap/tests/", "tests/", "tools/", ".githooks/")
 
-#: The suite runner's record: {"ran": N, "rc": 0, "subject": "<require_build.subject_digest>"}.
+#: The suite runner's record: {"ran": N, "rc": 0, "subject": "<require_build.subject_digest>"}, and "unit":
+#: what `ran` counted - "tests", or "suites" for a runner that counts suites; "tests" when it does not say.
 RECORD = ".last-suite-run"
 
 #: The plant ledger (see `tools/prove_plants.py`).
@@ -96,15 +104,21 @@ SUBJECT_EXCLUDE = ()
 #: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("GUARD_PATHS", "RECORD", "LEDGER", "COAUTHOR_SHAPE", "SUBJECT_EXCLUDE")
 
+#: The settings that ship OFF, at the value they ship at. A project turns them on; the bundle's
+#: own tests turn them off again for their run (`bundle_hooks.settings_off`).
+SHIPPED_OFF = {"SUBJECT_EXCLUDE": ()}
+
 GUARD_KINDS = ("refusal", "detector", "convention")
 MIN_GUARD_REASON = 60
 MIN_REASON = 80
 GIT_TIMEOUT = 120
 CHECKER_TIMEOUT = 900
 
-#: `N tests` - a count the message claims. Quoted spans are blanked first: a number QUOTED from
-#: somewhere else is a mention, not a claim this commit is making.
-_TEST_CLAIM = re.compile(r"([0-9][0-9,]*)[ \t]+tests\b")
+#: `N tests` or `N suites` - a count the message claims. Quoted spans are blanked first: a number QUOTED
+#: from somewhere else is a mention, not a claim this commit is making. BOTH WORDS (census M.85, 2026-10-12):
+#: the gate read only `tests` in a project whose battery is counted in suites, and five battery-size
+#: claims - "the app passed 128 suites" among them - went into git log with nothing asked of them.
+_TEST_CLAIM = re.compile(r"([0-9][0-9,]*)[ \t]+(tests|suites)\b")
 _QUOTED = re.compile(r"\*[^*]{1,400}?\*|" + chr(34) + r"[^" + chr(34) + r"]{1,400}?" + chr(34)
                      + r"|`[^`]{1,400}?`", re.S)
 _CHECKER = re.compile(r"^Checker:\s*(\S+)\s*::\s*(\S+?)::(\w+)\s*$", re.M)
@@ -149,8 +163,8 @@ def _asked(message, fix):
 
 def _git(args, text=True):
     try:
-        return subprocess.run(["git"] + list(args), cwd=ROOT, capture_output=True, text=text,
-                              timeout=GIT_TIMEOUT, creationflags=NO_WINDOW)
+        return bounded.run(["git"] + list(args), cwd=ROOT, capture_output=True, text=text,
+                           timeout=GIT_TIMEOUT, creationflags=NO_WINDOW)
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(args, 124, "" if text else b"",
                                            "git did not answer in %ds" % GIT_TIMEOUT)
@@ -229,6 +243,18 @@ def _defines(test_file, class_name, module):
     return "%s does not define %s" % (test_file, class_name)
 
 
+def checker_env():
+    """The environment a named checker runs in: this one, marked as run by the gate, and WITHOUT
+    git's place. git hands its hook `GIT_INDEX_FILE` and its kin; a checker that inherited them
+    ran every git command of every repository it built against this one's index - measured
+    2026-10-07, `check_bundle.py` exited 0 by hand and 1 inside the hook. The plant driver's own
+    list, `prove_plants.GIT_LOCATION`, so the two children are asked one question."""
+    import prove_plants
+    env = {k: v for k, v in os.environ.items() if k not in prove_plants.GIT_LOCATION}
+    env["BUNDLE_COMMIT_GATE_DEPTH"] = "1"
+    return env
+
+
 def checker_resolves(message, execute=True, fix=None):
     """The `Checker:` line of a `Guard: refusal` resolves: README section 2's two conditions
     (exists and committed; exits clean now) and the plant ledger's two sites. `fix`: see `_asked`."""
@@ -248,11 +274,10 @@ def checker_resolves(message, execute=True, fix=None):
     elif _git(["ls-files", "--error-unmatch", "--", tool]).returncode != 0:
         out.append("%s is not tracked by git - a guard that is not committed does not exist" % tool)
     elif execute and not os.environ.get("BUNDLE_COMMIT_GATE_DEPTH"):
-        env = dict(os.environ, BUNDLE_COMMIT_GATE_DEPTH="1")
         try:
-            done = subprocess.run([sys.executable, tool], cwd=ROOT, capture_output=True,
-                                  text=True, env=env, timeout=CHECKER_TIMEOUT,
-                                  creationflags=NO_WINDOW)
+            done = bounded.run([sys.executable, tool], cwd=ROOT, capture_output=True,
+                               text=True, env=checker_env(), timeout=CHECKER_TIMEOUT,
+                               creationflags=NO_WINDOW)
             if done.returncode != 0:
                 out.append("%s exits %d, so the class is NOT closed now" % (tool, done.returncode))
         except subprocess.TimeoutExpired:
@@ -313,24 +338,33 @@ def coauthor(message):
             "[<model>] <noreply@anthropic.com>` on a line of its own"]
 
 
-def test_claims(message):
+def worded_claims(message):
+    """[(count, word)] the message claims, `word` being `tests` or `suites`."""
     blanked = _QUOTED.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), body_of(message))
-    return sorted({int(n.replace(",", "")) for n in _TEST_CLAIM.findall(blanked)})
+    return sorted({(int(n.replace(",", "")), word) for n, word in _TEST_CLAIM.findall(blanked)})
+
+
+def test_claims(message):
+    """The counts the message claims, in either word."""
+    return sorted({count for count, _ in worded_claims(message)})
 
 
 def test_counts(message):
     """A claimed count matches the last run, that run passed, and it measured THIS tree."""
-    claims = test_claims(message)
+    claims = worded_claims(message)
     if not claims:
         return []
     try:
         with io.open(os.path.join(ROOT, RECORD), encoding="utf-8") as handle:
             run = json.load(handle)
     except (OSError, ValueError):
-        return ["the message claims %s tests and no suite run is recorded in %s"
-                % (claims, RECORD)]
-    out = ["the message claims %d tests; the last run said %s" % (c, run.get("ran"))
-           for c in claims if c != run.get("ran")]
+        return ["the message claims %s and no suite run is recorded in %s"
+                % (", ".join("%d %s" % c for c in claims), RECORD)]
+    unit = run.get("unit", "tests")
+    out = ["the message claims %d %s, and the last run counted %s - a count in another word cannot be "
+           "checked against it: say it in %s" % (c, word, unit, unit) for c, word in claims if word != unit]
+    out += ["the message claims %d %s; the last run said %s" % (c, word, run.get("ran"))
+            for c, word in claims if word == unit and c != run.get("ran")]
     if run.get("rc") != 0:
         out.append("the message quotes the last run, and that run FAILED (exit %s)" % run.get("rc"))
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -407,18 +441,53 @@ def project_ledger():
     return path, key, prove
 
 
-def _prove_in_project(prove, key):
-    """(red?, detail) - the project's own command, run on ONE plant of its own ledger."""
-    argv = [a.replace("{key}", key) for a in prove]
+def unknown_exit():
+    """The exit code the project's own plant driver gives for a plant it could NOT ASK on this
+    machine (`_tests.ledger.unknown_exit`), or None when it declares none."""
     try:
-        done = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True,
-                              timeout=PROJECT_PROVE_TIMEOUT, creationflags=NO_WINDOW)
+        with io.open(os.path.join(ROOT, DECLARATIONS), encoding="utf-8") as handle:
+            held = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    ledger = ((held.get("_tests") or {}) if isinstance(held, dict) else {}).get("ledger")
+    code = ledger.get("unknown_exit") if isinstance(ledger, dict) else None
+    return code if isinstance(code, int) and not isinstance(code, bool) and code > 1 else None
+
+
+def _prove_in_project(prove, key, unknown=None):
+    """(red?, detail) - the project's own command, run on ONE plant of its own ledger. `red` is
+    None - UNKNOWN - when the driver exits `unknown` (its declared code for a plant it could not
+    ask here) or cannot be run at all.
+
+    COULD NOT ASK IS NOT SURVIVED. Reported by the CTRMap session, 2026-10-07: nineteen of its
+    plants read the owner's game data, which exists only on the owner's machine, and its driver
+    says so with its own exit code - while this read every non-zero exit as "no longer reddens"
+    and told the session to re-anchor them. Re-anchoring a plant to get past a refusal is how a
+    plant is made to prove less. UNKNOWN is still refused - a plant nobody drove proves nothing -
+    and it says what it is, and where it can be proven."""
+    argv = [a.replace("{key}", key) for a in prove]
+    unknown = unknown_exit() if unknown is None else unknown
+    try:
+        done = bounded.run(argv, cwd=ROOT, capture_output=True, text=True,
+                           timeout=PROJECT_PROVE_TIMEOUT, creationflags=NO_WINDOW)
     except subprocess.TimeoutExpired:
         return False, "not proven within %ds" % PROJECT_PROVE_TIMEOUT
     except OSError as exc:
-        return False, "could not run %s: %s" % (argv[0], exc)
+        return None, "could not run %s: %s" % (argv[0], exc)
     tail = (done.stdout + done.stderr).strip().splitlines()
-    return done.returncode == 0, (tail[-1] if tail else "exit %d" % done.returncode)
+    said = tail[-1] if tail else "exit %d" % done.returncode
+    if unknown is not None and done.returncode == unknown:
+        return None, said
+    return done.returncode == 0, said
+
+
+def could_not_ask(kind, key, detail):
+    """The refusal for a plant this machine could not ask - never the advice to re-anchor it."""
+    return ("the %s plant %s could NOT BE ASKED on this machine: %s. That is UNKNOWN - not red, "
+            "and not survived - and the commit is refused until it is driven. Make this commit "
+            "where what the plant needs exists (for a plant that reads data only the owner's "
+            "machine has, on that machine). Never re-anchor a plant to get past this: that is how "
+            "a plant is made to prove less." % (kind, key, str(detail)[:200]))
 
 
 def fix_has_a_plant(message, keys=None, drive=None, own=None, added=None, prove=None, fix=None):
@@ -449,7 +518,7 @@ def fix_has_a_plant(message, keys=None, drive=None, own=None, added=None, prove=
     if added and prove is None:
         def prove(key):
             return _prove_in_project(own[2], key)
-    out, reds = [], 0
+    out, reds, unknown = [], 0, 0
     pairs = [(k, drive) for k in keys] + [(k, prove) for k in added]
     for key, driver in pairs:
         try:
@@ -457,13 +526,16 @@ def fix_has_a_plant(message, keys=None, drive=None, own=None, added=None, prove=
         except Exception as exc:                     # noqa: BLE001 - a broken plant is a NO
             red, detail = False, "%s: %s" % (type(exc).__name__, exc)
         reds += bool(red)
-        if not red:
+        if red is None:
+            unknown += 1
+            out.append(could_not_ask("new", key, detail))
+        elif not red:
             out.append("the new plant %s does not redden its test: %s" % (key, str(detail)[:200]))
-    say_driven("new", len(pairs), reds)
+    say_driven("new", len(pairs), reds, unknown)
     return out
 
 
-def say_driven(kind, driven, reds):
+def say_driven(kind, driven, reds, unknown=0):
     """Say what a drive did, when it passes as well as when it fails.
 
     A SUCCESS THAT PRINTS NOTHING READS LIKE A STEP THAT NEVER RAN. Measured on the project this
@@ -473,6 +545,8 @@ def say_driven(kind, driven, reds):
     when it is true.
     """
     said = "all %d red" % driven if reds == driven else "%d of %d red" % (reds, driven)
+    if unknown:
+        said += ", %d UNKNOWN - could not be asked here" % unknown
     sys.stdout.write("commit gate: %d %s plant(s) driven, %s%s" % (driven, kind, said, LF))
 
 
@@ -554,7 +628,7 @@ def held_own_plant_keys(files, own=None, held=None):
                   if entry.get("file") in changed or entry.get("suite") in stems)
 
 
-def held_plants_redden(files, keys=None, drive=None, own_keys=None, prove=None):
+def held_plants_redden(files, keys=None, drive=None, own_keys=None, prove=None, clean=None):
     """Every held plant this commit could have emptied, driven again - on EVERY commit, in the
     bundle's ledger and in the one the project proves its own tests with.
 
@@ -574,11 +648,21 @@ def held_plants_redden(files, keys=None, drive=None, own_keys=None, prove=None):
         import prove_plants
         with io.open(os.path.join(ROOT, LEDGER), encoding="utf-8") as handle:
             plants = json.load(handle)["plants"]
+        # A PLANT THIS COMMIT TAKES OUT OF THE LEDGER IS NOT DRIVEN, AND NOT COUNTED RED. It was
+        # counted red here as "not in the ledger being committed", so a commit withdrawing three
+        # plants printed "all N red" over three plants nothing drove. `plants_that_leave` asks
+        # them what took them out instead.
+        left = [key for key in keys if key not in plants]
+        keys = [key for key in keys if key in plants]
+        if left:
+            sys.stdout.write("commit gate: %d held plant(s) leave the ledger in this commit - "
+                             "asked what took them out, not driven%s" % (len(left), LF))
 
         def drive(key):
-            if key not in plants:
-                return True, "not in the ledger being committed"
             return prove_plants.drive_plant(key, plants[key])
+
+        if clean is None:
+            clean = prove_plants.red_with_nothing_planted
     if own_keys and prove is None:
         try:
             with io.open(os.path.join(ROOT, own[0]), encoding="utf-8") as handle:
@@ -588,11 +672,21 @@ def held_plants_redden(files, keys=None, drive=None, own_keys=None, prove=None):
 
         def prove(key):
             if now is None:
-                return False, "the project's own ledger %s cannot be read" % own[0]
+                return None, "the project's own ledger %s cannot be read" % own[0]
             if key not in now:
                 return True, "not in the ledger being committed"
             return _prove_in_project(own[2], key)
-    out, reds = [], 0
+    out, reds, unknown = [], 0, 0
+    # A TEST RED WITH NOTHING PLANTED MAKES EVERY PLANT ON IT RED FOR FREE - asked first, once a test
+    # (prove_plants.red_with_nothing_planted). A held plant on one is counted as nothing.
+    if keys and clean is not None:
+        red_clean, unrun = clean(keys)
+        for test in red_clean:
+            out.append("the test %s is RED WITH NOTHING PLANTED, so every held plant on it reddens for free and "
+                       "proves nothing - make it pass first" % test)
+        for test in unrun:
+            out.append("the test %s could not be run to a verdict with nothing planted - whether its plants "
+                       "prove anything is UNKNOWN" % test)
     pairs = [(k, drive) for k in keys] + [(k, prove) for k in own_keys]
     for key, driver in pairs:
         try:
@@ -600,12 +694,175 @@ def held_plants_redden(files, keys=None, drive=None, own_keys=None, prove=None):
         except Exception as exc:                     # noqa: BLE001 - a broken plant is a NO
             red, detail = False, "%s: %s" % (type(exc).__name__, exc)
         reds += bool(red)
-        if not red:
+        if red is None:
+            unknown += 1
+            out.append(could_not_ask("held", key, detail))
+        elif not red:
             out.append("the held plant %s no longer reddens its test after this change: %s - "
                        "re-anchor it where the defect now lives (`python tools/prove_plants.py "
                        "--reanchor <file>`), or make the test notice it again. A plant that "
                        "cannot redden proves nothing." % (key, str(detail)[:200]))
-    say_driven("held", len(pairs), reds)
+    say_driven("held", len(pairs), reds, unknown)
+    return out
+
+
+def _prove_plants():
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import prove_plants
+    return prove_plants
+
+
+def ledger_at(spec):
+    """The plant ledger at a git spec (`HEAD:<path>`, `:<path>` for the index) - {} when git
+    holds none there, None when it cannot be read."""
+    done = _git(["show", spec], text=False)
+    if done.returncode == 124:
+        return None
+    if done.returncode != 0:
+        return {}
+    try:
+        held = json.loads(done.stdout.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return None
+    return held if isinstance(held, dict) else None
+
+
+def index_reader():
+    """`read(rel)`: the text of `rel` as this commit would record it, None when git's index holds
+    no such file - raising OSError when git cannot say, because cannot-look is not absent."""
+    def read(rel):
+        listed = _git(["ls-files", "--cached", "--", rel])
+        if listed.returncode != 0:
+            raise OSError("git could not list %s in its index" % rel)
+        if not listed.stdout.strip():
+            return None
+        shown = _git(["show", ":" + rel], text=False)
+        if shown.returncode != 0:
+            raise OSError("git could not show %s from its index" % rel)
+        return shown.stdout.decode("utf-8", "replace")
+    return read
+
+
+def keyed_reason(message, marker, key):
+    """The reason on the flush-left `<marker> <key> -- <reason>` line naming `key`, or None.
+
+    FLUSH LEFT, where git keeps a trailer: an indented line is a body quoting one. And one line
+    per key - a line naming another plant answers nothing about this one."""
+    for line in body_of(message).splitlines():
+        if not line.startswith(marker):
+            continue
+        named, sep, reason = line[len(marker):].partition(" -- ")
+        if sep and named.strip() == key:
+            return reason.strip()
+    return None
+
+
+def _leaving(files, head, index):
+    """(head, index, {record: [keys HEAD held live that this commit moves into it]}), or a
+    refusal line when the ledger cannot be read. Nothing leaves a ledger the commit leaves alone."""
+    if files is not None and LEDGER not in files:
+        return {}, {}, {}
+    head = ledger_at("HEAD:" + LEDGER) if head is None else head
+    index = ledger_at(":" + LEDGER) if index is None else index
+    if head is None or index is None:
+        return ("%s cannot be read at HEAD or in the index, so which plants this commit takes "
+                "out of it is UNKNOWN" % LEDGER)
+    live, now = head.get("plants") or {}, index.get("plants") or {}
+    moved = {record: sorted(key for key in (index.get(record) or {})
+                            if key in live and key not in now)
+             for record in _prove_plants().LEFT}
+    return head, index, moved
+
+
+def plants_that_leave(message, files, head=None, index=None, read=None):
+    """Every plant HEAD held live that this commit takes out of `plants` without a record the
+    commit can stand behind - the cheap half: two reads of the ledger and one of each test file.
+
+    `prove_plants.py --withdraw` exists because deleted tests left their plants naming nothing,
+    and it is also the cheapest way past the whole ledger: delete a guard's test, withdraw its
+    plants, and nothing counts a class that is gone. So, as the project this came from asks of a
+    reopened item, each withdrawn plant is named on a flush-left `Withdraws: <key> -- <reason>`
+    line where `git log` keeps it, and the commit changes the test file the plant named - a plant
+    leaves in the change that removes its test. And the tool's own check is asked AGAIN, of the
+    tree the commit records: a record typed into the ledger by hand is not the tool, and moving a
+    plant whose test still runs into `withdrawn` would pass every other line of this.
+    """
+    found = _leaving(files, head, index)
+    if isinstance(found, str):
+        return [found]
+    head, index, moved = found
+    pp = _prove_plants()
+    out = pp.departures(head, index)
+    if moved.get("withdrawn") and files is None:
+        return out + ["what this commit touches could not be read from git, so whether each "
+                      "withdrawn plant left with its test is UNKNOWN"]
+    read = read or index_reader()
+    for key in moved.get("withdrawn") or []:
+        reason = keyed_reason(message, pp.WITHDRAWS, key)
+        homes = pp.test_files(key)
+        if reason is None or len(reason) < MIN_REASON:
+            out.append("%s is withdrawn without a flush-left `%s %s -- <reason>` line of %d+ "
+                       "characters - the argument for dropping a guard belongs where `git log` "
+                       "keeps it" % (key, pp.WITHDRAWS, key, MIN_REASON))
+        elif not any(rel in files for rel in homes):
+            out.append("%s is withdrawn, and this commit does not change %s - a plant leaves in "
+                       "the change that removes its test" % (key, homes[0]))
+        else:
+            try:
+                still = pp.test_exists(key, read=read)
+            except OSError as exc:
+                still = None
+                out.append("whether the test %s names is gone cannot be read from git's index "
+                           "(%s) - UNKNOWN is not gone" % (key, exc))
+            if still:
+                out.append("%s is withdrawn while the test it names is still in what this commit "
+                           "records - a plant on a test that exists is re-anchored, or retired "
+                           "once driven, never withdrawn" % key)
+    return out
+
+
+def retirements_hold(files, head=None, index=None, drive=None):
+    """Every plant this commit moves from `plants` to `retired`, DRIVEN - `--retire`'s own
+    question, asked again of the record the commit carries.
+
+    `--retire` drives a plant and moves it only when its test runs and passes. A plant typed into
+    `retired` by hand asked nothing, and it is the next cheapest way past `Withdraws:` once that
+    is refused: call the deleted test's plant retired instead. Its test does not resolve, so it
+    never runs to a pass, and it is refused here.
+    """
+    found = _leaving(files, head, index)
+    if isinstance(found, str):
+        return [found]
+    _head, index, moved = found
+    keys = moved.get("retired") or []
+    if not keys:
+        return []
+    if drive is None:
+        pp = _prove_plants()
+
+        def drive(key):
+            return pp.drive_plant(key, index["retired"][key])
+    out, passed = [], 0
+    for key in keys:
+        try:
+            red, detail = drive(key)
+        except Exception as exc:                     # noqa: BLE001 - a broken plant is a NO
+            red, detail = False, "%s: %s" % (type(exc).__name__, exc)
+        if _prove_plants().verdict_label(red, detail) == "skip":
+            out.append("%s is retired and declared for another platform, and its test skipped "
+                       "here - it can be retired only where that test runs" % key)
+        elif red:
+            out.append("%s is retired and still reddens its test - it proves something, and "
+                       "retiring it drops a working guard" % key)
+        elif str(detail).strip() != "OK":
+            out.append("%s is retired and its test did not run to a pass (%s) - a plant whose "
+                       "test is gone is withdrawn, not retired" % (key, str(detail).strip()[:160]))
+        else:
+            passed += 1
+    sys.stdout.write("commit gate: %d retired plant(s) driven, %d ran to a pass%s"
+                     % (len(keys), passed, LF))
     return out
 
 
@@ -629,12 +886,18 @@ def problems(message, files=None, keys=None, drive=None, execute=True, held=None
     files = staged_files() if files is None else files
     cheap = (fix_touches_a_guard(message, files) + guard_claim(message) + deferred_gap(message)
              + coauthor(message) + test_counts(message)
-             + checker_resolves(message, execute=execute))
+             + checker_resolves(message, execute=execute) + plants_that_leave(message, files))
     return cheap or (fix_has_a_plant(message, keys=keys, drive=drive)
-                     + held_plants_redden(files, keys=held, drive=redrive))
+                     + held_plants_redden(files, keys=held, drive=redrive)
+                     + retirements_hold(files))
 
 
 def main(argv):
+    import cli_words      # a word this does not read refuses the run, before anything runs
+    why = cli_words.refused(argv[1:], most=1)
+    if why:
+        print(why)
+        return 2
     if len(argv) < 2:
         sys.stdout.write(__doc__)
         return 2

@@ -91,6 +91,7 @@ public class EditToolGuardsTest {
 			triggerToolDrawsBothLists();
 			warpToolDrawsAndDragsWarps();
 			theToolsThatRefreshTheCameraForm();
+			aDragUpdatesTheToolOnlyWhenItMoved();
 			aCameraTableThatCannotBeReadEmptiesTheFormAndSaysSo(dump);
 			theTileInspectorAsksForNoRepaintOfItsOwn();
 			withTheWindow(dump);
@@ -815,6 +816,58 @@ public class EditToolGuardsTest {
 		EditorBench.hilight(7, 8);
 		t.onTileMouseDragged(EditorBench.drag(70, 80, false));
 		check(w0.x == wasX && !e.modified, "a drag that never pressed on a warp moves nothing");
+	}
+
+	/**
+	 * A navigator drag tells the tool in hand only when it moved the target (F148), and with no tool in hand it tells
+	 * nobody (the 2026-10-14 shared sweep, H3DRenderingPanel 224, negate-if, SURVIVED: no suite dragged through the
+	 * view). Driven through the view's own doNavi, over a target that is three numbers, every answer read.
+	 */
+	static void aDragUpdatesTheToolOnlyWhenItMoved() {
+		System.out.println("--- a drag tells the tool in hand only when it moved the target, and nobody when none is held");
+		java.util.List<String> log = new java.util.ArrayList<>();
+		ctrmap.humaninterface.tools.ToolSelection held = new ctrmap.humaninterface.tools.ToolSelection();
+		held.switchTo(() -> new SpySwitchTool(log, "spy") {
+			@Override
+			public void updateComponents() {
+				log.add("update");
+			}
+		});
+		ctrmap.humaninterface.H3DRenderingPanel view = new ctrmap.humaninterface.H3DRenderingPanel(
+				new java.util.ArrayList<ctrmap.humaninterface.CM3DRenderable>(), held);
+		final float[] at = {0f, 0f, 0f};
+		view.navi.bindModel(new ctrmap.formats.MapObject() {
+			public float getX() { return at[0]; }
+			public float getY() { return at[1]; }
+			public float getZ() { return at[2]; }
+			public void setX(float v) { at[0] = v; }
+			public void setY(float v) { at[1] = v; }
+			public void setZ(float v) { at[2] = v; }
+		});
+		view.navi.targetAxis = ctrmap.humaninterface.CM3DNavigator.TargetAxis.X;
+		view.navi.distFromTarget = 1200;
+		log.clear();
+		String said = drag(view, 10);
+		check(at[0] != 0f && log.equals(Arrays.asList("update")), "a drag that moved the target tells the tool once: x "
+				+ at[0] + ", " + log + said);
+		log.clear();
+		said = drag(view, 0);
+		check(log.isEmpty(), "a drag that moved nothing tells the tool nothing: " + log + said);
+		held.drop();
+		log.clear();
+		said = drag(view, 10);
+		check(said.isEmpty() && !log.contains("update"), "and with no tool in hand a drag tells nobody, and throws nothing: "
+				+ log + said);
+	}
+
+	/** The view's doNavi for a drag of {@code dx} pixels from where it began; "" or what it threw. */
+	static String drag(ctrmap.humaninterface.H3DRenderingPanel view, int dx) {
+		try {
+			view.doNavi(new java.awt.event.MouseEvent(view, java.awt.event.MouseEvent.MOUSE_DRAGGED, 0, 0, dx, 0, 0, false), 0, 0);
+			return "";
+		} catch (RuntimeException threw) {
+			return " - threw " + threw;
+		}
 	}
 
 	// ---- the copy-paste in updateComponents ---------------------------------

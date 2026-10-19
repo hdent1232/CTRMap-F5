@@ -87,6 +87,10 @@ public class TileMapPanelStateTest {
 		theAnimatorFindsNothingToDrawBeforeAZoneOpens();
 		theColoursARegionIsPaintedInFollowTheTileset();
 		unloadingDropsTheUndoHistoryWithTheMap();
+		theTallGrassIsReadInOnePlace();
+		anEditedRegionIsDrawnWhereItSits();
+		aDroppedRegionModelIsFreedNotLeaked();
+		theGlOverlaysSettingsAreMadeWhereGlStarts();
 
 		if (!dump.isDirectory()) {
 			Skip.section("no dump at " + dump
@@ -101,12 +105,483 @@ public class TileMapPanelStateTest {
 			aMatrixThatOutgrewItsArraysWritesOnlyTheCellsItHas();
 			openingALooseMapDropsThePreviousZonesTextures();
 			loadingAMapDropsTheTilePickedOnTheLastOne();
+			aRegionsTallGrassIsItsModelOrNothing();
+			readingAMatrixReadsItsFilledCellsOnly();
 		}
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * The map view's GL overlay is set up where OpenGL starts - hardware, single-buffered, an alpha channel - and is
+	 * none where it does not, the view built either way (the 2026-10-15 shared sweep, TileMapPanel 289, negate-if,
+	 * SURVIVED: GlUnavailableTest asks the second half and skips where OpenGL starts, and nothing asked the first).
+	 * Whichever this machine is, the inversion is seen: unset settings where GL starts, a throw where it does not.
+	 */
+	static void theGlOverlaysSettingsAreMadeWhereGlStarts() throws Exception {
+		System.out.println("--- the map view's GL overlay is set up where OpenGL starts, and is none where it does not");
+		ctrmap.humaninterface.tools.ToolSelection tools = new ctrmap.humaninterface.tools.ToolSelection();
+		String built;
+		Object caps = null;
+		try {
+			ctrmap.humaninterface.TileMapPanel map = new ctrmap.humaninterface.TileMapPanel(new ctrmap.LoadedZone(), tools,
+					new RecordingScene(), new javax.swing.JScrollPane(),
+					new ctrmap.humaninterface.CollEditPanel(tools, UndoHistoryTest.overOneNumber(new int[]{0})), null);
+			java.lang.reflect.Field f = ctrmap.humaninterface.TileMapPanel.class.getDeclaredField("caps");
+			f.setAccessible(true);
+			caps = f.get(map);
+			built = "built";
+		} catch (RuntimeException | LinkageError threw) {
+			built = "threw " + threw;
+		}
+		boolean gl = ctrmap.humaninterface.GlSupport.available();
+		boolean set = caps != null && ((com.jogamp.opengl.GLCapabilities) caps).getHardwareAccelerated()
+				&& !((com.jogamp.opengl.GLCapabilities) caps).getDoubleBuffered()
+				&& ((com.jogamp.opengl.GLCapabilities) caps).getAlphaBits() == 8;
+		check("built".equals(built) && (gl ? set : caps == null), "OpenGL " + (gl ? "starts here: the overlay is"
+				+ " hardware, single-buffered, with alpha" : "does not start here: the view is built with no overlay")
+				+ " - " + built + ", " + caps);
+	}
+
+	/**
+	 * Reading a matrix reads every filled cell and no empty one (the 2026-10-15 shared sweep, TileMapPanel 668,
+	 * negate-if, SURVIVED: readRegions was read in its source only). Inverted, the filled cells were skipped and the
+	 * empty ones read as regions that are not there. Over the first retail matrix of at most 64 cells with cells of both kinds.
+	 */
+	static void readingAMatrixReadsItsFilledCellsOnly() throws Exception {
+		System.out.println("--- reading a matrix reads its filled cells and no empty one");
+		MapMatrix found = null;
+		int filled = 0;
+		int empty = 0;
+		int matrices = Workspace.getArchive(ArchiveType.MAP_MATRIX).length;
+		for (int id = 0; id < matrices && found == null; id++) {
+			File f = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, id);
+			if (f == null || !f.isFile()) {
+				continue;
+			}
+			MapMatrix mm = new MapMatrix(new MM(f, Workspace.session()), Workspace.session());
+			if (mm.width * mm.height > 64) {
+				continue;
+			}
+			filled = 0;
+			empty = 0;
+			for (int i = 0; i < mm.height; i++) {
+				for (int j = 0; j < mm.width; j++) {
+					if (mm.ids.get(j, i) != -1) {
+						filled++;
+					} else {
+						empty++;
+					}
+				}
+			}
+			found = filled > 0 && empty > 0 ? mm : null;
+		}
+		check(found != null, "control: a retail matrix of at most 64 cells has filled cells and empty ones (" + filled
+				+ " filled, " + empty + " empty)");
+		if (found == null) {
+			return;
+		}
+		String wrong;
+		try {
+			TileMapPanel.Regions r = TileMapPanel.readRegions(found, null, null, null, null);
+			Tilemap[][] tilemaps = (Tilemap[][]) field(r, "tilemaps");
+			//and each filled cell's map model, placed where it sits (TileMapPanel 673, negate-if, SURVIVED in the same
+			//sweep: the model of a cell that has one was dropped)
+			ctrmap.formats.h3d.BCHFile[][] models = (ctrmap.formats.h3d.BCHFile[][]) field(r, "models");
+			//and a caption for the collision tree exactly where a filled cell's collision reads (TileMapPanel 701,
+			//negate-if, SURVIVED in the same sweep: captioned where it did not read, and not where it did)
+			ctrmap.formats.gfcollision.GRCollisionFile[][] colls = (ctrmap.formats.gfcollision.GRCollisionFile[][]) field(r, "colls");
+			String[][] captions = (String[][]) field(r, "captions");
+			List<String> off = new java.util.ArrayList<>();
+			for (int i = 0; i < found.height; i++) {
+				for (int j = 0; j < found.width; j++) {
+					boolean inUse = found.ids.get(j, i) != -1;
+					boolean reads = inUse && colls[j][i] != null && colls[j][i].unreadable == null;
+					if (inUse != (tilemaps[j][i] != null) || inUse != (models[j][i] != null)
+							|| reads != (captions[j][i] != null)) {
+						off.add("(" + j + "," + i + ")");
+					}
+				}
+			}
+			wrong = off.isEmpty() ? "none" : off.toString();
+			//and showing them hands the collision editor every captioned cell's collision, row by row, and no other
+			//(TileMapPanel 735, negate-if, SURVIVED in the same sweep: showRegions was never called by a suite)
+			List<ctrmap.formats.gfcollision.GRCollisionFile> captioned = new java.util.ArrayList<>();
+			for (int i = 0; i < found.height; i++) {
+				for (int j = 0; j < found.width; j++) {
+					if (captions[j][i] != null) {
+						captioned.add(colls[j][i]);
+					}
+				}
+			}
+			check(!captioned.isEmpty(), "control: the matrix has a captioned cell (" + captioned.size() + ")");
+			ctrmap.humaninterface.CollEditPanel editor = new ctrmap.humaninterface.CollEditPanel(TOOLS,
+					UndoHistoryTest.overOneNumber(new int[]{0}));
+			String handed;
+			javax.swing.JScrollPane scroll = new javax.swing.JScrollPane();
+			RecordingScene viewScene = new RecordingScene();
+			TileMapPanel shown = null;
+			try {
+				shown = new TileMapPanel(new ctrmap.LoadedZone(), TOOLS, viewScene, scroll, editor, null);
+				shown.showRegions(r, null, null);
+				handed = editor.files.equals(captioned) ? "every captioned cell's, in order"
+						: editor.files.size() + " of " + captioned.size();
+			} catch (RuntimeException threw) {
+				handed = "threw " + threw;
+			}
+			check("every captioned cell's, in order".equals(handed), "showing them gives the collision editor "
+					+ "every captioned cell's collision and no other: " + handed);
+			//and the map shown paints with no GL overlay made - none is until the view is resized, and none ever is
+			//where OpenGL does not start (TileMapPanel 1115, negate-if, SURVIVED in the same sweep: no suite painted
+			//a loaded map). Inverted, a view with no overlay asked the one it has not got to draw.
+			String painted;
+			TOOLS.switchTo(QuietTool::new);
+			try {
+				scroll.setSize(200, 200);
+				scroll.doLayout();
+				java.awt.image.BufferedImage frame = new java.awt.image.BufferedImage(200, 200,
+						java.awt.image.BufferedImage.TYPE_INT_ARGB);
+				java.awt.Graphics g = frame.getGraphics();
+				java.lang.reflect.Method paint = TileMapPanel.class.getDeclaredMethod("paintComponent", java.awt.Graphics.class);
+				paint.setAccessible(true);
+				int asked = QuietTool.overlays;
+				try {
+					paint.invoke(shown, g);
+				} finally {
+					g.dispose();
+				}
+				painted = QuietTool.overlays == asked + 1 ? "painted" : "painted without reaching the tool's overlay";
+			} catch (java.lang.reflect.InvocationTargetException threw) {
+				painted = "threw " + threw.getCause();
+			} catch (RuntimeException threw) {
+				painted = "threw " + threw;
+			} finally {
+				TOOLS.drop();
+			}
+			check("painted".equals(painted), "and the map it shows paints with no GL overlay made: " + painted);
+			//and with one made: the first paint draws it, a paint while the held tool asks for no update keeps that
+			//frame, and one that does not draws anew (TileMapPanel 1118, negate-if, SURVIVED in the same sweep: no
+			//suite painted a map with an overlay). Inverted, the overlay was drawn only when it need not be, and a
+			//paint that should draw it showed the last frame, or none
+			if (!ctrmap.humaninterface.GlSupport.available()) {
+				Skip.section("OpenGL does not start here, so the map view has no overlay to keep or draw anew");
+			} else {
+				//DRAWN IS COUNTED, NOT SEEN BY IDENTITY: the frame reader hands back one image it fills again, so a
+				//frame drawn anew is the same object as the last (measured: the first version of this check said a
+				//paint not asked to keep the frame kept it). The overlay draws the view's scene, and one renderable
+				//in it counts its draws
+				String overlay;
+				String laid = "(not painted)";
+				int[] draws = {0};
+				viewScene.renderables().add(new CountingRenderable(draws));
+				TOOLS.switchTo(QuietTool::new);
+				try {
+					//SIZED AS THE EDITOR SIZES IT, to its image, so the image starts at the panel's corner - unsized, the
+					//origin was (-1600,-1600) and the overlay was laid off the frame (measured). Its listeners are held
+					//off while it is sized: a resize is POSTED to the event thread, which would make a GL context of its
+					//own current there while this thread holds one; the resize is delivered here instead, below
+					java.lang.reflect.Field image = TileMapPanel.class.getDeclaredField("tilemapScaledImage");
+					image.setAccessible(true);
+					java.awt.image.BufferedImage drawn = (java.awt.image.BufferedImage) image.get(shown);
+					java.awt.event.ComponentListener[] listening = shown.getComponentListeners();
+					for (java.awt.event.ComponentListener l : listening) {
+						shown.removeComponentListener(l);
+					}
+					shown.setSize(drawn.getWidth(), drawn.getHeight());
+					for (java.awt.event.ComponentListener l : listening) {
+						shown.addComponentListener(l);
+					}
+					shown.dispatchEvent(new java.awt.event.ComponentEvent(shown, java.awt.event.ComponentEvent.COMPONENT_RESIZED));
+					java.lang.reflect.Field last = TileMapPanel.class.getDeclaredField("CM2DTempImage");
+					last.setAccessible(true);
+					Object first = paintFrame(shown, last);
+					int afterFirst = draws[0];
+					TOOLS.current().CM2DNoUpdate = true;
+					paintFrame(shown, last);
+					int afterKept = draws[0];
+					TOOLS.current().CM2DNoUpdate = false;
+					paintFrame(shown, last);
+					int afterFresh = draws[0];
+					overlay = first == null || afterFirst != 1 ? "the first paint drew the overlay " + afterFirst + " time(s)"
+							: afterKept != afterFirst ? "a paint asked for no update drew anew"
+							: afterFresh != afterKept + 1 ? "a paint not asked to keep the frame kept it" : "kept, then drawn anew";
+					//and what the overlay drew is laid over the map: a renderable that fills it red turns the middle
+					//of the painted map red (TileMapPanel 1138, negate-if, SURVIVED in the same sweep - inverted, an
+					//overlay that was drawn was never laid over the map, and one that was not was asked to be)
+					viewScene.renderables().add(new RedOverlay());
+					java.awt.image.BufferedImage onto = new java.awt.image.BufferedImage(200, 200,
+							java.awt.image.BufferedImage.TYPE_INT_ARGB);
+					java.awt.Graphics g = onto.getGraphics();
+					try {
+						java.lang.reflect.Method paint = TileMapPanel.class.getDeclaredMethod("paintComponent",
+								java.awt.Graphics.class);
+						paint.setAccessible(true);
+						paint.invoke(shown, g);
+					} finally {
+						g.dispose();
+					}
+					int reds = 0, x0 = 200, y0 = 200, x1 = -1, y1 = -1;
+					for (int y = 0; y < 200; y++) {
+						for (int x = 0; x < 200; x++) {
+							int px = onto.getRGB(x, y);
+							int red = px >> 16 & 0xFF, green = px >> 8 & 0xFF, blue = px & 0xFF;
+							if ((px >>> 24) > 0 && red > 2 * green && red > 2 * blue) {
+								reds++;
+								x0 = Math.min(x0, x);
+								y0 = Math.min(y0, y);
+								x1 = Math.max(x1, x);
+								y1 = Math.max(y1, y);
+							}
+						}
+					}
+					java.lang.reflect.Method origin = TileMapPanel.class.getDeclaredMethod("imageOrigin");
+					origin.setAccessible(true);
+					laid = reds > 0 ? "laid over the map" : "not laid over the map: no red pixel, image origin "
+							+ origin.invoke(shown) + ", overlay frame " + (last.get(shown) == null ? "none"
+							: ((java.awt.image.BufferedImage) last.get(shown)).getWidth() + "x"
+							+ ((java.awt.image.BufferedImage) last.get(shown)).getHeight() + " #" + Integer.toHexString(
+							((java.awt.image.BufferedImage) last.get(shown)).getRGB(10, 10)));
+					System.out.println("  (red over " + reds + " pixel(s), (" + x0 + "," + y0 + ")-(" + x1 + "," + y1 + "))");
+				} catch (ReflectiveOperationException | RuntimeException threw) {
+					overlay = "threw " + (threw.getCause() != null ? threw.getCause() : threw);
+				} finally {
+					TOOLS.drop();
+				}
+				check("kept, then drawn anew".equals(overlay), "and with an overlay made, a paint the held tool asks to"
+						+ " keep keeps the last frame and any other draws anew: " + overlay);
+				check("laid over the map".equals(laid), "and what the overlay drew is laid over the map: " + laid);
+			}
+		} catch (RuntimeException threw) {
+			wrong = "threw " + threw;
+		}
+		check("none".equals(wrong), "every filled cell is read and no empty one: cells read wrongly - " + wrong);
+	}
+
+	/**
+	 * A region edited on the map is drawn again where it sits, at the view's scale, and a cell the map has not got
+	 * draws nothing and throws nothing (the 2026-10-15 shared sweep, TileMapPanel 1278, negate-if, SURVIVED: no suite
+	 * redrew one region). Inverted, an edited region was never redrawn and a cell that is not there threw. Needs no
+	 * game: a 2x2 map whose region (1,0) is a tile map, made without its constructor, whose image is solid red.
+	 */
+	static void anEditedRegionIsDrawnWhereItSits() throws Exception {
+		System.out.println("--- an edited region is drawn again where it sits, and a cell not there draws nothing");
+		TileMapPanel map = new TileMapPanel(new ctrmap.LoadedZone(), TOOLS, new RecordingScene(), new javax.swing.JScrollPane(),
+				new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null);
+		map.loaded = true;
+		map.tilemapScaledImage = new java.awt.image.BufferedImage(400, 400, java.awt.image.BufferedImage.TYPE_INT_RGB);
+		map.tilemaps = new ctrmap.formats.tilemap.Tilemap[2][2];
+		map.tilemaps[1][0] = redTilemap();
+		String drawn;
+		String missing;
+		try {
+			map.perfScale(0.5, 1, 0);
+			int inside = map.tilemapScaledImage.getRGB(250, 50) & 0xFFFFFF;
+			int outside = map.tilemapScaledImage.getRGB(50, 50) & 0xFFFFFF;
+			drawn = inside == 0xFF0000 && outside == 0 ? "drawn at (1,0)"
+					: String.format("not where it sits: #%06X inside its cell, #%06X outside", inside, outside);
+		} catch (RuntimeException threw) {
+			drawn = "threw " + threw;
+		}
+		try {
+			map.perfScale(0.5, 5, 5);
+			missing = "nothing";
+		} catch (RuntimeException threw) {
+			missing = "threw " + threw;
+		}
+		check("drawn at (1,0)".equals(drawn) && "nothing".equals(missing),
+				"an edited region is drawn again where it sits (" + drawn + "), and a cell not there draws " + missing);
+	}
+
+	/** A tile map whose image is solid red, made without its constructor: getImage is all a redraw asks of it. */
+	static ctrmap.formats.tilemap.Tilemap redTilemap() throws Exception {
+		java.lang.reflect.Field theUnsafe = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe");
+		theUnsafe.setAccessible(true);
+		Object unsafe = theUnsafe.get(null);
+		return (ctrmap.formats.tilemap.Tilemap) unsafe.getClass().getMethod("allocateInstance", Class.class)
+				.invoke(unsafe, RedTilemap.class);
+	}
+
+	/** See {@link #redTilemap}; its constructor is never run. */
+	static final class RedTilemap extends ctrmap.formats.tilemap.Tilemap {
+
+		private RedTilemap() {
+			super((ctrmap.formats.containers.GR) null);
+		}
+
+		@Override
+		public java.awt.image.BufferedImage getImage() {
+			java.awt.image.BufferedImage red = new java.awt.image.BufferedImage(40, 40, java.awt.image.BufferedImage.TYPE_INT_RGB);
+			java.awt.Graphics g = red.getGraphics();
+			g.setColor(java.awt.Color.RED);
+			g.fillRect(0, 0, 40, 40);
+			g.dispose();
+			return red;
+		}
+	}
+
+	/** A renderable that fills whatever it is drawn into with opaque red: what an overlay drew, unmistakably. */
+	static final class RedOverlay implements ctrmap.humaninterface.CM3DRenderable {
+
+		@Override
+		public void renderCM3D(com.jogamp.opengl.GL2 gl) {
+			gl.glClearColor(1f, 0f, 0f, 1f);
+			gl.glClear(com.jogamp.opengl.GL2.GL_COLOR_BUFFER_BIT);
+			gl.glClearColor(0f, 0f, 0f, 0f);
+		}
+
+		@Override
+		public void renderOverlayCM3D(com.jogamp.opengl.GL2 gl) {
+		}
+
+		@Override
+		public void uploadBuffers(com.jogamp.opengl.GL2 gl) {
+		}
+
+		@Override
+		public void deleteGLInstanceBuffers(com.jogamp.opengl.GL2 gl) {
+		}
+
+		@Override
+		public void doSelectionLoop(java.awt.event.MouseEvent e, java.awt.Component parent, float[] mvMatrix,
+				float[] projMatrix, int[] view, ctrmap.formats.vectors.Vec3f cameraVec) {
+		}
+	}
+
+	/** A renderable that draws nothing and counts each time it is asked to. */
+	static final class CountingRenderable implements ctrmap.humaninterface.CM3DRenderable {
+
+		private final int[] draws;
+
+		CountingRenderable(int[] draws) {
+			this.draws = draws;
+		}
+
+		@Override
+		public void renderCM3D(com.jogamp.opengl.GL2 gl) {
+			draws[0]++;
+		}
+
+		@Override
+		public void renderOverlayCM3D(com.jogamp.opengl.GL2 gl) {
+		}
+
+		@Override
+		public void uploadBuffers(com.jogamp.opengl.GL2 gl) {
+		}
+
+		@Override
+		public void deleteGLInstanceBuffers(com.jogamp.opengl.GL2 gl) {
+		}
+
+		@Override
+		public void doSelectionLoop(java.awt.event.MouseEvent e, java.awt.Component parent, float[] mvMatrix,
+				float[] projMatrix, int[] view, ctrmap.formats.vectors.Vec3f cameraVec) {
+		}
+	}
+
+	/** Paints {@code map} once onto a frame of its own and answers the overlay frame it kept, read from {@code last}. */
+	static Object paintFrame(TileMapPanel map, java.lang.reflect.Field last) throws ReflectiveOperationException {
+		java.awt.image.BufferedImage frame = new java.awt.image.BufferedImage(200, 200,
+				java.awt.image.BufferedImage.TYPE_INT_ARGB);
+		java.awt.Graphics g = frame.getGraphics();
+		java.lang.reflect.Method paint = TileMapPanel.class.getDeclaredMethod("paintComponent", java.awt.Graphics.class);
+		paint.setAccessible(true);
+		try {
+			paint.invoke(map, g);
+		} finally {
+			g.dispose();
+		}
+		return last.get(map);
+	}
+
+	/** A tool that draws nothing and touches no editor: what the map view needs held to paint. */
+	static final class QuietTool extends ctrmap.humaninterface.tools.AbstractTool {
+
+		/** How many times the view asked it for its overlay - the last thing a paint of a loaded map does. */
+		static int overlays;
+
+		QuietTool() {
+			super(new RecordingHost());
+		}
+
+		@Override
+		public void onToolInit() {
+		}
+
+		@Override
+		public void onToolShutdown() {
+		}
+
+		@Override
+		public void fireCancel() {
+		}
+
+		@Override
+		public void drawOverlay(java.awt.Graphics g, int x, int y, double dim) {
+			overlays++;
+		}
+
+		@Override
+		public boolean getSelectorEnabled() {
+			return false;
+		}
+
+		@Override
+		public boolean getNaviEnabled() {
+			return false;
+		}
+
+		@Override
+		public void onTileClick(java.awt.event.MouseEvent e) {
+		}
+
+		@Override
+		public void onTileMouseDown(java.awt.event.MouseEvent e) {
+		}
+
+		@Override
+		public void onTileMouseUp(java.awt.event.MouseEvent e) {
+		}
+
+		@Override
+		public void onTileMouseDragged(java.awt.event.MouseEvent e) {
+		}
+	}
+
+	/**
+	 * A region's tall grass is the model its subfile 5 holds, or nothing when that is no model (the 2026-10-15 shared
+	 * sweep, TileMapPanel 225, negate-if, SURVIVED: tallGrassOf was read in its source only). Inverted, a region with
+	 * grass drew none, and one without had its bytes decoded as a model. Over the first region of each kind in the dump.
+	 */
+	static void aRegionsTallGrassIsItsModelOrNothing() throws Exception {
+		System.out.println("--- a region's tall grass is its subfile 5's model, or nothing");
+		ctrmap.formats.garc.GARC fd = ctrmap.Workspace.getArchive(ctrmap.gamedef.ArchiveType.FIELD_DATA);
+		java.lang.reflect.Method of = ctrmap.humaninterface.TileMapPanel.class.getDeclaredMethod("tallGrassOf",
+				ctrmap.formats.containers.GR.class, List.class, float.class, float.class);
+		of.setAccessible(true);
+		ctrmap.formats.containers.GR grass = null;
+		ctrmap.formats.containers.GR none = null;
+		for (int r = 0; r < fd.length && (grass == null || none == null); r++) {
+			File f = Scratch.file("ctrmap_tallgrass");
+			java.nio.file.Files.write(f.toPath(), fd.getDecompressedEntry(r));
+			ctrmap.formats.containers.GR g = new ctrmap.formats.containers.GR(f, ctrmap.Workspace.session());
+			if (ctrmap.formats.h3d.BchSections.hasMagic(g.getFile(5))) {
+				grass = grass == null ? g : grass;
+			} else {
+				none = none == null ? g : none;
+			}
+		}
+		check(grass != null && none != null, "control: the dump holds a region with tall grass and one without");
+		if (grass == null || none == null) {
+			return;
+		}
+		Object withGrass = of.invoke(null, grass, null, 0f, 0f);
+		Object without = of.invoke(null, none, null, 0f, 0f);
+		check(withGrass != null && !((ctrmap.formats.h3d.BCHFile) withGrass).models.isEmpty() && without == null,
+				"a region with tall grass draws its model, and one without draws nothing: " + withGrass + ", " + without);
 	}
 
 	// ---- the save chain ----------------------------------------------------
@@ -135,7 +610,7 @@ public class TileMapPanelStateTest {
 		List<String> said = Ui.record();
 		boolean ok;
 		try {
-			ok = panel.saveTileMap(true);
+			ok = save(panel, true);
 		} finally {
 			Ui.stopRecording();
 		}
@@ -146,7 +621,7 @@ public class TileMapPanelStateTest {
 		panel.loaded = false;
 		said = Ui.record();
 		try {
-			ok = panel.saveTileMap(true);
+			ok = save(panel, true);
 		} finally {
 			Ui.stopRecording();
 		}
@@ -157,7 +632,7 @@ public class TileMapPanelStateTest {
 		byte[] edited = editATile(panel);
 		said = Ui.record(JOptionPane.YES_OPTION);
 		try {
-			ok = panel.saveTileMap(true);
+			ok = save(panel, true);
 		} finally {
 			Ui.stopRecording();
 		}
@@ -176,7 +651,7 @@ public class TileMapPanelStateTest {
 		editATile(panel);
 		said = Ui.record(JOptionPane.NO_OPTION);
 		try {
-			ok = panel.saveTileMap(true);
+			ok = save(panel, true);
 		} finally {
 			Ui.stopRecording();
 		}
@@ -191,7 +666,7 @@ public class TileMapPanelStateTest {
 		editATile(panel);
 		said = Ui.record(JOptionPane.CANCEL_OPTION);
 		try {
-			ok = panel.saveTileMap(true);
+			ok = save(panel, true);
 		} finally {
 			Ui.stopRecording();
 		}
@@ -202,7 +677,7 @@ public class TileMapPanelStateTest {
 		//nobody there at all reads as cancel, never as consent
 		said = Ui.record();
 		try {
-			ok = panel.saveTileMap(true);
+			ok = save(panel, true);
 		} finally {
 			Ui.stopRecording();
 		}
@@ -216,7 +691,7 @@ public class TileMapPanelStateTest {
 		//map was reported saved and thrown away, and the matrix path a few
 		//lines up never had the problem, so nobody with a zone open could see
 		//it. The flag means "may I ask", not "may I write".
-		ok = panel.saveTileMap(false);
+		ok = save(panel, false);
 		check(ok, "asked not to prompt, the single-region save returns true");
 		check(!Arrays.equals(panel.mainGR.getFile(0), pristine),
 				"AND WRITES: a flush that asks nobody still has to save");
@@ -284,7 +759,7 @@ public class TileMapPanelStateTest {
 		List<String> said = Ui.record();
 		boolean ok;
 		try {
-			ok = panel.saveTileMap(true);
+			ok = save(panel, true);
 		} finally {
 			Ui.stopRecording();
 		}
@@ -299,7 +774,7 @@ public class TileMapPanelStateTest {
 		}
 		said = Ui.record(JOptionPane.YES_OPTION);
 		try {
-			ok = panel.saveTileMap(true);
+			ok = save(panel, true);
 		} finally {
 			Ui.stopRecording();
 		}
@@ -347,7 +822,7 @@ public class TileMapPanelStateTest {
 		List<String> said = Ui.record(JOptionPane.CANCEL_OPTION);
 		boolean ok;
 		try {
-			ok = panel.saveTileMap(true);
+			ok = save(panel, true);
 		} finally {
 			Ui.stopRecording();
 		}
@@ -357,7 +832,7 @@ public class TileMapPanelStateTest {
 
 		said = Ui.record(JOptionPane.NO_OPTION);
 		try {
-			ok = panel.saveTileMap(true);
+			ok = save(panel, true);
 		} finally {
 			Ui.stopRecording();
 		}
@@ -368,7 +843,7 @@ public class TileMapPanelStateTest {
 
 		//a matrix with no cells is not a reason to stop anything
 		panel.mm = null;
-		check(panel.saveMatrix(true), "a panel with no matrix at all saves trivially");
+		check(saveMatrixOf(panel, true), "a panel with no matrix at all saves trivially");
 	}
 
 	/**
@@ -400,7 +875,86 @@ public class TileMapPanelStateTest {
 				"and the mode is back to single, so the next save does not walk a null matrix");
 		check(panel.getRegionForTile(0, 0) == null,
 				"and a region lookup answers null rather than throwing");
-		check(panel.saveTileMap(true), "and saving an unloaded panel is trivially fine");
+		check(save(panel, true), "and saving an unloaded panel is trivially fine");
+	}
+
+	/**
+	 * A region's tall grass is read in one place, and both loads go through it (census M.60). The matrix load and the
+	 * loose-map load each read subfile 5 themselves; the author's own length fix landed on one, and the loose copy
+	 * bound no textures, placed nothing and made no buffers.
+	 */
+	static void theTallGrassIsReadInOnePlace() throws Exception {
+		System.out.println("--- a region's tall grass is read in one place (census M.60)");
+		java.util.regex.Pattern grass = java.util.regex.Pattern.compile("\\.getFile\\(\\s*5\\s*\\)");
+		check(grass.matcher("byte[] tg = mm.regions.get(j, i).getFile(5);").find() && !grass.matcher("x.getFile(15)").find(),
+				"control: the scan sees subfile 5 read, and not subfile 15");
+		java.util.Map<String, Integer> readers = new java.util.TreeMap<>();
+		for (java.io.File f : CollisionReadTest.javaFiles(new java.io.File("src/ctrmap"), new java.util.ArrayList<>())) {
+			if (f.getPath().contains(java.io.File.separator + "tests" + java.io.File.separator)) {
+				continue;
+			}
+			java.util.regex.Matcher m = grass.matcher(SourceSeamTest.stripComments(new String(
+					java.nio.file.Files.readAllBytes(f.toPath()), java.nio.charset.StandardCharsets.UTF_8)));
+			while (m.find()) {
+				readers.merge(f.getName(), 1, Integer::sum);
+			}
+		}
+		String panel = SourceSeamTest.stripComments(new String(java.nio.file.Files.readAllBytes(
+				new java.io.File("src/ctrmap/humaninterface/TileMapPanel.java").toPath()), java.nio.charset.StandardCharsets.UTF_8));
+		String one = CollisionReadTest.body(panel, "static BCHFile tallGrassOf(");
+		check(readers.toString().equals("{TileMapPanel.java=1}") && one != null && grass.matcher(one).find(),
+				"subfile 5 is read once, in tallGrassOf: " + readers);
+		String loose = CollisionReadTest.body(panel, "public void loadTileMap(");
+		String matrix = CollisionReadTest.body(panel, "public static Regions readRegions(");
+		check(loose != null && loose.contains("tallGrassOf(") && matrix != null && matrix.contains("tallGrassOf("),
+				"and the loose-map load and the matrix load both go through it");
+	}
+
+	/**
+	 * A region model the panel stops drawing has its GPU buffers freed, not stranded (census M.95, M.96). GL objects
+	 * are not the garbage collector's; every zone load, unload and live repaint of a region dropped the models it
+	 * replaced, a VBO and a texture per mesh, until the 3D view went black.
+	 */
+	static void aDroppedRegionModelIsFreedNotLeaked() throws Exception {
+		System.out.println("--- a region model the World Editor stops drawing is freed, not leaked (census M.95, M.96)");
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null);
+		java.lang.reflect.Field draw = TileMapPanel.class.getDeclaredField("draw");
+		draw.setAccessible(true);
+		draw.set(panel, new RenderLoopTest.CountingRenderer());
+		ctrmap.formats.h3d.model.H3DModel model = (ctrmap.formats.h3d.model.H3DModel) RenderLoopTest.bare(ctrmap.formats.h3d.model.H3DModel.class);
+		model.meshes = new java.util.ArrayList<>();
+		RenderLoopTest.CountingMesh mesh = new RenderLoopTest.CountingMesh();
+		model.meshes.add(mesh);
+		ctrmap.formats.h3d.BCHFile region = (ctrmap.formats.h3d.BCHFile) RenderLoopTest.bare(ctrmap.formats.h3d.BCHFile.class);
+		region.models = new java.util.ArrayList<>();
+		region.models.add(model);
+		panel.models = new ctrmap.formats.h3d.BCHFile[][]{{region}};
+		panel.tallgrass = new ctrmap.formats.h3d.BCHFile[1][1];
+		java.lang.reflect.Method waiting = TileMapPanel.class.getDeclaredMethod("retiredWaiting");
+		waiting.setAccessible(true);
+		check((Integer) waiting.invoke(panel) == 0, "control: nothing is waiting to be freed before anything is dropped");
+		panel.unload();
+		check((Integer) waiting.invoke(panel) == 1, "an unload retires the region model it drops: " + waiting.invoke(panel));
+		panel.renderCM3D(null);
+		check(mesh.destroys == 1 && (Integer) waiting.invoke(panel) == 0,
+				"and the next frame frees its buffers, though there is nothing left to draw (" + mesh.destroys + " freed)");
+		//and nothing writes the panel's grids around the two setters that retire what they replace
+		String src = SourceSeamTest.stripComments(new String(java.nio.file.Files.readAllBytes(
+				new java.io.File("src/ctrmap/humaninterface/TileMapPanel.java").toPath()), java.nio.charset.StandardCharsets.UTF_8));
+		for (String owned : new String[]{"public static final class Regions {", "private void setRegionModels(", "private void setRegionModel("}) {
+			String body = CollisionReadTest.body(src, owned);
+			check(body != null, "control: " + owned + " is found");
+			src = body == null ? src : src.replace(body, "");
+		}
+		java.util.regex.Matcher write = java.util.regex.Pattern.compile(
+				"(?<![\\w.])(?:this\\.)?(?:models|tallgrass)\\s*(?:\\[[^\\]]*\\]\\s*)*=(?!=)").matcher(src);
+		java.util.List<String> around = new java.util.ArrayList<>();
+		while (write.find()) {
+			around.add(write.group().trim());
+		}
+		check(java.util.regex.Pattern.compile("(?<![\\w.])(?:this\\.)?(?:models|tallgrass)\\s*(?:\\[[^\\]]*\\]\\s*)*=(?!=)")
+				.matcher("models[cellX][cellY] = bch;").find(), "control: the scan sees a cell of the grid written");
+		check(around.isEmpty(), "the panel's model grids are written only through the setters that retire what they replace: " + around);
 	}
 
 	/**
@@ -440,10 +994,18 @@ public class TileMapPanelStateTest {
 		check(history.canUndo(),
 				"fixture: an edit to the open map leaves an undo step behind it");
 
+		ctrmap.humaninterface.Selector.hilightTileX = 12;
+		ctrmap.humaninterface.Selector.hilightTileY = 13;
+		ctrmap.humaninterface.Selector.selTileX = 14;
+		ctrmap.humaninterface.Selector.selTileY = 15;
 		panel.unload();
 		check(panel.tilemaps == null, "the unload drops the tilemaps that step is over");
 		check(!history.canUndo(),
 				"and the undo history goes with them, so nothing offers to take back an edit to a map that is no longer open");
+		//census M.18: the loads cleared the pick alone and unload neither - the cursor named tiles of a map not open
+		check(ctrmap.humaninterface.Selector.hilightTileX == -1 && ctrmap.humaninterface.Selector.hilightTileY == -1
+				&& ctrmap.humaninterface.Selector.selTileX == -1 && ctrmap.humaninterface.Selector.selTileY == -1,
+				"and the whole tile cursor goes too, the tile under the pointer with the picked one");
 	}
 
 	// ---- lookups and geometry ----------------------------------------------
@@ -734,6 +1296,17 @@ public class TileMapPanelStateTest {
 			+ " is not assigned yet: " + gap);
 	}
 
+	/** The panel's Save as the application makes it: on the event thread, where the progress dialog it
+	 * shows belongs (F220). */
+	static boolean save(TileMapPanel panel, boolean ask) throws Exception {
+		return Edt.call(() -> panel.saveTileMap(ask));
+	}
+
+	/** The panel's matrix Save, on the event thread for the same reason. */
+	static boolean saveMatrixOf(TileMapPanel panel, boolean ask) throws Exception {
+		return Edt.call(() -> panel.saveMatrix(ask));
+	}
+
 	/**
 	 * What {@code tileColors()} answers. Reflection because the method is
 	 * package-private in {@code ctrmap.humaninterface} and every suite lives in
@@ -820,7 +1393,7 @@ public class TileMapPanelStateTest {
 			Throwable thrown = null;
 			boolean answered = false;
 			try {
-				answered = panel.saveTileMap(true);
+				answered = save(panel, true);
 			} catch (Throwable t) {
 				thrown = t;
 			} finally {
@@ -862,6 +1435,8 @@ public class TileMapPanelStateTest {
 		ctrmap.humaninterface.UndoHistory history = historyOver(panel);
 		ctrmap.humaninterface.Selector.selTileX = 500;
 		ctrmap.humaninterface.Selector.selTileY = 500;
+		ctrmap.humaninterface.Selector.hilightTileX = 500;   //and the hover, which the loads left (census M.18)
+		ctrmap.humaninterface.Selector.hilightTileY = 500;
 		editOneTile(panel);
 		history.settle();
 		check(history.canUndo() 
@@ -903,6 +1478,16 @@ public class TileMapPanelStateTest {
 			&& ctrmap.humaninterface.Selector.selTileY == -1,
 			"and the picked tile, which named a cell of a matrix wider than the one region"
 			+ " a loose map has");
+		check(ctrmap.humaninterface.Selector.hilightTileX == -1 && ctrmap.humaninterface.Selector.hilightTileY == -1,
+			"opening a loose map drops the tile under the pointer too, measured on the map it replaced (census M.18)");
+		//and the collision editor is handed the loose region's collision - the one parse the view reads heights from -
+		//when it reads (the 2026-10-15 shared sweep, TileMapPanel 393, negate-if, SURVIVED: nothing asked what the
+		//collision editor held after a loose map opened). The handoff runs before the headless stop above.
+		ctrmap.humaninterface.CollEditPanel edits = (ctrmap.humaninterface.CollEditPanel) field(panel, "collision");
+		check(panel.colls != null && panel.colls[0][0] != null && panel.colls[0][0].unreadable == null
+				&& edits.coll == panel.colls[0][0],
+				"and the collision editor holds the loose region's collision, the one the view reads heights from: "
+				+ (edits.coll == null ? "none" : edits.coll == panel.colls[0][0] ? "the same" : "another"));
 	}
 
 	/**
@@ -931,8 +1516,11 @@ public class TileMapPanelStateTest {
 		int cells = Math.min(panel.mm.width, panel.mm.height);
 		ctrmap.humaninterface.Selector.selTileX = 500;
 		ctrmap.humaninterface.Selector.selTileY = 500;
+		ctrmap.humaninterface.Selector.hilightTileX = 500;   //and the hover, which the loads left (census M.18)
+		ctrmap.humaninterface.Selector.hilightTileY = 500;
 		try {
-			panel.loadMatrix(panel.mm, null, null, null);
+			//ON THE EVENT THREAD, as the application loads a map: its progress dialog belongs there (F220)
+			Edt.run(() -> panel.loadMatrix(panel.mm, null, null, null));
 		} catch (RuntimeException needsAScreen) {
 			//the loading half puts a progress dialog up and cannot run headless, and
 			//awaitLoad rewraps that as IllegalStateException, so this catches the
@@ -944,6 +1532,8 @@ public class TileMapPanelStateTest {
 				|| String.valueOf(needsAScreen.getCause()).contains("Headless"),
 				"the load stopped for want of a screen, not for anything else: " + needsAScreen);
 		}
+		check(ctrmap.humaninterface.Selector.hilightTileX == -1 && ctrmap.humaninterface.Selector.hilightTileY == -1,
+			"loading a matrix drops the tile under the pointer too - a Fill pressed next anchored on the old map (census M.18)");
 		check(ctrmap.humaninterface.Selector.selTileX == -1
 			&& ctrmap.humaninterface.Selector.selTileY == -1,
 			"the picked tile is dropped with the undo history it belongs to ("
@@ -1023,6 +1613,13 @@ public class TileMapPanelStateTest {
 		java.lang.reflect.Field fl = o.getClass().getDeclaredField(name);
 		fl.setAccessible(true);
 		fl.set(o, value);
+	}
+
+	/** Reads a private field, so a suite can see what the panel handed on. */
+	static Object field(Object o, String name) throws Exception {
+		java.lang.reflect.Field fl = o.getClass().getDeclaredField(name);
+		fl.setAccessible(true);
+		return fl.get(o);
 	}
 
 	/** A panel holding the whole of zone 15's map, the way loadMatrix leaves it. */

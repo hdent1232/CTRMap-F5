@@ -45,6 +45,51 @@ public class RecordPoolTest {
 		check(pool.unreadable(1) && !pool.unreadable(0) && !pool.unreadable(2) && pool.unreadableCount() == 1,
 				"the short one is named unreadable: " + pool.why(1));
 
+		//measured by the 2026-10-12 sweep (RecordPool 60, dropped, SURVIVED): nothing asked a record the game cannot
+		//stage. Dropped, the read went on with no file, and the user was told the record could not be read because of
+		//a null pointer instead of because the game holds no record to stage - here, its archive gone since it opened
+		System.out.println("--- a record the game cannot stage is named with that reason, not a null pointer");
+		FakeGameFiles gone = new FakeGameFiles();
+		File vanished = new File(gone.root(), "vanished.garc");
+		HandedGameTest.writeGarc(vanished, set(25));
+		gone.open(POOL, new GARC(vanished));
+		check(vanished.delete() && gone.staged(POOL, 0) == null, "CONTROL: the archive's file is gone since it was opened,"
+				+ " so the game cannot stage its record 0");
+		MaisonSet[] lost = new MaisonSet[1];
+		RecordPool unstaged = RecordPool.load(gone, POOL, lost, MaisonSet::read, MaisonSet::new);
+		check(unstaged != null && unstaged.unreadable(0) && lost[0] != null
+				&& String.valueOf(unstaged.why(0)).contains("the game holds no record 0 to stage"),
+				"a record the game cannot stage is named unreadable, with that reason: "
+				+ (unstaged == null ? "the load answered no pool at all" : unstaged.why(0)));
+
+		//measured by the 2026-10-12 sweep (RecordPool 114, dropped, SURVIVED): nothing asked a save whose edited record
+		//has no file to write to. Dropped, the save went on to write to no file and failed on a null pointer, the
+		//record named nowhere - here its staged copy and its archive both gone between the read and the save
+		System.out.println("--- a save whose edited record has no file to write to is refused, naming the record");
+		FakeGameFiles goneAtSave = new FakeGameFiles();
+		File held = new File(goneAtSave.root(), "held.garc");
+		HandedGameTest.writeGarc(held, set(25));
+		goneAtSave.open(POOL, new GARC(held));
+		MaisonSet[] one = new MaisonSet[1];
+		RecordPool readable = RecordPool.load(goneAtSave, POOL, one, MaisonSet::read, MaisonSet::new);
+		File stagedCopy = goneAtSave.staged(POOL, 0);
+		check(!readable.unreadable(0) && one[0].species == 25 && stagedCopy != null && stagedCopy.delete() && held.delete()
+				&& goneAtSave.staged(POOL, 0) == null,
+				"CONTROL: the record was read, and then its staged copy and its archive are gone, so it has no file");
+		one[0].species = 26;
+		int heardBefore = goneAtSave.edited().size();
+		Object saved;
+		try {
+			saved = readable.save(one, MaisonSet::write);
+		} catch (Exception refused) {
+			saved = refused;
+		}
+		check(saved instanceof java.io.IOException
+				&& ((Exception) saved).getMessage().contains("record 0 of " + POOL + " has no file to write to")
+				&& goneAtSave.edited().size() == heardBefore,
+				"a save whose edited record has no file to write to is refused, naming the record, and nothing is marked"
+				+ " edited: " + saved);
+
 		System.out.println("--- it is not free space (F102)");
 		MaisonPoolGuard guard = MaisonPoolGuard.load(game, POOL, null, new MaisonSet[]{sets[0], sets[1], new MaisonSet()});
 		check(guard.firstFreeSlot(new MaisonSet[]{sets[0], sets[1], new MaisonSet()}) == 1,
@@ -71,13 +116,16 @@ public class RecordPoolTest {
 		String sets_ = source("src/ctrmap/humaninterface/MaisonEditDialog.java");
 		String lists_ = source("src/ctrmap/humaninterface/MaisonClassListDialog.java");
 		String loadPool = CollisionReadTest.body(sets_, "void loadPool(int idx)");
-		String savePool = CollisionReadTest.body(sets_, "void save() throws Exception");
+		String saveSets = CollisionReadTest.body(sets_, "void save(SaveHistory saves) throws Exception");
+		String savePool = CollisionReadTest.body(sets_, "public static <T> List<Integer> savePool(");
 		String editSet = CollisionReadTest.body(sets_, "public void setValueAt(Object v, int r, int c)");
 		String copy = CollisionReadTest.body(sets_, "int copyToFreeSlot(int r)");
 		String loadTable = CollisionReadTest.body(lists_, "void loadTable(int idx)");
-		String saveTable = CollisionReadTest.body(lists_, "void save() throws Exception");
+		String saveTable = CollisionReadTest.body(lists_, "void save(SaveHistory saves) throws Exception");
+		String tableSeam = CollisionReadTest.body(lists_, "public static java.util.List<Integer> saveTable(");
 		String editList = CollisionReadTest.body(lists_, "public void setValueAt(Object v, int r, int c)");
-		check(loadPool != null && loadPool.contains("poolIndex = idx") && savePool != null && savePool.contains("dirty = false")
+		check(loadPool != null && loadPool.contains("poolIndex = idx") && saveSets != null && saveSets.contains("dirty = false")
+				&& savePool != null && tableSeam != null
 				&& editSet != null && editSet.contains("allowVanillaEdits") && copy != null && copy.contains("fireTableRowsUpdated")
 				&& loadTable != null && loadTable.contains("tableIndex = idx") && saveTable != null && editList != null
 				&& editList.contains("disclosed"), "control: every method read is found");
@@ -85,12 +133,18 @@ public class RecordPoolTest {
 				&& loadTable != null && loadTable.contains("RecordPool.load(") && !loadTable.contains("new MaisonClassList()"),
 				"both read through RecordPool, neither puts a blank record in for one it could not read");
 		check(savePool != null && savePool.contains("pool.save(") && savePool.contains("WorkspaceUnit.begin(")
-				&& !savePool.contains("FileOutputStream") && saveTable != null && saveTable.contains("pool.save(")
-				&& saveTable.contains("WorkspaceUnit.begin(") && !saveTable.contains("FileOutputStream"),
-				"both save only what changed, as one unit");
+				&& !savePool.contains("FileOutputStream") && saveSets != null && saveSets.contains("savePool(")
+				&& saveTable != null && saveTable.contains("saveTable(") && tableSeam != null
+				&& tableSeam.contains("MaisonEditDialog.savePool("),
+				"both save only what changed, as one unit - the one savePool, which both editors' saves call");
 		check(editSet != null && editSet.contains("pool.unreadable(r)") && editList != null && editList.contains("pool.unreadable(r)"),
 				"both refuse to edit a record they could not read");
 		check(copy != null && copy.contains("pool::unreadable"), "and a copy is never put in one");
+
+		//census M.126: every door away from the pool editor asks about its unsaved edits - Class assignments replaced
+		//the editor, and its edits with it, without asking, where the pool dropdown and Close asked
+		int asked = sets_.split("model\\.dirty && !confirmDiscard\\(dlg\\)", -1).length - 1;
+		check(asked >= 3, "the pool dropdown, Close and Class assignments each ask about unsaved pool edits (" + asked + ")");
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		System.exit(fails == 0 ? 0 : 1);

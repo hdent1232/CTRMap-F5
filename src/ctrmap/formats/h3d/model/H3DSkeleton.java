@@ -1,6 +1,5 @@
 package ctrmap.formats.h3d.model;
 
-import com.jogamp.opengl.math.Matrix4;
 import ctrmap.formats.h3d.RandomAccessBAIS;
 import ctrmap.formats.h3d.StringUtils;
 import ctrmap.formats.vectors.Vec3f;
@@ -11,7 +10,7 @@ import java.util.List;
 public class H3DSkeleton {
 
 	public List<H3DBone> bones = new ArrayList<>();
-	public List<Matrix4> transform = new ArrayList<>();
+	public List<Transform4> transform = new ArrayList<>();
 
 	public H3DSkeleton(RandomAccessBAIS in, byte[] buf, int numBones, String name) throws IOException {
 		for (int index = 0; index < numBones; index++) {
@@ -20,27 +19,27 @@ public class H3DSkeleton {
 			int boneFlags = in.readInt();
 			bone.isSegmentScaleCompensate = (boneFlags & 0x00400000) > 0;
 			bone.parentId = in.readShort();
-			int boneSpacer = in.readUnsignedShort();
+			in.readUnsignedShort();   //spacer
 			bone.scale = new Vec3f(in.readFloat(), in.readFloat(), in.readFloat());
 			bone.rotation = new Vec3f(in.readFloat(), in.readFloat(), in.readFloat());
 			bone.translation = new Vec3f(in.readFloat(), in.readFloat(), in.readFloat());
 			bone.absoluteScale = new Vec3f(bone.scale);
 
-			Matrix4 boneMatrix = new Matrix4();
-			boneMatrix.getMatrix()[0] = in.readFloat();
-			boneMatrix.getMatrix()[1] = in.readFloat();
-			boneMatrix.getMatrix()[2] = in.readFloat();
-			boneMatrix.getMatrix()[3] = in.readFloat();
+			Transform4 boneMatrix = new Transform4();
+			boneMatrix.cells()[0] = in.readFloat();
+			boneMatrix.cells()[1] = in.readFloat();
+			boneMatrix.cells()[2] = in.readFloat();
+			boneMatrix.cells()[3] = in.readFloat();
 
-			boneMatrix.getMatrix()[4] = in.readFloat();
-			boneMatrix.getMatrix()[5] = in.readFloat();
-			boneMatrix.getMatrix()[6] = in.readFloat();
-			boneMatrix.getMatrix()[7] = in.readFloat();
+			boneMatrix.cells()[4] = in.readFloat();
+			boneMatrix.cells()[5] = in.readFloat();
+			boneMatrix.cells()[6] = in.readFloat();
+			boneMatrix.cells()[7] = in.readFloat();
 
-			boneMatrix.getMatrix()[8] = in.readFloat();
-			boneMatrix.getMatrix()[9] = in.readFloat();
-			boneMatrix.getMatrix()[10] = in.readFloat();
-			boneMatrix.getMatrix()[11] = in.readFloat();
+			boneMatrix.cells()[8] = in.readFloat();
+			boneMatrix.cells()[9] = in.readFloat();
+			boneMatrix.cells()[10] = in.readFloat();
+			boneMatrix.cells()[11] = in.readFloat();
 			
 			bone.invTransform = boneMatrix;
 
@@ -55,7 +54,7 @@ public class H3DSkeleton {
 		}
 
 		for (int index = 0; index < numBones; index++) {
-			Matrix4 mtx = new Matrix4();
+			Transform4 mtx = new Transform4();
 			transformSkeleton(bones, index, mtx);
 			transform.add(mtx);
 		}
@@ -77,7 +76,7 @@ public class H3DSkeleton {
 		}
 	}
 
-	public static void transformSkeleton(List<H3DBone> bones, int index, Matrix4 target) {
+	public static void transformSkeleton(List<H3DBone> bones, int index, Transform4 target) {
 		H3DBone bone = bones.get(index);
 		target.scale(bone.absoluteScale.x, bone.absoluteScale.y, bone.absoluteScale.z);
 		target.rotate((float) Math.toRadians(bone.rotation.x), 1f, 0f, 0f);
@@ -96,7 +95,7 @@ public class H3DSkeleton {
 		public Vec3f rotation;
 		public Vec3f scale;
 		public Vec3f absoluteScale;
-		public Matrix4 invTransform;
+		public Transform4 invTransform;
 		public short parentId;
 		public String name = null;
 

@@ -85,7 +85,7 @@ You can re-run it any time from **Options → Setup wizard**.
   one from elsewhere in the game rather than refusing or painting garbage.
 - **Edit in place** — paint onto a real map and keep everything you did not touch. The
   surrounding retail terrain, its collision and its detail stay exactly as they were.
-- **Building palette** — **3,583 catalogued structures** harvested from the game: houses, marts,
+- **Building palette** — **3,568 catalogued structures** harvested from the game: houses, marts,
   Pokémon Centers, gyms, signs, fences, doors. Search by name, preview, stamp. Textures the
   target map lacks are carried across automatically.
 - **Blank canvas** — start a map from nothing instead of from someone else's town.
@@ -144,7 +144,7 @@ Every binary format writer is validated headlessly against a real ORAS dump: par
 re-serialize must be **byte-identical**, and every surgical operation is dry-run across *every*
 eligible zone in the game before it is allowed into the UI.
 
-`test.ps1` runs **211 suites**. Current measured results:
+`test.ps1` runs **219 suites**. Current measured results:
 
 | | |
 |---|---|

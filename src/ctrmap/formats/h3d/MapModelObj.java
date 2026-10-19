@@ -61,7 +61,7 @@ public class MapModelObj {
 			}
 			float[][] pos = model.getVertexPositions(g.meshIndex);
 			int[] tris = model.getTriangles(g.meshIndex);
-			if (pos == null || tris == null) {
+			if (pos == null) {
 				skipped.add(g.meshIndex);
 				continue;
 			}

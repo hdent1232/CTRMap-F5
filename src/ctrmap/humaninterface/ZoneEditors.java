@@ -119,6 +119,7 @@ public class ZoneEditors {
 	}
 
 	/** How many editors show the zone; the guard checks the count it was built with. */
+	@ctrmap.util.ForSuites("SEAM: a suite counts the editors the set was built with, to see none is skipped when a zone is shown")
 	public int size() {
 		return views.size();
 	}

@@ -46,13 +46,19 @@ public class AreaLightingDialog {
 	 * @param onClose what to do when the user is finished with it
 	 * @param fogChanged what redraws the 3D view's fog once the area's atmosphere is written - HANDED, not
 	 *        a call up into the window (F007): this pane is built by the window and is told what to ask
+	 * @param ops the workspace's history, which keeps each save and the fork before it (F209c)
+	 * @param reread what reads the open zone again once a fork is packed, and on Undo and Redo of one (F255)
 	 * @return the editor, or null when there is nothing to edit (it says why first)
 	 */
 	public static javax.swing.JComponent panel(java.awt.Component parent, LoadedZone loaded,
 			java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> worldTextures, Runnable onClose,
-			Runnable fogChanged) {
+			Runnable fogChanged, SaveHistory ops, Runnable reread) {
 		if (fogChanged == null) {
 			throw new IllegalArgumentException("the fog and lighting editor must be handed what redraws the fog");
+		}
+		if (ops == null || reread == null) {
+			throw new IllegalArgumentException("the fog and lighting editor must be handed the history that keeps its"
+					+ " saves and what reads the zone again");
 		}
 		if (loaded == null) {
 			throw new IllegalArgumentException("AreaLightingDialog must be handed the LoadedZone");
@@ -80,14 +86,18 @@ public class AreaLightingDialog {
 			ctrmap.Ui.error(parent, "Load a zone first (Zone tab).", "Area fog & lighting");
 			return null;
 		}
-		//this zone's atmosphere must be ITS OWN: an area shared with other zones
-		//gets forked first, so the edit cannot leak into them
-		final ctrmap.AreaForker.ForkResult fork = AreaForkPrompt.ensurePrivate(loaded, parent, loaded.index(),
-				loaded.open().header.areadataID, "changing the fog and lighting");
-		if (fork == null) {
+		//THE AREA THE ZONE'S FILE NAMES (F255): its open copy's header could still name one it was forked away from.
+		//A shared one is offered a private copy when the edit is SAVED - the prompt's own rule, a fork at the edit -
+		//so a look that ends in Cancel forks nothing
+		final int zoneIndex = loaded.index();
+		final int areaId;
+		try {
+			areaId = ctrmap.AreaForker.currentArea(zoneIndex);
+		} catch (Exception ex) {
+			ctrmap.Ui.error(parent, "Could not read which area zone " + zoneIndex + " is on:\n" + ctrmap.util.Bytes.reason(ex),
+					"Area fog & lighting");
 			return null;
 		}
-		final int areaId = fork.newArea;
 		final File areaFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, areaId);
 		final AD ad;
 		final byte[] sub4;
@@ -108,22 +118,7 @@ public class AreaLightingDialog {
 			return null;
 		}
 		if (picked != GfEnvPicker.CUSTOM) {
-			if (picked.length != sub4.length) {
-				ctrmap.Ui.error(parent, "The picked atmosphere block does not match this area's format.", "Area fog & lighting");
-				return null;
-			}
-			try {
-				System.arraycopy(picked, 0, sub4, 0, sub4.length);
-				ad.storeFile(4, sub4);
-				Workspace.addPersist(areaFile);
-				fogChanged.run();
-				AreaForkPrompt.packIfForked(fork, null);
-				ctrmap.Ui.message(parent,
-						"Atmosphere applied. Deploy to see it in-game - the 3D view already shows it.",
-						"Area fog & lighting", JOptionPane.INFORMATION_MESSAGE);
-			} catch (Exception ex) {
-				ctrmap.Ui.error(parent, "Save failed:\n" + ctrmap.util.Bytes.reason(ex), "Area fog & lighting");
-			}
+			applyPicked(parent, loaded, zoneIndex, sub4, picked, ops, reread, fogChanged);
 			return null;
 		}
 		//fall through: the custom-settings form
@@ -184,7 +179,7 @@ public class AreaLightingDialog {
 		};
 
 		JPanel main = new JPanel(new BorderLayout(0, 6));
-		main.add(new JLabel("<html>Area " + areaId + " - <b>affects EVERY zone in this area</b>. "
+		main.add(new JLabel("<html>Area " + areaId + " - <b>a shared area is offered a copy of its own when you save</b>. "
 				+ "Routes = long blue haze; caves/rooms = short dim.</html>"), BorderLayout.NORTH);
 		main.add(form, BorderLayout.CENTER);
 
@@ -231,24 +226,94 @@ public class AreaLightingDialog {
 			}
 			env.fogNear = ((Number) near.getValue()).floatValue();
 			env.fogFar = ((Number) far.getValue()).floatValue();
-			try {
-				env.writeInto(sub4);
-				ad.storeFile(4, sub4);
-				Workspace.addPersist(areaFile);
-				fogChanged.run();
-				AreaForkPrompt.packIfForked(fork, null);
-				onClose.run();
-				ctrmap.Ui.message(parent,
-						"Fog & lighting saved. Deploy to see it in-game - the 3D view already shows it.",
-						"Area fog & lighting", JOptionPane.INFORMATION_MESSAGE);
-			} catch (Exception ex) {
-				ctrmap.Ui.error(dlg, "Save failed:\n" + ctrmap.util.Bytes.reason(ex), "Area fog & lighting");
-			}
+			saveCustom(dlg, parent, loaded, zoneIndex, env, sub4, ops, reread, fogChanged, onClose);
 		});
 		cancel.addActionListener(e -> onClose.run());
 
 		dlg.setMinimumSize(new Dimension(360, dlg.getPreferredSize().height));
 		return dlg;
+	}
+
+	/**
+	 * Writes the custom form's atmosphere {@code env} into {@code sub4}, the area's own block, through {@link #save};
+	 * once it is saved the form is let go and the save is said, and a cancelled area prompt leaves the form where it
+	 * is with nothing written. Out of the form so a suite reaches it: the form opens only after the picker, a modal
+	 * window no recording answers (the 2026-10-14 shared sweep, AreaLightingDialog 244, negate-if, SURVIVED).
+	 *
+	 * <p>NO ANSWER (2026-10-16): it answered whether it saved, and nothing but a suite read that - the form's Save
+	 * ignored it - so a flipped answer changed nothing anyone sees (the assembly, AreaLightingDialog 260, flip-return,
+	 * SURVIVED). What a save does is what it says and whether the form is let go, and that is what is asked.
+	 */
+	public static void saveCustom(java.awt.Component form, java.awt.Component parent, LoadedZone loaded,
+			int zoneIndex, AreaEnv env, byte[] sub4, SaveHistory ops, Runnable reread, Runnable fogChanged,
+			Runnable onClose) {
+		try {
+			env.writeInto(sub4);
+			if (save(form, loaded, zoneIndex, sub4, ops, reread, fogChanged) == null) {
+				return;   //the area question was cancelled: nothing written, the form stays
+			}
+			onClose.run();
+			ctrmap.Ui.message(parent,
+					"Fog & lighting saved. Deploy to see it in-game - the 3D view already shows it.",
+					"Area fog & lighting", JOptionPane.INFORMATION_MESSAGE);
+		} catch (Exception ex) {
+			ctrmap.Ui.error(form, "Save failed:\n" + ctrmap.util.Bytes.reason(ex), "Area fog & lighting");
+		}
+	}
+
+	/**
+	 * Writes the atmosphere {@code picked} from the GameFreak presets over {@code sub4}, the area's own block,
+	 * through {@link #save}, and says it was applied only once it is saved; a block of another size is refused and
+	 * nothing written. Out of the panel so a suite reaches it: the picker before it is a modal window no recording
+	 * answers (the 2026-10-14 shared sweep, AreaLightingDialog 127, negate-if, SURVIVED).
+	 */
+	public static void applyPicked(java.awt.Component parent, LoadedZone loaded, int zoneIndex, byte[] sub4,
+			byte[] picked, SaveHistory ops, Runnable reread, Runnable fogChanged) {
+		if (picked.length != sub4.length) {
+			ctrmap.Ui.error(parent, "The picked atmosphere block does not match this area's format.", "Area fog & lighting");
+			return;
+		}
+		try {
+			System.arraycopy(picked, 0, sub4, 0, sub4.length);
+			if (save(parent, loaded, zoneIndex, sub4, ops, reread, fogChanged) != null) {
+				ctrmap.Ui.message(parent,
+						"Atmosphere applied. Deploy to see it in-game - the 3D view already shows it.",
+						"Area fog & lighting", JOptionPane.INFORMATION_MESSAGE);
+			}
+		} catch (Exception ex) {
+			ctrmap.Ui.error(parent, "Save failed:\n" + ctrmap.util.Bytes.reason(ex), "Area fog & lighting");
+		}
+	}
+
+	/**
+	 * Writes {@code sub4} as the atmosphere of the area zone {@code zoneIndex}'s file names, giving the zone its own
+	 * area first when that one is shared and the user asks (F255): the fork a change of its own, the atmosphere
+	 * another, both kept in {@code ops} (F209c). A fork is packed and the zone read again whatever the write did.
+	 *
+	 * @return what the area prompt answered, or null when it was cancelled and nothing was written
+	 * @throws IllegalStateException when the atmosphere could not be written; it was not, and a fork made is kept
+	 */
+	public static ctrmap.AreaForker.ForkResult save(java.awt.Component parent, LoadedZone loaded, int zoneIndex,
+			byte[] sub4, SaveHistory ops, Runnable reread, Runnable fogChanged) {
+		ctrmap.AreaForker.ForkResult fork = AreaForkPrompt.ensurePrivate(loaded, parent, zoneIndex,
+				"changing the fog and lighting", ops, reread);
+		if (fork == null) {
+			return null;
+		}
+		try {
+			File areaFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, fork.newArea);
+			try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Fog and lighting of area " + fork.newArea,
+					Workspace.session())) {
+				new AD(areaFile, Workspace.session()).storeFile(AD.ENVIRONMENT, sub4);
+				Workspace.addPersist(areaFile);
+				ctrmap.WorkspaceUnit.inMemory(fogChanged, fogChanged);
+				ops.keep(unit.commitKeeping());
+			}
+			fogChanged.run();
+			return fork;
+		} finally {
+			AreaForkPrompt.packIfForked(fork, reread);
+		}
 	}
 
 	private static JButton swatch(String tip, Color c) {

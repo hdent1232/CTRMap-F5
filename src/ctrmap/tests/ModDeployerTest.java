@@ -48,11 +48,64 @@ public class ModDeployerTest {
 
 	static int fails = 0;
 
+	/**
+	 * A deploy never runs on the event thread (census M.63). It compares every moddable archive with the retail
+	 * copy - hundreds of megabytes - and it ran inside the pack worker's done(), with the window frozen and nothing
+	 * on screen after the progress dialog closed.
+	 */
+	static void aDeployIsNeverOnTheEventThread() throws Exception {
+		System.out.println("--- a deploy never runs on the event thread (census M.63)");
+		File modRoot = new File(Scratch.dir("ctrmap_edt_deploy"), "mods" + File.separator + "000400000011C400");
+		final Throwable[] got = {null};
+		java.awt.EventQueue.invokeAndWait(() -> {
+			try {
+				ModDeployer.deploy(modRoot, null);
+			} catch (Throwable refused) {
+				got[0] = refused;
+			}
+		});
+		check(got[0] instanceof IllegalStateException && got[0].getMessage().contains("never run on the event thread")
+				&& !modRoot.exists(), "a deploy asked for on the event thread is refused, in words, before it touches anything: " + got[0]);
+		String main = SourceSeamTest.stripComments(new String(Files.readAllBytes(
+				new File("src/ctrmap/CtrmapMainframe.java").toPath()), java.nio.charset.StandardCharsets.UTF_8));
+		String after = CollisionReadTest.body(main, "private void deployAfterPack(");
+		String background = after == null ? null : CollisionReadTest.body(after, "protected ModDeployer.Result doInBackground()");
+		check(background != null && background.contains("ModDeployer.deploy(modRoot, ips, gameDir)") && after.contains("progress.showDialog()")
+				&& after.indexOf("final String gameDir = Workspace.GAMEDIR_PATH;") >= 0   //read on the event thread that writes it
+				&& after.indexOf("final String gameDir = Workspace.GAMEDIR_PATH;") < after.indexOf("doInBackground()"),
+				"and the window deploys in a worker behind a progress dialog: " + background);
+		//and the archives it did not touch are not inflated entry by entry: two whole archives byte for byte alike
+		//are equal before the loop that decompresses every entry of both
+		String deployer = SourceSeamTest.stripComments(new String(Files.readAllBytes(
+				new File("src/ctrmap/ModDeployer.java").toPath()), java.nio.charset.StandardCharsets.UTF_8));
+		String equal = CollisionReadTest.body(deployer, "public static boolean garcContentsEqual(");
+		int whole = equal == null ? -1 : equal.indexOf("readableEntries >= 0");
+		String squeezed = equal == null ? "" : equal.replaceAll("\\s+", " ");
+		int same = squeezed.indexOf("if (a.length() == b.length() && sameBytes(a, b)) { return true; }");
+		same = same < 0 ? -1 : equal.indexOf("sameBytes(a, b)");
+		int inflate = equal == null ? -1 : equal.indexOf("sameEntries(ga, gb, a, b)");
+		check(whole > 0 && same > whole && inflate > same, "two whole archives alike byte for byte compare equal before"
+				+ " any entry is inflated, and only once both are known whole (" + whole + ", " + same + ", " + inflate + ")");
+		File one = new File(Scratch.dir("ctrmap_samebytes"), "one");
+		File two = new File(one.getParentFile(), "two");
+		Files.write(one.toPath(), new byte[3 << 20]);
+		byte[] differs = new byte[3 << 20];
+		differs[(3 << 20) - 1] = 1;
+		Files.write(two.toPath(), differs);
+		check(ModDeployer.sameBytes(one, one) && !ModDeployer.sameBytes(one, two),
+				"the byte comparison sees a difference in the last byte of the third megabyte, and none against itself");
+	}
+
 	public static void main(String[] args) throws Exception {
 		//needs no dump: the game is two archives written by hand
 		anArchiveBackToRetailIsTakenOutOfTheMod();
 		whereTheModGoes();
 		aHeldFileLeavesOneWholeMod();
+		aMoveWhoseCopyFailsRemovesNothing();
+		aPutBackThatCannotRemakeAFolderKeepsTheCopy();
+		aPutBackThatCannotListAFolderKeepsTheCopy();
+		aComparisonThatCannotReadAnArchiveSaysWhy();
+		aDeployIsNeverOnTheEventThread();
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
 			Skip.section("no dump at " + dump.getAbsolutePath());
@@ -205,14 +258,20 @@ public class ModDeployerTest {
 			public void at(int percent, String what) {
 			}
 		});
-		int rewritten = 0;
+		//A PACK TOUCHES ONLY WHAT WAS EDITED (PackScope): an archive holding no edited entry and no pending
+		//compression flag is skipped, so the seven unedited containers keep every byte. This asked the
+		//opposite - that the pack rewrote them - from when every pack repacked all eight; red on 2026-10-09 with
+		//0 of 8 rewritten. Deploy still compares decompressed contents, for the repack of an archive nobody
+		//edited that a pending flag can still cause.
+		int touched = 0;
 		for (int i = 0; i < live.length; i++) {
-			if (!Arrays.equals(headBefore[i], head(live[i]))) {
-				rewritten++;
+			if (live[i] != Workspace.session().archiveFile(ArchiveType.GAMETEXT)
+					&& !Arrays.equals(headBefore[i], head(live[i]))) {
+				touched++;
 			}
 		}
-		check(rewritten > 1, rewritten + " of the 8 archive containers were rewritten by the pack"
-				+ " - which is why deploy diffs decompressed contents and not files");
+		check(touched == 0, touched + " of the 7 unedited archive containers were rewritten by a pack that had"
+				+ " nothing of theirs to write");
 
 		String itemRel = anEditedItemArchive();
 
@@ -227,7 +286,16 @@ public class ModDeployerTest {
 		check(shippedItems.isFile() && Arrays.equals(Files.readAllBytes(shippedItems.toPath()),
 				Files.readAllBytes(new File(Workspace.GAMEDIR_PATH + itemRel).toPath())),
 				"the in-place archive was shipped from the live game, byte for byte");
-		check(r.unchanged == 7, r.unchanged + " archives were recognised as unchanged despite being repacked");
+		//BACK TO ITS BASELINE, OUT OF THE MOD - measured by the 2026-10-12 sweep (ModDeployer 294 and 298, each
+		//negated, SURVIVED): nothing asked what a deploy does with an in-place archive edited once and then put
+		//back. The copy this deploy shipped is now the retail file in the mod's load path; it is taken out, as any
+		//archive back to retail is
+		File itemBaseline = new File(ctrmap.formats.pokedata.ItemTable.baselineDir(Workspace.session()), "itemdata.garc");
+		Files.write(new File(Workspace.GAMEDIR_PATH + itemRel).toPath(), Files.readAllBytes(itemBaseline.toPath()));
+		ModDeployer.deploy(modRoot, ips);
+		check(!shippedItems.exists(), "an in-place archive put back to its baseline is taken out of the mod, not"
+				+ " left shipping the retail bytes: " + shippedItems);
+		check(r.unchanged == 7, r.unchanged + " archives were recognised as unchanged");
 		check(r.skipped.isEmpty(), "nothing was skipped (" + r.skipped + ")");
 
 		File shipped = new File(new File(modRoot, "romfs").getAbsolutePath() + rel);
@@ -420,6 +488,27 @@ public class ModDeployerTest {
 		File b = Workspace.session().archiveFile(ArchiveType.AREA_DATA);
 		check(ModDeployer.garcContentsEqual(a, a), "an archive equals itself");
 		check(!ModDeployer.garcContentsEqual(a, b), "two different archives are not equal");
+		//census M.105: an entry neither side could read compared equal - Arrays.equals(null, null) - and the archive
+		//was counted unchanged, the user's edit not deployed, with nothing in the skipped list. Two real archives,
+		//opened, then taken away from under them: every entry read after that fails on both sides
+		File held = Scratch.dir("ctrmap_unread_entries");
+		File copyA = new File(held, "a.garc");
+		File copyB = new File(held, "b.garc");
+		Files.copy(a.toPath(), copyA.toPath());
+		Files.copy(a.toPath(), copyB.toPath());
+		ctrmap.formats.garc.GARC ga = new ctrmap.formats.garc.GARC(copyA);
+		ctrmap.formats.garc.GARC gb = new ctrmap.formats.garc.GARC(copyB);
+		check(ga.length > 0 && ModDeployer.sameEntries(ga, gb, copyA, copyB), "control: two whole copies hold the same entries");
+		Files.delete(copyA.toPath());
+		Files.delete(copyB.toPath());
+		String unread = null;
+		try {
+			ModDeployer.sameEntries(ga, gb, copyA, copyB);
+		} catch (IllegalStateException refused) {
+			unread = refused.getMessage();
+		}
+		check(unread != null && unread.contains("entry 0 of a.garc could not be read"),
+				"two entries neither side could read are not the same entry - they are refused, naming the first: " + unread);
 		File tmp = Scratch.dir("ctrmap_notgarc");
 		File junk1 = new File(tmp, "junk1");
 		File junk2 = new File(tmp, "junk2");
@@ -499,6 +588,177 @@ public class ModDeployerTest {
 		ModDeployer.copyThenRemove(src, moved, Files::delete);
 		check(!src.exists() && whole(moved, names) == names.length,
 				"with nothing held the same move moves: every file at the new place, none at the old");
+	}
+
+	/**
+	 * A move whose copy fails removes nothing, and says so.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (ModDeployer 440, dropped and swallowed, SURVIVED): nothing asked a
+	 * copy that fails. Dropped, the move went on to remove the original after its copy had failed - the mod gone
+	 * from both places; swallowed, it answered that it had moved when it had not.
+	 */
+	private static void aMoveWhoseCopyFailsRemovesNothing() throws IOException {
+		System.out.println("--- a move whose copy fails removes nothing, and says so");
+		String[] names = {"romfs/a.bin", "romfs/b/c.bin", "code.ips"};
+		File base = Scratch.dir("ctrmap_failed_copy");
+		File src = new File(base, "mods" + File.separator + "000400000011C400");
+		write(src, names);
+		File notAFolder = new File(base, "mods_disabled");
+		Files.write(notAFolder.toPath(), new byte[]{1});                //a FILE where the destination's folder goes
+		IOException refused = null;
+		try {
+			ModDeployer.copyThenRemove(src, new File(notAFolder, "000400000011C400"), Files::delete);
+		} catch (IOException e) {
+			refused = e;
+		}
+		check(refused != null && refused.getMessage().contains("Could not copy"),
+				"a move whose copy fails is refused in words: " + (refused == null ? "no refusal" : refused.getMessage()));
+		check(whole(src, names) == names.length, "and the original is whole - " + whole(src, names) + " of "
+				+ names.length + " files, each its own bytes");
+	}
+
+	/**
+	 * A put-back that cannot remake a folder keeps the copy, and says which folder.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (ModDeployer 505, dropped and swallowed, SURVIVED): nothing asked a
+	 * put-back whose folder cannot be made again. Dropped, the put-back ran on and failed on the folder's first
+	 * file, in words that name a file and not the folder; swallowed, the put-back answered done with the folder
+	 * not back - and the move then deleted the copy, the one whole set of the mod's files.
+	 */
+	private static void aPutBackThatCannotRemakeAFolderKeepsTheCopy() throws IOException {
+		System.out.println("--- a put-back that cannot remake a folder keeps the copy, and says which folder");
+		String[] names = {"romfs/a/one.bin", "romfs/b/held.bin", "code.ips"};
+		File base = Scratch.dir("ctrmap_putback_folder");
+		File src = new File(base, "mods" + File.separator + "000400000011C400");
+		File dst = new File(base, "mods_disabled" + File.separator + "000400000011C400");
+		write(src, names);
+		File folderA = new File(src, "romfs" + File.separator + "a");
+		IOException refused = null;
+		try {
+			ModDeployer.copyThenRemove(src, dst, path -> {
+				if (path.getFileName().toString().equals("held.bin")) {
+					throw new java.nio.file.AccessDeniedException(path.toString(), null, "held by the emulator");
+				}
+				Files.delete(path);
+				if (path.toFile().getAbsoluteFile().equals(folderA.getAbsoluteFile())) {
+					Files.write(path, new byte[]{1});      //something else takes the folder's place
+				}
+			});
+		} catch (IOException e) {
+			refused = e;
+		}
+		String said = refused == null ? "no refusal" : refused.getMessage();
+		check(said.contains("could not be put back") && said.contains("could not make")
+				&& said.contains(folderA.getAbsolutePath()),
+				"a put-back that cannot remake a folder is refused, naming that folder: " + said);
+		check(whole(dst, names) == names.length, "and the copy - the one whole set of the mod's files - is kept: "
+				+ whole(dst, names) + " of " + names.length + " files");
+	}
+
+	/**
+	 * A put-back that cannot list a folder of the copy keeps the copy, and says which folder.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (ModDeployer 509, dropped and swallowed, SURVIVED): nothing asked a put-back
+	 * whose copy holds a folder it cannot list. Dropped, the put-back walked a list that is not there and crashed
+	 * past the move's own refusal; swallowed, it skipped the folder, answered done, and the move then deleted the copy.
+	 * Asked on Windows, where a deny on listing the folder - set on this test's own scratch folder between the copy
+	 * and the put-back, and taken off again - makes the folder unlistable for real.
+	 */
+	private static void aPutBackThatCannotListAFolderKeepsTheCopy() throws IOException {
+		System.out.println("--- a put-back that cannot list a folder of the copy keeps the copy, and says which folder");
+		if (!System.getProperty("os.name", "").toLowerCase().contains("win")) {
+			Skip.section("a folder made unlistable by a deny on listing is asked only on Windows - NOT asked here");
+			return;
+		}
+		String[] names = {"romfs/a/one.bin", "romfs/b/held.bin", "code.ips"};
+		File base = Scratch.dir("ctrmap_putback_list");
+		File src = new File(base, "mods" + File.separator + "000400000011C400");
+		File dst = new File(base, "mods_disabled" + File.separator + "000400000011C400");
+		write(src, names);
+		java.nio.file.Path locked = new File(dst, "romfs" + File.separator + "a").toPath();
+		java.nio.file.attribute.AclFileAttributeView[] view = {null};
+		java.util.List<java.nio.file.attribute.AclEntry> before = new java.util.ArrayList<>();
+		IOException refused = null;
+		RuntimeException crashed = null;
+		try {
+			ModDeployer.copyThenRemove(src, dst, path -> {
+				if (view[0] == null) {          //the copy is whole now, the put-back not begun: deny listing its folder a
+					view[0] = Files.getFileAttributeView(locked, java.nio.file.attribute.AclFileAttributeView.class);
+					before.addAll(view[0].getAcl());
+					java.util.List<java.nio.file.attribute.AclEntry> acl = new java.util.ArrayList<>(before);
+					acl.add(0, java.nio.file.attribute.AclEntry.newBuilder()
+							.setType(java.nio.file.attribute.AclEntryType.DENY).setPrincipal(Files.getOwner(locked))
+							.setPermissions(java.nio.file.attribute.AclEntryPermission.LIST_DIRECTORY).build());
+					view[0].setAcl(acl);
+				}
+				if (path.getFileName().toString().equals("held.bin")) {
+					throw new java.nio.file.AccessDeniedException(path.toString(), null, "held by the emulator");
+				}
+				Files.delete(path);
+			});
+		} catch (IOException e) {
+			refused = e;
+		} catch (RuntimeException e) {
+			crashed = e;
+		} finally {
+			if (view[0] != null) {
+				view[0].setAcl(before);
+			}
+		}
+		check(view[0] != null && locked.toFile().list() != null,
+				"CONTROL: the deny was set on the copy's folder, and is off again");
+		String said = refused != null ? refused.getMessage() : crashed != null ? "crashed: " + crashed : "no refusal";
+		check(said.contains("could not be put back") && said.contains("cannot list") && said.contains(locked.toString()),
+				"a put-back that cannot list a folder of the copy is refused, naming that folder: " + said);
+		check(whole(dst, names) == names.length, "and the copy - the one whole set of the mod's files - is kept: "
+				+ whole(dst, names) + " of " + names.length + " files");
+	}
+
+	/**
+	 * A byte comparison that cannot read an archive is refused with the system's own reason, naming both files.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (ModDeployer 565, dropped, SURVIVED): nothing asked a comparison whose byte
+	 * read fails. Dropped, it fell through to inflating entry by entry, where a failed read answers null - so the
+	 * deploy was told at best "entry 1 could not be read", the system's reason (another program holds part of the
+	 * file) gone, and with the held bytes outside every entry, that the archives were identical: "already shipped,
+	 * skip it" about a file whose read had failed. That is this fixture - its locked last byte is padding past the
+	 * last entry, and the fall-through, asked under the lock, answered true. Asked on Windows, where a lock this
+	 * test takes on the archive's last byte, after both archives are written, makes that byte unreadable through
+	 * any other handle.
+	 */
+	private static void aComparisonThatCannotReadAnArchiveSaysWhy() throws Exception {
+		System.out.println("--- a comparison that cannot read an archive is refused with the system's reason");
+		if (!System.getProperty("os.name", "").toLowerCase().contains("win")) {
+			Skip.section("a byte made unreadable by a lock is asked only on Windows, whose locks bind - NOT asked here");
+			return;
+		}
+		File base = Scratch.dir("ctrmap_compare_locked");
+		File a = new File(base, "a");
+		File b = new File(base, "b");
+		HandedGameTest.writeGarc(a, "zone0".getBytes("US-ASCII"), "master".getBytes("US-ASCII"));
+		HandedGameTest.writeGarc(b, "zone0".getBytes("US-ASCII"), "master".getBytes("US-ASCII"));
+		check(ModDeployer.garcContentsEqual(a, b), "CONTROL: two archives written alike compare equal while nothing holds either");
+		boolean unreadable = false;
+		Throwable got = null;
+		try (java.io.RandomAccessFile hold = new java.io.RandomAccessFile(b, "rw");
+				java.nio.channels.FileLock lock = hold.getChannel().lock(b.length() - 1, 1, false)) {
+			try {
+				ModDeployer.sameBytes(a, b);
+			} catch (IOException held) {
+				unreadable = true;
+			}
+			try {
+				check(false, "a comparison of an archive it cannot read answered " + ModDeployer.garcContentsEqual(a, b));
+			} catch (RuntimeException refused) {
+				got = refused;
+			}
+		}
+		check(unreadable, "CONTROL: the lock makes the archive's last byte unreadable to the byte comparison");
+		String said = got == null ? "no refusal" : got + " (cause: " + got.getCause() + ")";
+		check(got instanceof java.io.UncheckedIOException && got.getCause() instanceof IOException
+				&& got.getMessage().contains(a.toString()) && got.getMessage().contains(b.toString())
+				&& got.getMessage().contains(got.getCause().getMessage()),
+				"a comparison that cannot read an archive is refused with the system's reason, naming both files: " + said);
 	}
 
 	private static void write(File root, String[] names) throws IOException {

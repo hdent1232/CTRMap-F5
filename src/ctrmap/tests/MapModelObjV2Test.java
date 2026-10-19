@@ -98,7 +98,7 @@ public class MapModelObjV2Test {
 					continue;
 				}
 				List<MapModelObjImporter.Outcome> outcomes = new ArrayList<>();
-				byte[] applied = MapModelObjImporter.apply(model, parsed, outcomes);
+				byte[] applied = MapModelObjImporter.apply(model, parsed, outcomes, null, -1);
 				BchMapModel re = new BchMapModel(applied);
 				if (!re.validate().isEmpty()) {
 					throw new IllegalStateException("region " + i + ": identity import re-parse " + re.validate());
@@ -157,7 +157,7 @@ public class MapModelObjV2Test {
 							t[0] += 0.25f;
 						}
 					}
-					byte[] shifted = MapModelObjImporter.apply(model, parsed, new ArrayList<>());
+					byte[] shifted = MapModelObjImporter.apply(model, parsed, new ArrayList<>(), null, -1);
 					BchMapModel sm = new BchMapModel(shifted);
 					BchMapModel.MeshGeom g = sm.geometry().get(uvGroup.meshIndex);
 					BchMapModel.MeshAttr uv = sm.findAttr(uvGroup.meshIndex, 4);
@@ -219,6 +219,36 @@ public class MapModelObjV2Test {
 					}
 					if (!found) {
 						throw new IllegalStateException("region " + i + ": new material not present");
+					}
+					//CENSUS H.22: a group whose geometry is refused AFTER its material was injected is reported
+					//skipped, and leaves no material and no mesh behind it in the map
+					int[] savedTris = donor.triangles;
+					donor.material = "cmf5badmat";
+					donor.triangles = savedTris.clone();
+					donor.triangles[donor.triangles.length - 1] = donor.positions.length + 7;
+					try {
+						List<MapModelObjImporter.Outcome> oc3 = new ArrayList<>();
+						byte[] after;
+						try {
+							after = MapModelObjImporter.apply(model, parsed, oc3, model, donorMesh);
+						} catch (IllegalStateException nothingLanded) {
+							//the region's only group was the refused one: the whole import is refused and
+							//nothing reaches the map, which is the same answer - and only that refusal is
+							if (nothingLanded.getMessage() == null
+									|| !nothingLanded.getMessage().contains("No OBJ group could be applied")) {
+								throw nothingLanded;
+							}
+							after = null;
+						}
+						BchMapModel bad = after == null ? null : new BchMapModel(after);
+						for (int mm = 0; bad != null && mm < bad.matCount; mm++) {
+							if ("cmf5badmat".equals(bad.getMaterialName(mm))) {
+								throw new IllegalStateException("region " + i + ": a group reported skipped left its"
+										+ " injected material in the map");
+							}
+						}
+					} finally {
+						donor.triangles = savedTris;
 					}
 					templateOk++;
 				} catch (IllegalStateException ex) {

@@ -35,6 +35,7 @@ public class ZoneWrittenElsewhereTest {
 	public static void main(String[] args) throws Exception {
 		File root = new File(args.length > 0 ? args[0] : "src");
 		aHeaderAnotherActionWroteIsNotWrittenBack();
+		aMassEditNamesTheZoneThatRefused();
 		entitiesAnotherActionWroteAreNotWrittenBack();
 		theScriptIsWrittenOnlyWhenItChanged();
 		theEditorReadsTheZoneAgain(root);
@@ -104,6 +105,34 @@ public class ZoneWrittenElsewhereTest {
 		Zone again = table.reread();
 		check(again.changedOnDisk().isEmpty() && again.header.areadataID == 7,
 				"and reading the zone again shows what the file holds (area " + again.header.areadataID + ")");
+	}
+
+	/**
+	 * A mass edit's store of a zone that refuses names the zone and throws - the throw is what takes back every zone
+	 * the edit wrote before it (the 2026-10-14 shared sweep, ExtrasPanel 291, drop-throw, SURVIVED: no zone a suite's
+	 * mass edit stored ever refused). Asked of the edits' one store, with a zone whose header another action wrote.
+	 */
+	static void aMassEditNamesTheZoneThatRefused() throws Exception {
+		System.out.println("--- a mass edit's zone that refuses is named, and the edit stops there (F234)");
+		File f = zoneFile("ctrmap_zwe_mass", noRecords());
+		Zone zone = new Zone(new ZO(f, FILES), GameType.ORAS);
+		ZO other = new ZO(f, FILES);
+		byte[] renamed = other.getFile(0).clone();
+		MapResizeTest.putU16(renamed, 2, 7);
+		other.storeFile(0, renamed);
+		zone.header.textID = zone.header.textID + 1;
+		java.lang.reflect.Method store = ctrmap.humaninterface.ExtrasPanel.class.getDeclaredMethod("storeZone",
+				Zone.class, int.class);
+		store.setAccessible(true);
+		String said = "nothing was refused";
+		try {
+			store.invoke(null, zone, 7);
+		} catch (java.lang.reflect.InvocationTargetException thrown) {
+			said = String.valueOf(thrown.getCause());
+		}
+		check(said.startsWith("java.lang.IllegalStateException: zone 7 was not saved: ") && said.contains("changed on disk")
+				&& Arrays.equals(renamed, new ZO(f, FILES).getFile(0)),
+				"the refusal names the zone and why, and the other action's header stays on disk: " + said);
 	}
 
 	static void entitiesAnotherActionWroteAreNotWrittenBack() throws Exception {

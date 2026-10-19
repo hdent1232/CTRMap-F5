@@ -125,14 +125,6 @@ public final class ZoneTables {
 	}
 
 	/**
-	 * GARC index of the master zone-header table - the first entry past the
-	 * last zone, and the runtime-authoritative copy of every zone header.
-	 */
-	public static int masterIndex(GARC zoneData) throws IOException {
-		return zoneCount(zoneData);
-	}
-
-	/**
 	 * The AreaData index of the engine's global per-area table: the profile's measured index
 	 * (F235). It was "the first entry past the last area" - length minus the trailing tables -
 	 * and an area fork appends AFTER the table, so after one fork that named the forked area as
@@ -172,11 +164,6 @@ public final class ZoneTables {
 			}
 		}
 		return ids;
-	}
-
-	/** How many areas the open game has - the forked ones included (F235). */
-	public static int areaCount(GARC areaData) throws IOException {
-		return areaIds(areaData).length;
 	}
 
 	private static GameProfile requireProfile() throws IOException {

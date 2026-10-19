@@ -21,8 +21,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.UUID;
@@ -33,7 +31,6 @@ import javax.swing.DefaultListModel;
 import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
 import javax.swing.SwingWorker;
-import javax.swing.event.ListSelectionEvent;
 
 public class Builder extends javax.swing.JPanel {
 
@@ -58,6 +55,41 @@ public class Builder extends javax.swing.JPanel {
 	private final java.util.function.BiConsumer<String, javax.swing.JComponent> showInExtras;
 
 	/**
+	 * This browser's history (F209c): every write it makes is one change kept here, Undo and Redo under the browser
+	 * putting its files back and again and reading the archive and the container shown again.
+	 */
+	private final ctrmap.humaninterface.SaveHistory saves = new ctrmap.humaninterface.SaveHistory(
+			() -> java.util.Collections.<Object>singletonList(Workspace.session()));
+
+	/** The browser with Undo and Redo under it. */
+	public javax.swing.JComponent withUndo() {
+		return saves.around(this);
+	}
+
+	/** The history: a suite undoes through it. */
+	public ctrmap.humaninterface.UndoHistory history() {
+		return saves.history();
+	}
+
+	/**
+	 * Keeps what {@code unit} wrote as one change of this browser's history, the archive and the container shown read
+	 * again when it is taken back or put again. Each write runs in its own unit, in its own handler, and hands it here.
+	 */
+	private void kept(ctrmap.WorkspaceUnit unit) {
+		ctrmap.WorkspaceUnit.inMemory(this::readAgain, this::readAgain);
+		saves.keep(unit.commitKeeping());
+	}
+
+	/** The archive's entries and the container shown, read again - after Undo or Redo moved their files. */
+	private void readAgain() {
+		if (currentAGFC != null && currentAGFC.getOriginFile().isFile()) {
+			currentAGFC = ContainerIdentifier.makeAGFC(currentAGFC.getOriginFile(), Workspace.session());
+			reloadContainer();
+		}
+		loadGARC(garc.getSelectedIndex());
+	}
+
+	/**
 	 * Creates new form Builder
 	 */
 	public Builder(java.util.function.BiConsumer<String, javax.swing.JComponent> showInExtras) {
@@ -68,7 +100,9 @@ public class Builder extends javax.swing.JPanel {
 		initComponents();
 		garcFileList.setModel(GARCmodel);
 		contFileList.setModel(contModel);
-		garcFileList.addListSelectionListener((ListSelectionEvent e) -> {
+		offerContainerButtons();   //nothing is loaded yet (census M.80)
+		ctrmap.Ui.offer(btnAddFileToGARC, "Choose an archive first");   //census M.136, L.59
+		ctrmap.util.Selections.onSettled(garcFileList, () -> {
 			contModel.removeAllElements();
 			if (currentGARC != null && garcFileList.getSelectedIndex() != -1) {
 				int index = garcFileList.getSelectedIndex();
@@ -100,10 +134,27 @@ public class Builder extends javax.swing.JPanel {
 		}
 	}
 
+	/**
+	 * The buttons that act on the loaded container, offered only while there is one (census M.80): Import and
+	 * Import from file were the first things clicked in a panel that opens empty, and both threw on the null
+	 * container - one after its body was skipped, one two lines before its own null test.
+	 */
+	private void offerContainerButtons() {
+		for (javax.swing.JButton b : new javax.swing.JButton[]{btnFAImport, btnFAExport, btnFADummy, btnImportContainer,
+				btnContSaveExternal, btnClearContainer}) {
+			b.setEnabled(currentAGFC != null);
+		}
+	}
+
 	public void loadContainer(AbstractGamefreakContainer cont) {
-		container.setName(cont.getOriginFile().getAbsolutePath());
+		if (cont == null) {
+			throw new IllegalArgumentException("there is no container to load - open one first");
+		}
+		//SHOWN, NOT NAMED (census M.16): setName set the component's hidden name, and the label went on saying <none>
+		container.setText(cont.getOriginFile().getAbsolutePath());
 		contModel.removeAllElements();
 		currentAGFC = cont;
+		offerContainerButtons();
 		currentFiles.clear();
 		for (int i = 0; i < cont.len; i++) {
 			BuilderFile bf = new BuilderFile();
@@ -444,9 +495,11 @@ public class Builder extends javax.swing.JPanel {
 						String[] extra = (textures == JOptionPane.YES_OPTION) ? new String[0] : new String[]{"-notextures"};
 						ESPICAControl.ESPICAProcess proc = new ESPICAControl.ESPICAProcess(ESPICAControl.ESPICAFunctionMode.MODEL_CONVERT, f, donor, output, extra);
 						runESPICA(proc, () -> {
-							try {
+							try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Import " + f.getName()
+									+ " as a model into subfile " + index, Workspace.session())) {
 								persistentContainerReference.storeFile(index, output);
 								Workspace.addPersist(persistentContainerReference.getOriginFile());
+								kept(unit);
 							} catch (RuntimeException notStored) {
 								ctrmap.Ui.error(Builder.this, "Storing the converted model into the container failed:\n"
 									+ ctrmap.Ui.reason(notStored) + "\n The container was not modified.", "Builder alert");
@@ -461,13 +514,22 @@ public class Builder extends javax.swing.JPanel {
 				if (rsl == JOptionPane.YES_OPTION) {
 					File f = openFileDialog("Open a material description file");
 					if (f != null) {
-						File donor = persistentContainerReference.getIOFile(index);
+						File donor;
+						try {
+							donor = persistentContainerReference.getIOFile(index);
+						} catch (IOException unread) {
+							ctrmap.Ui.error(this, "The texture pack in subfile " + index + " could not be read out for the"
+									+ " converter, so nothing was merged:\n" + ctrmap.Ui.reason(unread), "Builder alert");
+							return;
+						}
 						File output = new File(Workspace.temp() + "/espica_texturepack_" + UUID.randomUUID().toString() + ".bch");
 						ESPICAControl.ESPICAProcess proc = new ESPICAControl.ESPICAProcess(ESPICAControl.ESPICAFunctionMode.TEXTURE_MERGE, f, donor, output, new String[0]);
 						runESPICA(proc, () -> {
-							try {
+							try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Merge " + f.getName()
+									+ " into the texture pack in subfile " + index, Workspace.session())) {
 								persistentContainerReference.storeFile(index, output);
 								Workspace.addPersist(persistentContainerReference.getOriginFile());
+								kept(unit);
 							} catch (RuntimeException notStored) {
 								ctrmap.Ui.error(Builder.this, "Storing the merged texture pack into the container failed:\n"
 									+ ctrmap.Ui.reason(notStored) + "\n The container was not modified.", "Builder alert");
@@ -481,21 +543,33 @@ public class Builder extends javax.swing.JPanel {
 			} else {
 				importGeneric(persistentContainerReference, index);
 			}
+			reloadContainer();   //only after an import: with nothing selected nothing was, and nothing may be loaded (census M.80)
 		}
-		reloadContainer();
     }//GEN-LAST:event_btnFAImportActionPerformed
 
     private void btnImportContainerActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnImportContainerActionPerformed
+		if (currentAGFC == null) {
+			return;
+		}
 		File fToReplace = currentAGFC.getOriginFile();
 		File fNew = openFileDialog("Select new container file");
-		if (fNew != null && currentAGFC != null) {
-			try {
-				Files.copy(fNew.toPath(), fToReplace.toPath(), StandardCopyOption.REPLACE_EXISTING);
+		if (fNew != null) {
+			//ASKED BEFORE THE COPY (census H.40): identified after it, a file that was no container was kept and packed
+			String notReplaceable = ContainerIdentifier.whyNotReplaceable(fToReplace, fNew);
+			if (notReplaceable != null) {
+				ctrmap.Ui.error(this, "The container was not replaced: " + notReplaceable, "Builder alert");
+				return;
+			}
+			try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Replace " + fToReplace.getName() + " with "
+					+ fNew.getName(), Workspace.session())) {
+				ctrmap.WorkspaceUnit.copy(fNew, fToReplace);   //copied first by the change, so Undo can put it back
 				currentAGFC = ContainerIdentifier.makeAGFC(fToReplace, Workspace.session());
 				Workspace.addPersist(fToReplace);
+				kept(unit);
 				reloadContainer();
-			} catch (IOException ex) {
+			} catch (IOException | RuntimeException ex) {
 				Logger.getLogger(Builder.class.getName()).log(Level.SEVERE, null, ex);
+				ctrmap.Ui.error(this, "The container was not replaced:\n" + ctrmap.Ui.reason(ex), "Builder alert");
 			}
 		}
     }//GEN-LAST:event_btnImportContainerActionPerformed
@@ -504,7 +578,7 @@ public class Builder extends javax.swing.JPanel {
 		File fNew = saveFileDialog("Select external location");
 		if (fNew != null && currentAGFC != null) {
 			try {
-				Files.copy(currentAGFC.getOriginFile().toPath(), fNew.toPath(), StandardCopyOption.REPLACE_EXISTING);
+				ctrmap.Exports.copy(currentAGFC.getOriginFile(), fNew);
 			} catch (IOException ex) {
 				Logger.getLogger(Builder.class.getName()).log(Level.SEVERE, null, ex);
 			}
@@ -512,8 +586,19 @@ public class Builder extends javax.swing.JPanel {
     }//GEN-LAST:event_btnContSaveExternalActionPerformed
 
     private void btnAddFileToGARCActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnAddFileToGARCActionPerformed
+		if (currentGARC == null || !currentGARC.canMakeNewEntry()) {
+			//SAID (census M.136): every type but two fell out of this method having done nothing
+			ctrmap.Ui.error(this, "CTRMap can make a new entry of the MapMatrix and FieldData archives only"
+					+ (currentGARC == null ? " - pick one of them first." : ", not of " + currentGARC + "."), "Builder alert");
+			return;
+		}
 		boolean success = false;
+		final AbstractGamefreakContainer before = currentAGFC;
 		GARC arc = Workspace.getArchive(currentGARC);
+		final ArchiveType packing = currentGARC;
+		//KEPT (F209c): the new entry, written and listed, is one change of this browser's history. The pack below
+		//carries it into the game at once, so Undo then refuses in words: a pack only adds entries
+		try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Add an entry to " + currentGARC, Workspace.session())) {
 		if (currentGARC == ArchiveType.MAP_MATRIX) {
 			MM mm = new MM(Workspace.getWorkspaceFile(currentGARC, arc.length), 2, MM.MM_MAP_MATRIX, Workspace.session());
 			currentAGFC = mm;
@@ -555,6 +640,18 @@ public class Builder extends javax.swing.JPanel {
 			success = true;
 		}
 		if (success) {
+			Workspace.addPersist(currentAGFC.getOriginFile());
+			kept(unit);
+		}
+		} catch (RuntimeException notMade) {
+			//SAID (census M.137): the only storeFile caller in this file that let a failed write reach nobody - the
+			//button looked dead and a half-built container sat in the workspace. The unit has put back what it wrote
+			currentAGFC = before;
+			ctrmap.Ui.error(this, "The new " + packing + " entry was not made: " + ctrmap.Ui.reason(notMade)
+					+ "\nNothing was changed.", "Builder alert");
+			return;
+		}
+		if (success) {
 			LoadingDialog dlg = LoadingDialog.makeDialog("Packing, please wait");
 			SwingWorker worker = new SwingWorker() {
 				@Override
@@ -587,10 +684,8 @@ public class Builder extends javax.swing.JPanel {
 
 				@Override
 				protected Object doInBackground() throws Exception {
-					Workspace.addPersist(currentAGFC.getOriginFile());
-					ctrmap.WorkspaceSession ws = Workspace.session();
-					arc.packDirectory(ws.getExtractionDirectory(currentGARC), ws::isPersisted, ws.workspaceDir());
-					Workspace.reloadGARC(currentGARC);
+					//through the session, which counts the pack (F209b): the entry kept above is in the game now
+					Workspace.session().packOne(packing);
 					return null;
 				}
 			};
@@ -605,9 +700,9 @@ public class Builder extends javax.swing.JPanel {
 			File fNew = saveFileDialog("Select export location");
 			if (fNew != null) {
 				try {
-					Files.copy(currentAGFC.getIOFile(index).toPath(), fNew.toPath(), StandardCopyOption.REPLACE_EXISTING);
+					ctrmap.Exports.copy(currentAGFC.getIOFile(index), fNew);
 				} catch (IOException ex) {
-					Logger.getLogger(Builder.class.getName()).log(Level.SEVERE, null, ex);
+					ctrmap.Ui.error(this, "Subfile " + index + " was not exported:\n" + ctrmap.Ui.reason(ex), "Builder alert");
 				}
 			}
 		}
@@ -618,9 +713,11 @@ public class Builder extends javax.swing.JPanel {
 		if (index != -1 && currentAGFC != null) {
 			int rsl = ctrmap.Ui.confirm(this, "This will replace the selected file with a dummy. Continue?", "Builder alert", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
 			if (rsl == JOptionPane.YES_OPTION) {
-				try {
+				try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Replace subfile " + index + " with a dummy",
+						Workspace.session())) {
 					currentAGFC.storeFile(index, new byte[0]);
 					Workspace.addPersist(currentAGFC.getOriginFile()); //storeFile writes the workspace file but only persisted files survive cleanUnchanged() and get packed
+					kept(unit);
 				} catch (RuntimeException notStored) {
 					ctrmap.Ui.error(this, "Replacing the file with a dummy failed:\n"
 						+ ctrmap.Ui.reason(notStored) + "\nThe container was not modified.", "Builder alert");
@@ -635,15 +732,19 @@ public class Builder extends javax.swing.JPanel {
 			int rsl = ctrmap.Ui.confirm(this, "This will replace the container with a blank one. Continue?", "Builder alert", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
 			if (rsl == JOptionPane.YES_OPTION) {
 				File target = currentAGFC.getOriginFile();
-				if (currentAGFC instanceof GR) {
-					currentAGFC = new GR(target, currentAGFC.len, Workspace.session());
-				} else if (currentAGFC instanceof MM) {
-					currentAGFC = new MM(target, currentAGFC.len, ((MM) currentAGFC).type, Workspace.session());
-				} else {
+				if (!(currentAGFC instanceof GR) && !(currentAGFC instanceof MM)) {
 					ctrmap.Ui.error(this, "Creating this container type from scratch is not supported.", "Builder alert");
 					return;
 				}
-				Workspace.addPersist(target);
+				try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Replace " + target.getName()
+						+ " with a blank container", Workspace.session())) {
+					currentAGFC = currentAGFC instanceof GR ? new GR(target, currentAGFC.len, Workspace.session())
+							: new MM(target, currentAGFC.len, ((MM) currentAGFC).type, Workspace.session());
+					Workspace.addPersist(target);
+					kept(unit);
+				} catch (RuntimeException notMade) {
+					ctrmap.Ui.error(this, "The blank container was not made:\n" + ctrmap.Ui.reason(notMade), "Builder alert");
+				}
 				reloadContainer();
 			}
 		}
@@ -653,21 +754,23 @@ public class Builder extends javax.swing.JPanel {
 		if (currentAGFC != null) {
 			int rsl = ctrmap.Ui.confirm(this, "This will clear all files in the container. Continue?", "Builder alert", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
 			if (rsl == JOptionPane.YES_OPTION) {
-				String stopped = null;
-				for (int i = 0; i < currentAGFC.len && stopped == null; i++) {
-					try {
-						currentAGFC.storeFile(i, new byte[0]);
-					} catch (RuntimeException notStored) {
-						//STOPS AT THE FIRST ONE. Carrying on past a container that cannot be
-						//rewritten only widened the damage: the rest of the loop kept recomputing
-						//offsets against a file that was no longer what it thought.
-						stopped = "subfile " + i + ": " + ctrmap.Ui.reason(notStored);
+				//WHOLE OR NOT AT ALL (F209c): it stopped at the first subfile that would not store and left the ones
+				//before it cleared - "it may be only partially cleared". One kept change now: a failure puts back
+				//every subfile it cleared, and a clear that finished is taken back by Undo
+				try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Clear " + currentAGFC.getOriginFile().getName(),
+						Workspace.session())) {
+					for (int i = 0; i < currentAGFC.len; i++) {
+						try {
+							currentAGFC.storeFile(i, new byte[0]);
+						} catch (RuntimeException notStored) {
+							throw new IllegalStateException("subfile " + i + ": " + ctrmap.Ui.reason(notStored), notStored);
+						}
 					}
-				}
-				Workspace.addPersist(currentAGFC.getOriginFile()); //storeFile writes the workspace file but only persisted files survive cleanUnchanged() and get packed
-				if (stopped != null) {
-					ctrmap.Ui.error(this, "Clearing the container stopped at " + stopped
-						+ "\nIt may be only partially cleared.", "Builder alert");
+					Workspace.addPersist(currentAGFC.getOriginFile()); //storeFile writes the workspace file but only persisted files survive cleanUnchanged() and get packed
+					kept(unit);
+				} catch (RuntimeException stopped) {
+					ctrmap.Ui.error(this, "The container was not cleared - it stopped at " + ctrmap.Ui.reason(stopped)
+						+ "\nNothing in it was changed.", "Builder alert");
 				}
 				reloadContainer();
 			}
@@ -681,9 +784,11 @@ public class Builder extends javax.swing.JPanel {
 	private void importGeneric(AbstractGamefreakContainer persistentContainerReference, int index) {
 		File in = openFileDialog("Select file to import");
 		if (in != null) {
-			try {
+			try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Import " + in.getName() + " into subfile " + index,
+					Workspace.session())) {
 				persistentContainerReference.storeFile(index, in);
 				Workspace.addPersist(persistentContainerReference.getOriginFile()); //storeFile writes the workspace file but only persisted files survive cleanUnchanged() and get packed
+				kept(unit);
 			} catch (RuntimeException notStored) {
 				ctrmap.Ui.error(this, "Importing the file into the container failed:\n"
 					+ ctrmap.Ui.reason(notStored) + "\nThe container was not modified.", "Builder alert");
@@ -691,13 +796,16 @@ public class Builder extends javax.swing.JPanel {
 		}
 	}
 
-	/** A bundled resource copied to the workspace's temp folder, or null when it cannot be written there. */
+	/**
+	 * A bundled resource copied to the workspace's scratch folder, its extension kept, or null when it cannot be
+	 * written there - a file of its own through the one scratch writer, not an edit (F209d).
+	 */
 	private static File copyToTemp(String name) {
-		File out = new File(Workspace.temp() + "/" + name);
+		int dot = name.lastIndexOf('.');
 		try {
-			java.nio.file.Files.write(out.toPath(), ResourceAccess.getByteArray(name));
-			return out;
-		} catch (java.io.IOException ex) {
+			return Workspace.session().toScratch(name.substring(0, dot) + "_", name.substring(dot),
+					ResourceAccess.getByteArray(name));
+		} catch (java.io.IOException | RuntimeException ex) {
 			return null;
 		}
 	}
@@ -717,6 +825,8 @@ public class Builder extends javax.swing.JPanel {
 		GARCmodel.clear();
 		if (index != -1) {
 			currentGARC = ctrmap.util.Bytes.enumOf(ArchiveType.values(), index, null);
+			ctrmap.Ui.offer(btnAddFileToGARC, currentGARC.canMakeNewEntry() ? null   //offered only where it can (census M.136)
+				: "CTRMap can make a new, empty entry only of the map matrix and region archives");
 			if (Workspace.getArchive(currentGARC) != null) {
 				for (int i = 0; i < Workspace.getArchive(currentGARC).length; i++) {
 					GARCmodel.addElement(String.valueOf(i));

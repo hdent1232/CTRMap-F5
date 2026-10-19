@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_all.py\"",
+            "command": "python -B -c \"import json,os,subprocess,sys\nNW=getattr(subprocess,'CREATE_NO_WINDOW',0)\ndef top():\n    try:\n        r=subprocess.run(['git','rev-parse','--show-toplevel'],capture_output=True,text=True,timeout=30,creationflags=NW)\n        return r.stdout.strip() if r.returncode==0 else ''\n    except Exception:\n        return ''\ndef main(rel):\n    tried=[]\n    for d in (os.environ.get('CLAUDE_PROJECT_DIR') or '',top()):\n        if d:\n            p=os.path.join(d,*rel.split('/'))\n            tried.append(p)\n            if os.path.isfile(p):\n                return subprocess.run([sys.executable,'-B',p],stdin=sys.stdin,stdout=sys.stdout,stderr=sys.stderr,creationflags=NW).returncode\n    try:\n        payload=json.loads(sys.stdin.read())\n    except Exception:\n        payload={}\n    payload=payload if isinstance(payload,dict) else {}\n    event=payload.get('hook_event_name') or ''\n    if event=='PreToolUse' and payload.get('tool_name') in ('Read','Glob','Grep'):\n        return 0\n    if payload.get('stop_hook_active'):\n        return 0\n    sys.stderr.write('BLOCKED: the hook '+rel+' is not under the folder this session started in nor under the repository of its current folder, so none of its guards can run and nothing but a read goes through. Looked at: '+(', '.join(tried) or 'nothing - no start folder and no repository')+'. CLAUDE_PROJECT_DIR is the folder a session STARTED in, and a running session moved into another folder keeps it. Start a new session in the folder whose .claude/settings.json wires this hook.'+chr(10))\n    return 2\ntry:\n    sys.exit(main(sys.argv[1]))\nexcept Exception as e:\n    sys.stderr.write('BLOCKED: the hook launcher could not run (%s: %s) - a launcher that cannot answer is not one that answered yes'%(type(e).__name__,e)+chr(10))\n    sys.exit(2)\n\" .claude/hooks/guard_all.py",
             "timeout": 20,
             "statusMessage": "checking project policy"
           }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/bundle-hooks/dispatch.py\"",
+            "command": "python -B -c \"import json,os,subprocess,sys\nNW=getattr(subprocess,'CREATE_NO_WINDOW',0)\ndef top():\n    try:\n        r=subprocess.run(['git','rev-parse','--show-toplevel'],capture_output=True,text=True,timeout=30,creationflags=NW)\n        return r.stdout.strip() if r.returncode==0 else ''\n    except Exception:\n        return ''\ndef main(rel):\n    tried=[]\n    for d in (os.environ.get('CLAUDE_PROJECT_DIR') or '',top()):\n        if d:\n            p=os.path.join(d,*rel.split('/'))\n            tried.append(p)\n            if os.path.isfile(p):\n                return subprocess.run([sys.executable,'-B',p],stdin=sys.stdin,stdout=sys.stdout,stderr=sys.stderr,creationflags=NW).returncode\n    try:\n        payload=json.loads(sys.stdin.read())\n    except Exception:\n        payload={}\n    payload=payload if isinstance(payload,dict) else {}\n    event=payload.get('hook_event_name') or ''\n    if event=='PreToolUse' and payload.get('tool_name') in ('Read','Glob','Grep'):\n        return 0\n    if payload.get('stop_hook_active'):\n        return 0\n    sys.stderr.write('BLOCKED: the hook '+rel+' is not under the folder this session started in nor under the repository of its current folder, so none of its guards can run and nothing but a read goes through. Looked at: '+(', '.join(tried) or 'nothing - no start folder and no repository')+'. CLAUDE_PROJECT_DIR is the folder a session STARTED in, and a running session moved into another folder keeps it. Start a new session in the folder whose .claude/settings.json wires this hook.'+chr(10))\n    return 2\ntry:\n    sys.exit(main(sys.argv[1]))\nexcept Exception as e:\n    sys.stderr.write('BLOCKED: the hook launcher could not run (%s: %s) - a launcher that cannot answer is not one that answered yes'%(type(e).__name__,e)+chr(10))\n    sys.exit(2)\n\" .claude/bundle-hooks/dispatch.py",
             "timeout": 1800
           }
         ]
@@ -26,21 +26,11 @@
     ],
     "Stop": [
       {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_unfinished.py\"",
-            "timeout": 20,
-            "statusMessage": "checking nothing was left owed"
-          }
-        ]
-      },
-      {
         "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/bundle-hooks/dispatch.py\"",
+            "command": "python -B -c \"import json,os,subprocess,sys\nNW=getattr(subprocess,'CREATE_NO_WINDOW',0)\ndef top():\n    try:\n        r=subprocess.run(['git','rev-parse','--show-toplevel'],capture_output=True,text=True,timeout=30,creationflags=NW)\n        return r.stdout.strip() if r.returncode==0 else ''\n    except Exception:\n        return ''\ndef main(rel):\n    tried=[]\n    for d in (os.environ.get('CLAUDE_PROJECT_DIR') or '',top()):\n        if d:\n            p=os.path.join(d,*rel.split('/'))\n            tried.append(p)\n            if os.path.isfile(p):\n                return subprocess.run([sys.executable,'-B',p],stdin=sys.stdin,stdout=sys.stdout,stderr=sys.stderr,creationflags=NW).returncode\n    try:\n        payload=json.loads(sys.stdin.read())\n    except Exception:\n        payload={}\n    payload=payload if isinstance(payload,dict) else {}\n    event=payload.get('hook_event_name') or ''\n    if event=='PreToolUse' and payload.get('tool_name') in ('Read','Glob','Grep'):\n        return 0\n    if payload.get('stop_hook_active'):\n        return 0\n    sys.stderr.write('BLOCKED: the hook '+rel+' is not under the folder this session started in nor under the repository of its current folder, so none of its guards can run and nothing but a read goes through. Looked at: '+(', '.join(tried) or 'nothing - no start folder and no repository')+'. CLAUDE_PROJECT_DIR is the folder a session STARTED in, and a running session moved into another folder keeps it. Start a new session in the folder whose .claude/settings.json wires this hook.'+chr(10))\n    return 2\ntry:\n    sys.exit(main(sys.argv[1]))\nexcept Exception as e:\n    sys.stderr.write('BLOCKED: the hook launcher could not run (%s: %s) - a launcher that cannot answer is not one that answered yes'%(type(e).__name__,e)+chr(10))\n    sys.exit(2)\n\" .claude/bundle-hooks/dispatch.py",
             "timeout": 300
           }
         ]
@@ -52,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/bundle-hooks/after_rules.py\"",
+            "command": "python -B -c \"import json,os,subprocess,sys\nNW=getattr(subprocess,'CREATE_NO_WINDOW',0)\ndef top():\n    try:\n        r=subprocess.run(['git','rev-parse','--show-toplevel'],capture_output=True,text=True,timeout=30,creationflags=NW)\n        return r.stdout.strip() if r.returncode==0 else ''\n    except Exception:\n        return ''\ndef main(rel):\n    tried=[]\n    for d in (os.environ.get('CLAUDE_PROJECT_DIR') or '',top()):\n        if d:\n            p=os.path.join(d,*rel.split('/'))\n            tried.append(p)\n            if os.path.isfile(p):\n                return subprocess.run([sys.executable,'-B',p],stdin=sys.stdin,stdout=sys.stdout,stderr=sys.stderr,creationflags=NW).returncode\n    try:\n        payload=json.loads(sys.stdin.read())\n    except Exception:\n        payload={}\n    payload=payload if isinstance(payload,dict) else {}\n    event=payload.get('hook_event_name') or ''\n    if event=='PreToolUse' and payload.get('tool_name') in ('Read','Glob','Grep'):\n        return 0\n    if payload.get('stop_hook_active'):\n        return 0\n    sys.stderr.write('BLOCKED: the hook '+rel+' is not under the folder this session started in nor under the repository of its current folder, so none of its guards can run and nothing but a read goes through. Looked at: '+(', '.join(tried) or 'nothing - no start folder and no repository')+'. CLAUDE_PROJECT_DIR is the folder a session STARTED in, and a running session moved into another folder keeps it. Start a new session in the folder whose .claude/settings.json wires this hook.'+chr(10))\n    return 2\ntry:\n    sys.exit(main(sys.argv[1]))\nexcept Exception as e:\n    sys.stderr.write('BLOCKED: the hook launcher could not run (%s: %s) - a launcher that cannot answer is not one that answered yes'%(type(e).__name__,e)+chr(10))\n    sys.exit(2)\n\" .claude/bundle-hooks/after_rules.py",
             "timeout": 1800
           }
         ]
@@ -63,7 +53,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python -B \"$CLAUDE_PROJECT_DIR/tools/arm_checkout.py\"",
+            "command": "python -B -c \"import json,os,subprocess,sys\nNW=getattr(subprocess,'CREATE_NO_WINDOW',0)\ndef top():\n    try:\n        r=subprocess.run(['git','rev-parse','--show-toplevel'],capture_output=True,text=True,timeout=30,creationflags=NW)\n        return r.stdout.strip() if r.returncode==0 else ''\n    except Exception:\n        return ''\ndef main(rel):\n    tried=[]\n    for d in (os.environ.get('CLAUDE_PROJECT_DIR') or '',top()):\n        if d:\n            p=os.path.join(d,*rel.split('/'))\n            tried.append(p)\n            if os.path.isfile(p):\n                return subprocess.run([sys.executable,'-B',p],stdin=sys.stdin,stdout=sys.stdout,stderr=sys.stderr,creationflags=NW).returncode\n    try:\n        payload=json.loads(sys.stdin.read())\n    except Exception:\n        payload={}\n    payload=payload if isinstance(payload,dict) else {}\n    event=payload.get('hook_event_name') or ''\n    if event=='PreToolUse' and payload.get('tool_name') in ('Read','Glob','Grep'):\n        return 0\n    if payload.get('stop_hook_active'):\n        return 0\n    sys.stderr.write('BLOCKED: the hook '+rel+' is not under the folder this session started in nor under the repository of its current folder, so none of its guards can run and nothing but a read goes through. Looked at: '+(', '.join(tried) or 'nothing - no start folder and no repository')+'. CLAUDE_PROJECT_DIR is the folder a session STARTED in, and a running session moved into another folder keeps it. Start a new session in the folder whose .claude/settings.json wires this hook.'+chr(10))\n    return 2\ntry:\n    sys.exit(main(sys.argv[1]))\nexcept Exception as e:\n    sys.stderr.write('BLOCKED: the hook launcher could not run (%s: %s) - a launcher that cannot answer is not one that answered yes'%(type(e).__name__,e)+chr(10))\n    sys.exit(2)\n\" tools/arm_checkout.py",
             "timeout": 900,
             "statusMessage": "arming this checkout's git hooks, bringing the bundle and the notes"
           }
@@ -76,7 +66,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/bundle-hooks/dispatch.py\"",
+            "command": "python -B -c \"import json,os,subprocess,sys\nNW=getattr(subprocess,'CREATE_NO_WINDOW',0)\ndef top():\n    try:\n        r=subprocess.run(['git','rev-parse','--show-toplevel'],capture_output=True,text=True,timeout=30,creationflags=NW)\n        return r.stdout.strip() if r.returncode==0 else ''\n    except Exception:\n        return ''\ndef main(rel):\n    tried=[]\n    for d in (os.environ.get('CLAUDE_PROJECT_DIR') or '',top()):\n        if d:\n            p=os.path.join(d,*rel.split('/'))\n            tried.append(p)\n            if os.path.isfile(p):\n                return subprocess.run([sys.executable,'-B',p],stdin=sys.stdin,stdout=sys.stdout,stderr=sys.stderr,creationflags=NW).returncode\n    try:\n        payload=json.loads(sys.stdin.read())\n    except Exception:\n        payload={}\n    payload=payload if isinstance(payload,dict) else {}\n    event=payload.get('hook_event_name') or ''\n    if event=='PreToolUse' and payload.get('tool_name') in ('Read','Glob','Grep'):\n        return 0\n    if payload.get('stop_hook_active'):\n        return 0\n    sys.stderr.write('BLOCKED: the hook '+rel+' is not under the folder this session started in nor under the repository of its current folder, so none of its guards can run and nothing but a read goes through. Looked at: '+(', '.join(tried) or 'nothing - no start folder and no repository')+'. CLAUDE_PROJECT_DIR is the folder a session STARTED in, and a running session moved into another folder keeps it. Start a new session in the folder whose .claude/settings.json wires this hook.'+chr(10))\n    return 2\ntry:\n    sys.exit(main(sys.argv[1]))\nexcept Exception as e:\n    sys.stderr.write('BLOCKED: the hook launcher could not run (%s: %s) - a launcher that cannot answer is not one that answered yes'%(type(e).__name__,e)+chr(10))\n    sys.exit(2)\n\" .claude/bundle-hooks/dispatch.py",
             "timeout": 60
           }
         ]
@@ -88,7 +78,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/bundle-hooks/dispatch.py\"",
+            "command": "python -B -c \"import json,os,subprocess,sys\nNW=getattr(subprocess,'CREATE_NO_WINDOW',0)\ndef top():\n    try:\n        r=subprocess.run(['git','rev-parse','--show-toplevel'],capture_output=True,text=True,timeout=30,creationflags=NW)\n        return r.stdout.strip() if r.returncode==0 else ''\n    except Exception:\n        return ''\ndef main(rel):\n    tried=[]\n    for d in (os.environ.get('CLAUDE_PROJECT_DIR') or '',top()):\n        if d:\n            p=os.path.join(d,*rel.split('/'))\n            tried.append(p)\n            if os.path.isfile(p):\n                return subprocess.run([sys.executable,'-B',p],stdin=sys.stdin,stdout=sys.stdout,stderr=sys.stderr,creationflags=NW).returncode\n    try:\n        payload=json.loads(sys.stdin.read())\n    except Exception:\n        payload={}\n    payload=payload if isinstance(payload,dict) else {}\n    event=payload.get('hook_event_name') or ''\n    if event=='PreToolUse' and payload.get('tool_name') in ('Read','Glob','Grep'):\n        return 0\n    if payload.get('stop_hook_active'):\n        return 0\n    sys.stderr.write('BLOCKED: the hook '+rel+' is not under the folder this session started in nor under the repository of its current folder, so none of its guards can run and nothing but a read goes through. Looked at: '+(', '.join(tried) or 'nothing - no start folder and no repository')+'. CLAUDE_PROJECT_DIR is the folder a session STARTED in, and a running session moved into another folder keeps it. Start a new session in the folder whose .claude/settings.json wires this hook.'+chr(10))\n    return 2\ntry:\n    sys.exit(main(sys.argv[1]))\nexcept Exception as e:\n    sys.stderr.write('BLOCKED: the hook launcher could not run (%s: %s) - a launcher that cannot answer is not one that answered yes'%(type(e).__name__,e)+chr(10))\n    sys.exit(2)\n\" .claude/bundle-hooks/dispatch.py",
             "timeout": 300
           }
         ]

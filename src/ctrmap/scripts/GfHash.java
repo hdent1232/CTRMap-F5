@@ -53,6 +53,7 @@ public class GfHash {
 	}
 
 	/** The bundled name-&gt;hash table (ORAS field natives). Read-only. */
+	@ctrmap.util.ForSuites("SEAM: GfHashTest reads the bundled name table whole, to check every name hashes to its entry and back; the program asks one name at a time")
 	public static synchronized Map<String, Integer> table() {
 		ensureLoaded();
 		return HASH_BY_NAME;
@@ -64,16 +65,31 @@ public class GfHash {
 		}
 		Map<Integer, String> byHash = new HashMap<>();
 		Map<String, Integer> byName = new HashMap<>();
-		//REFUSED, NOT EMPTY (F130): a table that was missing or that one row stopped read as "no
-		//native has a name", every hash printed bare, with a line on a console the build does not have
-		try (InputStream in = ctrmap.resources.ResourceAccess.getStream("oras_natives.tsv")) {
+		readTable(() -> ctrmap.resources.ResourceAccess.getStream("oras_natives.tsv"), byHash, byName);
+		NAME_BY_HASH = byHash;
+		HASH_BY_NAME = byName;
+	}
+
+	/** Where the native-name table's bytes come from, opened when it is read. */
+	public interface TableSource {
+
+		InputStream open() throws java.io.IOException;
+	}
+
+	/**
+	 * Reads the native-name table from {@code source} into the two maps, or throws saying it could not be read.
+	 * REFUSED, NOT EMPTY (F130): a table that was missing or that one row stopped read as "no native has a name", every
+	 * hash printed bare, with a line on a console the build does not have. Apart from ensureLoaded, which reads the
+	 * table built into the program, so a suite can hand it one that will not read (the 2026-10-15 shared sweep, GfHash
+	 * 73, drop-throw, SURVIVED: the built-in table always read).
+	 */
+	public static void readTable(TableSource source, Map<Integer, String> byHash, Map<String, Integer> byName) {
+		try (InputStream in = source.open()) {
 			read(new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8)), byHash, byName);
 		} catch (java.io.IOException ex) {
 			throw new IllegalStateException("The native-name table built into the program could not be read: "
 					+ ctrmap.util.Bytes.reason(ex), ex);
 		}
-		NAME_BY_HASH = byHash;
-		HASH_BY_NAME = byName;
 	}
 
 	/**

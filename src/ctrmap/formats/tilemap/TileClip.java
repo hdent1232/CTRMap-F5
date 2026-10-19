@@ -384,6 +384,7 @@ public final class TileClip {
 	 * region rect (closed bounds - boundary contact counts). Pass the tri's
 	 * plan-view points; collinearity is the caller's classification.
 	 */
+	@ctrmap.util.ForSuites("ORACLE: CompositeBuildTest decides with it which retail walls a composite build may cut, apart from the clipping the build does")
 	public static boolean segmentTouchesRegion(float[][] xz, List<float[]> rects) {
 		for (float[] r : rects) {
 			for (int i = 0; i < xz.length; i++) {

@@ -117,6 +117,7 @@ public class WorldAnim {
 		return -1;
 	}
 
+	@ctrmap.util.ForSuites("ORACLE: AnimSpliceTest's reading of an area animation file, which it holds a splice to: every other animation unchanged, the name tree rebuilt as retail's")
 	public List<String> animNames() {
 		List<String> out = new ArrayList<>();
 		for (int i = 0; i < animCount(); i++) {
@@ -162,6 +163,7 @@ public class WorldAnim {
 	 * targets, curve parameters, keyframe bytes - no absolute pointers), used to
 	 * prove that a splice leaves every other animation untouched.
 	 */
+	@ctrmap.util.ForSuites("ORACLE: AnimSpliceTest's reading of an area animation file, which it holds a splice to: every other animation unchanged, the name tree rebuilt as retail's")
 	public String describeAnim(int i) {
 		StringBuilder sb = new StringBuilder();
 		int a = animAt(i);
@@ -400,6 +402,7 @@ public class WorldAnim {
 	}
 
 	/** The retail bytes of this file's dict-9 tree (for the gold test). */
+	@ctrmap.util.ForSuites("ORACLE: AnimSpliceTest's reading of an area animation file, which it holds a splice to: every other animation unchanged, the name tree rebuilt as retail's")
 	public byte[] retailTreeBytes() {
 		int tree = contentsAddr + dict9Tree();
 		int n = (animCount() + 1) * 12;
@@ -407,6 +410,7 @@ public class WorldAnim {
 	}
 
 	/** Rebuilds this file's dict-9 tree from its name list (for the gold test). */
+	@ctrmap.util.ForSuites("ORACLE: AnimSpliceTest's reading of an area animation file, which it holds a splice to: every other animation unchanged, the name tree rebuilt as retail's")
 	public byte[] rebuiltTreeBytes() {
 		List<String> names = new ArrayList<>();
 		List<Integer> offs = new ArrayList<>();

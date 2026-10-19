@@ -29,6 +29,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 HERE = _tree_root.require(__file__)
 sys.path.insert(0, os.path.join(HERE, "tools", "guard"))
 import citations  # noqa: E402  - the guard under test
@@ -48,8 +49,8 @@ class ACitationACheckoutCannotOpenIsRefused(unittest.TestCase):
         root = os.path.join(base, "repo")
         os.makedirs(os.path.join(root, "tools", "guard"))
         os.makedirs(os.path.join(root, "docs"))
-        subprocess.run(["git", "init", "-q", root], capture_output=True, timeout=120,
-                       creationflags=NO_WINDOW)
+        bounded.run(["git", "init", "-q", root], capture_output=True, timeout=120,
+                    creationflags=NO_WINDOW)
         with io.open(os.path.join(root, "docs", "note.md"), "w", encoding="utf-8") as handle:
             handle.write("The evidence is in `%s`.%s" % (cited, LF))
         with io.open(citations.manifest_path(root), "w", encoding="utf-8") as handle:

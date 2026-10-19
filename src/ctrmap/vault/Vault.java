@@ -15,7 +15,6 @@ import java.io.OutputStream;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
@@ -253,6 +252,8 @@ public final class Vault {
 	 * reason - re-taking a snapshot against edited archives bakes the edits in
 	 * as "pristine".
 	 */
+	@ctrmap.util.NotAnEdit("it copies the dump into the vault once, as the record of the game as it shipped, and"
+		+ " never rewrites a sealed entry: a backup of the game's own files, nothing the user made")
 	public static SealResult seal(File dumpRoot, Scope scope, Progress progress) {
 		SealResult out = new SealResult();
 		DumpCheck.Result dc = DumpCheck.check(dumpRoot);
@@ -261,10 +262,17 @@ public final class Vault {
 		out.entry = entry;
 
 		if (isSealed(entry)) {
-			VaultManifest existing = VaultManifest.read(entry);
+			VaultManifest existing;
+			String why;
 			//ALREADY BACKED UP ONLY WHEN IT IS THIS DUMP'S (F121): the second of a version pair in a folder
 			//not named by its title was told it was backed up, by the first one's backup
-			String why = existing == null ? "The backup there cannot be read." : mismatch(existing, dumpRoot);
+			try {
+				existing = VaultManifest.read(entry);
+				why = existing == null ? "The backup there cannot be read." : mismatch(existing, dumpRoot);
+			} catch (IOException damaged) {
+				existing = null;
+				why = "The backup there cannot be read: " + ctrmap.util.Bytes.reason(damaged);
+			}
 			if (!why.isEmpty()) {
 				out.problem = "The vault holds a backup under that name, and it may not be this dump's:\n" + why
 						+ "\nThis dump has NOT been backed up, and the backup there was left as it is.";
@@ -331,6 +339,37 @@ public final class Vault {
 		}
 	}
 
+	/**
+	 * Where a file that lives BESIDE the dump folder - the decompressed code.bin a dump tool leaves next to it -
+	 * is kept in a backup: a name inside the backup's own tree (census M.37). It was keyed "../code.bin", so the
+	 * seal copied it one folder out of the backup's files, and a restore into any folder but the original wrote
+	 * an executable into that folder's PARENT, outside the folder the user named.
+	 */
+	public static final String BESIDE = "_beside_the_dump/";
+
+	/** The file {@code key} names for the dump at {@code dumpRoot}: one under {@link #BESIDE} is beside the folder. */
+	static File sourceOf(File dumpRoot, String key) {
+		return key.startsWith(BESIDE) ? new File(dumpRoot.getAbsoluteFile().getParentFile(), key.substring(BESIDE.length()))
+				: new File(dumpRoot, key);
+	}
+
+	/**
+	 * Why {@code key} cannot name a file inside a backup or the folder it is restored into - absolute, or with a
+	 * ".." segment - or null when it can. Asked on seal and on restore, so a manifest key never chooses a path
+	 * outside them (census M.37).
+	 */
+	public static String escapes(String key) {
+		if (key == null || key.isEmpty() || key.startsWith("/") || key.matches("^[A-Za-z]:.*")) {
+			return "\"" + key + "\" is not a path inside the folder";
+		}
+		for (String segment : key.split("/")) {
+			if (segment.equals("..")) {
+				return "\"" + key + "\" climbs out of the folder";
+			}
+		}
+		return null;
+	}
+
 	private static void sealRaw(File dumpRoot, File entry, List<String> rel, VaultManifest man,
 			Progress progress, SealResult out) throws IOException {
 		File filesDir = new File(entry, "files");
@@ -340,7 +379,10 @@ public final class Vault {
 				out.problem = "The backup was stopped before it finished.";
 				return;
 			}
-			File src = new File(dumpRoot, r);
+			if (escapes(r) != null) {
+				throw new IOException("Nothing more was sealed: " + escapes(r) + ".");
+			}
+			File src = sourceOf(dumpRoot, r);
 			File dst = new File(filesDir, r);
 			dst.getParentFile().mkdirs();
 			man.entries.put(r, copyAndDigest(src, dst));
@@ -361,7 +403,10 @@ public final class Vault {
 					out.problem = "The backup was stopped before it finished.";
 					return;
 				}
-				File src = new File(dumpRoot, r);
+				if (escapes(r) != null) {
+					throw new IOException("Nothing more was sealed: " + escapes(r) + ".");
+				}
+				File src = sourceOf(dumpRoot, r);
 				zos.putNextEntry(new ZipEntry(r));
 				man.entries.put(r, copyAndDigest(src, zos));
 				zos.closeEntry();
@@ -472,8 +517,8 @@ public final class Vault {
 				}
 			}
 			//the executable, because an IPS patch alters it and nothing else here would
-			for (String exe : new String[]{"code.bin", "exefs/code.bin", "../code.bin"}) {
-				File f = new File(dumpRoot, exe);
+			for (String exe : new String[]{"code.bin", "exefs/code.bin", BESIDE + "code.bin"}) {
+				File f = sourceOf(dumpRoot, exe);
 				if (f.isFile()) {
 					out.add(exe);
 				}
@@ -541,7 +586,13 @@ public final class Vault {
 	 */
 	public static List<Drift> verify(File entry, boolean deep) {
 		List<Drift> bad = new ArrayList<>();
-		VaultManifest man = VaultManifest.read(entry);
+		VaultManifest man;
+		try {
+			man = VaultManifest.read(entry);
+		} catch (IOException damaged) {
+			bad.add(new Drift("", ctrmap.util.Bytes.reason(damaged) + ", so nothing in this backup can be checked." + " Its files are still in " + entry + "."));
+			return bad;
+		}
 		if (man == null) {
 			bad.add(new Drift("", isInterrupted(entry)
 					? "this backup was never finished - it is missing its manifest, so nothing in it can be trusted"
@@ -616,9 +667,16 @@ public final class Vault {
 	 * away every edit made since. Returns an empty string on success, or why
 	 * not.
 	 */
+	@ctrmap.util.NotAnEdit("it puts one file of the game folder back as the game shipped it, from the sealed backup:"
+		+ " a repair of the packed output - the workspace keeps every edit, and the next pack writes them again")
 	public static String restoreOne(File entry, String relPath, File targetRoot) {
 		relPath = key(relPath);
-		VaultManifest man = VaultManifest.read(entry);
+		VaultManifest man;
+		try {
+			man = VaultManifest.read(entry);
+		} catch (IOException damaged) {
+			return ctrmap.util.Bytes.reason(damaged) + ", so nothing was restored from it." + " Its files are still in " + entry + ".";
+		}
 		if (man == null) {
 			return "There is no finished backup to restore from.";
 		}
@@ -627,6 +685,10 @@ public final class Vault {
 		String other = mismatch(man, targetRoot);
 		if (!other.isEmpty()) {
 			return "Nothing was restored: " + other;
+		}
+		String climbs = escapes(relPath);
+		if (climbs != null) {
+			return "Nothing was restored: " + climbs + ".";
 		}
 		File dst = new File(targetRoot, relPath);
 		//STAGED BESIDE THE GAME FILE AND CHECKED BEFORE IT REPLACES IT (F140): the backup's bytes were
@@ -655,9 +717,16 @@ public final class Vault {
 	 * "" when {@code into} holds exactly the sealed bytes, or why not - and then nothing is left at
 	 * {@code into}. Only from this dump's own backup (F121).
 	 */
+	@ctrmap.util.NotAnEdit("it copies one file of the sealed backup out, checked against its seal, for a reader"
+		+ " that needs the game as it shipped: the bytes are the retail game's own, and nothing the user made changes")
 	public static String verifiedCopy(File entry, File dumpRoot, String relPath, File into) {
 		relPath = key(relPath);
-		VaultManifest man = VaultManifest.read(entry);
+		VaultManifest man;
+		try {
+			man = VaultManifest.read(entry);
+		} catch (IOException damaged) {
+			return ctrmap.util.Bytes.reason(damaged) + ", so " + relPath + " cannot be read from it.";
+		}
 		if (man == null) {
 			return "There is no finished backup to read " + relPath + " from.";
 		}
@@ -729,7 +798,13 @@ public final class Vault {
 	 */
 	public static List<String> restoreAll(File entry, File targetRoot, Progress progress) {
 		List<String> bad = new ArrayList<>();
-		VaultManifest man = VaultManifest.read(entry);
+		VaultManifest man;
+		try {
+			man = VaultManifest.read(entry);
+		} catch (IOException damaged) {
+			bad.add(ctrmap.util.Bytes.reason(damaged) + ", so nothing was restored from it." + " Its files are still in " + entry + ".");
+			return bad;
+		}
 		if (man == null) {
 			bad.add("There is no finished backup to restore from.");
 			return bad;
@@ -771,31 +846,13 @@ public final class Vault {
 		}
 	}
 
-	/** Every sealed vault on this machine, newest first. Never null. */
-	public static List<VaultManifest> list() {
-		List<VaultManifest> out = new ArrayList<>();
-		File[] kids = root().listFiles();
-		if (kids == null) {
-			return out;
-		}
-		Map<Long, VaultManifest> byTime = new LinkedHashMap<>();
-		for (File k : kids) {
-			if (!k.isDirectory()) {
-				continue;
-			}
-			VaultManifest m = VaultManifest.read(k);
-			if (m != null) {
-				m.entryDir = k;
-				byTime.put(m.sealedAt, m);
-			}
-		}
-		out.addAll(byTime.values());
-		Collections.sort(out, new java.util.Comparator<VaultManifest>() {
-			@Override
-			public int compare(VaultManifest a, VaultManifest b) {
-				return Long.compare(b.sealedAt, a.sealedAt);
-			}
-		});
-		return out;
+	/**
+	 * The files the backup in {@code entry} holds, by the name a restore takes (census M.147), in the order
+	 * the manifest lists them; empty when there is no backup. A damaged manifest is thrown, naming it (M.144).
+	 */
+	public static List<String> heldFiles(File entry) throws IOException {
+		VaultManifest man = VaultManifest.read(entry);
+		return man == null ? new ArrayList<String>() : new ArrayList<>(man.entries.keySet());
 	}
+
 }

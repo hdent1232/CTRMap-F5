@@ -87,7 +87,7 @@ public class AreaTableTest {
 		System.out.println("--- a retail AreaData: 228 areas, then the per-area table");
 		GARC ad = open(ws, game, GameType.ORAS, 229);
 		int[] ids = ExtrasPanel.areaIds();
-		check(ZoneTables.areaTableIndex(ad) == 228 && ids.length == 228 && ids[227] == 227 && ZoneTables.areaCount(ad) == 228,
+		check(ZoneTables.areaTableIndex(ad) == 228 && ids.length == 228 && ids[227] == 227 && ZoneTables.areaIds(ad).length == 228,
 				"control: the table is entry 228 and the areas 0..227 (" + ids.length + " of them)");
 		check(ExtrasPanel.areaTableRows(ids) == 228 && ExtrasPanel.areaTableRowSize(10032, ExtrasPanel.areaTableRows(ids)) == 44,
 				"and the retail table's 10032 bytes are 228 rows of 44");
@@ -100,7 +100,7 @@ public class AreaTableTest {
 		check(ZoneTables.areaTableIndex(ad) == 228, "the table is still entry 228 - the old rule named entry 229, the forked area");
 		check(ids.length == 229 && ids[227] == 227 && ids[228] == 229 && Arrays.binarySearch(ids, 228) < 0,
 				"the areas are 0..227 and 229 - the forked one in, the table out (the old range was 0..228, the table in and the fork out)");
-		check(ZoneTables.areaCount(ad) == 229, "229 areas");
+		check(ZoneTables.areaIds(ad).length == 229, "229 areas");
 		//AreaForker.planFork grows the table to (newArea + 1) * AREA_ROW: a row per id, 228 a filler
 		long grown = (229 + 1) * (long) AreaForker.AREA_ROW;
 		int rows = ExtrasPanel.areaTableRows(ids);

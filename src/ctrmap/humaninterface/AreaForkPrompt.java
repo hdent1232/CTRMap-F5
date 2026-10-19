@@ -5,6 +5,7 @@ import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.zone.Zone;
 import java.awt.Component;
+import java.io.IOException;
 import javax.swing.JOptionPane;
 
 /**
@@ -46,11 +47,38 @@ public class AreaForkPrompt {
 	 * Its sibling {@link GeometryForker#ensurePrivate} returns the same shape.
 	 *
 	 * <p>{@code loaded} is the zone owner the caller was handed: the sharers
-	 * are named from its table, and a fork repoints its open zone's header.
+	 * are named from its table.
+	 *
+	 * <p>THE AREA IS THE ONE THE ZONE'S FILE NAMES (F255). It was handed in - the open zone's header, in memory -
+	 * while the sharers were read from the master table, so a zone whose open copy still said the area it had been
+	 * forked away from was answered "private" and handed that old, shared area to edit. And a fork no longer
+	 * repoints the open zone in memory: setting its header's id left its area container, the map view's prop
+	 * registry and the camera form on the old area, and edits went on into it. The open zone is read again instead
+	 * - by the caller once the fork is packed ({@code packIfForked(fork, reread)}), and by Undo and Redo of the fork.
+	 *
+	 * <p>KEPT (F209c): a fork asked for outside any change is a change of its own, handed to {@code ops}; one asked
+	 * for inside a change - the painter's Apply - is part of that change, and that change keeps it.
 	 */
-	public static AreaForker.ForkResult ensurePrivate(LoadedZone loaded, Component parent, int zoneIndex, int currentArea, String whatEdit) {
+	public static AreaForker.ForkResult ensurePrivate(LoadedZone loaded, Component parent, int zoneIndex, String whatEdit,
+			SaveHistory ops, Runnable reread) {
 		if (loaded == null) {
 			throw new IllegalArgumentException("AreaForkPrompt.ensurePrivate must be handed the LoadedZone");
+		}
+		if (ops == null || reread == null) {
+			throw new IllegalArgumentException("an area fork must be handed the history that keeps it and what reads the"
+					+ " zone again");
+		}
+		if (!Workspace.isValid()) {
+			ctrmap.Ui.error(parent, "Load a workspace first (Options > Workspace settings).", "Shared area");
+			return null;
+		}
+		int currentArea;
+		try {
+			currentArea = AreaForker.currentArea(zoneIndex);
+		} catch (IOException | RuntimeException unread) {
+			ctrmap.Ui.error(parent, "Could not read which area zone " + zoneIndex + " is on:\n" + ctrmap.Ui.reason(unread)
+					+ "\n\nNothing was changed.", "Shared area");
+			return null;
 		}
 		//Ask whether THIS GAME can fork an area, not whether it is ORAS. The
 		//prompt is an offer, so an unsupported game must not be offered it:
@@ -58,9 +86,7 @@ public class AreaForkPrompt {
 		//per-area table rewrite were all measured on ORAS, and which refuses
 		//outright for anything else. Offering a button that can only produce a
 		//refusal is worse than not offering it.
-		if (!Workspace.isValid()
-				|| !Workspace.profile().supports(ctrmap.gamedef.GameProfile.Feature.AREA_FORK)
-				|| zoneIndex < 0) {
+		if (!Workspace.profile().supports(ctrmap.gamedef.GameProfile.Feature.AREA_FORK)) {
 			return unforked(zoneIndex, currentArea);
 		}
 		int sharers;
@@ -96,13 +122,7 @@ public class AreaForkPrompt {
 			return unforked(zoneIndex, currentArea); //deliberate game-wide edit
 		}
 		try {
-			AreaForker.ForkResult r = AreaForker.forkArea(zoneIndex);
-			//keep the loaded zone's live header coherent with what we just wrote
-			Zone open = loaded.open();
-			if (open != null && open.header != null && loaded.index() == zoneIndex) {
-				open.header.areadataID = r.newArea;
-			}
-			return r;
+			return fork(zoneIndex, ops, reread);
 		} catch (Exception ex) {
 			ctrmap.Ui.error(parent,
 					"Could not give this zone its own area:\n" + ctrmap.Ui.reason(ex)
@@ -112,7 +132,26 @@ public class AreaForkPrompt {
 		}
 	}
 
-	/** "Edit this area as it is": the id the caller came in with, nothing appended. */
+	/**
+	 * Gives zone {@code zoneIndex} its own area: a change of its own kept in {@code ops}, Undo and Redo reading the
+	 * zone again - or, asked inside a change, part of that one.
+	 */
+	private static AreaForker.ForkResult fork(int zoneIndex, SaveHistory ops, Runnable reread) throws IOException {
+		boolean partOfAnother = ctrmap.WorkspaceUnit.current() != null;
+		try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Give zone " + zoneIndex + " its own area",
+				Workspace.session())) {
+			AreaForker.ForkResult r = AreaForker.forkArea(zoneIndex);
+			if (partOfAnother) {
+				unit.commit();   //joined: the change it is part of keeps it
+				return r;
+			}
+			ctrmap.WorkspaceUnit.inMemory(reread, reread);
+			ops.keep(unit.commitKeeping());
+			return r;
+		}
+	}
+
+	/** "Edit this area as it is": the id the zone's file names, nothing appended. */
 	private static AreaForker.ForkResult unforked(int zoneIndex, int area) {
 		AreaForker.ForkResult r = new AreaForker.ForkResult();
 		r.zoneIndex = zoneIndex;

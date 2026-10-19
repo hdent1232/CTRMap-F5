@@ -103,7 +103,9 @@ public class MainframeShapeTest {
 	/** What a screen reader calls each tool, in row order. */
 	private static final String[] TOOL_NAMES = {"Edit", "Set", "Fill", "Camera", "Prop", "NPC", "Warp", "Trigger", "Map Builder", "Geometry"};
 
-	private static final String EXPECTED_MAP_ROW = "label: Map:   button:Blank canvas button:Resize map button:Fog & lighting button:Encounters button:Make independent";
+	/** The Blender round trip joined the row (census M.146): it was in the Map menu and nowhere else. */
+	private static final String EXPECTED_MAP_ROW = "label: Map:   button:Blank canvas button:Resize map button:Fog & lighting button:Encounters button:Make independent"
+			+ " button:Import model button:Export OBJ button:Import OBJ";
 	private static final String EXPECTED_ZONE_ROW = "label: Zone actions:   button:Connect zones button:Rename button:Empty button:Find reusable zones button:Remove added zones button:Custom battle facility";
 	private static final String EXPECTED_EXTRAS_ROW = "button:Raw archive browser (Builder) button:Tileset editor button:Workspace & paths";
 
@@ -180,6 +182,20 @@ public class MainframeShapeTest {
 				+ ". Drop what the view shows, or record why it keeps it in CLEAR_KEEPS"));
 	}
 
+	/** A click on {@code caption}, as its mouse listeners take one: "" or what it threw. */
+	static String clickCaption(javax.swing.JLabel caption) {
+		try {
+			java.awt.event.MouseEvent click = new java.awt.event.MouseEvent(caption, java.awt.event.MouseEvent.MOUSE_CLICKED,
+					0, 0, 1, 1, 1, false);
+			for (java.awt.event.MouseListener l : caption.getMouseListeners()) {
+				l.mouseClicked(click);
+			}
+			return "";
+		} catch (RuntimeException threw) {
+			return " - threw " + threw;
+		}
+	}
+
 	static void check(boolean cond, String what) {
 		if (!cond) {
 			System.out.println("  FAIL: " + what);
@@ -207,6 +223,8 @@ public class MainframeShapeTest {
 		menuWired(bar);
 		menuTooltips(bar);
 		theAreaActionsAreDeclaredOnce(bar);
+		noFeatureLivesOnlyInAMenu(bar);
+		everyFileDialogRemembersItsFolder();
 		toolRow();
 		actionRow("map-actions", TestWindow.buildMapActionsBar(), EXPECTED_MAP_ROW);
 		actionRow("Zone Loader", TestWindow.buildZoneActionsBar(), EXPECTED_ZONE_ROW);
@@ -292,6 +310,7 @@ public class MainframeShapeTest {
 		//an exact 'items == 35' beside them was a third copy that had to be edited by hand (F158)
 
 		theZoneLoaderTabHoldsItsPreview();
+		theZoneColumnUndoesTheWorkspacesOperations();
 		browsingAZoneDoesNotLoadIt();
 		theExtrasTabHoldsTheArchiveBrowser();
 		theGameDataTabHoldsItsEditors();
@@ -408,12 +427,91 @@ public class MainframeShapeTest {
 	}
 
 	/**
+	 * The menu items that are not area actions - not drawn as a button on their area's row - each with why the
+	 * menu is where it belongs (census M.146). The Blender round trip was four Map-menu items and nothing else: the
+	 * way to bring a map or a collision in from Blender was found only in a menu named after another part of the
+	 * window. A new menu item is either an area action or argued here; one listed here that is gone is a stale
+	 * argument and fails too.
+	 */
+	private static final String[][] MENU_AT_HOME = {
+		{"Open GR Mapfile", "opens a file from disk, which is what the File menu is for"},
+		{"Open MapMatrix", "opens a file from disk"},
+		{"Open Zone", "opens a file from disk"},
+		{"Save", "saves everything open at once - the window's own command, on Ctrl+S"},
+		{"Pack Workspace", "acts on the whole workspace, not on one area of the window"},
+		{"Deploy to emulator (mod)...", "acts on the whole workspace, on Ctrl+D"},
+		{"Map Builder (this zone)", "picks the World Editor's paint tool, which is a button on the tool row itself"},
+		{"Tileset Editor", "opens its editor in the Extras tab, where a seldom-used tool lives"},
+		{"Edit trainer (party/battle)...", "opens its editor in the Game Data tab, which lists it"},
+		{"Edit battle facility opponents...", "opens its editor in the Game Data tab, which lists it"},
+		{"Edit shop inventories (Marts)...", "opens its editor in the Game Data tab, which lists it"},
+		{"Edit items (price, effects, name)...", "opens its editor in the Game Data tab, which lists it"},
+		{"Setup wizard...", "sets the program up, which is what Options is for"},
+		{"Workspace settings", "sets the program up"},
+		{"Restore from pristine backup...", "acts on the whole game folder, from the program's own backup"},
+		{"Clean workspace", "acts on the whole workspace"},
+		{"Quick start guide", "help about the program itself"},
+		{"Check for updates...", "about the program itself"},
+		{"Support/Issue tracker", "about the program itself"},
+		{"About", "about the program itself"},
+	};
+
+	/**
+	 * Every file dialog the window opens is made by the helpers that remember its folder (census L.31). The .bch
+	 * import wrote the memory out again under a key of its own, and the OBJ round trip, the code.ips pick and the mod
+	 * folder remembered nothing - the workflow that navigates most started from the default every time.
+	 */
+	static void everyFileDialogRemembersItsFolder() throws Exception {
+		System.out.println("--- every file dialog in the window remembers its folder (census L.31)");
+		String src = SourceSeamTest.stripComments(new String(Files.readAllBytes(new File("src/ctrmap/CtrmapMainframe.java").toPath()),
+				StandardCharsets.UTF_8));
+		String rest = src;
+		for (String helper : new String[]{"private static JFileChooser openDialog(", "private static JFileChooser folderDialog(",
+			"private static Preferences fileDialogPrefs("}) {
+			String body = CollisionReadTest.body(src, helper);
+			check(body != null, "control: " + helper + " is found");
+			rest = body == null ? rest : rest.replace(body, "");
+		}
+		int choosers = rest.split("new JFileChooser\\(", -1).length - 1;
+		int nodes = rest.split("Preferences\\.userRoot\\(\\)", -1).length - 1;
+		check(choosers == 0 && nodes == 0, "the window makes a file dialog and reaches its preferences only through the helpers"
+				+ " (" + choosers + " chooser(s) and " + nodes + " node(s) elsewhere)");
+	}
+
+	/**
 	 * Every Map and Zone action is declared once and drawn from that declaration (F223). The menus
 	 * and the two area rows were hand-written twice: the comments counting them were wrong both
 	 * ways, the battle facility was two modes on the bar and one in the menu, and nothing compared
 	 * them. Now every button on the Map and Zone rows must be a {@code CtrmapMainframe.AreaAction},
 	 * and every one of those must be on exactly one menu item and one button.
 	 */
+	static void noFeatureLivesOnlyInAMenu(JMenuBar menus) {
+		System.out.println("--- no feature lives only in a menu (census M.146)");
+		java.util.Map<String, String> atHome = new java.util.LinkedHashMap<>();
+		for (String[] row : MENU_AT_HOME) {
+			atHome.put(row[0], row[1]);
+		}
+		List<String> unargued = new ArrayList<>();
+		java.util.Set<String> seen = new java.util.HashSet<>();
+		int areaItems = 0;
+		for (JMenuItem it : items(menus)) {
+			if (it.getClientProperty(TestWindow.AREA_ACTION) != null) {
+				areaItems++;
+				continue;
+			}
+			seen.add(it.getText());
+			if (!atHome.containsKey(it.getText())) {
+				unargued.add(it.getText());
+			}
+		}
+		List<String> stale = new ArrayList<>(atHome.keySet());
+		stale.removeAll(seen);
+		check(areaItems > 0 && !seen.isEmpty(), "control: the menus hold " + areaItems + " area actions and " + seen.size() + " other items");
+		check(unargued.isEmpty(), "every menu item is an area action - a button on its area's row too - or argued as"
+				+ " belonging in a menu" + (unargued.isEmpty() ? "" : " - these are in a menu and nowhere else: " + unargued));
+		check(stale.isEmpty(), "and every argument names an item that is still there" + (stale.isEmpty() ? "" : " - gone: " + stale));
+	}
+
 	static void theAreaActionsAreDeclaredOnce(JMenuBar menus) {
 		System.out.println("--- every Map and Zone action is declared once, in a menu and on its row (F223)");
 		Map<Object, Integer> inMenus = new java.util.LinkedHashMap<>();
@@ -426,7 +524,9 @@ public class MainframeShapeTest {
 		}
 		List<String> handWritten = new ArrayList<>();
 		int buttons = 0;
-		for (JToolBar row : new JToolBar[]{TestWindow.buildMapActionsBar(), TestWindow.buildZoneActionsBar()}) {
+		//the Collision row too (census M.146): OBJ to collisions was a menu item and nothing else
+		for (JToolBar row : new JToolBar[]{TestWindow.buildMapActionsBar(), TestWindow.buildZoneActionsBar(),
+				TestWindow.buildCollisionActionsBar()}) {
 			for (Component c : row.getComponents()) {
 				if (!(c instanceof AbstractButton)) {
 					continue;
@@ -476,13 +576,22 @@ public class MainframeShapeTest {
 		java.awt.LayoutManager lay = tab.getLayout();
 		Component east = lay instanceof java.awt.BorderLayout
 			? ((java.awt.BorderLayout) lay).getLayoutComponent(java.awt.BorderLayout.EAST) : null;
-		//the column can show a zone tool over the browser, so look INSIDE it
+		//the column can show a zone tool over the browser, and sits over the workspace's Undo and Redo (F209c), so
+		//look INSIDE it - the column, then what it holds
 		ctrmap.humaninterface.ZoneBrowserPane found = null;
-		for (Component c : east instanceof java.awt.Container
-			? ((java.awt.Container) east).getComponents() : new Component[0]) {
-			if (c instanceof ctrmap.humaninterface.ZoneBrowserPane) {
-				found = (ctrmap.humaninterface.ZoneBrowserPane) c;
+		java.util.List<Component> look = new java.util.ArrayList<>();
+		look.add(east);
+		for (int depth = 0; depth < 2 && found == null; depth++) {
+			java.util.List<Component> next = new java.util.ArrayList<>();
+			for (Component in : look) {
+				for (Component c : in instanceof java.awt.Container ? ((java.awt.Container) in).getComponents() : new Component[0]) {
+					if (c instanceof ctrmap.humaninterface.ZoneBrowserPane) {
+						found = (ctrmap.humaninterface.ZoneBrowserPane) c;
+					}
+					next.add(c);
+				}
 			}
+			look = next;
 		}
 		check(found != null,
 			"the zone BROWSER is IN the Zone Loader tab, beside the zone panel - not in a"
@@ -498,6 +607,56 @@ public class MainframeShapeTest {
 		}
 		check(deep, "and it is a child of the tab, so it is on screen when the tab is");
 	}
+	/**
+	 * Ctrl+Z in the zone column goes to the workspace's history, and that history takes a kept change back and puts it
+	 * again (F209c). The window's structural operations - forks, clones, renames, removals, imports, resizes, Connect
+	 * zones - are kept there; with the column owned by any other history, or by none, Ctrl+Z beside the zone list
+	 * would take back an NPC move instead, or nothing.
+	 */
+	static void theZoneColumnUndoesTheWorkspacesOperations() {
+		System.out.println("--- Ctrl+Z in the zone column takes back the workspace's last operation (F209c)");
+		java.awt.Container tab = TestWindow.buildZoneTab(new javax.swing.JPanel(), new ctrmap.LoadedZone(),
+				new ctrmap.humaninterface.tools.ToolSelection());
+		Component east = ((java.awt.BorderLayout) tab.getLayout()).getLayoutComponent(java.awt.BorderLayout.EAST);
+		ctrmap.CtrmapMainframe window = TestWindow.W;
+		//ASKED OF ITS GETTER: the history is made when first asked for, so the field is empty in a window that never
+		//asked - which made this control the only thing that failed when the column was taken out of the history
+		ctrmap.humaninterface.SaveHistory ops = null;
+		try {
+			java.lang.reflect.Method getter = ctrmap.CtrmapMainframe.class.getDeclaredMethod("workspaceOps");
+			getter.setAccessible(true);
+			ops = window == null ? null : (ctrmap.humaninterface.SaveHistory) getter.invoke(window);
+		} catch (ReflectiveOperationException notAsked) {
+			System.out.println("  the window's workspaceOps() could not be asked: " + notAsked);
+		}
+		check(window != null && ops != null, "control: the window built the zone tab and holds the workspace's history");
+		Component leaf = east;
+		while (leaf instanceof java.awt.Container && ((java.awt.Container) leaf).getComponentCount() > 0) {
+			leaf = ((java.awt.Container) leaf).getComponent(0);
+		}
+		check(leaf != east && ctrmap.humaninterface.UndoHistory.of(leaf, null) == ops.history(),
+				"the zone column's Ctrl+Z goes to the workspace's history (from a " + leaf.getClass().getSimpleName() + ")");
+		String back;
+		String again;
+		try {
+			File f = File.createTempFile("ctrmap_workspace_op", ".bin");
+			f.deleteOnExit();
+			Files.write(f.toPath(), "before".getBytes(StandardCharsets.US_ASCII));
+			try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Test operation", null)) {
+				ctrmap.WorkspaceUnit.write(f, "after".getBytes(StandardCharsets.US_ASCII));
+				ops.keep(unit.commitKeeping());
+			}
+			ops.history().undo();
+			back = new String(Files.readAllBytes(f.toPath()), StandardCharsets.US_ASCII);
+			ops.history().redo();
+			again = new String(Files.readAllBytes(f.toPath()), StandardCharsets.US_ASCII);
+		} catch (java.io.IOException cannot) {
+			back = again = "the check's own file could not be written: " + cannot;
+		}
+		check(back.equals("before") && again.equals("after"),
+				"and its Undo takes a kept operation back and Redo puts it again (" + back + ", " + again + ")");
+	}
+
 	/**
 	 * The Extras tab contains the raw archive browser, rather than a button that opens
 	 * it in a window.
@@ -732,6 +891,7 @@ public class MainframeShapeTest {
 		{"TESTING.md", "ON", "a checkbox ticked, then the painter's Apply button"},
 		{"TESTING.md", "OFF", "a checkbox cleared, then what to expect"},
 		{"TESTING.md", "Apply", "the painter's Apply button, then the step after it"},
+		{"TESTING.md", "Add", "the NPC tool's Add button, then the template its list offers (NPCEditForm's templates)"},
 	};
 
 	/**
@@ -864,6 +1024,36 @@ public class MainframeShapeTest {
 		}
 		check(npcU10, "control: the NPC form's generated 'U10' caption is read as raw bytes");
 		check(showing.isEmpty(), "every label captioned as raw bytes is folded by Forms.unknownField or captioned again: " + showing);
+		//handed no fields to fold (the 2026-10-14 shared sweep, Forms 206, drop-throw, SURVIVED: every caller hands some)
+		String foldsNothing = "(nothing was thrown)";
+		try {
+			ctrmap.humaninterface.Forms.unknownField(new javax.swing.JLabel("U10"), "U10", "a byte nobody has named");
+		} catch (IllegalArgumentException refused) {
+			foldsNothing = refused.getMessage();
+		}
+		check("'U10' must be handed the fields it folds".equals(foldsNothing),
+				"a raw-bytes caption handed no fields to fold is refused, naming it: " + foldsNothing);
+		//a click on the caption shows its fields, and lays out the panel it sits in when it sits in one (the
+		//2026-10-14 shared sweep, Forms 225, negate-if, SURVIVED: no suite clicked one) - every answer read
+		final int[] laidOut = {0};
+		javax.swing.JPanel holder = new javax.swing.JPanel() {
+			@Override
+			public void revalidate() {
+				laidOut[0]++;
+				super.revalidate();
+			}
+		};
+		javax.swing.JLabel inPanel = new javax.swing.JLabel(), alone = new javax.swing.JLabel();
+		javax.swing.JTextField shown = new javax.swing.JTextField(), loose = new javax.swing.JTextField();
+		holder.add(inPanel);
+		ctrmap.humaninterface.Forms.unknownField(inPanel, "U10", "a byte nobody has named", shown);
+		ctrmap.humaninterface.Forms.unknownField(alone, "U11", "another", loose);
+		laidOut[0] = 0;
+		String clicked = clickCaption(inPanel) + clickCaption(alone);
+		check(clicked.isEmpty() && shown.isVisible() && loose.isVisible() && laidOut[0] > 0
+				&& inPanel.getText().equals("[-] U10") && alone.getText().equals("[-] U11"),
+				"a click shows the caption's fields and lays out its panel, and one with no panel throws nothing: laid out "
+				+ laidOut[0] + " time(s), \"" + inPanel.getText() + "\", \"" + alone.getText() + "\"" + clicked);
 
 		Pattern decl = Pattern.compile("(?m)^\\s*(?:(?:public|private|protected|static|final|transient)\\s+)*"
 				+ "(?:int|long|short|byte|boolean|float|double|byte\\[\\]|int\\[\\]|short\\[\\])\\s+"
@@ -1553,7 +1743,8 @@ public class MainframeShapeTest {
 		File panel = new File(mainframe.getParentFile(), "TileMapPanel.java");
 		String placing = panel.isFile() ? SourceSeamTest.stripComments(
 				new String(Files.readAllBytes(panel.toPath()), StandardCharsets.UTF_8)) : "";
-		int loose = placing.indexOf("models[0][0] = new BCHFile(file.getFile(1));");
+		//the loose load hands its grids to the setter that retires the ones they replace (census M.95, M.96)
+		int loose = placing.indexOf("setRegionModels(new BCHFile[][]{{new BCHFile(file.getFile(1))}},");
 		int looseEnd = loose < 0 ? -1 : placing.indexOf("scene.frameSingleRegion();", loose);
 		check(singleBody.contains("translateX = 0f;") && looseEnd > loose
 				&& !placing.substring(loose, looseEnd).contains("worldLocX"),
@@ -1693,7 +1884,7 @@ public class MainframeShapeTest {
 						@Override
 						public void resync() {
 						}
-					}, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+					}, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		} catch (Throwable cannotBuild) {
 			check(false, "a real ZoneLoadingPanel can be built headlessly: " + cannotBuild);
 			return;

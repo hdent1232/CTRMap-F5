@@ -119,6 +119,7 @@ public class BatteryHygieneTest {
 		}
 		thePublishInstructionCannotSilentlySkipTheTag(repo);
 		onlyTheProgramsEntryPointsShip(repo, root);
+		noSuiteRunsAProgramThatCanEndIt(root);
 		theFeatureTableIsWhatTheProfilesSay(repo);
 		theIdeBuildsWhereTheScriptsDoNot(repo, root);
 		noRecordFieldIsCutUnsaid(repo);
@@ -135,6 +136,48 @@ public class BatteryHygieneTest {
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	/** {@code Name.main(} calls in a test source, outside strings and comments: the program entry points it runs. */
+	static List<String> mainsCalled(String body) {
+		String code = body.replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("//[^\\n]*", " ")
+			.replaceAll("\"(?:[^\"\\\\]|\\\\.)*\"", "\"\"");
+		List<String> out = new ArrayList<>();
+		Matcher m = Pattern.compile("\\b([A-Z][A-Za-z0-9_]*)\\s*\\.\\s*main\\s*\\(").matcher(code);
+		while (m.find()) {
+			out.add(m.group(1));
+		}
+		return out;
+	}
+
+	/**
+	 * NO SUITE RUNS A PROGRAM'S {@code main}: a program may end the JVM, and the JVM is the suite's.
+	 *
+	 * <p>MEASURED 2026-10-10. HarvesterGuardsTest called {@code BuildingHarvester.main}, whose
+	 * refusal of its arguments is {@code System.exit(1)}. With that refusal turned on by a plant the
+	 * suite's process ended mid-run: red, with no FAIL line and no summary, so the pricing drive could
+	 * only say the plant "never said" what it watches for. A tool hands a suite its status through
+	 * a method that RETURNS it ({@code BuildingHarvester.run}); {@code main} only passes it to the JVM.
+	 */
+	static void noSuiteRunsAProgramThatCanEndIt(File srcRoot) throws Exception {
+		System.out.println("--- no suite runs a program's main, which may end the suite's own process");
+		String known = "int s = Tool.main(new String[0]); // Other.main(x)\n String t = \"Q.main(\";";
+		check(mainsCalled(known).equals(java.util.Arrays.asList("Tool")), "control: a call to a program's main is"
+			+ " seen, and one in a comment or a string is not: " + mainsCalled(known));
+		File[] files = new File(srcRoot, "ctrmap/tests").listFiles((d, n) -> n.endsWith(".java"));
+		check(files != null && files.length > 0, "control: the suites were listed");
+		if (files == null) {
+			return;
+		}
+		//A SUITE'S main IS A PROGRAM TOO: it ends the JVM on a failure, so no name is exempt
+		List<String> found = new ArrayList<>();
+		for (File f : files) {
+			for (String called : mainsCalled(new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8))) {
+				found.add(f.getName() + " runs " + called + ".main");
+			}
+		}
+		check(found.isEmpty(), "no suite runs a program's main - call the method that returns its status"
+			+ (found.isEmpty() ? "" : ": " + found));
 	}
 
 	/**
@@ -203,7 +246,11 @@ public class BatteryHygieneTest {
 			+ "    TimeoutExpired = Exception\n"
 			+ "    def run(self, cmd, **kw):\n"
 			+ "        return Done('' if cmd and cmd[0] == 'git' else text)\n"
-			+ "m.subprocess = FakeSub()\n"
+			// THE CALL record_run MAKES: it runs the battery through bounded.run. A stand-in for its
+			// subprocess caught nothing once the deadline moved, and record_run started the REAL battery
+			// from inside this suite, which did the same - 302 processes on 2026-10-11 (test.ps1 now
+			// refuses a second battery while one runs)
+			+ "m.bounded = FakeSub()\n"
 			// main(), NOT just run(). The first version of this drove run() alone and a
 			// NameError in main() - one level up, same edit, same afternoon - still cost a
 			// full battery to find. main() is where the record is written, the magnitude
@@ -699,31 +746,41 @@ public class BatteryHygieneTest {
 		check(!code.contains("--follow-tags"),
 			"the publish instruction does not lean on --follow-tags, which skips a lightweight"
 			+ " tag without a word");
-		check(body.contains("git push origin master v$Version"),
-			"...it names the tag in the push instead");
 
-		// ONE instruction. Two copies drift, and the drifted one is the one somebody reads.
-		int pushes = 0;
-		for (String line : body.split("\n")) {
-			if (line.contains("git push") && !line.trim().startsWith("#")) {
-				pushes++;
+		// ONE instruction, and since 2026-10-12 it is tools/release_channel.py's, which decides core or nightly:
+		// the packager prints what the tool says, handed the version and BOTH builds it made, and says no push or
+		// release of its own for a copy to drift from.
+		int own = 0;
+		for (String line : code.split("\n")) {
+			if (line.contains("git push") || line.contains("gh release create")) {
+				own++;
 			}
 		}
-		check(pushes == 1, "and there is exactly ONE push instruction in the file, not a copy"
-			+ " in the header to drift from it (found " + pushes + ")");
-
-		// AND BOTH BUILDS. Updater.Flavour picks its download by asset-name suffix, so a
-		// release carrying one zip offers nothing at all to users who installed the other way.
-		int releases = 0;
-		for (String line : body.split("\n")) {
-			if (line.contains("gh release create") && !line.trim().startsWith("#")) {
-				releases++;
-				check(line.contains("$winZip") && line.contains("$zip"),
-					"the release command carries BOTH builds, named from the variables that"
-					+ " made them");
-			}
-		}
-		check(releases == 1, "and there is exactly one release command (found " + releases + ")");
+		check(own == 0, "the packager says no push or release of its own, only the channel tool's (found " + own + ")");
+		check(code.contains("tools\\release_channel.py\") $Version $winZip $zip"),
+			"...and hands the channel tool the version and both builds it made");
+		// ASKED OF WHAT IT PRINTS, for each channel. A core version names the tag in the push to master and is a
+		// full release - the one every copy's updater is offered; a nightly goes to the nightly branch as a
+		// PRE-release, which GitHub never returns as releases/latest, so no updater is offered it; anything else
+		// is refused rather than published as one of the two.
+		List<String> core = channelSays(repo, "1.0.4");
+		check(core.contains("git push origin master v1.0.4") && core.contains("exit=0"),
+			"a core version names its tag in the push to master: " + core);
+		check(core.toString().contains("gh release create v1.0.4 W.zip P.zip") && !core.toString().contains("--prerelease"),
+			"...and is a full release carrying BOTH builds, which every copy's updater is offered: " + core);
+		List<String> nightly = channelSays(repo, "1.0.3-nightly.1");
+		check(nightly.contains("git push origin HEAD:refs/heads/nightly v1.0.3-nightly.1") && nightly.contains("exit=0"),
+			"a nightly names its tag in the push to the nightly branch, never master: " + nightly);
+		check(nightly.toString().contains("gh release create v1.0.3-nightly.1 W.zip P.zip")
+				&& nightly.toString().contains("--prerelease"),
+			"...and is a PRE-release carrying both builds, which no copy's updater is offered: " + nightly);
+		check(!core.toString().contains("--follow-tags") && !nightly.toString().contains("--follow-tags"),
+			"and neither channel's push leans on --follow-tags - asked of what the tool prints, not of its prose");
+		List<String> neither = channelSays(repo, "1.0.4-beta");
+		check(neither.contains("exit=2") && !neither.toString().contains("gh release create"),
+			"a version neither core nor nightly is refused, not published as either: " + neither);
+		check(code.contains("--app-version $appVersion") && code.contains("$appVersion = $Version -replace '-.*$', ''"),
+			"and jpackage is handed the version's numbers only, which is all it takes on Windows");
 
 		// The suffixes are the contract between packager and updater. If either side renames,
 		// this says so rather than letting a release publish assets nobody can select.
@@ -736,6 +793,23 @@ public class BatteryHygieneTest {
 				"and the updater still selects on those same two, or the packager is naming"
 				+ " files nothing will download");
 		}
+	}
+
+	/** What tools/release_channel.py prints for {@code version} and two stand-in builds, its exit code last. */
+	static List<String> channelSays(File repo, String version) throws Exception {
+		ProcessBuilder pb = new ProcessBuilder("python", "-B", new File(repo, "tools/release_channel.py").getAbsolutePath(),
+				version, "W.zip", "P.zip");
+		pb.redirectErrorStream(true);
+		Process p = pb.start();
+		List<String> out = new ArrayList<>();
+		try (java.io.BufferedReader r = new java.io.BufferedReader(
+				new java.io.InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
+			for (String line = r.readLine(); line != null; line = r.readLine()) {
+				out.add(line.trim());
+			}
+		}
+		out.add(p.waitFor(120, java.util.concurrent.TimeUnit.SECONDS) ? "exit=" + p.exitValue() : "exit=hung");
+		return out;
 	}
 
 	/**
@@ -1399,56 +1473,46 @@ public class BatteryHygieneTest {
 		Scratch.deleteTree(dir);
 	}
 
-	/** The commit a test world says it was built from. */
-	static final Pattern BUILT_FROM = Pattern.compile("[Bb]uilt by hand from commit ([0-9a-f]{7,40})");
+	/** The script that builds the in-game test world, which both docs must name. */
+	static final String WORLD_LAUNCHER = "testworld.ps1";
+
+	/** What the docs said of the world while it was a hand-built one packed into a game: stale now, refused. */
+	static final String[] HAND_BUILT = {"built by hand from commit", "packed into your game data",
+		"packed into the owner's game data", "nothing rebuilds it"};
 
 	/**
-	 * The in-game test world says which code it checks, and the checklist that sends the owner to it says
-	 * the same (F138). TESTING.md sent them to walk a world "packed into your game data" first, built by
-	 * hand once on 2026-08-30 with nothing in the tree able to rebuild it - and 518 of the 642 commits came
-	 * after it, 87 in the subsystems its symptom table isolates. Walking it tested that commit's output.
+	 * The in-game test world is a build product, and the docs that send the owner to it say so (F138).
+	 * TESTING.md sent them to walk a world "packed into your game data" first, built by hand once on 2026-08-30
+	 * with nothing in the tree able to rebuild it - and 518 of the 642 commits came after it, 87 in the
+	 * subsystems its symptom table isolates. Now {@link TestWorldBuilder} builds it, the build's own stamp
+	 * names the commit, and TestWorldBuildTest builds and reads one back every battery: the docs must name the
+	 * builder and the stamp, and must not say what was true of the hand-built world.
 	 */
 	static void theTestWorldSaysWhichCodeItChecks(File repo) throws Exception {
-		System.out.println("--- the in-game test world says which commit it was built from (F138)");
+		System.out.println("--- the in-game test world is built, and the docs say by what and where it says which commit (F138)");
 		String zone = quoteless(new File(repo, "TESTZONE.md")), testing = quoteless(new File(repo, "TESTING.md"));
-		java.util.regex.Matcher built = BUILT_FROM.matcher(zone);
-		check(built.find(), "TESTZONE.md says which commit the test world was built by hand from");
-		if (!built.find(0)) {
-			return;
+		check(zone.contains(WORLD_LAUNCHER) && zone.contains("`BUILT.txt` names the commit"),
+				"TESTZONE.md says " + WORLD_LAUNCHER + " builds the world and that its BUILT.txt names the commit");
+		check(testing.contains(WORLD_LAUNCHER), "and TESTING.md, which sends the owner there first, names the same builder");
+		List<String> stale = new ArrayList<>();
+		for (String phrase : HAND_BUILT) {
+			if (zone.contains(phrase)) {
+				stale.add("TESTZONE.md: " + phrase);
+			}
+			if (testing.contains(phrase)) {
+				stale.add("TESTING.md: " + phrase);
+			}
 		}
-		String hash = built.group(1);
-		check(testing.contains("built by hand from commit " + hash), "and TESTING.md, which sends the owner there"
-				+ " first, says the same commit (" + hash + ")");
-		Process git;
-		try {
-			git = new ProcessBuilder("git", "cat-file", "-e", hash + "^{commit}").directory(repo).redirectErrorStream(true).start();
-		} catch (java.io.IOException noGit) {
-			Skip.section("git cannot be started, so whether commit " + hash + " exists was NOT checked");
-			return;
-		}
-		drainQuietly(git);
-		int code = git.waitFor();
-		boolean isRepo = new File(repo, ".git").exists();
-		if (!isRepo) {
-			Skip.section("this copy is not a git repository, so whether commit " + hash + " exists was NOT checked");
-			return;
-		}
-		check(code == 0, "and that commit is in this repository's history (git cat-file exit " + code + ")");
+		check(stale.isEmpty(), "neither says the world is a hand-built one packed into a game" + (stale.isEmpty() ? "" : ": " + stale));
+		File launcher = new File(repo, WORLD_LAUNCHER);
+		check(launcher.isFile() && new String(Files.readAllBytes(launcher.toPath()), StandardCharsets.UTF_8)
+				.contains("ctrmap.tests.TestWorldBuilder"), WORLD_LAUNCHER + " is here and runs the builder");
 	}
 
 	/** A markdown file's text with its quote markers and line breaks folded into single spaces. */
 	static String quoteless(File md) throws Exception {
 		String text = new String(Files.readAllBytes(md.toPath()), StandardCharsets.UTF_8);
 		return text.replaceAll("(?m)^>\\s?", "").replaceAll("\\s+", " ");
-	}
-
-	static void drainQuietly(Process p) throws Exception {
-		try (java.io.InputStream in = p.getInputStream()) {
-			byte[] buf = new byte[4096];
-			while (in.read(buf) >= 0) {
-				//the answer is the exit code; what it says is not read
-			}
-		}
 	}
 
 	/**
@@ -1540,9 +1604,6 @@ public class BatteryHygieneTest {
 			"the highest movement code the probe asks about - a loop bound over codes, not a count that may only fall"},
 		{"WarpTransitionsTest.java", "PROBE_CEILING",
 			"the highest transition code the probe asks about - a loop bound over codes, not a count that may only fall"},
-		{"PaintSealTest.java", "NOTCH_COMPOSITE_CEILING",
-			"held tight per painted height in its own form: e.holes >= allowed fails when the notch falls, naming"
-			+ " the value to lower it to"},
 	};
 
 	/** A ceiling: a static final int whose name says CEILING. */

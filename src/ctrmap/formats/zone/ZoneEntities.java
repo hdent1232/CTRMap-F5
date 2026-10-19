@@ -398,13 +398,16 @@ public class ZoneEntities {
 
 		@Override
 		public void setX(float val) {
+			//THE DISTANCE FROM THE TILE, IN CLOSED FORM (census L.5): this was a modulo by (tile - 1) * 18 below the
+			//tile and tile * 18 above it - by zero at tiles 1 and 0, and the accumulator went NaN. The tile is
+			//round(val / 18), so the modulo was exactly this wherever it was defined; setZ is the same for yTile
 			xTile = Math.round(val / 18f);
 			if (val < xTile * 18f) {
 				if (xTile != floatMotionOrigin) {
 					floatMotionOrigin = xTile;
-					floatMotionRemainder = 18f - (val % ((xTile - 1) * 18f));
+					floatMotionRemainder = (xTile * 18f - val);
 				} else {
-					floatMotionRemainder += 18f - (val % ((xTile - 1) * 18f));
+					floatMotionRemainder += (xTile * 18f - val);
 					if (floatMotionRemainder >= 18f) {
 						xTile--;
 						floatMotionRemainder %= 18f;
@@ -414,9 +417,9 @@ public class ZoneEntities {
 			} else {
 				if (xTile != floatMotionOrigin) {
 					floatMotionOrigin = xTile;
-					floatMotionRemainder = val % (xTile * 18f);
+					floatMotionRemainder = (val - xTile * 18f);
 				} else {
-					floatMotionRemainder += val % (xTile * 18f);
+					floatMotionRemainder += (val - xTile * 18f);
 					if (floatMotionRemainder >= 18f) {
 						xTile++;
 						floatMotionRemainder %= 18f;
@@ -476,9 +479,9 @@ public class ZoneEntities {
 			if (val < yTile * 18f) {
 				if (yTile != floatMotionOrigin) {
 					floatMotionOrigin = yTile;
-					floatMotionRemainder = 18f - (val % ((yTile - 1) * 18f));
+					floatMotionRemainder = (yTile * 18f - val);
 				} else {
-					floatMotionRemainder += 18f - (val % ((yTile - 1) * 18f));
+					floatMotionRemainder += (yTile * 18f - val);
 					if (floatMotionRemainder >= 18f) {
 						yTile--;
 						floatMotionRemainder %= 18f;
@@ -488,9 +491,9 @@ public class ZoneEntities {
 			} else {
 				if (yTile != floatMotionOrigin) {
 					floatMotionOrigin = yTile;
-					floatMotionRemainder = val % (yTile * 18f);
+					floatMotionRemainder = (val - yTile * 18f);
 				} else {
-					floatMotionRemainder += val % (yTile * 18f);
+					floatMotionRemainder += (val - yTile * 18f);
 					if (floatMotionRemainder >= 18f) {
 						yTile++;
 						floatMotionRemainder %= 18f;

@@ -427,6 +427,23 @@ public class RecordSchemaTest {
 		check(loaded > 700, loaded + " retail records loaded into the real form");
 		check(changed == 0, "and every one reads back byte for byte" + firstChanged);
 
+		//the item editor's own choice between a record and a refusal (the 2026-10-14 shared sweep, ItemEditDialog 240,
+		//negate-if, SURVIVED): a record read is shown; one the table refused is said, and nothing shown to edit or save
+		byte[] shownBefore = panel.record();
+		byte[] one = g.getDecompressedEntry(1);
+		String chose;
+		try {
+			ctrmap.humaninterface.ItemEditDialog.showRecord(panel, null, 9999);
+			boolean refusedIsEmpty = panel.record() == null;
+			ctrmap.humaninterface.ItemEditDialog.showRecord(panel, one, 1);
+			chose = refusedIsEmpty + ", " + java.util.Arrays.equals(one, panel.record());
+		} catch (RuntimeException threw) {
+			chose = "threw " + threw;
+		}
+		check(chose.equals("true, true"), "the item editor shows a record it read, and for one the table refused shows"
+				+ " nothing to edit or save: " + chose);
+		panel.setRecord(shownBefore);
+
 		//now drive each control the way a person would
 		java.util.Map<String, java.awt.Component> byName = new java.util.HashMap<>();
 		collect(panel, byName);
@@ -479,19 +496,38 @@ public class RecordSchemaTest {
 		check(spilled == 0, "and none of them touched a bit belonging to another field"
 				+ (spilled == 0 ? "" : " - " + firstSpill));
 
-		//and undo puts the record back exactly
+		//a record shown is the record held, and an edit through a control sticks
 		byte[] start = g.getDecompressedEntry(2);
 		panel.setRecord(start);
 		java.awt.Component c = byName.get(fieldNamedIn(s, "Sort index").key());
 		((javax.swing.JSpinner) c).setValue(99);
-		check(!java.util.Arrays.equals(panel.record(), start), "an edit through a control sticks");
-		panel.undo();
-		check(java.util.Arrays.equals(panel.record(), start),
-				"and Undo puts every byte of the record back");
-		panel.redo();
-		check(SchemaRegistry.items().fields().get(0) != null
-				&& fieldNamedIn(s, "Sort index").get(panel.record()) == 99,
-				"and Redo puts the edit back");
+		check(!java.util.Arrays.equals(panel.record(), start) && fieldNamedIn(s, "Sort index").get(panel.record()) == 99,
+				"an edit through a control sticks");
+		panel.setRecord(start);
+		check(java.util.Arrays.equals(panel.record(), start), "and a record put back is shown byte for byte");
+		//census M.134: a record the table refused - none, or the wrong size - became an editable page of zeros, and
+		//one change saved the zeros over the real item
+		for (byte[] refused : new byte[][]{null, java.util.Arrays.copyOf(start, start.length - 1)}) {
+			try {
+				panel.setRecord(refused);
+				check(false, "a record that is " + (refused == null ? "missing" : "short") + " is refused, not shown as zeros");
+			} catch (IllegalArgumentException said) {
+				check(said.getMessage().contains("not shown as one"), "a record that is " + (refused == null ? "missing" : "short")
+						+ " is refused, not shown as zeros: " + said.getMessage());
+			}
+		}
+		panel.showUnreadable("planted: item 9999 could not be read");
+		((javax.swing.JSpinner) c).setValue(42);
+		check(panel.record() == null && !c.isEnabled(), "a form showing nothing offers no control, and holds no record to save");
+		panel.setRecord(start);
+		check(c.isEnabled() && java.util.Arrays.equals(panel.record(), start), "and a record shown after it is offered again");
+		//ONE UNDO MODEL (F209c): the form keeps no history of its own - the editor showing it watches its record
+		//as a document of its tab's history
+		boolean ownUndo = false;
+		for (java.lang.reflect.Method m : ctrmap.humaninterface.RecordEditPanel.class.getDeclaredMethods()) {
+			ownUndo |= m.getName().equals("undo") || m.getName().equals("redo") || m.getName().equals("canUndo");
+		}
+		check(!ownUndo, "the form keeps no undo of its own: one history takes back what its editor shows");
 	}
 
 	/**

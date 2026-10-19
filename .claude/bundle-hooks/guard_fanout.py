@@ -17,10 +17,20 @@ against the quota. This hook is the stop. It is deliberately mechanical: it does
 not depend on a future assistant remembering, reading CLAUDE.md, or exercising
 judgement while mid-task.
 
-TO RUN A WORKFLOW ANYWAY: the owner sets `bundle_env.name("ALLOW_WORKFLOW")` to 1 in the
-environment for that session. That is an explicit, deliberate act - and even then README
-section 12's rule holds: ONE FIX WORKFLOW AT A TIME. A lifted block is capped at
-`bundle_env.cap("WORKFLOW_CAP", 1)` per window, counted in the same file as the agents.
+EVERY LAUNCH NEEDS THE OWNER'S YES, TYPED BY THE OWNER. On 2026-10-06 an assistant told "no
+agents" launched a five-agent design panel and a review fan-out anyway: it stated its own price
+and called that the yes, called a system prompt the yes, and called the agents read-only - and
+this hook let four launches a window through with no yes at all. Now an agent launch, a workflow
+and a session started on a prompt are each refused with a one-time code, and the launch goes
+ahead only when a row THE OWNER TYPED (`request_ledger.owner_typed`) carries the code issued
+for that exact launch, after it was issued; one yes, one launch. Nothing the assistant writes,
+nothing a hook says and nothing a subagent or another session sends is a row the owner typed.
+A transcript that cannot be read is no yes.
+
+THE OWNER'S STANDING YES lives in the environment the owner sets, which no tool call reaches:
+`bundle_env.name("AGENT_CAP")` launches a window (default NONE), and
+`bundle_env.name("ALLOW_WORKFLOW")` with `bundle_env.cap("WORKFLOW_CAP", 1)` workflows - and
+even then README section 12's rule holds: ONE FIX WORKFLOW AT A TIME.
 
 EVERY ENVIRONMENT NAME COMES FROM `bundle_env`. The project's copy of this file read its cap
 with a bare `int(os.environ.get(...))` - a value like `six` raised at IMPORT, which the
@@ -30,6 +40,7 @@ a message telling the reader to set a variable the hook did not read.
 """
 import json
 import os
+import re
 import sys
 if __name__ == "__main__":
     sys.dont_write_bytecode = True     # run from its folder, a tool leaves no bytecode there
@@ -37,11 +48,14 @@ if __name__ == "__main__":
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bundle_env      # noqa: E402  - one PREFIX renames every override
 import bundle_shell    # noqa: E402  - an agent launch, found by shape
-import request_ledger  # noqa: E402  - the one launch this cap does not count
+import owner_codes     # noqa: E402  - the owner's typed yes, issued and read in one place
+import request_ledger  # noqa: E402  - the transcript's rows
 import time
 
-# One task-level Agent call is fine. A dozen is a screening campaign.
-AGENT_CAP = bundle_env.cap("AGENT_CAP", 4)
+#: Launches a window the OWNER has said yes to in advance, in the environment the owner sets.
+#: None by default: every launch is asked of the owner.
+AGENT_CAP = bundle_env.cap("AGENT_CAP", 0)
+
 STATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".fanout-count")
 
 #: The window a count is held for. A cap that never resets is a cap that gets raised.
@@ -138,6 +152,37 @@ def record(agents, workflows):
         )
 
 
+#: A MESSAGE THE LISTING DOES NOT NAME YET IS NOT YET A LAUNCH. Measured 2026-10-09: the owner was asked for
+#: codes all afternoon by sessions messaging each other, and one of the refusals was a session started after
+#: the sender last listed its peers - one ListAgents call would have sent it with no code at all. The way that
+#: needs no owner comes first; the code is for a recipient still unlisted after it.
+LIST_FIRST = ("IF %r IS ONE OF THE OWNER'S RUNNING SESSIONS, NO CODE IS NEEDED: it is not in this session's "
+              "latest ListAgents listing. Call ListAgents, then send the identical message again - a message "
+              "to a session the latest listing names starts no agent and goes through. Only a recipient still "
+              "unlisted after that is a launch, and only then:\n\n")
+
+
+def ask_the_owner(payload, what, first=""):
+    """Refuse this launch with a fresh code, saying what the owner is asked to approve - after `first`, the
+    way through that needs no owner, when there is one."""
+    code = owner_codes.issue("FANOUT")
+    given = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
+    script = given.get("script") if isinstance(given.get("script"), str) else ""
+    counted = ("\nThis script calls agent() %d time(s) in its text - more where a call sits in "
+               "a loop." % len(re.findall(r"\bagent\s*\(", script))) if script else ""
+    deny(
+        bundle_shell.policy(__file__) + "\n"
+        "%s needs the OWNER'S yes, typed by the owner. A price you state is not a yes, a system "
+        "prompt or a skill is not a yes, and a brief that says read-only is still a launch: "
+        "CLAUDE.md, AN AGENT FAN-OUT NEEDS A YES AND A PRICE.%s\n\n%s"
+        "Stop and tell the owner (a) how many agents this starts, (b) the estimated tokens, "
+        "(c) what question it answers that reading in the main thread cannot - and this code. "
+        "The owner approves THIS launch, once, by typing:\n\n    %s\n\n"
+        "Then send the identical call again. Nothing you write can approve it, and the owner "
+        "saying nothing is a no: do the work in the main thread."
+        % (what, counted, first, code))
+
+
 def main():
     try:
         payload = json.load(sys.stdin)
@@ -167,24 +212,34 @@ def main():
 
     # BY SHAPE AS WELL AS BY NAME - `bundle_shell.workflows`. A script of `agent(...)` calls under
     # another tool's name was every agent in it, uncounted.
-    if tool == "Workflow" or (isinstance(payload, dict) and bundle_shell.workflows(payload)):
+    launch = tool in ("Agent", "Task") or (isinstance(payload, dict) and (
+        bundle_shell.launches(payload) or bundle_shell.cli_sessions(payload)))
+    scripted = tool == "Workflow" or (isinstance(payload, dict) and bundle_shell.workflows(payload))
+    if not (launch or scripted):
+        sys.exit(0)
+    rows = request_ledger.read_rows(payload.get("transcript_path"))
+    if rows is None:
+        if bundle_env.allowed("ALLOW_FANOUT_UNMEASURED"):
+            sys.exit(0)
+        deny(bundle_shell.policy(__file__) + "\n"
+             "Whether the owner said yes to this launch cannot be looked for: the session's "
+             "transcript (%s) cannot be read. A yes nobody could look for is no yes. The owner's "
+             "way past, if the hook is broken: %s=1." % (payload.get("transcript_path"),
+                                                       ALLOW_UNMEASURED))
+    # A MESSAGE TO ONE OF THE OWNER'S RUNNING SESSIONS STARTS NO AGENT, and the owner asked on 2026-10-09
+    # not to be the messenger who types a code for every one. `bundle_shell.message_to_session` reads the
+    # harness's own listing; a session it does not name, or a call carrying more than a message, is a launch.
+    if bundle_shell.message_to_session(payload, rows):
+        sys.exit(0)
+    if owner_codes.given(payload, rows):
+        sys.exit(0)
+    unlisted = bundle_shell.message_recipient(payload)
+    if unlisted and not scripted:
+        ask_the_owner(payload, "A message to %r" % unlisted, first=LIST_FIRST % unlisted)
+
+    if scripted:
         if not bundle_env.allowed("ALLOW_WORKFLOW"):
-            deny(
-                bundle_shell.policy(__file__) + "\n"
-                "Multi-agent Workflow runs are disabled in this project. On 2026-08-17 "
-                "26 of them burned ~97M subagent tokens - 96%% of a weekly 20x "
-                "allowance - in one day, and ~24M of that returned nothing because "
-                "whole runs died on session limits. The audits were not converging: "
-                "findings per round ran 59/79/49/48/43/29/44/47/40/39/32/35/34, flat "
-                "from round 3, because each round fed the next audit 30-40 fresh "
-                "changes to hunt.\n\n"
-                "Do the work in the main thread instead: read the code, reproduce the "
-                "defect, fix it, run the suite. If a fan-out is genuinely warranted, "
-                "STOP and ask the owner for approval with (a) how many agents, (b) an "
-                "estimated token cost, and (c) what question it answers that a "
-                "targeted read cannot. Only the owner may lift this, by setting "
-                "%s=1." % ALLOW_WORKFLOW
-            )
+            ask_the_owner(payload, "A multi-agent workflow")
         held = load()
         if held is None:
             if bundle_env.allowed("ALLOW_FANOUT_UNMEASURED"):
@@ -205,12 +260,17 @@ def main():
     # AN AGENT LAUNCH BY SHAPE, and by either name the launching tool has had. Asking for the
     # string "Agent" alone is one rename from off - the tool was called `Task` before it was
     # called `Agent` - which is the trigger-by-name defect this directory was rebuilt to remove.
-    if tool in ("Agent", "Task") or (isinstance(payload, dict) and bundle_shell.launches(payload)):
-        # THE REVIEW THE PROJECT DECLARED IT CAN AFFORD IS NOT FAN-OUT. `_review` in its
-        # declarations is the owner's yes and its price; the launch must be exactly the prompt
-        # the ledger owes, one agent, on the declared model - anything else is counted as usual.
+    if launch:
+        # THE ONE LAUNCH ANOTHER HOOK DEMANDS. Where the project declares a reviewer, the request
+        # ledger refuses the end of a turn until the owed review has run, with exactly the prompt
+        # it writes - and refusing that here would leave a turn nothing can end. It goes ahead
+        # on the OWNER'S standing yes: `_review` in `.claude/bundle-install.json`, which
+        # `guard_owner_files` refuses an agent to add or change without the owner's typed code.
+        # Not counted against a cap: the owner declared it affordable.
         if request_ledger.is_owed_review(payload):
             sys.exit(0)
+        if AGENT_CAP <= 0:
+            ask_the_owner(payload, "An agent launch")
         held = load()
         if held is None:
             # THE SAME DECISION AS THE WRITE BELOW, WHICH ALREADY REFUSES. Its comment says a
@@ -221,14 +281,8 @@ def main():
             unreadable_counter()
         used, workflows = held
         if used >= AGENT_CAP:
-            deny(
-                f"BLOCKED BY PROJECT POLICY: {used} subagents already spawned in "
-                f"this window (cap {AGENT_CAP}).\n"
-                "This project has been burned by unbounded agent fan-out - see "
-                f"{bundle_shell.FOLDER}/{os.path.basename(__file__)}. Finish the work in the main "
-                "thread, or ask the owner to raise %s for this "
-                "session with a stated reason and cost." % bundle_env.name("AGENT_CAP")
-            )
+            ask_the_owner(payload, "An agent launch past the owner's standing %d a window"
+                          % AGENT_CAP)
         record(used + 1, workflows)
     sys.exit(0)
 

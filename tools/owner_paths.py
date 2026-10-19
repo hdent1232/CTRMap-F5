@@ -118,6 +118,11 @@ def message_findings(message, root):
 
 
 def main(argv):
+    import cli_words      # a word this does not read refuses the run, before anything runs
+    why = cli_words.refused(argv[1:], most=None)
+    if why:
+        print(why)
+        return 2
     found = []
     for rel in argv[1:]:
         try:

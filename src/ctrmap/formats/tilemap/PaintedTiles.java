@@ -23,12 +23,22 @@ public final class PaintedTiles {
 
 	// ---- tilemap ----------------------------------------------------------
 
-	/** Composite tilemap: the donor's movement bytes with only the touched
-	 *  tiles' tuples overwritten. An unusable donor degrades to a full build. */
-	static byte[] buildTilemapComposite(byte[] donorTilemap, TilePalette[][] grid, boolean[][] touched) {
+	/** Why {@code donorTilemap} cannot be painted over keeping its untouched tiles, or null when it can. */
+	static String whyNotADonorTilemap(byte[] donorTilemap) {
 		if (donorTilemap == null || donorTilemap.length < 4 + DIM * DIM * 4
 				|| (donorTilemap[0] & 0xFF) != DIM || (donorTilemap[2] & 0xFF) != DIM) {
-			return buildTilemap(grid);
+			return "the region's tilemap (subfile 0) is not a " + DIM + " by " + DIM + " tilemap";
+		}
+		return null;
+	}
+
+	/** Composite tilemap: the donor's movement bytes with only the touched
+	 *  tiles' tuples overwritten. An unusable donor is refused (census H.64): it
+	 *  degraded to a full build, which dropped every tile the user had not touched. */
+	static byte[] buildTilemapComposite(byte[] donorTilemap, TilePalette[][] grid, boolean[][] touched) {
+		String unusable = whyNotADonorTilemap(donorTilemap);
+		if (unusable != null) {
+			throw new IllegalStateException(unusable);
 		}
 		byte[] out = donorTilemap.clone();
 		for (int ty = 0; ty < DIM; ty++) {

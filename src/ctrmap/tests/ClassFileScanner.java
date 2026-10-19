@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import java.io.BufferedInputStream;
+import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -171,20 +172,38 @@ public final class ClassFileScanner {
 		/** The fields its body READS - getfield and getstatic - as {@code owner#name}, the owner as the
 		 *  instruction names it (the declaring class or a subclass of it). A write is not a read (F204). */
 		public final Set<String> reads;
+		/** The fields its body WRITES - putfield and putstatic - as {@code owner#name}, the owner as the instruction names it. */
+		public final Set<String> writes;
+		/** The string constants its body loads - ldc and ldc_w of a String - in no order. */
+		public final Set<String> loads;
+		/** The fields in {@link #writes} it only ever writes zero or false to - an iconst_0 before every write. */
+		public final Set<String> clears;
+		/** Its annotations, visible or not, each type descriptor to the string values it gives, joined. */
+		public final Map<String, String> annotations;
 		/** The Code attribute, from max_stack on, or null for a body-less method; and each invoke by its code offset. */
 		private final byte[] code;
 		private final Map<Integer, String> invokeAt;
 
 		Method(String owner, String name, String descriptor, int flags, Set<String> invokes, Set<String> reads,
-				byte[] code, Map<Integer, String> invokeAt) {
+				Set<String> writes, Set<String> loads, Set<String> clears, Map<String, String> annotations, byte[] code,
+				Map<Integer, String> invokeAt) {
 			this.owner = owner;
 			this.name = name;
 			this.descriptor = descriptor;
 			this.flags = flags;
 			this.invokes = Collections.unmodifiableSet(invokes);
 			this.reads = Collections.unmodifiableSet(reads);
+			this.writes = Collections.unmodifiableSet(writes);
+			this.loads = Collections.unmodifiableSet(loads);
+			this.clears = Collections.unmodifiableSet(clears);
+			this.annotations = Collections.unmodifiableMap(annotations);
 			this.code = code;
 			this.invokeAt = invokeAt;
+		}
+
+		/** Every call the method makes, by the offset of its instruction in the code, in the order they stand. */
+		public java.util.SortedMap<Integer, String> calls() {
+			return new java.util.TreeMap<>(invokeAt);
 		}
 
 		/**
@@ -573,22 +592,33 @@ public final class ClassFileScanner {
 				String descriptor = utf[in.readUnsignedShort()];
 				Set<String> invokes = new LinkedHashSet<>();
 				Set<String> reads = new LinkedHashSet<>();
+				Set<String> writes = new LinkedHashSet<>();
+				Set<String> loads = new LinkedHashSet<>();
+				Set<String> clears = new LinkedHashSet<>();
 				Map<Integer, String> invokeAt = new HashMap<>();
+				Map<String, String> annotations = new HashMap<>();
 				byte[] code = null;
 				for (int n = in.readUnsignedShort(); n > 0; n--) {
 					String attribute = utf[in.readUnsignedShort()];
 					int length = in.readInt();
+					if ("RuntimeVisibleAnnotations".equals(attribute) || "RuntimeInvisibleAnnotations".equals(attribute)) {
+						byte[] held = new byte[length];
+						in.readFully(held);
+						annotationsIn(held, utf, annotations);
+						continue;
+					}
 					if (!"Code".equals(attribute)) {
 						skip(in, length);
 						continue;
 					}
 					code = new byte[length];
 					in.readFully(code);
-					invokesIn(code, tag, utf, a, b, invokes, reads, invokeAt, internalName + "." + name);
+					invokesIn(code, tag, utf, a, b, invokes, reads, writes, loads, clears, invokeAt, internalName + "." + name);
 				}
 				classesIn(descriptor, classes);
 				declares.add(new Ref(internalName, name, descriptor, true));
-				methods.add(new Method(internalName, name, descriptor, flags, invokes, reads, code, invokeAt));
+				methods.add(new Method(internalName, name, descriptor, flags, invokes, reads, writes, loads, clears,
+						annotations, code, invokeAt));
 			}
 			return new ClassFile(internalName, globals, statics, refs, strings, classes, declares, methods, handles,
 					superName, interfaces, classFlags, fields, declaredFields);
@@ -655,11 +685,14 @@ public final class ClassFileScanner {
 	 * is an IOException: a body read wrong would report a method calling nothing.
 	 */
 	private static void invokesIn(byte[] attr, int[] tag, String[] utf, int[] a, int[] b, Set<String> out,
-			Set<String> reads, Map<Integer, String> invokeAt, String where) throws IOException {
+			Set<String> reads, Set<String> writes, Set<String> loads, Set<String> clears, Map<Integer, String> invokeAt,
+			String where) throws IOException {
 		int length = ((attr[4] & 0xFF) << 24) | ((attr[5] & 0xFF) << 16) | ((attr[6] & 0xFF) << 8) | (attr[7] & 0xFF);
 		int start = 8;
 		int end = start + length;
 		int pc = start;
+		int previous = -1;
+		Set<String> setOtherwise = new java.util.HashSet<>();
 		while (pc < end) {
 			int op = attr[pc] & 0xFF;
 			if (op >= 0xb6 && op <= 0xb9) {
@@ -668,14 +701,75 @@ public final class ClassFileScanner {
 				String invoked = utf[a[a[ref]]] + "#" + utf[a[nt]] + utf[b[nt]];
 				out.add(invoked);
 				invokeAt.put(pc - start, invoked);
-			} else if (op == 0xb2 || op == 0xb4) {   //getstatic, getfield; 0xb3 and 0xb5 write
+			} else if (op == 0xb2 || op == 0xb4) {   //getstatic, getfield
 				int ref = ((attr[pc + 1] & 0xFF) << 8) | (attr[pc + 2] & 0xFF);
 				reads.add(utf[a[a[ref]]] + "#" + utf[a[b[ref]]]);
+			} else if (op == 0xb3 || op == 0xb5) {   //putstatic, putfield
+				int ref = ((attr[pc + 1] & 0xFF) << 8) | (attr[pc + 2] & 0xFF);
+				String field = utf[a[a[ref]]] + "#" + utf[a[b[ref]]];
+				writes.add(field);
+				(previous == 0x03 ? clears : setOtherwise).add(field);   //iconst_0: zero, or false
+			} else if (op == 0x12 || op == 0x13) {   //ldc, ldc_w: a String constant is tag 8
+				int ref = op == 0x12 ? attr[pc + 1] & 0xFF : ((attr[pc + 1] & 0xFF) << 8) | (attr[pc + 2] & 0xFF);
+				if (tag[ref] == 8) {
+					loads.add(utf[a[ref]]);
+				}
 			}
+			previous = op;
 			pc += stepAt(attr, pc, start);
 		}
+		clears.removeAll(setOtherwise);
 		if (pc != end) {
 			throw new IOException(where + ": its code did not walk to its end (" + (pc - start) + " of " + length + ")");
+		}
+	}
+
+	/** The annotations one attribute holds, each type descriptor to its string values, joined (JVMS 4.7.16). */
+	private static void annotationsIn(byte[] attr, String[] utf, Map<String, String> out) throws IOException {
+		DataInputStream in = new DataInputStream(new ByteArrayInputStream(attr));
+		for (int n = in.readUnsignedShort(); n > 0; n--) {
+			annotation(in, utf, out);
+		}
+		if (in.read() != -1) {
+			throw new IOException("an annotations attribute did not end where its annotations did");
+		}
+	}
+
+	private static void annotation(DataInputStream in, String[] utf, Map<String, String> out) throws IOException {
+		String type = utf[in.readUnsignedShort()];
+		StringBuilder strings = new StringBuilder();
+		for (int pairs = in.readUnsignedShort(); pairs > 0; pairs--) {
+			in.readUnsignedShort();   //the element's name
+			elementValue(in, utf, strings);
+		}
+		if (out != null) {
+			out.put(type, strings.toString());
+		}
+	}
+
+	private static void elementValue(DataInputStream in, String[] utf, StringBuilder strings) throws IOException {
+		int tag = in.readUnsignedByte();
+		switch (tag) {
+			case 's':
+				strings.append(utf[in.readUnsignedShort()]);
+				break;
+			case 'B': case 'C': case 'D': case 'F': case 'I': case 'J': case 'S': case 'Z': case 'c':
+				in.readUnsignedShort();
+				break;
+			case 'e':
+				in.readUnsignedShort();
+				in.readUnsignedShort();
+				break;
+			case '@':
+				annotation(in, utf, null);
+				break;
+			case '[':
+				for (int n = in.readUnsignedShort(); n > 0; n--) {
+					elementValue(in, utf, strings);
+				}
+				break;
+			default:
+				throw new IOException("unknown annotation element tag " + tag);
 		}
 	}
 

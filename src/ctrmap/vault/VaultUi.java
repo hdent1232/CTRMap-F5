@@ -98,8 +98,13 @@ public final class VaultUi {
 	public static Vault.SealResult offer(Component parent, File dumpRoot, long dumpBytes) {
 		File entry = Vault.entryFor(dumpRoot);
 		if (Vault.isSealed(entry)) {
-			VaultManifest existing = VaultManifest.read(entry);
-			String why = existing == null ? "The backup there cannot be read." : Vault.mismatch(existing, dumpRoot);
+			String why;
+			try {
+				VaultManifest existing = VaultManifest.read(entry);
+				why = existing == null ? "The backup there cannot be read." : Vault.mismatch(existing, dumpRoot);
+			} catch (java.io.IOException damaged) {
+				why = "The backup there cannot be read: " + ctrmap.util.Bytes.reason(damaged);
+			}
 			if (why.isEmpty()) {
 				return null;               // this dump's backup is there; say nothing, ask nothing
 			}
@@ -153,7 +158,15 @@ public final class VaultUi {
 	 */
 	public static boolean restoreEverything(Component parent, File entry, File targetRoot,
 			ctrmap.WorkspaceSession open) {
-		VaultManifest man = read(entry);
+		VaultManifest man;
+		try {
+			man = VaultManifest.read(entry);
+		} catch (java.io.IOException damaged) {
+			//SAID AS DAMAGE, NOT AS NO BACKUP (census M.144): this read the list, which leaves a damaged one out
+			Ui.error(parent, ctrmap.util.Bytes.reason(damaged) + ", so the game cannot be restored from it.\n\nIts files are"
+					+ " still in " + entry + " and can be copied back by hand.", "Backup damaged");
+			return false;
+		}
 		if (man == null) {
 			Ui.error(parent, Vault.isInterrupted(entry)
 					? "The backup for this game was never finished, so it cannot be restored from."
@@ -251,7 +264,14 @@ public final class VaultUi {
 	 */
 	public static List<Vault.Drift> checkOnOpen(Component parent, File gameDir) {
 		File entry = Vault.entryFor(gameDir);
-		VaultManifest man = Vault.isSealed(entry) ? VaultManifest.read(entry) : null;
+		VaultManifest man;
+		try {
+			man = Vault.isSealed(entry) ? VaultManifest.read(entry) : null;
+		} catch (java.io.IOException damaged) {
+			Ui.message(parent, "The pristine backup of this game cannot be trusted to restore from: " + ctrmap.util.Bytes.reason(damaged)
+					+ "\n\nIts files are still in " + entry + ".", "Backup damaged", JOptionPane.WARNING_MESSAGE);
+			return java.util.Collections.emptyList();
+		}
 		if (man == null || !Vault.mismatch(man, gameDir).isEmpty()) {
 			return java.util.Collections.emptyList();
 		}
@@ -262,15 +282,6 @@ public final class VaultUi {
 					+ " dump to take a fresh one.", "Backup changed", JOptionPane.WARNING_MESSAGE);
 		}
 		return drift;
-	}
-
-	static VaultManifest read(File entry) {
-		for (VaultManifest m : Vault.list()) {
-			if (m.entryDir != null && m.entryDir.equals(entry)) {
-				return m;
-			}
-		}
-		return null;
 	}
 
 	static String join(List<?> xs, int max) {

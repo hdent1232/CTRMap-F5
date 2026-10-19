@@ -119,6 +119,7 @@ public class ZoneLimitPatch {
 	}
 
 	/** Spare (never-visited) zone slots created to keep the master index a multiple of 4. */
+	@ctrmap.util.ForSuites("SEAM: ZoneLimitPatchTest asks the padding an append of N makes on a stock game; the append counts its own from the game as it is, which a previous append may have grown")
 	public static int spareZones(int newZones) {
 		return masterIndex(newZones) - (BASE_ZONES + newZones);
 	}
@@ -192,9 +193,33 @@ public class ZoneLimitPatch {
 	}
 
 	/**
+	 * The patch for a game whose ZoneData holds {@code zoneCount} zone slots now - what Add zones saved, made
+	 * again for a game that already has them (census H.2). Add zones was the only producer and runs once per
+	 * stock base, so a patch lost to a cancelled save or a failed write could never be made again, and the game
+	 * black-screened without it.
+	 *
+	 * @throws IllegalStateException when the game has no added zones, holds a count no append leaves, or
+	 * {@code code} is not the executable this patch is measured on
+	 */
+	public static byte[] forZoneCount(int zoneCount, byte[] code) {
+		if (zoneCount <= BASE_ZONES) {
+			throw new IllegalStateException("This game holds " + zoneCount + " zones, the stock " + BASE_ZONES
+					+ " or fewer: it has no added zones, so it needs no zone-limit patch.");
+		}
+		int newZones = zoneCount - BASE_ZONES;
+		if (newZones > MAX_NEW_ZONES || masterIndex(newZones) != zoneCount) {
+			throw new IllegalStateException("This game holds " + zoneCount + " zone slots, which no append leaves"
+					+ " (a multiple of 4, at most " + (BASE_ZONES + MAX_NEW_ZONES) + "), so no zone-limit patch is made"
+					+ " for it.");
+		}
+		return buildIPS(newZones, code);
+	}
+
+	/**
 	 * Returns a patched copy of a decompressed code.bin, verifying every stock
 	 * word first (throws if the input is not a matching ORAS build).
 	 */
+	@ctrmap.util.ForSuites("ORACLE: patches a code.bin word by word with every stock word verified, so a suite can hold the IPS the editor deploys, applied, to it")
 	public static byte[] applyToCode(int newZones, byte[] code) {
 		verify(code);
 		byte[] out = code.clone();

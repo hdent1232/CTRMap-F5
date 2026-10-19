@@ -46,6 +46,7 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console window for 
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import shellin                                    # noqa: E402  (path set above)
+import bounded                                    # noqa: E402  a deadline ends the child's whole tree
 
 HOOK = "guard_push.py"
 TOKEN = ".push-approved"
@@ -70,13 +71,19 @@ _DIR = re.compile(r"(?:^|\s)-C\s+(" + _WORD + r")")
 
 
 def pushes(command):
-    """Every `git push` in this command line: (git's own options, the push's arguments)."""
+    """Every `git push` in this command line: (git's own options, the push's arguments).
+
+    Found in the line with its quoted ARGUMENTS blanked (shellin.arguments_blanked), and read back from the line as
+    typed: `grep -n "tag|git push|release" package.ps1` named a push inside a search pattern and was refused as one
+    (2026-10-12). A push a shell is handed in quotes - bash -c, eval, powershell -Command - is its own command in
+    shellin.located, and is judged there."""
     out = []
-    for found in _PUSH.finditer(command):
-        tail = found.group(2) or ""
+    for found in _PUSH.finditer(shellin.arguments_blanked(command)):
+        options = command[found.start(1):found.end(1)] if found.start(1) >= 0 else ""
+        tail = command[found.start(2):found.end(2)] if found.start(2) >= 0 else ""
         if _HELP.search(tail):
             continue
-        out.append(((found.group(1) or "").strip(), tail.strip()))
+        out.append((options.strip(), tail.strip()))
     return out
 
 
@@ -85,14 +92,15 @@ def repo_of(command, cwd, options=""):
 
     Its OWN `git -C <dir>` when given, then a `cd <dir>` earlier on the same line, then the
     working directory - and if that is not a repository, one level down, because this project's
-    tree holds the repository inside the session folder the hooks are wired from.
+    tree holds the repository inside the session folder the hooks are wired from. A folder spelled
+    `/c/...` is the drive it names when only that exists (shellin.drive_folder).
     """
     found = _DIR.search(options)
     if found:
-        return found.group(1).strip('"' + chr(39))
+        return shellin.drive_folder(found.group(1).strip('"' + chr(39)))
     found = re.search(r"(?:^|[;|&])\s*cd\s+([^;|&]+?)\s*(?:&&|;|$)", command)
     if found:
-        return found.group(1).strip().strip('"' + chr(39))
+        return shellin.drive_folder(found.group(1).strip().strip('"' + chr(39)))
     if os.path.isdir(os.path.join(cwd, ".git")):
         return cwd
     try:
@@ -367,6 +375,31 @@ def decide(payload):
     return False, None
 
 
+def foreign_roots(repo, remote, sha):
+    """The root commits `sha`'s history starts from that the remote's published history does not:
+    [] when there are none - or when the remote has no history here to compare with - and None
+    when git cannot say.
+
+    HISTORY THAT WAS REWRITTEN AWAY IS STILL ON THIS MACHINE (OUTSTANDING, the privacy rewrite of
+    2026-09-26). Every path and name from the owner's computer was removed from the published
+    history and force-pushed; the pre-rewrite history stays here as refs/original, root 5be18bc,
+    where the published one starts at 392f44a. Pushing any commit of it publishes it again, and
+    the approval this hook asks for is a quote of the owner's words, which cannot tell one history
+    from another. A different root can."""
+    def roots(*revs):
+        try:
+            done = bounded.run(["git", "-C", repo, "rev-list", "--max-parents=0"] + list(revs),
+                               capture_output=True, text=True, timeout=60, creationflags=NO_WINDOW)
+        except Exception:
+            return None
+        return set(done.stdout.split()) if done.returncode == 0 else None
+    mine = roots(sha)
+    theirs = roots("--remotes=%s" % remote) if remote else set()
+    if mine is None or theirs is None:
+        return None
+    return sorted(mine - theirs) if theirs else []
+
+
 def pre_push(remote, lines, repo):
     """(deny, reason) for what git hands a pre-push hook: the remote's name, and one line per ref
     - `<local ref> <local sha> <remote ref> <remote sha>`.
@@ -395,6 +428,17 @@ def pre_push(remote, lines, repo):
             else remote_ref
         deleting = set(local_sha) == {"0"}
         sent.append((None if deleting else local_sha, landed, local_ref))
+        if not deleting:
+            foreign = foreign_roots(repo, remote, local_sha)
+            if foreign is None:
+                return True, _no("where the history %s sends starts cannot be told, so whether "
+                                 "it is history the remote never published is UNKNOWN." % local_ref)
+            if foreign:
+                return True, _no("%s starts from %s, a root the published history on %s does "
+                                 "not have - this publishes a history that is not the remote's, "
+                                 "such as the pre-rewrite one kept in refs/original. Approve a "
+                                 "push of the published history instead."
+                                 % (local_ref, ", ".join(r[:12] for r in foreign), remote))
         if not deleting and set(remote_sha) != {"0"} and not forced:
             #a push that is not a fast-forward discards what the remote holds: a force push,
             #whether or not the word `--force` was typed - and one this cannot check is not
@@ -402,10 +446,10 @@ def pre_push(remote, lines, repo):
             try:
                 #bounded like every child a gate starts: a git that hangs is "cannot be told",
                 #which the except below answers as not a fast-forward
-                behind = subprocess.call(["git", "-C", repo, "merge-base", "--is-ancestor",
-                                          remote_sha, local_sha],
-                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                         timeout=20)
+                behind = bounded.run(["git", "-C", repo, "merge-base", "--is-ancestor",
+                                      remote_sha, local_sha],
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     timeout=20, creationflags=NO_WINDOW).returncode
             except Exception:
                 behind = 2
             if behind != 0:

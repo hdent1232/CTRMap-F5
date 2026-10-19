@@ -81,6 +81,7 @@ public class UiOutputTest {
 		}
 
 		aSinkIsHandedTheMessage();
+		unreadNamesAreSaidOnlyWhenThereAreAny();
 		withoutADialogTheMessageIsStillSaid();
 		withDialogsOnTheDialogIsOpened();
 
@@ -100,6 +101,27 @@ public class UiOutputTest {
 		}
 		check(said.size() == 1 && said.get(0).contains("the archive is held open"),
 				"a recording test is handed the message: " + said);
+	}
+
+	/**
+	 * Names that could not be read are said once, naming each - and nothing is said when every one was read.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (Ui 186, negated, SURVIVED): no suite asked saidUnread at all. Inverted,
+	 * an editor whose names all read told the owner some could not, listing none, and one whose names failed showed
+	 * numbers in their place and said nothing about why (census M.55).
+	 */
+	static void unreadNamesAreSaidOnlyWhenThereAreAny() {
+		List<String> said = Ui.record();
+		try {
+			Ui.saidUnread(null, java.util.Collections.<String>emptyList(), "Zone names");
+			check(said.isEmpty(), "names that all read are not reported as unread: " + said);
+			Ui.saidUnread(null, java.util.Arrays.asList("location names", "trainer classes"), "Zone names");
+			check(said.size() == 1 && said.get(0).contains("could not be read")
+					&& said.get(0).contains("location names") && said.get(0).contains("trainer classes"),
+					"and names that could not be read are said once, naming each: " + said);
+		} finally {
+			Ui.stopRecording();
+		}
 	}
 
 	/**

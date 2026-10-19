@@ -328,7 +328,7 @@ public class MatrixEditFormGuardsTest {
 		aRegionThatDoesNotExistIsRefusedAndSaid();
 		unTickingTheLayerIsAskedFirst();
 		clearingTheLodCheckboxDropsTheZoneLayer();
-		cameraBoundsRoundTripAndTheSaveTruncatesSubfileOne();
+		cameraBoundsRoundTripAndTheSaveKeepsSubfileOnesTail();
 		newAndRemoveCameraChangeTheEntryCount();
 		rowsAndColumnsGrowAndShrinkTheWrittenMatrix();
 		theRegionGridGrowsWithTheGridItIsIndexedBy();
@@ -354,9 +354,11 @@ public class MatrixEditFormGuardsTest {
 		check(f.mm.width == 8 && f.mm.height == 8, "and is 8x8 regions (found " + f.mm.width + "x" + f.mm.height + ")");
 		check(f.mm.cambounds.size() == 3, "with 3 camera boundaries (found " + f.mm.cambounds.size() + ")");
 		check(f.section0.length == 2312, "its matrix section is 2312 bytes: " + f.section0.length);
-		check(f.section1.length == 324 && f.mm.assembleCamData().length == 64,
+		//F160: the header counts three boundaries, 4 + 3 * 20 = 64 bytes, and the 260 after them are
+		//carried rather than dropped, so the section assembles to the length it was read at
+		check(f.section1.length == 324 && u32(f.section1, 0) == 3 && f.mm.assembleCamData().length == 324,
 				"and its camera section is " + f.section1.length + " bytes on disk, of which the header counts "
-				+ f.mm.assembleCamData().length);
+				+ u32(f.section1, 0) + " boundaries, and it assembles to " + f.mm.assembleCamData().length);
 		check(Arrays.equals(f.mm.assembleData(), f.section0),
 				"the matrix section rebuilds byte for byte, so a difference below is the form's doing");
 	}
@@ -493,10 +495,12 @@ public class MatrixEditFormGuardsTest {
 	/**
 	 * The four bound fields are the camera record, in the file's order. Note
 	 * what the save does to the section as a whole: retail ships 324 bytes of
-	 * camera data with only three entries counted, and the writer emits just
-	 * the counted ones, so the first save of any kind shortens it to 64.
+	 * camera data with only three entries counted. The writer used to emit just
+	 * the counted ones, so the first save of any kind shortened it to 64; since
+	 * F160 it writes them over a copy of the section, and the 260 bytes after
+	 * them - unmeasured, so carried - survive.
 	 */
-	static void cameraBoundsRoundTripAndTheSaveTruncatesSubfileOne() throws Exception {
+	static void cameraBoundsRoundTripAndTheSaveKeepsSubfileOnesTail() throws Exception {
 		Fixture f = open();
 		selectTool(f.form, "btnCamTool");
 		check(field(f.form, "cam") == null && ((JFormattedTextField) field(f.form, "northBound")).getValue() == null,
@@ -522,8 +526,10 @@ public class MatrixEditFormGuardsTest {
 
 		check(f.form.store(false), "the matrix stores");
 		byte[] after = f.section1();
-		check(after.length == 64, "the camera section is now just the three counted entries: " + after.length
+		check(after.length == f.section1.length, "the camera section keeps its length: " + after.length
 				+ " bytes, from " + f.section1.length);
+		check(Arrays.equals(Arrays.copyOfRange(after, 64, after.length), Arrays.copyOfRange(f.section1, 64, f.section1.length)),
+				"and every byte after the three counted entries is the one that was read (F160)");
 		check(u32(after, 0) == 3, "with the count still 3");
 		check(f32(after, 4) == -12.5f && f32(after, 8) == 1234.25f && f32(after, 12) == -3.75f && f32(after, 16) == 999.5f,
 				"and camera 0 written north, south, west, east: "
@@ -545,8 +551,14 @@ public class MatrixEditFormGuardsTest {
 				"a 0..100 repeal box: " + fresh.north + "/" + fresh.south + "/" + fresh.west + "/" + fresh.east + "/" + fresh.isRepeal);
 		check(((JComboBox<?>) field(f.form, "boundEntryBox")).getItemCount() == 4, "and a fourth row in the dropdown");
 		check(f.form.store(false), "the matrix stores");
-		check(u32(f.section1(), 0) == 4 && f.section1().length == 84, "the camera section counts 4 entries in 84 bytes: "
-				+ u32(f.section1(), 0) + " in " + f.section1().length);
+		//the fourth entry is written over bytes 64..84 of the carried section, and everything after it stays (F160)
+		byte[] grown = f.section1();
+		check(u32(grown, 0) == 4 && grown.length == f.section1.length, "the camera section counts 4 entries in the "
+				+ f.section1.length + " bytes it was read at: " + u32(grown, 0) + " in " + grown.length);
+		check(f32(grown, 64) == 0f && f32(grown, 68) == 100f && f32(grown, 72) == 0f && f32(grown, 76) == 100f && u32(grown, 80) == 1,
+				"the new entry is written where the counted ones end");
+		check(Arrays.equals(Arrays.copyOfRange(grown, 84, grown.length), Arrays.copyOfRange(f.section1, 84, f.section1.length)),
+				"and the bytes after it are the ones that were read");
 
 		MatrixCameraBoundaries second = f.mm.cambounds.get(1);
 		f.form.setCam(1);
@@ -918,7 +930,7 @@ public class MatrixEditFormGuardsTest {
 		Arrays.fill(rows, oneZone);
 		LoadedZone lz = new LoadedZone();
 		lz.table(rows);
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		TestWindow.mZonePnl(pnl);
 		f.form = new MatrixEditForm(lz, CANVAS, UndoHistoryTest.overOneNumber(new int[]{0}));
 		TestWindow.mMtxEditForm(f.form);

@@ -13,6 +13,59 @@ param([switch]$Quick, [string]$Pristine, [string]$GameDir, [string]$Code, [Valid
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
+. (Join-Path $root "native.ps1")   #every native command runs through Invoke-Native: its exit code is the verdict
+. (Join-Path $root "said.ps1")     #a failed suite shows what it said, not its last two lines
+
+# ON THE UNATTENDED DESKTOP (2026-10-11). The suites open the editor's own windows - its zone loading
+# dialog above all - and run from here they opened them in the middle of the owner's screen, where one
+# took the keyboard and a window the owner was working in was lost with every edit in it. The battery
+# runs itself again on a second desktop of the same session (tools/guard/hidden_desktop.py): the same
+# suites, the same JVM flags, real windows, drawn where nobody is working; what it prints comes back here
+# as it prints it. tests/test_hidden_desktop.py proves a window started there is not drawn here.
+if ($env:CTRMAP_ON_UNATTENDED_DESKTOP -ne "1" -and $env:OS -eq "Windows_NT") {
+    $again = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $MyInvocation.MyCommand.Path)
+    foreach ($k in $PSBoundParameters.Keys) {
+        $v = $PSBoundParameters[$k]
+        if ($v -is [System.Management.Automation.SwitchParameter]) {
+            if ($v.IsPresent) { $again += "-$k" }
+        } else {
+            $again += @("-$k", "$v")
+        }
+    }
+    $hpy = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $hpy) {
+        Write-Host "REFUSING: no python on PATH to start the battery on the unattended desktop - its windows would open on yours" -ForegroundColor Red
+        exit 1
+    }
+    Invoke-Native { & $hpy.Source -B (Join-Path $root "tools\guard\hidden_desktop.py") --stream -- powershell @again }
+    exit $LASTEXITCODE
+}
+if ($env:CTRMAP_ON_UNATTENDED_DESKTOP -eq "1") {
+    Write-Host "(the battery runs on the unattended desktop: its suites' windows are not drawn on yours)"
+}
+
+# ONE BATTERY AT A TIME, asked before anything else. On 2026-10-11 a suite's stand-in for record_run's
+# subprocess caught nothing once record_run ran the battery through bounded.run, so record_run started the
+# REAL battery from inside the battery, and that one did the same - 302 processes, every level a full
+# battery, before it was killed. Whether one is running is asked of tools/guard/battery_lock.py, which
+# build.ps1 and replant.py ask too, and which answers by the rule of the hook that refuses an edit during a
+# run: a lock whose process is alive or cannot be told dead holds, one naming none holds for ninety
+# minutes, one that cannot be read holds, and a killed run's is taken over. tests/test_one_battery.py
+# starts one beside a live lock.
+$batteryLock = Join-Path $root "build\.battery-running"
+if (Test-Path $batteryLock) {
+    $askPy = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $askPy) {
+        Write-Host ("REFUSING: " + $batteryLock + " is there and no python is on PATH to ask whether its battery still runs - unknown is not finished") -ForegroundColor Red
+        exit 1
+    }
+    $heldOut = Invoke-Native { & $askPy.Source -B (Join-Path $root "tools\guard\battery_lock.py") 2>&1 }
+    if ($LASTEXITCODE -ne 0) {
+        $heldOut | ForEach-Object { Write-Host ("  " + $_) }
+        Write-Host "REFUSING: a battery may already be running - one battery at a time" -ForegroundColor Red
+        exit 1
+    }
+}
 
 # MEASURE LAST, ENFORCED. Forty minutes of suites measure the tree as it is when they
 # start. Run them with work still queued and the result is void the moment the next
@@ -27,11 +80,17 @@ $py = Get-Command python -ErrorAction SilentlyContinue
 if ($py) {
   $gateArgs = @((Join-Path $root "tools\guard\work_order.py"), "--gate", "the battery")
   if ($Anyway) { $gateArgs += @("--anyway", $Anyway) }
-  $gateOut = & $py.Source @gateArgs 2>&1
+  $gateOut = Invoke-Native { & $py.Source @gateArgs 2>&1 }
   $gateOut | ForEach-Object { Write-Host $_ }
   if ($LASTEXITCODE -ne 0) { exit 1 }
+} elseif ($Anyway) {
+  Write-Host ("  (no python on PATH - the work order cannot be asked; run ANYWAY: " + $Anyway + ")") -ForegroundColor Yellow
 } else {
-  Write-Host "  (no python on PATH - the work order cannot be asked)"
+  # REFUSED, NOT NOTED (census M.84): this printed one line and ran on, so MEASURE LAST held only on a machine
+  # that had python, and the note scrolled away above nine hundred lines - while an unstamped build and a
+  # missing corpus are refused with exit 2 a few lines down. Unknown is not an empty queue.
+  Write-Host "REFUSING: no python on PATH, so the work order cannot be asked - a battery run in front of queued work is void (MEASURE LAST). Put python on PATH, or give -Anyway with the reason." -ForegroundColor Red
+  exit 2
 }
 
 $jdk = $env:CTRMAP_JDK
@@ -63,19 +122,6 @@ $a040 = Join-Path $pristine "a\0\4\0"
 # folder layouts (sound archive, the "a" folder, wrong-pick detection), so they
 # need the whole thing. Both suites skip themselves when it is not there.
 $gamedir = if ($GameDir) { $GameDir } else { Join-Path (Split-Path -Parent $root) "RomFS\000400000011C400" }
-
-# THE LOCK build.ps1 REFUSES ON, so nobody deletes build\classes out from under this run.
-# Written here because this is the thing that is running; removed at the bottom, and left
-# behind on a kill, where build.ps1 ages it out after ninety minutes.
-$batteryLock = Join-Path $root "build\.battery-running"
-New-Item -ItemType Directory -Force -Path (Join-Path $root "build") | Out-Null
-# The PID goes in it as well as the timestamp. build.ps1 ages the lock out after ninety
-# minutes, which is the best a timestamp can do; the hook that refuses an EDIT during a
-# run can ask whether this process is still alive and say so exactly.
-Set-Content -Path $batteryLock -Encoding utf8 -Value @(
-    ("started " + (Get-Date -Format o)),
-    ("pid=" + $PID),
-    "what=the battery")
 
 # The decompressed code.bin, for the suites that check the executable patches.
 # Two candidates because the repo is checked out in two shapes: beside the dump
@@ -120,6 +166,22 @@ if ($absent.Count -gt 0) {
     exit 2
 }
 
+# THE LOCK build.ps1 REFUSES ON, so nobody deletes build\classes out from under this run.
+# Written here because this is the thing that is running; removed at the bottom, and left
+# behind on a kill, where no reader holds it once this process is gone.
+# AFTER THE LAST REFUSAL (2026-10-12): it was written above the dump check, so every run that
+# refused a missing dump left a lock naming a dead battery, and build.ps1 asked about that
+# battery when an open editor's lock was the one it was being proven against.
+# tests/test_one_battery.py asserts a refused battery leaves the lock as it found it.
+New-Item -ItemType Directory -Force -Path (Join-Path $root "build") | Out-Null
+# The PID goes in it as well as the timestamp, so every reader - tools/guard/battery_lock.py
+# and the hook that refuses an EDIT during a run - asks whether this process is still alive
+# and says so exactly, rather than guessing from the file's age.
+Set-Content -Path $batteryLock -Encoding utf8 -Value @(
+    ("started " + (Get-Date -Format o)),
+    ("pid=" + $PID),
+    "what=the battery")
+
 # suite name -> {main class, args}; -Quick raises sampling steps
 $step = if ($Quick) { "60" } else { "20" }
 $suites = @(
@@ -142,6 +204,7 @@ $suites = @(
     @{ n = "ClassFileScanner (bytecode sees what a grep cannot)"; c = "ctrmap.tests.ClassFileScannerTest"; a = @("src", "build\classes") },
     @{ n = "GameFilesSeam (the format layer is handed its game, never fetches it)"; c = "ctrmap.tests.GameFilesSeamTest"; a = @("src", "build\classes") },
     @{ n = "HandedGame (two more format classes handed their game)"; c = "ctrmap.tests.HandedGameTest"; a = @() },
+    @{ n = "HandedRefusals (every 'must be handed' refusal is heard, from its own line)"; c = "ctrmap.tests.HandedRefusalsTest"; a = @("src") },
     @{ n = "ModelName (a model's name is read from inside its BCH or refused, never looped for)"; c = "ctrmap.tests.ModelNameTest"; a = @() },
     @{ n = "PropRegistry (an area's prop registry keeps what it does not model, its order and its entries)"; c = "ctrmap.tests.PropRegistryTest"; a = @() },
     @{ n = "NpcRegistry (an area's NPC registry is written back as read, and an edit changes only what was edited)"; c = "ctrmap.tests.NpcRegistryTest"; a = @() },
@@ -150,6 +213,7 @@ $suites = @(
     @{ n = "MainframeShape (menus and toolbars, built headless)"; c = "ctrmap.tests.MainframeShapeTest"; a = @("src") },
     @{ n = "Ui output paths (printed, and shown)"; c = "ctrmap.tests.UiOutputTest";           a = @() },
     @{ n = "Dialog seam (only Ui opens one)"; c = "ctrmap.tests.DialogSeamTest";     a = @("src") },
+    @{ n = "Foreground (a window nobody asked for waits for the owner)"; c = "ctrmap.tests.ForegroundTest"; a = @() },
     @{ n = "Duplicate work (one implementation per capability)"; c = "ctrmap.tests.DuplicateWorkTest"; a = @("src") },
     @{ n = "Forms describe their code (a designer save deletes nothing)"; c = "ctrmap.tests.FormsDescribeTheirCodeTest"; a = @("src") },
     @{ n = "Every method is reached (nothing the program never calls; test-only methods only fall)"; c = "ctrmap.tests.EveryMethodIsReachedTest"; a = @("build\classes") },
@@ -165,6 +229,8 @@ $suites = @(
     @{ n = "NpcScriptGate (scripted-NPC templates only where they were measured)"; c = "ctrmap.tests.NpcScriptGateTest"; a = @("src") },
     @{ n = "Mutation baseline (guards still measured)"; c = "ctrmap.tests.MutationBaselineTest"; a = @("src") },
     @{ n = "BchMapModel (engine)";        c = "ctrmap.tests.BchMapModelTest";       a = @($a039) },
+    @{ n = "ModelTransform (bone matrices as JOGL 2.3.2 made them)"; c = "ctrmap.tests.ModelTransformTest"; a = @($pristine) },
+    @{ n = "OffscreenRender (what the 3D surfaces draw, pixel for pixel)"; c = "ctrmap.tests.OffscreenRenderTest"; a = @($pristine) },
     @{ n = "OBJ export round-trip";       c = "ctrmap.tests.MapModelObjTest";        a = @($a039) },
     @{ n = "OBJ import";                  c = "ctrmap.tests.MapModelObjImportTest";  a = @($a039) },
     @{ n = "OBJ v2 (UV/normal/template)"; c = "ctrmap.tests.MapModelObjV2Test";      a = @($a039, $step) },
@@ -235,7 +301,7 @@ $suites = @(
     @{ n = "DressUpIndex (which slot a part fills)"; c = "ctrmap.tests.DressUpIndexTest"; a = @($gamedir) },
     @{ n = "ZoneAppend";                  c = "ctrmap.tests.ZoneAppendTest";         a = @($a013) },
     @{ n = "WorkflowGuards (do it, pack, do it again)"; c = "ctrmap.tests.WorkflowGuardsTest"; a = @($gamedir) },
-    @{ n = "ZoneRemove (GARC shrink)";    c = "ctrmap.tests.ZoneRemoveTest";         a = @($a013) },
+    @{ n = "ZoneRemove (GARC shrink)";    c = "ctrmap.tests.ZoneRemoveTest";         a = @($a013, (Join-Path $gamedir "a\0\2\9")) },
     @{ n = "ZoneCloner (fork a whole zone)"; c = "ctrmap.tests.ZoneClonerTest";     a = @($a013) },
     @{ n = "ZoneAppendMulti (several at once)"; c = "ctrmap.tests.ZoneAppendMultiTest"; a = @($a013) },
     @{ n = "ZoneLimitPatch";              c = "ctrmap.tests.ZoneLimitPatchTest";     a = @($code) },
@@ -250,7 +316,8 @@ $suites = @(
     @{ n = "GFMessageFile round-trip"; c = "ctrmap.tests.GFMessageFileRoundTripTest"; a = @() }
     @{ n = "PackReport (warnings reach the user)"; c = "ctrmap.tests.PackReportTest"; a = @($pristine) },
     @{ n = "DoorPropGuards (a door names what it will draw)"; c = "ctrmap.tests.DoorPropGuardsTest"; a = @($pristine) },
-    @{ n = "ForkGuards (area/geometry forks)"; c = "ctrmap.tests.ForkGuardsTest";     a = @($pristine) },
+    @{ n = "ForkGuards (area/geometry forks)"; c = "ctrmap.tests.ForkGuardsTest";     a = @($pristine, $gamedir) },
+    @{ n = "TestWorldBuild (the in-game test world is a build product, and says what it was not built from)"; c = "ctrmap.tests.TestWorldBuildTest"; a = @($pristine, $gamedir) },
     @{ n = "PackRollback (a refused pack keeps its table)"; c = "ctrmap.tests.PackRollbackTest"; a = @($pristine) },
     @{ n = "PackScope (a pack writes what was edited)"; c = "ctrmap.tests.PackScopeTest"; a = @($pristine) },
     @{ n = "WorkspaceRepoint (the backup when the game folder changes)"; c = "ctrmap.tests.WorkspaceRepointTest"; a = @($pristine) },
@@ -281,8 +348,11 @@ $suites = @(
     @{ n = "SignCommit (the map painter's sign wiring writes its text, furniture and script together or not at all)"; c = "ctrmap.tests.SignCommitTest"; a = @() },
     @{ n = "RenderLoop (a render loop runs only while its panel is seen, and a model preview uploads its model once)"; c = "ctrmap.tests.RenderLoopTest"; a = @() },
     @{ n = "UndoHistory (one undo model: what a gesture changed is one edit, read from the documents, never put into one no longer open)"; c = "ctrmap.tests.UndoHistoryTest"; a = @() },
+    @{ n = "UndoCoverage (every editor the program has keeps its edits in an undo history, or says why it cannot; the open ones only fall)"; c = "ctrmap.tests.UndoCoverageTest"; a = @("build\classes", "src") },
     @{ n = "GlUnavailable (the editor opens 2D-only where OpenGL cannot start, and every way into OpenGL asks first)"; c = "ctrmap.tests.GlUnavailableTest"; a = @("build\classes") },
     @{ n = "MassEdit (the Extras mass edits happen whole or not at all, can be taken back, and are offered only where they were made)"; c = "ctrmap.tests.MassEditTest"; a = @() },
+    @{ n = "GameDataUndo (every save the Game Data tab makes is one kept edit, taken back and put again with its list of edits)"; c = "ctrmap.tests.GameDataUndoTest"; a = @() },
+    @{ n = "AreaEditUndo (an area edit goes into the area the zone's file names, and a fork leaves the open zone as read)"; c = "ctrmap.tests.AreaEditUndoTest"; a = @() },
     @{ n = "GeoSave (the geometry form touches the workspace only on Save, and writes it as one unit)"; c = "ctrmap.tests.GeoSaveTest"; a = @() },
     @{ n = "DiscardReverts (every keep question's No puts the editor back to what was last saved)"; c = "ctrmap.tests.DiscardRevertsTest"; a = @() },
     @{ n = "PropRegistration (a prop is registered in an area one way, whichever button placed it)"; c = "ctrmap.tests.PropRegistrationTest"; a = @() },
@@ -321,7 +391,7 @@ $suites = @(
 # have altered any of it without one suite noticing. Every one was proven by breaking the class it
 # covers and watching it fail.
     @{ n = "ZoneManager (clear, rename, repoint - by bytes)"; c = "ctrmap.tests.ZoneManagerTest"; a = @($pristine) },
-    @{ n = "ZoneRepurposeScanner (which zones are reusable)"; c = "ctrmap.tests.ZoneRepurposeScannerTest"; a = @($pristine) },
+    @{ n = "ZoneRepurposeScanner (which zones are reusable)"; c = "ctrmap.tests.ZoneRepurposeScannerTest"; a = @($pristine, $gamedir) },
     @{ n = "ModDeployer (only edited archives ship)"; c = "ctrmap.tests.ModDeployerTest"; a = @($pristine) },
     @{ n = "Helpers (the five groups Utils was split into)"; c = "ctrmap.tests.UtilsTest"; a = @() },
     @{ n = "PropEditForm (what the prop form writes)"; c = "ctrmap.tests.PropEditFormGuardsTest"; a = @($pristine) },
@@ -370,18 +440,16 @@ $failed = @()
 $skipped = @()
 $partly = @()
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
-# A suite that writes to stderr is not a suite that failed. Under
-# PowerShell 5.1, "2>&1" on a native exe wraps every stderr line in an
-# ErrorRecord, which $ErrorActionPreference = "Stop" then treats as
-# terminating - so one warning aborts the whole run at that suite and every
-# later one silently goes unrun. The exit code below is the actual verdict.
-$prevEAP = $ErrorActionPreference
-$ErrorActionPreference = "Continue"
+# A suite that writes to stderr is not a suite that failed: one warning used to abort the whole
+# run at that suite and leave every later one unrun. Each runs through Invoke-Native (native.ps1),
+# and the exit code below is the actual verdict.
 foreach ($s in $suites) {
     Write-Host ("--- " + $s.n) -ForegroundColor Cyan
-    $said = @(& "$jdk\bin\java.exe" -Xmx4g -cp "$cls;$libs" $s.c @($s.a) 2>&1 | ForEach-Object { "$_" })
+    $said = @(Invoke-Native { & "$jdk\bin\java.exe" -Xmx4g -cp "$cls;$libs" $s.c @($s.a) 2>&1 | ForEach-Object { "$_" } })
     $exit = $LASTEXITCODE
-    $said | Select-Object -Last 2 | ForEach-Object { Write-Host ("    " + $_) }
+    $saidFailed = @($said -match '^FAILURES PRESENT').Count -gt 0
+    if ($saidFailed -or ($exit -ne 0 -and $exit -ne 3)) { Show-Failed $said }
+    else { $said | Select-Object -Last 2 | ForEach-Object { Write-Host ("    " + $_) } }
     # A SUITE THAT SAYS IT FAILED HAS FAILED, whatever it exits with. Four suites printed
     # their verdict on a skip path and returned, so FAILURES PRESENT went out with exit 0
     # and this loop passed a suite that had printed "FAIL: the prop is refused"
@@ -412,9 +480,10 @@ if (-not $py) {
     Write-Host "    SKIPPED: no python on PATH - run 'python tools/mutate2.py --selftest' by hand" -ForegroundColor Yellow
     $skipped += $hname
 } else {
-    & $py.Source (Join-Path $root "tools\mutate2.py") --selftest |
-        Select-Object -Last 2 | ForEach-Object { Write-Host ("    " + $_) }
-    if ($LASTEXITCODE -ne 0) { $failed += $hname }
+    $selfSaid = @(Invoke-Native { & $py.Source (Join-Path $root "tools\mutate2.py") --selftest 2>&1 | ForEach-Object { "$_" } })
+    $selfExit = $LASTEXITCODE
+    if ($selfExit -ne 0) { Show-Failed $selfSaid; $failed += $hname }
+    else { $selfSaid | Select-Object -Last 2 | ForEach-Object { Write-Host ("    " + $_) } }
 }
 
 # THE PYTHON SUITE (F184). tests/ holds the tests of the hooks, the commit gate and the tools
@@ -430,12 +499,11 @@ if (-not $py) {
     Write-Host "    FAIL: no python on PATH - the Python suite could not run, which is not a pass"
     $failed += $pname
 } else {
-    $pySaid = @(& $py.Source -B -m unittest discover -s (Join-Path $root "tests") 2>&1 | ForEach-Object { "$_" })
+    $pySaid = @(Invoke-Native { & $py.Source -B -m unittest discover -s (Join-Path $root "tests") 2>&1 | ForEach-Object { "$_" } })
     $pyExit = $LASTEXITCODE
-    $pySaid | Where-Object { $_ -match '^(Ran \d+ tests|OK|FAILED)' } | ForEach-Object { Write-Host ("    " + $_) }
-    if ($pyExit -ne 0) { $failed += $pname }
+    if ($pyExit -ne 0) { Show-Failed $pySaid; $failed += $pname }
+    else { $pySaid | Where-Object { $_ -match '^(Ran \d+ tests|OK|FAILED)' } | ForEach-Object { Write-Host ("    " + $_) } }
 }
-$ErrorActionPreference = $prevEAP
 $sw.Stop()
 Write-Host ""
 # THE LOCK GOES BEFORE THE VERDICT, not after it. It was removed on the last line, which

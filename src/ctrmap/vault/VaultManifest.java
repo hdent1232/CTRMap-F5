@@ -54,14 +54,12 @@ public final class VaultManifest {
 	/** relative path -> what it was. Insertion-ordered so the file reads in sorted order. */
 	public final Map<String, Entry> entries = new LinkedHashMap<>();
 
-	/** Set by {@link Vault#list()}; not stored in the file. */
-	public transient File entryDir;
-
 	static File file(File entry) {
 		return new File(entry, "manifest.txt");
 	}
 
 	/** A one-line summary safe to show in a list. */
+	@ctrmap.util.ForSuites("CAPABILITY: one line for a sealed backup, its NOT-verified-vanilla caveat included; a list of the vault's backups would show it, and the vault offers none yet")
 	public String summary() {
 		return displayName + (verifiedVanilla ? "" : "  (NOT verified vanilla)")
 				+ " - " + entries.size() + " file(s), " + scope;
@@ -101,14 +99,18 @@ public final class VaultManifest {
 		}
 	}
 
-	/** The manifest in {@code entry}, or null when there is not a finished one. */
-	static VaultManifest read(File entry) {
+	/**
+	 * The manifest in {@code entry}, or null when there is none. One that is there and cannot be read - a
+	 * number that will not parse, fewer files listed than it declares - is THROWN, naming the file (census
+	 * M.144): it was the same null as no manifest at all, and every caller told the user there was no backup
+	 * while its files sat sealed and whole in the folder.
+	 */
+	public static VaultManifest read(File entry) throws IOException {
 		File f = file(entry);
 		if (!f.isFile()) {
 			return null;
 		}
 		VaultManifest m = new VaultManifest();
-		m.entryDir = entry;
 		try {
 			byte[] buf = new byte[(int) f.length()];
 			FileInputStream is = new FileInputStream(f);
@@ -169,10 +171,11 @@ public final class VaultManifest {
 			//that is missing files while looking complete - the exact state
 			//Workspace.snapshotMissingArchives exists to catch. Refuse it.
 			if (declared >= 0 && declared != m.entries.size()) {
-				return null;
+				throw new IOException("the backup's manifest " + f + " lists " + m.entries.size() + " file(s) and says it has "
+						+ declared + " - it was cut short");
 			}
-		} catch (IOException | RuntimeException ex) {
-			return null;
+		} catch (RuntimeException unparsed) {
+			throw new IOException("the backup's manifest " + f + " is damaged: " + ctrmap.util.Bytes.reason(unparsed), unparsed);
 		}
 		return m;
 	}

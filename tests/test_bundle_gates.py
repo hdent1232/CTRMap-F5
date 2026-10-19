@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -30,6 +31,7 @@ HERE = _tree_root.require(__file__)
 TOOLS = os.path.join(HERE, "tools")
 sys.path.insert(0, TOOLS)
 import bundle_hooks          # noqa: E402  - where this project keeps the bundle's hooks
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 HOOKS = bundle_hooks.path(HERE)
 OURS = bundle_hooks.folder(HERE)
 
@@ -38,6 +40,20 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
 #: This file drives guards. A project that discovers its guard suites by a marker finds it.
 GUARD_SUITE = True
+
+#: What `setUpModule` turned off, for `tearDownModule` to put back.
+_SHIPPED = []
+
+
+def setUpModule():
+    """Every setting the bundle ships off, off for this file's run: these tests say what the
+    bundle's code does as it SHIPS, and a project that turned a stricter rule on installs them too
+    (`bundle_hooks.settings_off`)."""
+    _SHIPPED[:] = bundle_hooks.settings_off(HERE)
+
+
+def tearDownModule():
+    bundle_hooks.put_back(_SHIPPED)
 
 
 class ACommitIsAskedWhatSections2And14Ask(unittest.TestCase):
@@ -48,7 +64,7 @@ class ACommitIsAskedWhatSections2And14Ask(unittest.TestCase):
     FIX = "fix(reader): the empty file" + LF + LF
 
     def setUp(self):
-        import commit_gate
+        commit_gate = bundle_hooks.load(HERE, "tools/commit_gate.py")
         self.gate = commit_gate
 
     def test_a_fix_that_touches_NO_guard_is_refused_and_one_that_does_is_not(self):
@@ -61,6 +77,23 @@ class ACommitIsAskedWhatSections2And14Ask(unittest.TestCase):
 
     def test_git_that_cannot_ANSWER_is_not_an_empty_commit(self):
         self.assertTrue(self.gate.fix_touches_a_guard(self.FIX, None))
+
+    def test_a_checker_runs_in_ITS_OWN_repository_not_the_hooks(self):
+        """MEASURED 2026-10-07: git hands its commit-msg hook `GIT_INDEX_FILE`, and the checker
+        the gate ran inherited it - every test in the bundle's suite that builds a repository of
+        its own ran against the bundle's index, and `check_bundle.py`, exiting 0 run by hand,
+        exited 1 inside the hook. The plant driver strips git's place from its children; the
+        checker's run did not."""
+        prove_plants = bundle_hooks.load(HERE, "tools/prove_plants.py")
+        from unittest import mock
+        held = {name: "/somewhere/else/" + name for name in prove_plants.GIT_LOCATION}
+        with mock.patch.dict(os.environ, held):
+            env = self.gate.checker_env()
+        self.assertEqual(sorted(n for n in prove_plants.GIT_LOCATION if n in env), [],
+                         "the checker inherited the hook's git location - it judges the wrong "
+                         "repository")
+        self.assertEqual(env.get("BUNDLE_COMMIT_GATE_DEPTH"), "1",
+                         "the control: the checker is no longer marked as run by the gate")
 
     def test_a_fix_names_its_KIND_and_a_detector_says_why_it_is_not_a_refusal(self):
         self.assertTrue(self.gate.guard_claim(self.FIX))
@@ -145,10 +178,32 @@ class ACommitIsAskedWhatSections2And14Ask(unittest.TestCase):
         self.assertEqual(self.gate.test_claims("as the doc says, `green at 6,105 tests`"), [])
         self.assertEqual(self.gate.test_claims("the suite: 6,349 tests, green"), [6349])
 
+    def test_a_count_of_SUITES_is_a_claim_too_and_is_checked_in_the_records_word(self):
+        """Census M.85: the gate read `N tests` in a project that writes `N suites`, and five battery-size
+        claims went into git log unchecked. Both words are claims; each is checked against the record
+        only in the word the record counted, and refused in the other."""
+        self.assertEqual(self.gate.worded_claims("the app passed 128 suites"), [(128, "suites")])
+        self.assertEqual(self.gate.test_claims("`ALL SUITES PASS at 127 suites`, as quoted"), [])
+        folder = tempfile.mkdtemp(prefix="vb-unit-")
+        self.addCleanup(shutil.rmtree, folder, True)
+        self.addCleanup(setattr, self.gate, "ROOT", self.gate.ROOT)
+        self.gate.ROOT = folder
+        def said(record, message):
+            io.open(os.path.join(folder, self.gate.RECORD), "w", encoding="utf-8").write(json.dumps(record))
+            return [p for p in self.gate.test_counts(message) if "tree" not in p and "FAILED" not in p]
+        suites = {"ran": 131, "rc": 0, "unit": "suites"}
+        self.assertEqual(said(suites, "the battery: 131 suites"), [], "the right count of suites was refused")
+        self.assertTrue(said(suites, "the battery: 130 suites"), "a wrong count of suites went through")
+        self.assertTrue(said(suites, "the battery: 131 tests"), "a count in the word the record did not count "
+                        "went through")
+        tests = {"ran": 6349, "rc": 0}
+        self.assertEqual(said(tests, "6,349 tests"), [], "a record that names no unit no longer counts tests")
+        self.assertTrue(said(tests, "split into 4 suites"), "a suite count was checked against a count of tests")
+
     def test_an_UNKNOWN_subject_refuses_a_count(self):
         """The shipped defect on the project this came from: git could not be asked, the
         subject was unknown, and the gate passed on the half that never asks what was measured."""
-        import require_build
+        require_build = bundle_hooks.load(HERE, "tools/require_build.py")
         folder = tempfile.mkdtemp(prefix="vb-gate-")
         self.addCleanup(shutil.rmtree, folder, True)
         self.addCleanup(setattr, self.gate, "ROOT", self.gate.ROOT)
@@ -229,7 +284,7 @@ class AHeldPlantIsDrivenAgainWhenItsFileChanges(unittest.TestCase):
     TRAILER = LF + LF + "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" + LF
 
     def setUp(self):
-        import commit_gate
+        commit_gate = bundle_hooks.load(HERE, "tools/commit_gate.py")
         self.gate = commit_gate
 
     def test_a_change_to_the_planted_file_OR_the_named_test_selects_the_plant(self):
@@ -252,6 +307,38 @@ class AHeldPlantIsDrivenAgainWhenItsFileChanges(unittest.TestCase):
                                                       drive=lambda k: (True, "red")), [])
         self.assertTrue(self.gate.held_plants_redden(None),
                         "which plants a commit touches was UNKNOWN and read as none")
+
+    def test_a_test_red_with_nothing_planted_refuses_the_commit(self):
+        """MEASURED 2026-10-10: a test faked a call its code had stopped making and went red on the bundle's
+        own tree; the gate drove its held plant "red" - the plant reddened for free - and let it through."""
+        key = "test_x.py::C::test_t"
+        refused = self.gate.held_plants_redden(["src/a.py"], keys=[key], drive=lambda k: (True, "red"),
+                                               clean=lambda keys: ([key], []))
+        self.assertTrue(any("RED WITH NOTHING PLANTED" in line and key in line for line in refused),
+                        "a held plant on a test already red was counted as proving something: %r" % refused)
+        self.assertTrue(any("UNKNOWN" in line for line in self.gate.held_plants_redden(
+            ["src/a.py"], keys=[key], drive=lambda k: (True, "red"), clean=lambda keys: ([], [key]))),
+            "a test that could not be run clean was read as passing")
+        self.assertEqual(self.gate.held_plants_redden(["src/a.py"], keys=[key], drive=lambda k: (True, "red"),
+                                                      clean=lambda keys: ([], [])), [],
+                         "control: a test green with nothing planted, and red with its plant, passes")
+
+    def test_each_named_test_is_run_once_with_nothing_planted(self):
+        prove_plants = bundle_hooks.load(HERE, "tools/prove_plants.py")
+        asked = []
+        answers = {"test_x.C.test_t": (True, "FAILED"), "test_y.D.test_u": (False, "OK"),
+                   "test_z.E.test_v": (None, "timed out")}
+
+        def run(test_id):
+            asked.append(test_id)
+            return answers[test_id]
+        red, unrun = prove_plants.red_with_nothing_planted(
+            ["test_x.py::C::test_t", "test_x.py::C::test_t::elsewhere", "test_y.py::D::test_u",
+             "test_z.py::E::test_v"], run=run)
+        self.assertEqual(red, ["test_x.py::C::test_t"], "a test red with nothing planted was not named")
+        self.assertEqual(unrun, ["test_z.py::E::test_v"], "a test with no verdict was not called UNKNOWN")
+        self.assertEqual(sorted(asked), ["test_x.C.test_t", "test_y.D.test_u", "test_z.E.test_v"],
+                         "each distinct test once, its plants' suffixes folded: %s" % asked)
 
     def test_a_commit_that_is_NOT_a_fix_is_asked_too(self):
         """The cheapest way past: drive held plants only for a fix. The change that empties a
@@ -286,6 +373,171 @@ class AHeldPlantIsDrivenAgainWhenItsFileChanges(unittest.TestCase):
                         "a project's own held plant that no longer reddened was let through: %r"
                         % refused)
 
+    def test_a_plant_this_machine_could_NOT_ASK_is_UNKNOWN_and_refused_never_called_survived(self):
+        """Reported by the CTRMap session, 2026-10-07: nineteen plants read the owner's game data,
+        which only the owner's machine has, and its driver says so with an exit code of its own -
+        while the gate read every non-zero exit as "no longer reddens" and advised re-anchoring
+        them. UNKNOWN is still refused; it is never called survived, and never answered with the
+        way to make a plant prove less."""
+        for shape, call in (
+                ("held", lambda: self.gate.held_plants_redden(
+                    ["src/A.java"], keys=[], drive=lambda k: (True, "red"), own_keys=["p1"],
+                    prove=lambda k: (None, "no game data on this machine"))),
+                ("new", lambda: self.gate.fix_has_a_plant(
+                    "fix(reader): x" + self.TRAILER, keys=[], own=self.OWN, added=["p1"],
+                    prove=lambda k: (None, "no game data on this machine")))):
+            refused = call()
+            self.assertTrue(any("p1" in line and "UNKNOWN" in line for line in refused),
+                            "UNKNOWN: a %s plant nobody could drive was let through, or not called "
+                            "UNKNOWN: %r" % (shape, refused))
+            self.assertFalse(any("--reanchor" in line or "does not redden" in line
+                                 or "no longer reddens" in line for line in refused),
+                             "UNKNOWN: a %s plant this machine could not ask was called survived "
+                             "and the way to make it prove less was offered: %r" % (shape, refused))
+
+    def test_the_DECLARED_exit_code_reads_as_UNKNOWN_and_no_other(self):
+        """The driver's own code, from `_tests.ledger.unknown_exit` - a driver that merely failed
+        is survived, as before, and a project that declares no code has none."""
+        folder = tempfile.mkdtemp(prefix="vb-unknown-")
+        self.addCleanup(shutil.rmtree, folder, True)
+        self.addCleanup(setattr, self.gate, "ROOT", self.gate.ROOT)
+        self.gate.ROOT = folder
+        os.makedirs(os.path.join(folder, ".claude"))
+
+        def declare(**more):
+            ledger = dict({"path": "plants.json", "key": "id",
+                           "prove": [sys.executable, "-c", "pass", "{key}"]}, **more)
+            with io.open(os.path.join(folder, ".claude", "bundle-install.json"), "w",
+                         encoding="utf-8", newline=LF) as handle:
+                handle.write(json.dumps({"_tests": {"ledger": ledger}}))
+
+        def exits(code):
+            return [sys.executable, "-c", "import sys; sys.exit(%d)" % code, "{key}"]
+        declare(unknown_exit=3)
+        self.assertEqual(self.gate.unknown_exit(), 3, "the declared code was not read")
+        self.assertIsNone(self.gate._prove_in_project(exits(3), "p1")[0],
+                          "UNKNOWN: the driver's declared could-not-ask code read as an answer")
+        self.assertIs(self.gate._prove_in_project(exits(1), "p1")[0], False,
+                      "a plant that survived read as UNKNOWN")
+        self.assertIs(self.gate._prove_in_project(exits(0), "p1")[0], True)
+        self.assertIsNone(self.gate._prove_in_project(["no-such-driver-anywhere", "{key}"],
+                                                      "p1")[0],
+                          "UNKNOWN: a driver that could not be started read as a plant survived")
+        for wrong in (1, 0, True, "3"):
+            declare(unknown_exit=wrong)
+            self.assertIsNone(self.gate.unknown_exit(),
+                              "%r was taken as the could-not-ask code - 0 is red, 1 is survived"
+                              % (wrong,))
+        declare()
+        self.assertIs(self.gate._prove_in_project(exits(3), "p1")[0], False,
+                      "with no code declared, a failing driver was read as UNKNOWN")
+
+class APlantLeavesTheLedgerOnlyByAnActTheCommitAsksAgain(unittest.TestCase):
+    """The cheapest way past the whole ledger is to delete a guard's test and its plants. So a
+    plant HEAD held live leaves `plants` only into a record this gate asks again: `withdrawn` is
+    argued on a flush-left `Withdraws:` line, in the change that removes its test, with the test
+    gone from what the commit records; `retired` is driven and must run to a pass; and a plant
+    that simply vanishes is refused. Each record can be typed in by hand, so the tool's own check
+    is not taken on trust."""
+
+    KEY = "test_gone.py::Gone::test_t"
+    WHY = ("the page this test drove was replaced by one drawn from the engine, and "
+           "test_engine_pages now holds what it held")
+    LINE = "Withdraws: %s -- %s" % (KEY, WHY)
+    LEDGER = "tests/plants.json"
+    FILES = ["tests/plants.json", "tests/test_gone.py"]
+    PLANT = {"file": "src/a.py", "old": "a", "new": "b", "site": "instance", "why": "w" * 70}
+    TRAILER = LF + LF + "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" + LF
+
+    def setUp(self):
+        commit_gate = bundle_hooks.load(HERE, "tools/commit_gate.py")
+        self.gate = commit_gate
+        self.addCleanup(setattr, self.gate, "LEDGER", self.gate.LEDGER)
+        self.gate.LEDGER = self.LEDGER
+
+    def ledgers(self, record="withdrawn"):
+        head = {"plants": {self.KEY: dict(self.PLANT)}}
+        index = {"plants": {}, record: {self.KEY: dict(self.PLANT, **{record: {"why": self.WHY}})}}
+        return head, index
+
+    def leave(self, body, files=None, test_text=None, record="withdrawn"):
+        head, index = self.ledgers(record)
+        texts = {"tests/test_gone.py": test_text}
+        return self.gate.plants_that_leave("feat: the page is the engine's" + LF + LF + body
+                                           + self.TRAILER, self.FILES if files is None else files,
+                                           head=head, index=index, read=texts.get)
+
+    def test_named_with_a_reason_in_the_change_that_removes_its_test_passes(self):
+        self.assertEqual(self.leave(self.LINE), [])
+
+    def test_a_withdrawal_with_no_line_or_a_label_or_an_indented_line_is_refused(self):
+        for body in ("The old pages are gone.", "Withdraws: %s -- the page went" % self.KEY,
+                     "  " + self.LINE, "Withdraws: test_other.py::O::test_o -- " + self.WHY):
+            with self.subTest(body=body[:40]):
+                found = self.leave(body)
+                self.assertTrue(any("without a flush-left `Withdraws:" in line for line in found),
+                                "a withdrawal not argued on its own flush-left line went "
+                                "through: %r" % found)
+
+    def test_a_withdrawal_apart_from_its_tests_change_is_refused(self):
+        found = self.leave(self.LINE, files=["tests/plants.json", "tools/x.py"])
+        self.assertTrue(any("a plant leaves in the change that removes its test" in line
+                            for line in found),
+                        "a withdrawal apart from its test's change went through: %r" % found)
+
+    def test_a_withdrawal_whose_test_is_STILL_in_the_commit_is_refused(self):
+        """The cheapest way past `--withdraw`'s own check: type the record in by hand, touch the
+        test file so the commit changes it, and keep the test. Asked of the tree the commit
+        RECORDS, so a file deleted on disk and still staged counts as there."""
+        kept = LF.join(["import unittest", "class Gone(unittest.TestCase):",
+                        "    def test_t(self):", "        pass", ""])
+        found = self.leave(self.LINE, test_text=kept)
+        self.assertTrue(any("still in what this commit records" in line for line in found),
+                        "a plant whose test is still in the commit was withdrawn: %r" % found)
+
+    def test_a_plant_that_VANISHES_is_refused(self):
+        head = {"plants": {self.KEY: dict(self.PLANT)}}
+        found = self.gate.plants_that_leave("feat: x" + self.TRAILER, self.FILES, head=head,
+                                            index={"plants": {}}, read={}.get)
+        self.assertTrue(any(self.KEY in line and "unrecorded" in line for line in found),
+                        "a plant deleted from the ledger by hand went through: %r" % found)
+
+    def test_a_RETIRED_plant_is_driven_and_must_run_to_a_pass(self):
+        """The next cheapest way past `Withdraws:`: call the deleted test's plant retired. Its
+        test does not resolve, so it never runs to a pass."""
+        head, index = self.ledgers("retired")
+        for detail, red, refused in (("the test id does not resolve", False, True),
+                                     ("FAILED (failures=1)", True, True),
+                                     ("OK", False, False)):
+            with self.subTest(detail=detail):
+                found = self.gate.retirements_hold(self.FILES, head=head, index=index,
+                                                   drive=lambda _k, d=detail, r=red: (r, d))
+                self.assertEqual(bool(found), refused,
+                                 "a retirement driven to %r was %s: %r"
+                                 % (detail, "let through" if refused else "refused", found))
+
+    def test_nothing_leaves_a_ledger_the_commit_leaves_alone_and_UNKNOWN_is_refused(self):
+        self.assertEqual(self.gate.plants_that_leave("feat: x", ["src/a.py"], head=None,
+                                                     index=None), [],
+                         "a commit not touching the ledger was read for departures")
+        from unittest import mock
+        with mock.patch.object(self.gate, "ledger_at", return_value=None):
+            found = self.gate.plants_that_leave("feat: x", self.FILES)
+        self.assertTrue(any("UNKNOWN" in line for line in found),
+                        "a ledger git could not read was taken as one nothing left")
+
+    def test_the_commit_gate_asks_it(self):
+        """Driven through `problems`, so a check written and never wired fails here."""
+        head, index = self.ledgers()
+        from unittest import mock
+        with mock.patch.object(self.gate, "ledger_at",
+                               side_effect=lambda spec: head if spec.startswith("HEAD") else index), \
+                mock.patch.object(self.gate, "index_reader", return_value={}.get):
+            found = self.gate.problems("feat: the page is the engine's" + self.TRAILER,
+                                       files=self.FILES, keys=[], execute=False, held=[])
+        self.assertTrue(any("is withdrawn without" in line for line in found),
+                        "the commit gate never asked whether a withdrawal was argued: %r" % found)
+
 
 class EveryPlantTheGateDrivesIsCountedAloud(unittest.TestCase):
     """A SUCCESS THAT PRINTS NOTHING READS LIKE A STEP THAT NEVER RAN. On the project this came
@@ -295,7 +547,7 @@ class EveryPlantTheGateDrivesIsCountedAloud(unittest.TestCase):
     FIX = "fix(reader): the empty file" + LF + LF + "Co-Authored-By: x" + LF
 
     def setUp(self):
-        import commit_gate
+        commit_gate = bundle_hooks.load(HERE, "tools/commit_gate.py")
         self.gate = commit_gate
 
     def said(self, call):
@@ -324,8 +576,35 @@ class EveryPlantTheGateDrivesIsCountedAloud(unittest.TestCase):
         self.assertIn("2 held plant(s) driven, 1 of 2 red", said,
                       "a drive where one plant stayed green was counted as all red: %r" % said)
 
+    def test_a_plant_that_could_not_be_asked_is_COUNTED_as_UNKNOWN(self):
+        """"1 of 2 red" over a plant nobody could drive says it survived."""
+        said = self.said(lambda: self.gate.held_plants_redden(
+            ["src/a.py"], keys=["k1", "k2"], drive=lambda k: (True, "red") if k == "k1"
+            else (None, "no data here")))
+        self.assertIn("2 held plant(s) driven, 1 of 2 red, 1 UNKNOWN", said,
+                      "a plant that could not be asked went uncounted: %r" % said)
+
+    def test_a_held_plant_that_LEFT_the_ledger_is_said_and_not_counted_red(self):
+        """A plant this commit withdraws or retires is not driven, and it was counted RED as "not
+        in the ledger being committed" - so a commit withdrawing three plants said "all 3 red"
+        over three plants nothing drove."""
+        folder = tempfile.mkdtemp(prefix="vb-left-")
+        self.addCleanup(shutil.rmtree, folder, True)
+        os.makedirs(os.path.join(folder, "tests"))
+        with io.open(os.path.join(folder, "tests", "plants.json"), "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"plants": {}}))
+        self.addCleanup(setattr, self.gate, "ROOT", self.gate.ROOT)
+        self.gate.ROOT = folder
+        said = self.said(lambda: self.gate.held_plants_redden(
+            ["tests/test_gone.py"], keys=["test_gone.py::Gone::test_t"], own_keys=[]))
+        self.assertNotIn("all 1 red", said,
+                         "a plant that left the ledger was counted red with nothing driven: %r"
+                         % said)
+        self.assertIn("1 held plant(s) leave the ledger", said,
+                      "a held plant leaving the ledger went unsaid: %r" % said)
+
     def test_the_ratchet_step_says_it_drives_none_rather_than_counting_zero(self):
-        import prove_plants
+        prove_plants = bundle_hooks.load(HERE, "tools/prove_plants.py")
         said = self.said(lambda: prove_plants.main(["prove_plants.py", "--owed"]))
         self.assertNotIn("0 plant(s) driven", said,
                          "--owed counted zero plants driven beside a gate that drove them")
@@ -337,7 +616,7 @@ class EveryPlantTheGateDrivesIsCountedAloud(unittest.TestCase):
         held plant, about 75 minutes of defects laid on disk one after another, and one of them
         (the hook dispatcher) held another session's every act. The whole ledger is `--all` now;
         nothing is `--all` by omission."""
-        import prove_plants
+        prove_plants = bundle_hooks.load(HERE, "tools/prove_plants.py")
         from unittest import mock
         driven = []
         with mock.patch.object(prove_plants, "drive_plant",
@@ -348,11 +627,30 @@ class EveryPlantTheGateDrivesIsCountedAloud(unittest.TestCase):
         self.assertNotEqual(code[0], 0, "a bare invocation that did nothing reported success")
         self.assertIn("--all", said, "the refusal did not say how to drive the whole ledger")
 
+    def test_a_word_nothing_reads_drives_nothing_whatever_it_is_spelt_with(self):
+        """Measured 2026-10-09 in the project this came from: its own driver read `--help`, run for
+        its usage, as no plant named and drove all 1,363 plants - about 7.5 hours. Here only `--`
+        words were asked, so `-h`, or a bare word, still fell through to the same default."""
+        prove_plants = bundle_hooks.load(HERE, "tools/prove_plants.py")
+        from unittest import mock
+        driven = []
+        with mock.patch.object(prove_plants, "drive_plant",
+                               lambda key, entry, *a, **k: driven.append(key) or (True, "red")):
+            for argv in (["-h"], ["-all"], ["help"], ["everything"], ["--owed", "stray"]):
+                code = [None]
+                said = self.said(lambda: code.__setitem__(0, prove_plants.main(["prove_plants.py"] + argv)))
+                #ITS OWN WORDS: the default path has refusals of its own, and one of those printed
+                #REFUSING with this refusal planted away - which read as this one
+                named = ("%s is not a flag this reads" % argv[-1] in said
+                         or "%s is a word this does not read" % argv[-1] in said)
+                self.assertTrue(code[0] == 2 and named, "%s was not refused in words: %r" % (argv, said[:300]))
+        self.assertEqual(driven, [], "a word nothing reads drove plants")
+
 
     def test_an_unclassified_record_can_be_classified_by_the_command_its_refusal_names(self):
         """F200: whole_tree refused an unclassified record with 'Record it as covers or exempts'
         and no command recorded a kind - the remedy was a hand edit."""
-        import whole_tree
+        whole_tree = bundle_hooks.load(HERE, "tools/whole_tree.py")
         root = tempfile.mkdtemp(prefix="wt-classify-")
         self.addCleanup(shutil.rmtree, root, True)
         package = os.path.join(root, whole_tree.PACKAGE)
@@ -384,7 +682,7 @@ class EveryPlantTheGateDrivesIsCountedAloud(unittest.TestCase):
         """F191: the module walk counted the tests, so the mutation record read 'missing 385 of 418' -
         a little of everything - when it scored 33 of 265 production modules, seven eighths of the
         program unscored."""
-        import whole_tree
+        whole_tree = bundle_hooks.load(HERE, "tools/whole_tree.py")
         root = tempfile.mkdtemp(prefix="wt-proofs-")
         self.addCleanup(shutil.rmtree, root, True)
         for rel in ("app/Main", "app/%s/MainTest" % whole_tree.PROOFS, "app/%s_kit/Helper" % whole_tree.PROOFS):
@@ -404,7 +702,7 @@ class EveryPlantTheGateDrivesIsCountedAloud(unittest.TestCase):
     def test_one_verdict_and_a_child_that_never_ran_is_not_a_kill(self):
         """F196: the verdict was written twice and only the Python copy refused a child that never
         ran to a verdict - a declared runner's JVM dying before any test was a KILL."""
-        import prove_plants
+        prove_plants = bundle_hooks.load(HERE, "tools/prove_plants.py")
         verdict = prove_plants.verdict
         self.assertFalse(verdict(1, "java.lang.OutOfMemoryError" + LF)[0],
                          "a child that died before any test, with no ran marker and no must_say, was a kill")
@@ -426,13 +724,13 @@ class EveryPlantTheGateDrivesIsCountedAloud(unittest.TestCase):
         """F197: --merge-from and --only read the next argument bare, so given last they crashed with
         IndexError while --add, --reanchor and --retire refused in words, and `--merge-from --only x`
         took a flag for a folder. A crash here reads as not refused."""
-        import prove_plants
+        prove_plants = bundle_hooks.load(HERE, "tools/prove_plants.py")
         from unittest import mock
         driven = []
         with mock.patch.object(prove_plants, "drive_plant",
                                lambda key, entry, *a, **k: driven.append(key) or (True, "red")):
             for argv in (["--add"], ["--reanchor"], ["--retire"], ["--merge-from"], ["--only"],
-                         ["--merge-from", "--only", "x"]):
+                         ["--merge-from", "--only", "x"], ["--only", "--no-such-flag"]):
                 code = [None]
 
                 def call():
@@ -452,7 +750,7 @@ class EveryGateSubprocessIsBOUNDED(unittest.TestCase):
     def test_every_way_to_start_a_child_and_wait_is_seen(self):
         """F199: the checker keyed on the module NAME `subprocess`, so an alias, a from-import, a
         Popen(...).wait(), os.system and os.popen each blocked forever and passed it."""
-        import timeouts
+        timeouts = bundle_hooks.load(HERE, "tools/timeouts.py")
         source = LF.join([
             "import os",
             "import subprocess as sp",
@@ -474,13 +772,13 @@ class EveryGateSubprocessIsBOUNDED(unittest.TestCase):
                          "the unbounded children were not all seen, or a bounded one was taken for one")
 
     def test_the_checker_finds_an_unbounded_call_and_passes_a_bounded_one(self):
-        import timeouts
+        timeouts = bundle_hooks.load(HERE, "tools/timeouts.py")
         control = ("import subprocess" + LF + "subprocess.run(['a'], timeout=5)" + LF
                    + "subprocess.run(['b'])" + LF + "p.communicate()" + LF)
         self.assertEqual(timeouts.unbounded(control), [3, 4])
 
     def test_the_hooks_here_are_derived_and_bounded(self):
-        import timeouts
+        timeouts = bundle_hooks.load(HERE, "tools/timeouts.py")
         found = timeouts.gates()
         self.assertIn(OURS + "/dispatch.py", found)
         self.assertEqual([o for o in timeouts.offenders() if o[0].startswith(OURS + "/")],
@@ -491,7 +789,7 @@ class TheInstallIsAskedAtEveryCommit(unittest.TestCase):
     """`tools/bundle_install.py` - the commit's copy of the question `check_install.py` asks."""
 
     def setUp(self):
-        import bundle_install
+        bundle_install = bundle_hooks.load(HERE, "tools/bundle_install.py")
         self.bi = bundle_install
         self.tmp = tempfile.mkdtemp(prefix="vb-bi-")
         self.addCleanup(shutil.rmtree, self.tmp, True)
@@ -564,9 +862,10 @@ class TheInstallIsAskedAtEveryCommit(unittest.TestCase):
                 io.open(os.path.join(root, rel), "w", encoding="utf-8").write(stub)
             if os.path.exists(ran):
                 os.remove(ran)
-            done = subprocess.run([shutil.which("sh"), os.path.join(HERE, ".githooks", hook),
-                                   message], cwd=root, capture_output=True, text=True,
-                                  timeout=120, env={"PATH": folder, "HOME": root})
+            done = bounded.run([shutil.which("sh"), os.path.join(HERE, ".githooks", hook),
+                                message], cwd=root, capture_output=True, text=True,
+                               timeout=120, env={"PATH": folder, "HOME": root},
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             said = io.open(ran, encoding="utf-8").read().split() if os.path.exists(ran) else []
             self.assertEqual((done.returncode, sorted(said)),
                              (0, sorted(os.path.basename(r) for r in named)),
@@ -606,7 +905,7 @@ class ABundleIsFoundWhereverItsProjectDeclaresIt(unittest.TestCase):
     """
 
     def setUp(self):
-        import bundle_install
+        bundle_install = bundle_hooks.load(HERE, "tools/bundle_install.py")
         self.bi = bundle_install
         self.tmp = tempfile.mkdtemp(prefix="vb-where-")
         self.addCleanup(shutil.rmtree, self.tmp, True)
@@ -693,7 +992,7 @@ class ACommitTheGateNeverSawIsFoundAndRefused(unittest.TestCase):
     can see. The gate stamps what it passed; a commit without a stamp is found the moment after."""
 
     def setUp(self):
-        import gate_stamps
+        gate_stamps = bundle_hooks.load(HERE, "tools/gate_stamps.py")
         self.gs = gate_stamps
         self.root = tempfile.mkdtemp(prefix="gate-stamps-")
         self.addCleanup(shutil.rmtree, self.root, True)
@@ -705,8 +1004,8 @@ class ACommitTheGateNeverSawIsFoundAndRefused(unittest.TestCase):
         self.assertEqual(gate_stamps.init(self.root), 0)
         tool = os.path.abspath(gate_stamps.__file__).replace(chr(92), "/")
         python = sys.executable.replace(chr(92), "/")
-        hook = os.path.join(self.root, ".githooks", "commit-msg")
-        with io.open(hook, "w", encoding="utf-8", newline=LF) as handle:
+        with io.open(os.path.join(self.root, ".githooks", "commit-msg"), "w", encoding="utf-8",
+                     newline=LF) as handle:
             handle.write("#!/bin/sh" + LF + 'exec "%s" -B "%s" stamp "$1"' % (python, tool) + LF)
         # EXECUTABLE, OR GIT NEVER RUNS IT. Windows runs a hook whatever its mode; Linux and macOS
         # skip one without the bit, with only a hint - so on those every commit here was made
@@ -717,8 +1016,8 @@ class ACommitTheGateNeverSawIsFoundAndRefused(unittest.TestCase):
 
     def git(self, *args, **extra):
         env = dict(self.env, **extra)
-        done = subprocess.run(["git"] + list(args), cwd=self.root, capture_output=True,
-                              text=True, timeout=60, env=env, creationflags=NO_WINDOW)
+        done = bounded.run(["git"] + list(args), cwd=self.root, capture_output=True,
+                           text=True, timeout=60, env=env, creationflags=NO_WINDOW)
         self.assertEqual(done.returncode, 0, "git %s failed: %s" % (args, done.stderr))
         return done.stdout.strip()
 
@@ -727,32 +1026,6 @@ class ACommitTheGateNeverSawIsFoundAndRefused(unittest.TestCase):
                      newline=LF) as handle:
             handle.write(text + LF)
         self.git("add", "a.txt")
-
-    def test_a_commit_while_git_would_SKIP_its_hook_is_refused_before_it_is_made(self):
-        """Measured 2026-10-07: this bundle and CTRMap had committed `.githooks/*` as 100644 from
-        Windows, where git runs a hook whatever its mode. A clone on Linux or macOS takes that mode
-        and git there skips the hook with only a hint, so every cloud checkout would commit past
-        the gate while `core.hooksPath` named it. `core.fileMode` is off here, as Windows keeps it,
-        so the index records 100644 on every system and this test means the same everywhere."""
-        commit = getattr(self.gs, self.gs.AT_COMMIT)
-        self.assertEqual(commit("a change", self.root), [], "a hook git runs was refused")
-        self.git("config", "core.fileMode", "false")
-        self.git("add", "--", ".githooks/commit-msg")
-        said = commit("a change", self.root)
-        self.assertTrue(said, "a commit while git would skip its hook was let through")
-        self.assertIn("update-index --chmod=+x", " ".join(said), "the refusal names no remedy")
-        self.git("update-index", "--chmod=+x", "--", ".githooks/commit-msg")
-        self.assertEqual(commit("a change", self.root), [],
-                         "a hook committed executable was still refused")
-
-    @unittest.skipIf(os.name == "nt", "Windows has no executable bit for git to skip a hook over")
-    def test_a_hook_not_executable_ON_DISK_is_refused_too(self):
-        self.git("add", "--", ".githooks/commit-msg")
-        self.git("update-index", "--chmod=+x", "--", ".githooks/commit-msg")
-        os.chmod(os.path.join(self.root, ".githooks", "commit-msg"), 0o644)
-        said = self.gs.unrunnable_hooks(self.root)
-        self.assertTrue(any("chmod +x" in line for line in said),
-                        "a hook git would skip on this machine was let through: %r" % said)
 
     def test_a_commit_made_past_the_gate_is_found_until_it_is_off_every_ref(self):
         self.change("one")
@@ -769,7 +1042,7 @@ class ACommitTheGateNeverSawIsFoundAndRefused(unittest.TestCase):
                          "a commit taken off every ref was still refused")
 
     def test_a_message_that_is_not_ascii_is_matched_to_its_stamp(self):
-        """MEASURED 2026-09-27 on DT Engine: a subject led by the byte-order mark PowerShell's
+        """MEASURED 2026-09-27 on DF Engine: a subject led by the byte-order mark PowerShell's
         `Set-Content -Encoding utf8` writes was stamped by `commit-msg` and then refused as made
         past the gate, because git's copy was read back in the Windows code page. An em dash or an
         accent does the same."""
@@ -859,9 +1132,9 @@ class ACommitTheGateNeverSawIsFoundAndRefused(unittest.TestCase):
         shutil.rmtree(tree)
         self.addCleanup(shutil.rmtree, tree, True)
         self.git("worktree", "add", "-q", "--detach", tree)
-        done = subprocess.run(["git", "commit", "-q", "--allow-empty", "--no-verify", "-m",
-                               "detached, elsewhere"], cwd=tree, capture_output=True,
-                              text=True, timeout=60, env=self.env, creationflags=NO_WINDOW)
+        done = bounded.run(["git", "commit", "-q", "--allow-empty", "--no-verify", "-m",
+                            "detached, elsewhere"], cwd=tree, capture_output=True,
+                           text=True, timeout=60, env=self.env, creationflags=NO_WINDOW)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(len(self.gs.ungated(self.root)), 1,
                          "a commit made past the gate in another worktree was not found")
@@ -875,6 +1148,34 @@ class ACommitTheGateNeverSawIsFoundAndRefused(unittest.TestCase):
             with self.subTest(repair):
                 self.assertEqual(self.gs.before_command(repair, self.root), [],
                                  "the repair of an ungated commit was refused")
+
+    def test_with_NO_BASELINE_the_remedy_the_refusal_names_runs_and_nothing_else_does(self):
+        """MEASURED 2026-10-07 in the bundle's own repository, the moment its wiring landed: every
+        command was refused with "`gate_stamps.py init` writes it" - and `gate_stamps.py init`,
+        not being a git read, was refused with them. A refusal whose remedy it refuses is a
+        lock-out; only the Write tool, which this rule does not ask, was left."""
+        os.remove(os.path.join(self.root, self.gs.BEFORE_FILE))
+        self.assertTrue(self.gs.before_command("python -m unittest", self.root),
+                        "the control: with no baseline, work was let run")
+        for remedy in ("python -B tools/gate_stamps.py init", "python3 tools/gate_stamps.py init",
+                       'py -3 "C:/b/tools/gate_stamps.py" init'):
+            with self.subTest(remedy):
+                self.assertEqual(self.gs.before_command(remedy, self.root), [],
+                                 "the remedy the refusal names was refused by the refusal")
+        for dressed in ("python -B tools/gate_stamps.py init; python -m unittest",
+                        "python -B tools/gate_stamps.py check", "python init.py",
+                        "python -B tools/gate_stamps.py init --force"):
+            with self.subTest(dressed):
+                self.assertTrue(self.gs.before_command(dressed, self.root),
+                                "a command dressed as the remedy walked past the refusal")
+
+    def test_once_the_baseline_EXISTS_its_remedy_is_no_way_past_an_ungated_commit(self):
+        """The cheapest way past a stamp check is a command it lets through: `init` is the remedy
+        only while there is no baseline, and with one it forgives nothing."""
+        self.change("one")
+        self.git("commit", "-q", "--no-verify", "-m", "past the gate")
+        self.assertTrue(self.gs.before_command("python -B tools/gate_stamps.py init", self.root),
+                        "the baseline's remedy let a command run over an ungated commit")
 
     def test_the_baseline_is_written_once_and_never_widened(self):
         """Forgiving a commit is the cheapest way past this check: write it into the baseline,
@@ -1081,6 +1382,7 @@ class ACommitTheGateNeverSawIsFoundAndRefused(unittest.TestCase):
             "gate_stamps_deeper", os.path.join(deeper, "gate_stamps.py"))
         copy = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(copy)
+        bundle_hooks.turn_off(copy)
         self.assertEqual(os.path.normcase(copy.ROOT), os.path.normcase(self.root),
                          "a copy installed under tools/audit/ took tools/ for its repository")
 
@@ -1131,7 +1433,7 @@ class EveryToolHereIsAskedAtTheActItGuards(unittest.TestCase):
         return path
 
     def test_every_tool_that_refuses_declares_an_act_or_is_run_by_the_gate(self):
-        import tiers
+        tiers = bundle_hooks.load(HERE, "tools/tiers.py")
         sys.path.insert(0, HOOKS)
         import bundle_rules
         gate = set()
@@ -1154,7 +1456,7 @@ class EveryToolHereIsAskedAtTheActItGuards(unittest.TestCase):
                              "of action - take them out of `_tiers_adopted`, or they can fall back")
 
     def test_tiers_refuses_a_guard_nothing_asks_and_credits_one_a_wired_hook_asks(self):
-        import tiers
+        tiers = bundle_hooks.load(HERE, "tools/tiers.py")
         self.write(".claude/settings.json", '{"command": "python %s/dispatch.py"}' % OURS)
         self.write(OURS + "/guard_write_rules.py", "# present" + LF)
         self.write("CLAUDE.md", "# scratch" + LF)
@@ -1170,7 +1472,7 @@ class EveryToolHereIsAskedAtTheActItGuards(unittest.TestCase):
         Nothing asked: an Edit adding a name to it excused a new detector as starting debt at
         the commit, and deleting the record then writing a larger one was two allowed writes."""
         from unittest import mock
-        import tiers
+        tiers = bundle_hooks.load(HERE, "tools/tiers.py")
         rel = ".claude/bundle-install.json"
 
         def record(*below):
@@ -1193,7 +1495,7 @@ class EveryToolHereIsAskedAtTheActItGuards(unittest.TestCase):
         """The second layer, for a write no hook saw: `tiers.py`, which every commit runs, refuses
         an adoption larger than the one HEAD carries."""
         from unittest import mock
-        import tiers
+        tiers = bundle_hooks.load(HERE, "tools/tiers.py")
         head = json.dumps({"_tiers_adopted": {"at": "x", "below": ["tools/old.py"]}})
         out = io.StringIO()
         with mock.patch.object(tiers, "guards", return_value=[("tools/new.py", "")]), \
@@ -1229,14 +1531,14 @@ class EveryToolHereIsAskedAtTheActItGuards(unittest.TestCase):
         """MACHINERY was a list of four names, and `request_ledger` - asked only by
         `guard_requests` and `guard_fanout` - was refused as below the point of action by
         CTRMap's first commit after it arrived. Imported by a dispatched guard is asked there."""
-        import tiers
+        tiers = bundle_hooks.load(HERE, "tools/tiers.py")
         self.machinery_tree()
         self.assertEqual([r for r in tiers.below(self.tmp) if r.startswith(OURS + "/")],
                          [OURS + "/loose_y.py"],
                          "a module a dispatched guard imports was refused as nobody's")
 
     def test_the_write_time_judge_derives_the_same_machinery(self):
-        import tiers
+        tiers = bundle_hooks.load(HERE, "tools/tiers.py")
         mine = self.machinery_tree()
         self.addCleanup(setattr, tiers, "_root", tiers._root)
         tiers._root = lambda: self.tmp
@@ -1250,7 +1552,7 @@ class EveryToolHereIsAskedAtTheActItGuards(unittest.TestCase):
                          "the write-time judge refused a module a dispatched guard imports")
 
     def test_an_exclusion_from_the_guards_must_carry_its_reason(self):
-        import tiers
+        tiers = bundle_hooks.load(HERE, "tools/tiers.py")
         self.assertEqual(tiers.excusals(), [])
         held = dict(tiers.NOT_GUARDS)
         self.addCleanup(setattr, tiers, "NOT_GUARDS", held)
@@ -1258,7 +1560,7 @@ class EveryToolHereIsAskedAtTheActItGuards(unittest.TestCase):
         self.assertTrue(tiers.excusals(), "an exclusion with a label for a reason was accepted")
 
     def test_the_commit_gate_answers_a_message_before_git_starts(self):
-        import commit_gate
+        commit_gate = bundle_hooks.load(HERE, "tools/commit_gate.py")
         self.assertTrue(commit_gate.message_problems("docs: a note" + LF),
                         "a message with no co-author trailer passed the command-time check")
         self.assertEqual(commit_gate.message_problems(
@@ -1266,14 +1568,14 @@ class EveryToolHereIsAskedAtTheActItGuards(unittest.TestCase):
             + LF), [])
 
     def test_a_gate_file_gaining_an_unbounded_child_is_refused_at_the_write(self):
-        import timeouts
+        timeouts = bundle_hooks.load(HERE, "tools/timeouts.py")
         source = "import subprocess" + LF + 'subprocess.run(["x"])' + LF
         self.assertTrue(timeouts.findings_in(OURS + "/dispatch.py", source),
                         "an unbounded child in a file every tool call runs was let in")
         self.assertEqual(timeouts.findings_in("src/not_a_gate.py", source), [])
 
     def test_a_record_covering_LESS_of_the_tree_is_refused_at_its_write(self):
-        import whole_tree
+        whole_tree = bundle_hooks.load(HERE, "tools/whole_tree.py")
         # IN THE LAYOUT THE TOOL IS ADAPTED TO. Spelled as `src/m0.py` under `tests/`, this went
         # red in the first project to adapt it - CTRMap's sources are `.java` and its record sits
         # at the top - over code that was right.
@@ -1296,7 +1598,7 @@ class EveryToolHereIsAskedAtTheActItGuards(unittest.TestCase):
         self.assertEqual(whole_tree.unheld_in(path, every, project=self.tmp), [])
 
     def test_the_install_is_asked_as_the_write_would_leave_it(self):
-        import bundle_install
+        bundle_install = bundle_hooks.load(HERE, "tools/bundle_install.py")
         project = os.path.join(self.tmp, "p")
         with io.open(os.path.join(HOOKS, "dispatch.py"),
                      encoding="utf-8") as handle:
@@ -1314,6 +1616,34 @@ class EveryToolHereIsAskedAtTheActItGuards(unittest.TestCase):
                                                project, declared)
         self.assertGreater(len(drifted), len(same),
                            "a hook edited out of step with the bundle was not seen at the write")
+
+    def test_the_install_is_asked_as_a_SET_of_writes_would_leave_it(self):
+        """`AT_WRITE_SET`: every changed install file at once, None for one that is gone. A
+        command that changed many was asked one file at a time - the whole install check twice
+        per file, 98 s for one dispatcher call (measured 2026-10-10) - so it is asked once a side,
+        and the set must still be read as the command would leave it."""
+        from unittest import mock
+        bundle_install = bundle_hooks.load(HERE, "tools/bundle_install.py")
+        self.assertEqual(bundle_install.AT_WRITE_SET, "worse_with")
+        with io.open(os.path.join(HOOKS, "dispatch.py"), encoding="utf-8") as handle:
+            shipped = handle.read()
+        # A PROJECT OF ITS OWN, as the test above builds one: asked in this folder, the project's
+        # copy of a hook and the bundle's are the same file, and a drift served for one is both.
+        project = os.path.join(self.tmp, "p")
+        rel = bundle_hooks.DEFAULT + "/dispatch.py"
+        self.write("p/" + rel, shipped)
+        where = (HERE if os.path.isfile(os.path.join(TOOLS, "check_install.py"))
+                 else bundle_install.bundle_path()[0])
+        declared = self.write("p/.claude/bundle-install.json", json.dumps({"_bundle": where}))
+        for name, value in (("ROOT", project), ("DECLARATIONS", declared)):
+            patched = mock.patch.object(bundle_install, name, value)
+            patched.start()
+            self.addCleanup(patched.stop)
+        same = bundle_install.worse_with({rel: shipped})
+        self.assertGreater(len(bundle_install.worse_with({rel: shipped + LF + "ZZ_DRIFT = 1" + LF})),
+                           len(same), "a hook edited out of step was not seen in the set")
+        self.assertGreater(len(bundle_install.worse_with({rel: None})), len(same),
+                           "a hook the set deletes was read as still there")
 
 
 class TheBundlesHooksAreFoundNotSpelled(unittest.TestCase):
@@ -1362,7 +1692,7 @@ class TheBundlesHooksAreFoundNotSpelled(unittest.TestCase):
                          "a scratch tree was answered with a layout its installation does not use")
 
     def test_a_dispatcher_asks_only_the_guards_beside_it(self):
-        import tiers
+        tiers = bundle_hooks.load(HERE, "tools/tiers.py")
         refusing = "def main():" + LF + '    print("REFUSING: no")' + LF
         self.write(bundle_hooks.DEFAULT + "/guard_mine.py", refusing)
         self.write(".claude/bundle-hooks/bundle_rules.py", "# the mark" + LF)
@@ -1386,7 +1716,7 @@ class EveryRootIsAnchoredNeverCounted(unittest.TestCase):
     sets, three of which answered a counted guess when they found none."""
 
     def setUp(self):
-        import counted_roots
+        counted_roots = bundle_hooks.load(HERE, "tools/counted_roots.py")
         self.check = counted_roots
 
     def test_the_checker_still_sees_every_spelling_it_refuses(self):
@@ -1433,3 +1763,347 @@ class EveryRootIsAnchoredNeverCounted(unittest.TestCase):
             anchors.add(os.path.join(top, "p", "a", "CLAUDE.md"))
             self.assertEqual(_tree_root.repo_root(start), os.path.join(top, "p", "a"),
                              "the nearest anchor is not the root")
+
+
+class AStampThatCannotBeWrittenSaysWhatGitSaid(unittest.TestCase):
+    """`gate_stamps.stamp` refused a pathspec commit on CTRMap (2026-09-26) with "git could not say
+    the tree or where the repository keeps its state" and nothing else: its git helper threw git's
+    own words away, so the refusal could not say WHY and the case stayed unexplained for weeks.
+    Reproduced on 2026-10-09 through the real commit-msg chain in a clone, the same pathspec commit
+    stamped; whatever made it fail then, the next failure says what git said."""
+
+    def setUp(self):
+        self.gate_stamps = bundle_hooks.load(HERE, "tools/gate_stamps.py")
+        self.tmp = tempfile.mkdtemp(prefix="stamp-why-")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.message = os.path.join(self.tmp, "MSG")
+        with io.open(self.message, "w", encoding="utf-8") as handle:
+            handle.write("fix: a subject" + LF)
+
+    def stamp(self, root):
+        said = io.StringIO()
+        held, sys.stderr = sys.stderr, said
+        try:
+            code = self.gate_stamps.stamp(self.message, root)
+        finally:
+            sys.stderr = held
+        return code, said.getvalue()
+
+    def test_a_stamp_git_cannot_place_says_what_git_said(self):
+        nowhere = os.path.join(self.tmp, "not a repository")
+        os.makedirs(nowhere)
+        env = {k: os.environ.pop(k) for k in list(os.environ) if k.startswith("GIT_")}
+        self.addCleanup(os.environ.update, env)
+        code, said = self.stamp(nowhere)
+        self.assertEqual(code, 1, "a stamp git could not place was written")
+        self.assertIn("not a git repository", said.lower(),
+                      "the stamp's refusal did not say what git said: %r" % said[:300])
+
+    def test_control_a_stamp_in_a_repository_is_written(self):
+        repo = os.path.join(self.tmp, "repo")
+        os.makedirs(repo)
+        bounded.run(["git", "init", "-q", repo], capture_output=True, timeout=120,
+                    creationflags=NO_WINDOW)
+        env = {k: os.environ.pop(k) for k in list(os.environ) if k.startswith("GIT_")}
+        self.addCleanup(os.environ.update, env)
+        code, said = self.stamp(repo)
+        self.assertEqual(code, 0, "CONTROL: a stamp in a real repository was refused: %r" % said)
+
+
+#: Long enough for a child to start its grandchild and say so; short enough that four of them are a minute.
+TREE_DEADLINE = 4
+
+#: A child that starts a grandchild, writes the grandchild's pid, then waits half a minute or leaves at
+#: once. The grandchild sleeps TWO minutes: longer than any wait here, so one still listed after a wait
+#: ends was left running - not one that happened to be finishing on its own.
+TREE_CHILD = LF.join([
+    "import subprocess, sys, time",
+    "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])",
+    "with open(sys.argv[1], 'w') as f:",
+    "    f.write(str(g.pid))",
+    "if sys.argv[2] == 'wait':",
+    "    time.sleep(30)",
+    "",
+])
+
+
+def _listed(pid):
+    """True when `pid` is a live process, asked of THE ONE PROBE, `bundle_shell.present`, which answers ALIVE
+    whenever it cannot tell - so a grandchild this cannot see is never read as one that was ended. It asked
+    tasklist itself until 2026-10-11: a second spelling of a question with one answer, refused as such by
+    CTRMap's liveness checker the day the bundle was installed there."""
+    sys.path.insert(0, HOOKS)
+    import bundle_shell
+    return bundle_shell.present(pid)
+
+
+def _end(pid):
+    """Ends a survivor this test only knows by pid - the control's grandchild."""
+    if os.name == "nt":
+        bounded._taskkill(pid)
+    else:
+        try:
+            os.kill(pid, 9)
+        except OSError:
+            pass
+
+
+class ADeadlineEndsTheWholeTree(unittest.TestCase):
+    """`bounded.run` - PAID FOR 2026-10-09 on CTRMap: a test handed `bash -c` a 120-second deadline,
+    bash died on it, and the python launcher bash had started and the hook that launcher ran were
+    still alive seven hours later. Each check starts a real grandchild, lets a real deadline pass and
+    asks the operating system whether the grandchild is still there - after the CONTROL: the same
+    deadline taken as `subprocess.run` takes it leaves the grandchild running, so a query that has
+    stopped seeing processes cannot pass these."""
+
+    def start(self, mode):
+        folder = tempfile.mkdtemp(prefix="bundle-bounded-")
+        self.addCleanup(shutil.rmtree, folder, True)
+        script = os.path.join(folder, "child.py")
+        with io.open(script, "w", encoding="utf-8") as handle:
+            handle.write(TREE_CHILD)
+        pidfile = os.path.join(folder, "grandchild.pid")
+        return [sys.executable, script, pidfile, mode], pidfile
+
+    def grandchild(self, pidfile):
+        self.assertTrue(os.path.isfile(pidfile), "the child never wrote its grandchild's pid - the "
+                                                 "setup did not run")
+        with io.open(pidfile, encoding="utf-8") as handle:
+            pid = int(handle.read())
+        time.sleep(1)
+        up = _listed(pid)
+        if up:
+            self.addCleanup(_end, pid)
+        return pid, up
+
+    def test_the_query_sees_a_live_process_and_not_a_dead_one(self):
+        self.assertTrue(_listed(os.getpid()), "the query cannot see this very process")
+        self.assertFalse(_listed(999999), "the query lists a pid nothing holds")
+
+    def test_control_a_deadline_that_ends_only_the_child_leaves_the_grandchild_running(self):
+        args, pidfile = self.start("wait")
+        child = subprocess.Popen(args, creationflags=NO_WINDOW)
+        with self.assertRaises(subprocess.TimeoutExpired):
+            child.wait(timeout=TREE_DEADLINE)
+        child.kill()
+        child.wait(timeout=30)
+        _pid, up = self.grandchild(pidfile)
+        self.assertTrue(up, "CONTROL: the grandchild of a child killed alone was gone - this query "
+                            "cannot tell a survivor from a dead process")
+
+    def test_bounded_run_ends_the_grandchild_with_its_parent(self):
+        args, pidfile = self.start("wait")
+        with self.assertRaises(subprocess.TimeoutExpired) as raised:
+            bounded.run(args, timeout=TREE_DEADLINE, creationflags=NO_WINDOW)
+        pid, up = self.grandchild(pidfile)
+        self.assertFalse(up, "grandchild %d outlived bounded.run's deadline" % pid)
+        self.assertIsNone(raised.exception.tree_not_ended, "the tree ended and the exception said "
+                                                          "it had not")
+
+    def test_one_whose_parent_left_holding_the_pipe_is_ended_promptly(self):
+        args, pidfile = self.start("leave")
+        started = time.time()
+        with self.assertRaises(subprocess.TimeoutExpired) as raised:
+            bounded.run(args, capture_output=True, timeout=TREE_DEADLINE, creationflags=NO_WINDOW)
+        took = time.time() - started
+        pid, up = self.grandchild(pidfile)
+        self.assertFalse(up, "grandchild %d outlived bounded.run's deadline" % pid)
+        self.assertLess(took, TREE_DEADLINE + 20, "bounded.run waited %.1f s for a pipe a dead "
+                                                  "tree held" % took)
+        self.assertIsNone(raised.exception.tree_not_ended, "the tree ended and the exception said "
+                                                          "it had not")
+
+    def test_a_tree_it_cannot_end_is_given_up_on_promptly_and_said(self):
+        """MEASURED: with the orphan out of reach, leaving `with Popen(...)` closed a pipe a reader
+        thread was still blocked on, and on Windows that close waited for the orphan - 120 s, its
+        whole life - inside a call that had already given up. Shown here by an end that ends nothing."""
+        from unittest import mock
+        args, pidfile = self.start("leave")
+        started = time.time()
+        with mock.patch.object(bounded, "end_tree", return_value="ended nothing, as told"), \
+                mock.patch.object(bounded, "KILL_DEADLINE", 3):
+            with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                bounded.run(args, capture_output=True, timeout=TREE_DEADLINE, creationflags=NO_WINDOW)
+        took = time.time() - started
+        self.grandchild(pidfile)
+        self.assertLess(took, TREE_DEADLINE + 15, "bounded.run waited %.1f s with a tree it could "
+                                                  "not end" % took)
+        self.assertIn("ended nothing", raised.exception.tree_not_ended or "",
+                      "a tree that was not ended was reported as ended")
+
+    def test_a_child_that_finishes_gets_subprocess_runs_answer(self):
+        done = bounded.run([sys.executable, "-c", "print('hi')"], capture_output=True, text=True,
+                           timeout=60, creationflags=NO_WINDOW)
+        self.assertEqual((done.returncode, done.stdout.strip()), (0, "hi"))
+        with self.assertRaises(subprocess.CalledProcessError):
+            bounded.run([sys.executable, "-c", "raise SystemExit(3)"], check=True, timeout=60,
+                        creationflags=NO_WINDOW)
+
+
+class ADeadlineThatEndsOnlyTheChildIsRefused(unittest.TestCase):
+    """`tools/timeouts.py` refuses a deadline handed to one of subprocess's own waits, anywhere in the
+    tree; `tools/counted_roots.py` holds every copy of `bounded.py` to the one in tools/."""
+
+    def setUp(self):
+        timeouts = bundle_hooks.load(HERE, "tools/timeouts.py")
+        counted_roots = bundle_hooks.load(HERE, "tools/counted_roots.py")
+        self.timeouts, self.counted = timeouts, counted_roots
+
+    def test_every_spelling_of_a_subprocess_deadline_is_seen(self):
+        refused = [
+            "import subprocess" + LF + "subprocess.run(['x'], timeout=5)" + LF,
+            "import subprocess as sp" + LF + "sp.check_output(['x'], timeout=5)" + LF,
+            "from subprocess import call" + LF + "call(['x'], timeout=5)" + LF,
+            "from subprocess import run as go" + LF + "go(['x'], timeout=5)" + LF,
+        ]
+        for source in refused:
+            self.assertEqual(self.timeouts.kills_only_the_child(source), [2],
+                             "not refused: " + source)
+        allowed = [
+            "import bounded" + LF + "bounded.run(['x'], timeout=5)" + LF,
+            "import subprocess" + LF + "p = subprocess.Popen(['x'])" + LF
+            + "p.communicate(timeout=5)" + LF,
+            "import subprocess" + LF + "subprocess.run(['x'])" + LF,
+        ]
+        for source in allowed:
+            self.assertEqual(self.timeouts.kills_only_the_child(source), [], "refused: " + source)
+
+    def test_a_bounded_run_with_no_deadline_is_still_unbounded(self):
+        for source in ("import bounded" + LF + "bounded.run(['x'])" + LF,
+                       "import bounded as b" + LF + "b.run(['x'])" + LF):
+            self.assertEqual(self.timeouts.unbounded(source), [2],
+                             "a bounded.run with no deadline was not seen: " + source)
+
+    def test_the_tree_walk_sees_an_offender_it_is_shown(self):
+        """The control for the walk below: a tree holding one offender and one file that is clean."""
+        from unittest import mock
+        tmp = tempfile.mkdtemp(prefix="bundle-deadline-tree-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        env = {k: os.environ.pop(k) for k in list(os.environ) if k.startswith("GIT_")}
+        self.addCleanup(os.environ.update, env)
+        bounded.run(["git", "init", "-q", tmp], capture_output=True, timeout=120,
+                    creationflags=NO_WINDOW)
+        for name, call in (("x.py", "subprocess.run(['x'], timeout=5)"),
+                           ("y.py", "subprocess.run(['x'])")):
+            with io.open(os.path.join(tmp, name), "w", encoding="utf-8") as handle:
+                handle.write("import subprocess" + LF + call + LF)
+        with mock.patch.object(self.timeouts, "ROOT", tmp):
+            found = self.timeouts.tree_offenders()
+        self.assertEqual(found, [("x.py", 2)], "the walk did not see the one offender it was shown, "
+                                               "or saw one in a clean file: %s" % found)
+
+    def test_the_refusal_is_asked_of_every_python_file_at_the_write(self):
+        said = self.timeouts.findings_in("tests/anything.py", "import subprocess" + LF
+                                         + "subprocess.run(['x'], timeout=5)" + LF)
+        self.assertEqual(len(said), 1, "a test file handing subprocess a deadline was not refused: "
+                                       "%s" % said)
+        self.assertIn("bounded.run", said[0])
+        said = self.timeouts.findings_in("tests/anything.py", "def (" + LF)
+        self.assertEqual(len(said), 1, "a file that does not parse was read as clean: %s" % said)
+        self.assertIn("UNKNOWN", said[0])
+
+    def test_nothing_in_this_tree_hands_subprocess_a_deadline(self):
+        found = self.timeouts.tree_offenders()
+        self.assertIsNotNone(found, "the tree could not be listed, so whether a deadline ends only a "
+                                    "child is UNKNOWN")
+        self.assertEqual(found, [], "a deadline that ends only the child: %s" % found)
+
+    def test_a_copy_of_bounded_that_drifts_is_refused(self):
+        with io.open(os.path.join(TOOLS, "bounded.py"), encoding="utf-8", newline="") as handle:
+            text = handle.read()
+        self.assertEqual(self.counted.findings_in("tests/bounded.py", text), [],
+                         "an exact copy was refused")
+        self.assertTrue(self.counted.findings_in("tests/bounded.py", text + "#" + LF),
+                        "a copy of bounded.py that drifted was not refused")
+
+    @staticmethod
+    def fakes_of_run(source):
+        """[module name] of every fake of a module's subprocess.run in SOURCE's CODE - patch.object(m.subprocess,
+        "run", ...) or patch("m.subprocess.run", ...) - read from its syntax tree, so a string or a comment
+        that spells one is not one. None when SOURCE does not parse."""
+        import ast
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return None
+        out = []
+        for n in ast.walk(tree):
+            #THE WHOLE MODULE REPLACED - `m.subprocess = stand_in` - is a fake of every call it makes through it
+            if isinstance(n, ast.Assign):
+                out += [(t.value.id, "subprocess") for t in n.targets if isinstance(t, ast.Attribute)
+                        and t.attr == "subprocess" and isinstance(t.value, ast.Name)]
+                continue
+            if not isinstance(n, ast.Call) or not n.args:
+                continue
+            name = getattr(n.func, "attr", None) or getattr(n.func, "id", None)
+            first = n.args[0]
+            second = n.args[1] if len(n.args) > 1 else None
+            if name == "object" and isinstance(first, ast.Attribute) and first.attr == "subprocess" \
+                    and isinstance(first.value, ast.Name) and isinstance(second, ast.Constant) \
+                    and second.value == "run":
+                out.append((first.value.id, "run"))
+            elif name in ("object", "setattr") and isinstance(first, ast.Name) \
+                    and isinstance(second, ast.Constant) and second.value == "subprocess":
+                out.append((first.id, "subprocess"))
+            elif name == "patch" and isinstance(first, ast.Constant) and isinstance(first.value, str) \
+                    and re.fullmatch(r"\w+\.subprocess(\.run)?", first.value):
+                out.append((first.value.split(".")[0], "run" if first.value.endswith(".run") else "subprocess"))
+        return out
+
+    @staticmethod
+    def calls_subprocess_run(source, starters=("run",)):
+        """Does SOURCE call `subprocess.<one of starters>` itself? None when it does not parse."""
+        import ast
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return None
+        return any(isinstance(n, ast.Call) and getattr(n.func, "attr", None) in starters
+                   and getattr(getattr(n.func, "value", None), "id", None) == "subprocess" for n in ast.walk(tree))
+
+    #What a stand-in for a module's WHOLE subprocess could intercept: every way it starts a child
+    STARTERS = ("run", "Popen", "call", "check_call", "check_output")
+
+    def test_no_test_fakes_a_subprocess_run_its_code_no_longer_makes(self):
+        """A FAKE OF A CALL THE CODE NO LONGER MAKES INTERCEPTS NOTHING. Measured 2026-10-10: when the
+        deadline moved onto bounded.run, two tests still faked `subprocess.run` to make git unaskable -
+        the fake caught nothing, the real git answered, and one of them shipped red on the bundle's own
+        tree. A fake that a test expects to pass through is worse: it passes having tested nothing."""
+        names = self.fakes_of_run('mock.patch.object(work_order.subprocess, "run", no_git)' + LF
+                                  + 'mock.patch("rules.subprocess.run")' + LF
+                                  + 'recorder.subprocess = types.SimpleNamespace(run=f)' + LF
+                                  + 'mock.patch.object(gate, "subprocess", fake)' + LF
+                                  + 'said = "mock.patch.object(quoted.subprocess, \'run\', x)"  # patch("c.subprocess.run")')
+        self.assertEqual(sorted(names), [("gate", "subprocess"), ("recorder", "subprocess"), ("rules", "run"),
+                                         ("work_order", "run")],
+                         "control: every spelling of the fake is seen - its run, or its whole subprocess - and "
+                         "one in a string or a comment is not")
+        self.assertTrue(self.calls_subprocess_run("import subprocess" + LF + "subprocess.run(['x'])" + LF)
+                        and not self.calls_subprocess_run("import bounded" + LF + "bounded.run(['x'])" + LF),
+                        "control: a call of subprocess.run is told from one of bounded.run")
+        files = self.counted.python_files(HERE)
+        self.assertTrue(files, "the tree could not be listed - UNKNOWN, not clean")
+        homes = {}
+        for rel in files:
+            homes.setdefault(rel.rsplit("/", 1)[-1][:-3], []).append(rel)
+
+        def read(rel):
+            with io.open(os.path.join(HERE, rel), encoding="utf-8", errors="replace") as handle:
+                return handle.read()
+        stale = []
+        for rel in files:
+            if not rel.rsplit("/", 1)[-1].startswith("test_"):
+                continue
+            fakes = self.fakes_of_run(read(rel))
+            if fakes is None:
+                stale.append("%s does not parse, so whether it fakes a call is UNKNOWN" % rel)
+                continue
+            for name, what in fakes:
+                found = homes.get(name, [])
+                starters = ("run",) if what == "run" else self.STARTERS
+                if not found:
+                    stale.append("%s fakes %s's subprocess, and no %s.py is here to fake it in" % (rel, name, name))
+                elif not any(self.calls_subprocess_run(read(home), starters) for home in found):
+                    stale.append("%s fakes %s's subprocess%s, which %s never starts a child through - fake the "
+                                 "call it makes" % (rel, name, ".run" if what == "run" else "", "/".join(found)))
+        self.assertEqual(stale, [], "a fake that intercepts nothing: %s" % stale)

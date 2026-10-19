@@ -21,12 +21,19 @@ public final class GiveBpForm {
 	private final JSpinner amount = new JSpinner(new javax.swing.SpinnerNumberModel(20, 1, 9999, 1));
 
 	private final ModelPicker model;
+	private final OnceFlagRow once;
 
 	public GiveBpForm(ctrmap.formats.GameFiles game, NPCRegistry reg, List<CustomH3DPreview> livePreviews) {
 		this.model = new ModelPicker(reg, livePreviews, game, -1);
 		Forms.addLabeled(panel, "Battle Points to give:", amount);
 		Forms.addLabeled(panel, "NPC model (type to search; preview below):", model);
-		panel.add(Forms.hint("<html>The NPC adds this many BP each time it is talked to (no one-time flag yet;<br>the game caps total BP at 9999). Uses the engine's own BP natives.</html>"));
+		panel.add(Forms.hint("<html>The NPC adds this many BP each time it is talked to, unless it gives once (the game<br>caps total BP at 9999). Uses the engine's own BP natives.</html>"));
+		this.once = new OnceFlagRow(game, panel);
+	}
+
+	/** The event flag the NPC gives once by, or -1 for every talk (F085). */
+	public int onceFlag() {
+		return once.flag();
 	}
 
 	public int amount() {

@@ -48,6 +48,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bundle_env        # noqa: E402  - one PREFIX renames every override
 import bundle_rules      # noqa: E402  - the one implementation of asking a rule
 import bundle_shell      # noqa: E402  - the call, found by shape
+import request_ledger    # noqa: E402  - the transcript, read: who the owner's sessions are
 
 LF = chr(10)
 
@@ -134,8 +135,30 @@ def runs_a_rule_tool(command):
 
 def looks(payload):
     """A read, by shape - and an agent launch is NOT one, though it carries no command and
-    writes nothing itself: what it launches can build on anything standing in the tree."""
-    return bundle_shell.reads_only(payload) and not bundle_shell.launches(payload)
+    writes nothing itself: what it launches can build on anything standing in the tree.
+
+    A MESSAGE TO ONE OF THE OWNER'S OWN RUNNING SESSIONS IS NOT A LAUNCH, here as in
+    `guard_fanout` and `guard_agent_edits`: it starts no agent, and it is how a held session says
+    why it has stopped. This asked `launches` alone, which counts a message as one, so a held tree
+    refused every session's word to every other. Measured on the project this bundle was installed
+    into, 2026-10-10: one session's staged change held the shared checkout for ten minutes, the
+    session it blocked could not tell the one that could repair it, and the owner had to carry
+    the message - the 2026-09-24 "no way to say so" class, back through a third call site. A
+    message to a name the harness's own listing does not hold is still a launch, and refused."""
+    if not bundle_shell.reads_only(payload):
+        return False
+    if not bundle_shell.launches(payload):
+        return True
+    # THE REVIEW THE LEDGER DEMANDS IS A READ. It is the one launch a turn may not end without,
+    # synchronous and read-only, and it judges what was asked - it builds on nothing held. This
+    # refused it like any launch, so a held tree left a turn that had to be reviewed to end and
+    # could not be: measured 2026-10-10 on DF Engine, while another session's install held the
+    # main checkout. The 2026-09-26 test asked every launch hook for the review only in a tree
+    # with nothing held, which is the one state this hook lets everything through.
+    if request_ledger.is_owed_review(payload):
+        return True
+    return bundle_shell.message_to_session(
+        payload, request_ledger.read_rows(payload.get("transcript_path")))
 
 
 def repairs(payload, root, held, named=()):
@@ -148,14 +171,17 @@ def repairs(payload, root, held, named=()):
     rels = set(held)
     writable = rels | set(named)
     if bundle_shell.writes(payload):
-        targets = [bundle_rules.rel_of(root, t if os.path.isabs(t) else os.path.join(root, t))
-                   for t in bundle_shell.paths(payload)]
+        paths = [os.path.abspath(t if os.path.isabs(t) else os.path.join(root, t))
+                 for t in bundle_shell.paths(payload)]
+        targets = [bundle_rules.rel_of(root, p) for p in paths]
         # A FILE OUTSIDE THE PROJECT IS NOT THIS PROJECT'S TO HOLD - the write hook says the
         # same. Measured: the source project's bundle is a folder beside it, and refusing a
         # write there while a change was held left the change and its fix in two places that
-        # could each only be written after the other.
+        # could each only be written after the other. Nor is a file of ANOTHER CHECKOUT, though
+        # it sits inside this folder: a worktree's change is held by that worktree.
         if not targets or not all(t in writable or bundle_rules.repairs(root, t) or t == ".."
-                                  or t.startswith("../") for t in targets):
+                                  or t.startswith("../") or bundle_rules.landing(root, p) != root
+                                  for t, p in zip(targets, paths)):
             return False
     text = bundle_shell.text(payload)
     if not text:
@@ -165,8 +191,27 @@ def repairs(payload, root, held, named=()):
                            or runs_a_rule_tool(one)))
 
 
-def verdict(payload, root):
-    """(exit code, message) for one call, or for the end of a turn."""
+def _unreadable(payload, root, call, why, repairable=False):
+    """(exit code, message) where a tree cannot be judged: only reads and git go through - and,
+    when what failed is the CHILD asked about a worktree, a write to this tree's hooks or rules,
+    the only place a judge that cannot start is repaired."""
+    text = bundle_shell.text(payload) if call else ""
+    if text and bundle_shell.every_command_is(
+            text, lambda one: _matches(one, READERS + (r"^\s*git\b",))):
+        return 0, ""
+    targets = bundle_shell.paths(payload) if call and bundle_shell.writes(payload) else []
+    if repairable and targets and all(bundle_rules.repairs(root, bundle_rules.rel_of(
+            root, t if os.path.isabs(t) else os.path.join(root, t))) for t in targets):
+        return 0, ""
+    return 2, ("BLOCKED: what changed in the tree cannot be read (%s), so no write that arrived "
+               "by a command can be judged. A tree nobody can read is not a clean one. Only "
+               "reads and git go through until it can be read - in a folder that is not a "
+               "repository yet, `git init`. The owner's way past: %s=1." % (why, ALLOW))
+
+
+def verdict(payload, root, delegate=True):
+    """(exit code, message) for one call, or for the end of a turn. `delegate` False: this
+    process IS the child asked about another checkout, and asks nothing further."""
     call = bundle_shell.is_tool_call(payload)
     if call and looks(payload):
         return 0, ""
@@ -178,17 +223,24 @@ def verdict(payload, root):
     # change is judged by the real judge the first time it is back, which is seconds - a plant.
     if bundle_shell.judge_under_mutation(root, bundle_rules.LOCK):
         return 0, ""
+    if delegate:
+        # EACH CHECKOUT THE CALL ACTS IN, judged as itself: this tree in this process, a worktree
+        # by its own rules in a child. A call running in a worktree builds on the worktree, not
+        # on whatever another session left held in this tree.
+        for place in bundle_rules.checkouts(payload, root):
+            if place == root:
+                code, said = verdict(payload, root, delegate=False)
+            else:
+                code, said = bundle_rules.ask_checkout(__file__, place, payload)
+                if code is None:
+                    code, said = _unreadable(payload, root, call, "the worktree at %s could not "
+                                             "be asked: %s" % (place, said), repairable=True)
+            if code:
+                return code, said
+        return 0, ""
     judged = bundle_rules.judge_unread(root)
     if judged["blind"]:
-        text = bundle_shell.text(payload) if call else ""
-        if text and bundle_shell.every_command_is(
-                text, lambda one: _matches(one, READERS + (r"^\s*git\b",))):
-            return 0, ""
-        return 2, ("BLOCKED: what changed in the tree cannot be read (%s), so no write that "
-                   "arrived by a command can be judged. A tree nobody can read is not a clean "
-                   "one. Only reads and git go through until it can be read - in a folder that "
-                   "is not a repository yet, `git init`. The owner's way past: %s=1."
-                   % (judged["blind"], ALLOW))
+        return _unreadable(payload, root, call, judged["blind"])
     if not judged["held"]:
         return 0, ""
     if call and repairs(payload, root, judged["held"], judged.get("named") or ()):
@@ -200,12 +252,18 @@ def verdict(payload, root):
     return 2, said
 
 
-def main():
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
     try:
         payload = json.load(sys.stdin)
     except (ValueError, IOError):
         return 0
     if not isinstance(payload, dict):
+        return 0
+    # `--judge <checkout>`: another checkout, asked by its parent in a process of its own.
+    place = bundle_rules.judge_mode(argv)
+    if place is not None:
+        sys.stdout.write(json.dumps(list(verdict(payload, place, delegate=False))) + LF)
         return 0
     root = bundle_rules.repo_root(__file__)
     if root is None:

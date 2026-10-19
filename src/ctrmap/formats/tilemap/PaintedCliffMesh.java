@@ -14,6 +14,7 @@ import static ctrmap.formats.tilemap.PaintedGeometry.Quad;
 import static ctrmap.formats.tilemap.PaintedGeometry.STEP;
 import static ctrmap.formats.tilemap.PaintedGeometry.TILE;
 import static ctrmap.formats.tilemap.PaintedGeometry.fixWindingTowards;
+import static ctrmap.formats.tilemap.PaintedGeometry.lowCorner;
 import static ctrmap.formats.tilemap.PaintedGeometry.roundOutline;
 import static ctrmap.formats.tilemap.PaintedGeometry.swapCorners12;
 
@@ -52,6 +53,16 @@ public final class PaintedCliffMesh {
 	 * @param yt  the top of the fall (this tile's surface)
 	 */
 	static CliffEdge cliffEdge(int tx, int ty, int dir, float yb, float yt) {
+		return cliffEdge(tx, ty, dir, yb, yt, -1, yt);
+	}
+
+	/**
+	 * The same, for the edge of a ramp going down {@code rd} (-1: not a ramp) whose slope lands at
+	 * {@code yLo}: the top at each end is the ramp's floor at that corner - {@code yt} on the high
+	 * edge, the foot on the low one, never below the fall's bottom - so the face along a ramp's side
+	 * falls with it, and on its back edge stays level.
+	 */
+	static CliffEdge cliffEdge(int tx, int ty, int dir, float yb, float yt, int rd, float yLo) {
 		float x0 = tx * TILE + ORIGIN, x1 = x0 + TILE;
 		float z0 = ty * TILE + ORIGIN, z1 = z0 + TILE;
 		CliffEdge e = new CliffEdge();
@@ -61,7 +72,8 @@ public final class PaintedCliffMesh {
 			case 2: e.ax = x1; e.az = z1; e.bx = x0; e.bz = z1; e.nx = 0; e.nz = 1; break;
 			default: e.ax = x0; e.az = z0; e.bx = x1; e.bz = z0; e.nx = 0; e.nz = -1; break;
 		}
-		e.yTop = yt;
+		e.yTopA = lowCorner(rd, e.ax == x1 ? 1 : 0, e.az == z1 ? 1 : 0) ? Math.max(yLo, yb) : yt;
+		e.yTopB = lowCorner(rd, e.bx == x1 ? 1 : 0, e.bz == z1 ? 1 : 0) ? Math.max(yLo, yb) : yt;
 		e.yBot = yb;
 		return e;
 	}
@@ -109,7 +121,7 @@ public final class PaintedCliffMesh {
 				float[] acc = corner.computeIfAbsent(k, x -> new float[3]);
 				acc[0] += e.nx;
 				acc[1] += e.nz;
-				acc[2] = Math.max(acc[2], e.yTop - e.yBot);
+				acc[2] = Math.max(acc[2], e.topAt(k) - e.yBot);
 			}
 		}
 
@@ -177,13 +189,14 @@ public final class PaintedCliffMesh {
 						//heights across that join stretched a long diagonal
 						//blade between them. One step of change, and no
 						//doubling back on itself.
-						float stepChange = Math.abs((c.yTop - c.yBot) - (cur.yTop - cur.yBot));
+						//Both read where the two meet: this one's end, that one's start.
+						float stepChange = Math.abs((c.yTopA - c.yBot) - (cur.yTopB - cur.yBot));
 						if (stepChange > STEP * 1.01f || straight < -0.1f) {
 							continue;
 						}
 						//and the tops must line up: a wall cannot continue into
 						//one that starts at a different height
-						if (Math.abs(c.yTop - cur.yTop) > STEP * 1.01f) {
+						if (Math.abs(c.yTopA - cur.yTopB) > STEP * 1.01f) {
 							continue;
 						}
 						float score = straight - stepChange / 72f * 1.5f;
@@ -611,7 +624,8 @@ public final class PaintedCliffMesh {
 		for (int i = 0; i < vc; i++) {
 			CliffEdge ea = edgeBefore(chain, i, loop);
 			CliffEdge eb = edgeAfter(chain, i, loop);
-			vyt[i] = (ea.yTop + eb.yTop) * 0.5f;
+			String at = vertexKey(chain, i);
+			vyt[i] = (ea.topAt(at) + eb.topAt(at)) * 0.5f;
 			vyb[i] = (ea.yBot + eb.yBot) * 0.5f;
 		}
 		return new float[][]{vyt, vyb};

@@ -76,6 +76,20 @@ public class PropRegistryTest {
 		check(a != b && reg.entries.containsKey(a) && reg.entries.containsKey(b) && reg.entries.size() == 5,
 				"each gets a free reference of its own (" + a + ", " + b + "), and both are kept: " + reg.entries.keySet());
 		check(reg.register(new ADPropRegistryEntry(), 5) == 6, "one asked for at a taken reference gets the next free one");
+		//measured by the 2026-10-14 shared sweep (ADPropRegistry 255, drop-throw SURVIVED): every entry asked for fit in
+		//16 bits, so a reference of 0x10000 - written back as 0 - was never refused where anyone looked
+		ADPropRegistry full = new ADPropRegistry(area(dir, "full", registry(entry(0xFFFF, 1, 0x44)), game));
+		String fullSaid = null;
+		int given = -1;
+		try {
+			given = full.register(new ADPropRegistryEntry(), 0xFFFF);
+		} catch (IllegalStateException e) {
+			fullSaid = e.getMessage();
+		}
+		check("no prop reference is free from 65535 up: references are 16-bit".equals(fullSaid)
+				&& full.entries.size() == 1,
+				"one asked for from 0xFFFF, which is taken, is refused and not kept: "
+				+ (fullSaid != null ? fullSaid : "it was given " + given) + ", " + full.entries.size() + " entry(s)");
 
 		System.out.println("--- a registry that cannot be written back whole is not written (F084)");
 		byte[] twice = registry(entry(5, 5, 0x11), entry(5, 6, 0x22));
@@ -126,6 +140,23 @@ public class PropRegistryTest {
 		check(save != null && !save.contains("(Short)") && !save.contains("(Integer)"),
 				"and reads every field as a Number, never through a cast to the class one field commits");
 		check(add != null && add.contains("reg.register(") && !add.contains("put(-1"), "New entry registers a free reference");
+		//census H.49: Remove with nothing selected threw out of its listener, and the entry it removed stayed the one
+		//shown, so moving the selection saved it back - into a registry that no longer holds it
+		String remove = CollisionReadTest.body(editor, "private void btnRemEntryActionPerformed(");
+		int guarded = remove == null ? -1 : remove.indexOf("if (index < 0");
+		int forgotten = remove == null ? -1 : remove.indexOf("e = null;");
+		int removed = remove == null ? -1 : remove.indexOf("reg.entries.remove(");
+		check(guarded > 0 && removed > guarded, "Remove with nothing selected removes nothing (" + guarded + ", " + removed + ")");
+		check(forgotten > 0 && removed > forgotten, "and the entry it removes stops being the one shown first ("
+				+ forgotten + ", " + removed + ")");
+		//census M.133: the prop form forgets a loose map when it is handed props from anywhere else, and on unload -
+		//a stale one let a failed zone load write its props through the old file and mark them clean
+		String form = source("src/ctrmap/humaninterface/PropEditForm.java");
+		String general = CollisionReadTest.body(form, "public void loadDataFile(GRPropData f, ADPropRegistry reg,");
+		String unload = CollisionReadTest.body(form, "public void unload()");
+		check(general != null && general.contains("gr = null;") && unload != null && unload.contains("gr = null;"),
+				"the prop form forgets a loose map when handed other props, and when unloaded");
+
 		String painter = source("src/ctrmap/MapPainter.java");
 		String stage = CollisionReadTest.body(painter, "void stageRegistry()");
 		check(stage != null && stage.contains("serialize()") && !stage.contains(".write(dos)"),

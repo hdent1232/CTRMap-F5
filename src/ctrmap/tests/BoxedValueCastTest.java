@@ -37,9 +37,10 @@ public class BoxedValueCastTest {
 	 * spinners through Number (F123), with the rest of this batch's form work; then 118 on
 	 * 2026-10-08, a cast gone with the 2026-10-06 audit's low fixes; then 117 the same day, the NPC
 	 * form's second motion-code read gone into one (F104); then 116 the same day, the Zone tab's second
-	 * read of its flag-word box gone (F221).
+	 * read of its flag-word box gone (F221); then 115 on 2026-10-10 - the undo round's map resize had
+	 * added two casts of its size spinners (117, refused by this suite), read through Number instead.
 	 */
-	private static final int CEILING = 116;
+	private static final int CEILING = 115;
 
 	static final Pattern CAST = Pattern.compile(
 			"\\((Short|Integer|Float|Double|Long|Byte)\\)\\s*[A-Za-z_][A-Za-z0-9_.]*\\.getValue\\(\\)");

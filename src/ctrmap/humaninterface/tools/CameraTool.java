@@ -38,7 +38,9 @@ public class CameraTool extends AbstractTool {
 
 	@Override
 	public void drawOverlay(Graphics g, int imgstartx, int imgstarty, double globimgdim) {
-		if (host.map().loaded) {
+		//THE FORM'S CAMERAS ARE ASKED FOR, not only the map (census M.81): unloading the form drops them, and this
+		//and a click then threw on the cameras that were gone
+		if (host.map().loaded && form.f != null) {
 			ArrayList<Byte> layers = new ArrayList<>();
 			for (int i = 0; i < form.f.camData.size(); i++) {
 				byte layer = (byte) form.f.camData.get(i).layer;
@@ -76,6 +78,9 @@ public class CameraTool extends AbstractTool {
 
 	@Override
 	public void onTileClick(MouseEvent e) {
+		if (form.f == null) {
+			return;
+		}
 		for (int i = 0; i < form.f.camData.size(); i++) {
 			CameraData cam = form.f.camData.get(i);
 			if (Selector.hilightTileX >= cam.boundX1 && Selector.hilightTileX <= cam.boundX2 && Selector.hilightTileY >= cam.boundY1 && Selector.hilightTileY <= cam.boundY2

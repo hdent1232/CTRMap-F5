@@ -67,11 +67,12 @@ import bundle_shell      # noqa: E402  - the command, found by shape, at any dep
 import time
 
 import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 ROOT = _tree_root.require(__file__)
 BLOCKED = os.path.join(ROOT, ".sweep", "blocked.json")
 
 #: Where this guard sits, relative to the project: the hooks folder, found rather than spelled.
-HOOKS_REL = os.path.relpath(os.path.dirname(os.path.abspath(__file__)), ROOT).replace(os.sep, "/")
+HOOKS_REL = bundle_shell.relative(os.path.dirname(os.path.abspath(__file__)), ROOT)
 
 #: Four polls of the runner's own 300-second cycle. Not a taste: at one poll it would fire
 #: before the runner had finished noticing, and at sixty-six it is the outage it exists for.
@@ -130,7 +131,7 @@ def blocked_for():
             held = json.load(handle)
     except (IOError, OSError, ValueError):
         return 0, []
-    if not alive(held.get("pid")):
+    if not alive(held.get("pid"), held.get("started_epoch")):
         return 0, []
     since = held.get("since")
     if not isinstance(since, (int, float)):
@@ -160,9 +161,9 @@ def still_uncommitted(paths):
     if not paths:
         return []
     try:
-        done = subprocess.run(["git", "status", "--porcelain", "--"] + list(paths),
-                              cwd=ROOT, capture_output=True, creationflags=NO_WINDOW,
-                              timeout=GIT_TIMEOUT)
+        done = bounded.run(["git", "status", "--porcelain", "--"] + list(paths),
+                           cwd=ROOT, capture_output=True, creationflags=NO_WINDOW,
+                           timeout=GIT_TIMEOUT)
     except (OSError, ValueError, subprocess.SubprocessError):
         return list(paths)
     if done.returncode != 0:
@@ -185,7 +186,7 @@ def is_escape(command):
 def _rel(path):
     """`path` relative to the project, `/`-separated, case-folded where the file system is."""
     full = path if os.path.isabs(path) else os.path.join(ROOT, path)
-    return os.path.normcase(os.path.relpath(os.path.abspath(full), ROOT)).replace(os.sep, "/")
+    return os.path.normcase(bundle_shell.relative(os.path.abspath(full), ROOT)).replace(os.sep, "/")
 
 
 def writes_allowed(payload, paths):
@@ -276,7 +277,7 @@ def refusal(seconds, paths, owners=None):
         lines += ["  None of it is known to be this session's, and committing another's work is",
                   "  theirs to do: find who (ListAgents, then SendMessage - a message is never",
                   "  refused), or the owner can stop the runner with %s."
-                  % os.path.relpath(os.path.join(os.path.dirname(BLOCKED), "STOP"), ROOT)]
+                  % bundle_shell.relative(os.path.join(os.path.dirname(BLOCKED), "STOP"), ROOT)]
     lines += [
         "",
         "  Every step toward that commit still runs, behind env, timeout or a shell too: git,",

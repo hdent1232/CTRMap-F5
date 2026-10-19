@@ -70,6 +70,8 @@ public class TilemapInputRouterTest {
 			aClickOffTheMapCancelsFirst();
 			theWheelZoomsWithinItsLimits();
 			theToolbarSwitchesTools();
+			aFillIsTheRectangleItsGestureMade();
+			theCameraToolAsksForTheFormsCameras();
 		} finally {
 			EditorBench.shutdown();
 		}
@@ -263,6 +265,70 @@ public class TilemapInputRouterTest {
 		check(EditorBench.map.tilemapScale == 0.5d, "with no map loaded the wheel does nothing");
 		EditorBench.map.loaded = true;
 		EditorBench.map.tilemapScale = 1.0d;
+	}
+
+	/**
+	 * Census H.41: the Fill tool's rectangle is the one its own gesture made. Its far corner was written by
+	 * drawOverlay, as a side effect of painting, so a fill with no repaint between its press and its release - a
+	 * quick click, a dropped frame - wrote the PREVIOUS gesture's rectangle into the map.
+	 */
+	static void aFillIsTheRectangleItsGestureMade() throws Exception {
+		System.out.println("--- a fill is the rectangle its own gesture made, painted or not (census H.41)");
+		ctrmap.humaninterface.tools.ToolHost host = (ctrmap.humaninterface.tools.ToolHost) java.lang.reflect.Proxy.newProxyInstance(
+				TilemapInputRouterTest.class.getClassLoader(), new Class<?>[]{ctrmap.humaninterface.tools.ToolHost.class},
+				(proxy, method, arguments) -> null);
+		FillTool fill = new FillTool(host, EditorBench.tiles);
+		EditorBench.hilight(2, 3);
+		fill.onTileMouseDown(EditorBench.press(0, 0, false));
+		EditorBench.hilight(5, 6);
+		fill.onTileMouseDragged(EditorBench.mouse(MouseEvent.MOUSE_DRAGGED, 0, 0, false));
+		fill.onTileMouseUp(EditorBench.mouse(MouseEvent.MOUSE_RELEASED, 0, 0, false));
+		check(fill.originX == 2 && fill.originY == 3 && fill.lastX == 5 && fill.lastY == 6,
+				"control: a drag from (2,3) to (5,6) holds that rectangle with nothing painted: (" + fill.originX + ","
+				+ fill.originY + ") to (" + fill.lastX + "," + fill.lastY + ")");
+		EditorBench.hilight(1, 1);
+		fill.onTileMouseDown(EditorBench.press(0, 0, false));
+		fill.onTileMouseUp(EditorBench.mouse(MouseEvent.MOUSE_RELEASED, 0, 0, false));
+		check(fill.originX == 1 && fill.originY == 1 && fill.lastX == 1 && fill.lastY == 1,
+				"a click at (1,1) after it, nothing painted between, is the one tile it clicked, not (1,1) to the last"
+				+ " drag's corner: (" + fill.lastX + "," + fill.lastY + ")");
+		fill.onTileMouseDown(EditorBench.press(0, 0, false));
+		EditorBench.hilight(4, 4);
+		fill.onTileMouseDragged(EditorBench.mouse(MouseEvent.MOUSE_DRAGGED, 0, 0, false));
+		EditorBench.hilight(-1, -1);
+		fill.onTileMouseUp(EditorBench.mouse(MouseEvent.MOUSE_RELEASED, 0, 0, false));
+		check(fill.lastX == 4 && fill.lastY == 4, "released off the map, the drag's last tile is kept: (" + fill.lastX + ","
+				+ fill.lastY + ")");
+		String tool = SourceSeamTest.stripComments(DialogSeamTest.read(new java.io.File("src/ctrmap/humaninterface/tools/FillTool.java")));
+		String draw = CollisionReadTest.body(tool, "public void drawOverlay(");
+		check(draw != null && !draw.matches("(?s).*\\blast[XY]\\s*=[^=].*"), "and painting draws the rectangle, never writes it");
+	}
+
+	/**
+	 * Census M.81: the camera tool asks whether the form holds cameras, not only whether the map is loaded.
+	 * Unloading the camera form drops them, and its overlay and a click then threw on the cameras that were gone.
+	 */
+	static void theCameraToolAsksForTheFormsCameras() throws Exception {
+		System.out.println("--- the camera tool asks for the form's cameras, not only the map (census M.81)");
+		ctrmap.humaninterface.tools.ToolHost host = (ctrmap.humaninterface.tools.ToolHost) java.lang.reflect.Proxy.newProxyInstance(
+				TilemapInputRouterTest.class.getClassLoader(), new Class<?>[]{ctrmap.humaninterface.tools.ToolHost.class},
+				(proxy, method, arguments) -> method.getName().equals("map") ? EditorBench.map : null);
+		ctrmap.humaninterface.CameraEditForm form = EditorBench.cam;
+		Object held = form.f;
+		form.f = null;   //what unload leaves
+		Throwable threw = null;
+		try {
+			CameraTool tool = new CameraTool(host, form, new javax.swing.JScrollPane());
+			java.awt.image.BufferedImage image = new java.awt.image.BufferedImage(8, 8, java.awt.image.BufferedImage.TYPE_INT_RGB);
+			check(EditorBench.map.loaded, "control: the map reads as loaded, so only the cameras can stop the overlay");
+			tool.drawOverlay(image.getGraphics(), 0, 0, 1);
+			tool.onTileClick(EditorBench.press(0, 0, false));
+		} catch (Throwable t) {
+			threw = t;
+		} finally {
+			form.f = (ctrmap.formats.cameradata.CameraDataFile) held;
+		}
+		check(threw == null, "with the form unloaded its overlay and a click throw nothing: " + threw);
 	}
 
 	/**

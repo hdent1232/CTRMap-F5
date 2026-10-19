@@ -22,6 +22,71 @@ public class TileDBWriter extends ctrmap.humaninterface.FormPanel {
 	private int curTile = 0;
 
 	/**
+	 * The tiles' history (F209c): a change to a tile, a tile added or removed, taken back by Undo under the editor
+	 * and put again by Redo, and each save kept so it can be taken back too. Another file opened starts it again.
+	 */
+	private Object opened = new Object();
+	private final ctrmap.humaninterface.SaveHistory edits = new ctrmap.humaninterface.SaveHistory(
+			() -> java.util.Collections.<Object>singletonList(opened));
+
+	/** The editor with Undo and Redo under it, its tiles the document they take back. */
+	public javax.swing.JComponent withUndo() {
+		return edits.around(ctrmap.humaninterface.SaveHistory.watching(this,
+				() -> java.util.Collections.<ctrmap.humaninterface.UndoHistory.Document<?>>singletonList(tilesDocument())));
+	}
+
+	/** The history this editor keeps: the window settles it around every gesture, and a suite undoes through it. */
+	public ctrmap.humaninterface.UndoHistory history() {
+		return edits.history();
+	}
+
+	/**
+	 * The tiles as a document: every record's fields, and the tile shown - put back, the tile shown with them. Moving
+	 * from tile to tile is no edit: two states are the same document when their tiles are.
+	 */
+	private ctrmap.humaninterface.UndoHistory.Document<Object[]> tilesDocument() {
+		final Object file = opened;
+		return new ctrmap.humaninterface.UndoHistory.Document<Object[]>() {
+			@Override
+			public Object subject() {
+				return file;
+			}
+
+			@Override
+			public Object[] take() {
+				Object[][] rows = new Object[tiles.size()][];
+				for (int i = 0; i < rows.length; i++) {
+					EditorTileset.Record r = tiles.get(i);
+					rows[i] = new Object[]{r.binary, r.name, r.color, r.cat1, r.cat2};
+				}
+				return new Object[]{curTile, rows};
+			}
+
+			@Override
+			public void put(Object[] state) {
+				List<EditorTileset.Record> back = new ArrayList<>();
+				for (Object[] r : (Object[][]) state[1]) {
+					back.add(new EditorTileset.Record((Integer) r[0], (String) r[1], (Integer) r[2], (Integer) r[3],
+							(Integer) r[4]));
+				}
+				tiles = back;
+				curTile = Math.max(0, Math.min((Integer) state[0], tiles.size() - 1));
+				showTile();
+			}
+
+			@Override
+			public boolean same(Object[] a, Object[] b) {
+				return java.util.Arrays.deepEquals((Object[]) a[1], (Object[]) b[1]);
+			}
+
+			@Override
+			public String what() {
+				return "the tileset's tiles";
+			}
+		};
+	}
+
+	/**
 	 * Creates new form TileDBWriter
 	 */
 	public TileDBWriter() {
@@ -490,6 +555,7 @@ public class TileDBWriter extends ctrmap.humaninterface.FormPanel {
 			return;
 		}
 		f = file;
+		opened = new Object();   //another file: its history starts again
 		tiles = new ArrayList<>(read);
 		curTile = 0;
 		showTile();
@@ -503,9 +569,11 @@ public class TileDBWriter extends ctrmap.humaninterface.FormPanel {
 		if (file == null || !commitCurrent()) {
 			return false;
 		}
-		try {
-			ctrmap.util.Bytes.replaceFile(file, EditorTileset.write(tiles));
-		} catch (IOException cannotWrite) {
+		//KEPT (F209c): the file as it was before the save comes back with Undo, and the save again with Redo
+		try (WorkspaceUnit unit = WorkspaceUnit.begin("Save the tileset to " + file.getName(), null)) {
+			WorkspaceUnit.write(file, EditorTileset.write(tiles));
+			edits.keep(unit.commitKeeping());
+		} catch (IOException | RuntimeException cannotWrite) {
 			Ui.error(this, "The tileset was not saved to " + file.getName() + ":\n" + Ui.reason(cannotWrite),
 					"Tileset editor");
 			return false;

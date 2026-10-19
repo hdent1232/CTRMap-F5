@@ -117,6 +117,7 @@ public final class ItemEffectLabels {
 	}
 
 	/** Every effect id that at least one item carries, ascending. */
+	@ctrmap.util.ForSuites("SEAM: ItemDataTest asks which effect ids the labels name, to check every id an item carries is named")
 	public List<Integer> ids() {
 		List<Integer> out = new ArrayList<>(itemsByEffect.keySet());
 		Collections.sort(out);
@@ -164,6 +165,7 @@ public final class ItemEffectLabels {
 	}
 
 	/** How many ids are described by a single item, i.e. named but not defined. */
+	@ctrmap.util.ForSuites("SEAM: ItemDataTest counts the ids a single item defines, which the labels name but cannot generalise")
 	public int singletonCount() {
 		int n = 0;
 		for (List<String> l : itemsByEffect.values()) {

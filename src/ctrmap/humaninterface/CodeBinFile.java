@@ -34,14 +34,30 @@ public final class CodeBinFile {
 		return Preferences.userRoot().node(ShopEditDialog.class.getName());
 	}
 
-	/** The remembered code.bin if it still exists, else null. */
+	/**
+	 * The preference key a code.bin is remembered under for the game in {@code gameDir} - ONE PER GAME FOLDER
+	 * (census M.31). One file was remembered for every game, so a user who had edited one dump's shops and opened
+	 * another workspace was handed the first dump's executable silently, and saved a code.ips diffed against it
+	 * into the other game.
+	 */
+	public static String keyFor(String gameDir) {
+		String game = gameDir == null ? "" : new File(gameDir).getAbsolutePath().toLowerCase(java.util.Locale.ROOT);
+		return KEY + "." + Integer.toHexString(game.hashCode());
+	}
+
+	/**
+	 * The code.bin remembered for the game in {@code gameDir}, read through {@code lookup}, if it still exists;
+	 * else null. A code.bin remembered before this, for every game at once, is not read: which game it was for is
+	 * unknown, and unknown is not this one.
+	 */
+	public static File rememberedFor(String gameDir, java.util.function.UnaryOperator<String> lookup) {
+		String path = lookup.apply(keyFor(gameDir));
+		return path != null && !path.isEmpty() && new File(path).isFile() ? new File(path) : null;
+	}
+
+	/** The code.bin remembered for the open game folder if it still exists, else null. */
 	public static File remembered() {
-		for (String path : new String[]{prefs().get(KEY, ""), shopPrefs().get(SHOP_KEY, "")}) {
-			if (!path.isEmpty() && new File(path).isFile()) {
-				return new File(path);
-			}
-		}
-		return null;
+		return rememberedFor(ctrmap.Workspace.GAMEDIR_PATH, key -> prefs().get(key, ""));
 	}
 
 	/**
@@ -78,13 +94,14 @@ public final class CodeBinFile {
 		return fc.getSelectedFile();
 	}
 
-	/** Remembers a code.bin that was read and accepted. */
+	/** Remembers a code.bin that was read and accepted, for the open game folder. */
 	public static void remember(File f) {
-		prefs().put(KEY, f.getAbsolutePath());
+		prefs().put(keyFor(ctrmap.Workspace.GAMEDIR_PATH), f.getAbsolutePath());
 	}
 
-	/** Forgets a code.bin that turned out not to be one this program can patch. */
+	/** Forgets a code.bin that turned out not to be one this program can patch, and the game-less ones before it. */
 	public static void forget() {
+		prefs().remove(keyFor(ctrmap.Workspace.GAMEDIR_PATH));
 		prefs().remove(KEY);
 		shopPrefs().remove(SHOP_KEY);
 	}

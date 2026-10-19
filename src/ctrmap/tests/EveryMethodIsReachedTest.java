@@ -84,10 +84,19 @@ public class EveryMethodIsReachedTest {
 	 * into LittleEndian (F228; found by listing both trees' suite-only methods). 135 once the record
 	 * schema's code-patch tier and icon schema went with nothing in the program reading them (F252).
 	 * 134 when the static tile history went, its batch-open query read only by suites (F209) - the
-	 * number this suite measured.
+	 * number this suite measured. 133 once UndoHistory.own gained a production caller - the Extras
+	 * panel's own history owns its box, so Ctrl+Z there takes back a mass edit (F209); found by
+	 * listing both builds' suite-only methods. 132 once WorkspaceUnit.current gained one - the area prompt's fork
+	 * asks it whether the fork is part of a larger change (F209d); found the same way, 133 against 132.
+	 * 105 on 2026-10-10, once each of the 132 was decided at the method (suiteOnlyMethodsSayWhatTheyAre):
+	 * 22 shorter doors to what the program calls deleted and their suites moved onto the program's form;
+	 * the prop registration and the encounter dialog made to call the copies the suites tested instead
+	 * of their own (2); a stream reader the program never used deleted (1); two private byte readers
+	 * nothing called - kept alive only by a suite's widget named "u8" - deleted (2). 27 gone; of the 105
+	 * left, 96 are marked and 9 are helpers only a marked method reaches.
 	 * Lower it when one gains a production caller or leaves; never raise it.
 	 */
-	private static final int TEST_ONLY_CEILING = 134;
+	private static final int TEST_ONLY_CEILING = 105;
 
 	private static final int ACC_PRIVATE = 0x0002;
 	private static final int ACC_STATIC = 0x0008;
@@ -166,6 +175,7 @@ public class EveryMethodIsReachedTest {
 				+ (w.dead.isEmpty() ? "" : " - these have none: " + w.dead + ". Delete them, or call them;"
 				+ " a method nothing calls is a mechanism a reader believes exists"));
 		System.out.println("  production methods only a suite calls: " + w.testOnly.size() + " " + w.testOnly);
+		suiteOnlyMethodsSayWhatTheyAre(w);
 		check(w.testOnly.size() <= TEST_ONLY_CEILING, "no more production methods live only through a suite than the "
 				+ TEST_ONLY_CEILING + " recorded (it is " + w.testOnly.size() + ")"
 				+ (w.testOnly.size() <= TEST_ONLY_CEILING ? "" : " - the new ones are among: " + w.testOnly));
@@ -173,6 +183,68 @@ public class EveryMethodIsReachedTest {
 				+ " one gains a caller or leaves (measured " + w.testOnly.size() + ", recorded " + TEST_ONLY_CEILING + ")");
 		everyFieldIsRead(all);
 		finish();
+	}
+
+	/** The annotation a suite-only method says what it is with. */
+	static final String FOR_SUITES = "Lctrmap/util/ForSuites;";
+	/** The three things a suite-only method may be; see {@link ctrmap.util.ForSuites}. */
+	static final List<String> KINDS = java.util.Arrays.asList("SEAM", "ORACLE", "CAPABILITY");
+	/** Shorter than this after its kind, a reason is a word or two - "for tests" - and says nothing. */
+	static final int REASON_MIN = 40;
+
+	/**
+	 * Every production method only a suite calls says what it is (F204). Counting them held the number and
+	 * said nothing about any one: of the 132 on 2026-10-10, two were the program's own work written a second
+	 * time beside the tested copy - the prop form's missing textures, the encounter dialog's read - so what
+	 * the suites checked was never what ran, 22 were shorter doors to what the program calls, which tested
+	 * a door nothing used, one was a reader the program never used, and two had no caller at all. A suite-only method carries {@link ctrmap.util.ForSuites} with its kind and why, or
+	 * is reached only through one that does; a mark the program reaches is refused, because it no longer
+	 * says what the method is.
+	 */
+	static void suiteOnlyMethodsSayWhatTheyAre(Walk w) {
+		check(markProblem("SEAM: a suite counts the editors the set was built with, to see none is dropped") == null
+				&& markProblem("seam: a suite counts the editors the set was built with, to see none is dropped") != null
+				&& markProblem("CONVENIENCE: a shorter way to call the form the program calls itself") != null
+				&& markProblem("ORACLE: for tests") != null && markProblem(null) != null,
+				"control: a mark's reason names one of the three kinds, in capitals, and says why in more than a word");
+		check(w.marked.containsKey("Ui.stopRecording()V"),
+				"control: the scanner reads the mark on the dialog seam's stopRecording - " + w.marked.size() + " marks read");
+		String helper = "BchModelVerifier.minSub()I";
+		check(w.testOnly.contains(helper) && !w.marked.containsKey(helper) && !w.unmarked.contains(helper),
+				"control: a helper only a marked method reaches - " + helper + ", which the verifier's verify calls"
+				+ " - is answered for by that mark");
+		List<String> badReasons = new ArrayList<>();
+		for (Map.Entry<String, String> e : w.marked.entrySet()) {
+			String problem = markProblem(e.getValue());
+			if (problem != null) {
+				badReasons.add(e.getKey() + " (" + problem + ")");
+			}
+		}
+		check(badReasons.isEmpty(), "every ForSuites mark names its kind and says why"
+				+ (badReasons.isEmpty() ? "" : " - these do not: " + badReasons));
+		check(w.staleMarks.isEmpty(), "no method marked ForSuites is one the program calls itself"
+				+ (w.staleMarks.isEmpty() ? "" : " - these are: " + w.staleMarks + ". Take the mark off: the"
+				+ " program uses it now, and the mark says it does not"));
+		check(w.unmarked.isEmpty(), "every production method only a suite calls says what it is"
+				+ (w.unmarked.isEmpty() ? "" : " - these do not: " + w.unmarked + ". If the program does the same"
+				+ " work another way, make it call this one; if it is a shorter way to call what the program"
+				+ " calls, delete it and call that form from the suite; otherwise mark it @ForSuites with"
+				+ " SEAM:, ORACLE: or CAPABILITY: and why"));
+	}
+
+	/** What is wrong with one mark's reason, or null when nothing is. */
+	static String markProblem(String why) {
+		if (why == null) {
+			return "no reason";
+		}
+		int colon = why.indexOf(':');
+		if (colon < 0 || !KINDS.contains(why.substring(0, colon))) {
+			return "it does not start with SEAM:, ORACLE: or CAPABILITY:";
+		}
+		if (why.substring(colon + 1).trim().length() < REASON_MIN) {
+			return "its reason is a word or two";
+		}
+		return null;
 	}
 
 	/**
@@ -472,6 +544,12 @@ public class EveryMethodIsReachedTest {
 		final Set<ClassFileScanner.Method> liveProgram;
 		final Set<String> dead = new TreeSet<>();
 		final Set<String> testOnly = new TreeSet<>();
+		/** Production methods carrying {@link ctrmap.util.ForSuites}, each to its reason. */
+		final Map<String, String> marked = new java.util.TreeMap<>();
+		/** Marked methods the program's own roots reach: the mark no longer says what the method is. */
+		final Set<String> staleMarks = new TreeSet<>();
+		/** Suite-only methods neither marked nor reached through a marked one. */
+		final Set<String> unmarked = new TreeSet<>();
 		int production;
 
 		Walk(List<ClassFileScanner.ClassFile> program, Set<String> launched) {
@@ -532,8 +610,11 @@ public class EveryMethodIsReachedTest {
 					}
 				}
 			}
-			liveAll = reach(roots);
-			liveProgram = reach(programRoots);
+			liveAll = reach(roots, true);
+			//THE PROGRAM NEVER RUNS A SUITE'S CLASS: a call through an interface resolves to every implementation,
+			//and the test world builder's answer to the painter's Host is one - so the program's walk went into
+			//it and counted the dialog seam's recorder as the program's own (2026-10-10, three marks read stale)
+			liveProgram = reach(programRoots, false);
 			for (ClassFileScanner.ClassFile cf : program) {
 				if (cf.isTest()) {
 					continue;
@@ -547,6 +628,35 @@ public class EveryMethodIsReachedTest {
 						dead.add(m.toString());
 					} else if (!liveProgram.contains(m)) {
 						testOnly.add(m.toString());
+					}
+				}
+			}
+			//THE DECISION AT THE METHOD (F204): a suite-only method says which of the three it is, or is a
+			//helper that only a method saying so reaches - BchModelVerifier's checks serve its verify
+			Set<ClassFileScanner.Method> marks = new HashSet<>();
+			for (ClassFileScanner.ClassFile cf : program) {
+				if (cf.isTest()) {
+					continue;
+				}
+				for (ClassFileScanner.Method m : cf.methods) {
+					String why = m.annotations.get(FOR_SUITES);
+					if (why != null) {
+						marked.put(m.toString(), why);
+						marks.add(m);
+						if (liveProgram.contains(m)) {
+							staleMarks.add(m.toString());
+						}
+					}
+				}
+			}
+			Set<ClassFileScanner.Method> served = reach(marks, false);
+			for (ClassFileScanner.ClassFile cf : program) {
+				if (cf.isTest()) {
+					continue;
+				}
+				for (ClassFileScanner.Method m : cf.methods) {
+					if (testOnly.contains(m.toString()) && !served.contains(m)) {
+						unmarked.add(m.toString());
 					}
 				}
 			}
@@ -586,13 +696,17 @@ public class EveryMethodIsReachedTest {
 			return leaves;
 		}
 
-		private Set<ClassFileScanner.Method> reach(Set<ClassFileScanner.Method> from) {
+		/** Everything {@code from} reaches; a suite's class only when {@code intoSuites}, which the program never runs. */
+		private Set<ClassFileScanner.Method> reach(Set<ClassFileScanner.Method> from, boolean intoSuites) {
 			Set<ClassFileScanner.Method> live = new HashSet<>(from);
 			Deque<ClassFileScanner.Method> todo = new ArrayDeque<>(from);
 			while (!todo.isEmpty()) {
 				for (String call : todo.pop().invokes) {
 					int hash = call.indexOf('#');
 					for (ClassFileScanner.Method m : targets(call.substring(0, hash), call.substring(hash + 1))) {
+						if (!intoSuites && m.owner.startsWith("ctrmap/tests/")) {
+							continue;
+						}
 						if (live.add(m)) {
 							todo.push(m);
 						}

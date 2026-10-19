@@ -78,6 +78,7 @@ public class SignWrapperInjector {
 	 *
 	 * @throws PawnClosure.Refused when the donor does not qualify
 	 */
+	@ctrmap.util.ForSuites("SEAM: a suite asks whether a donor qualifies without injecting anything, to see a bad one refused before any zone is touched")
 	public static void validateDonor(GFLPawnScript donor) {
 		PawnClosure.buildDonor(SPEC, donor);
 	}

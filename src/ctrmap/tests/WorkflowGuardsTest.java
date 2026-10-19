@@ -62,6 +62,7 @@ public class WorkflowGuardsTest {
 			section("deploy, disable, deploy again", () -> deployDisableDeployAgain(dump));
 			section("edit encounters, pack, edit again", () -> encountersPackEncounters(dump));
 			section("link two zones, pack, link again", () -> linkPackLinkAgain(dump));
+			section("an item form holding no record is not saved", () -> anItemFormHoldingNoRecordIsNotSaved(dump));
 			section("a region that will not decode answers nothing",
 					() -> aRegionThatWillNotDecodeAnswersNothing());
 		}
@@ -69,6 +70,63 @@ public class WorkflowGuardsTest {
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * Save item with the form holding no record - one the table refused, shown as nothing to edit or save - is refused
+	 * in words and writes nothing (the 2026-10-16 assembly, ItemEditDialog 396, drop-throw, SURVIVED: no suite pressed
+	 * Save). Dropped, the save went on with no record. The item editor's own panel, over the game, its Save pressed.
+	 */
+	static void anItemFormHoldingNoRecordIsNotSaved(File dump) throws Exception {
+		System.out.println("--- Save item with the form holding no record is refused, nothing written");
+		ScratchGame.open(dump);
+		//the scratch game holds no item archive: the game's is copied in, as ItemEditTest does, and opened with it
+		String items = ctrmap.gamedef.GameProfile.of(ctrmap.gamedef.GameType.ORAS).archivePath(ArchiveType.ITEM_DATA);
+		File live = new File(Workspace.GAMEDIR_PATH + items);
+		live.getParentFile().mkdirs();
+		java.nio.file.Files.copy(new File(dump.getAbsolutePath() + items).toPath(), live.toPath(),
+				java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+		Workspace.install(Workspace.session().withArchive(ArchiveType.ITEM_DATA, new ctrmap.formats.garc.GARC(live, false)));
+		javax.swing.JComponent panel = ctrmap.humaninterface.ItemEditDialog.panel(null, () -> { },
+				new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
+		check(panel != null, "control: the item editor opens over the game");
+		if (panel == null) {
+			return;
+		}
+		ctrmap.humaninterface.RecordEditPanel form = firstOf(panel, ctrmap.humaninterface.RecordEditPanel.class, null);
+		javax.swing.JButton save = firstOf(panel, javax.swing.JButton.class, "Save item");
+		check(form != null && save != null && save.isEnabled(), "control: the panel holds its form and an enabled Save item");
+		if (form == null || save == null) {
+			return;
+		}
+		ctrmap.humaninterface.ItemEditDialog.showRecord(form, null, 9999);
+		java.util.List<String> wrote = new java.util.ArrayList<>(Workspace.persistPaths());
+		java.util.List<String> said = ctrmap.Ui.record();
+		try {
+			save.doClick();
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 1 && said.get(0).contains("could not be read, so there is nothing to save")
+				&& Workspace.persistPaths().equals(wrote),
+				"Save item with the form holding no record is refused in words and writes nothing: " + said);
+	}
+
+	/** The first component of {@code type} under {@code c}, depth first; a button by its text when {@code text} is given. */
+	static <T> T firstOf(java.awt.Container c, Class<T> type, String text) {
+		for (java.awt.Component k : c.getComponents()) {
+			if (type.isInstance(k) && (text == null || (k instanceof javax.swing.AbstractButton
+					&& text.equals(((javax.swing.AbstractButton) k).getText())))) {
+				return type.cast(k);
+			}
+			if (k instanceof java.awt.Container) {
+				T found = firstOf((java.awt.Container) k, type, text);
+				if (found != null) {
+					return found;
+				}
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -645,7 +703,7 @@ public class WorkflowGuardsTest {
 		repointZoneAt(broken.get(0), donorMatrix);
 		final java.util.List<Runnable> held = new java.util.ArrayList<>();
 		final int[] wentOn = {0};
-		ctrmap.PaddingZoneRepair.repairOnOpen(null, held::add, () -> wentOn[0]++);
+		ctrmap.PaddingZoneRepair.repairOnOpen(null, ctrmap.Workspace.session(), held::add, kept -> { }, () -> wentOn[0]++);
 		check(held.size() == 1, "a repair that found something starts exactly one pack ("
 			+ held.size() + ")");
 		check(wentOn[0] == 0, "and nothing after it has run yet, with that pack still going");
@@ -657,7 +715,7 @@ public class WorkflowGuardsTest {
 		pack();
 		held.clear();
 		wentOn[0] = 0;
-		ctrmap.PaddingZoneRepair.repairOnOpen(null, held::add, () -> wentOn[0]++);
+		ctrmap.PaddingZoneRepair.repairOnOpen(null, ctrmap.Workspace.session(), held::add, kept -> { }, () -> wentOn[0]++);
 		check(held.isEmpty() && wentOn[0] == 1,
 			"a workspace with nothing to repair packs nothing and carries straight on ("
 			+ held.size() + " pack(s), " + wentOn[0] + " continuation(s))");
@@ -786,7 +844,7 @@ public class WorkflowGuardsTest {
 		String refused = "";
 		if (!shared.isEmpty()) {
 			try {
-				ZoneAppender.appendZones(1, DONOR);
+				ZoneAppender.appendZones(1, DONOR, false);
 			} catch (Exception ex) {
 				refused = String.valueOf(ex.getMessage());
 			}
@@ -1123,6 +1181,46 @@ public class WorkflowGuardsTest {
 		ctrmap.formats.encounters.EncounterTable before =
 			ctrmap.humaninterface.EncounterEditDialog.readEncounters(Workspace.session(), mine);
 		check(before != null, "a zone's encounters can be read without opening a dialog");
+		//census M.149: Copy from zone asked for a raw zone number; it offers the game's zones by name now
+		java.util.List<String> zones = ctrmap.humaninterface.EncounterEditDialog.zoneChoices(Workspace.session());
+		int count = ctrmap.ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA), Workspace.profile());
+		check(zones.size() == count && count > 0 && zones.get(mine).endsWith(" - " + mine) && zones.get(mine).length() > (" - " + mine).length(),   //the one label (census L.36)
+				"Copy from zone offers every zone, numbered and named (" + zones.size() + " of " + count + ", e.g. " + zones.get(mine) + ")");
+		String copySrc = new String(java.nio.file.Files.readAllBytes(new File("src/ctrmap/humaninterface/EncounterEditDialog.java").toPath()),
+				java.nio.charset.StandardCharsets.UTF_8);
+		check(copySrc.contains("JOptionPane.QUESTION_MESSAGE, zones.toArray(), null);") && !copySrc.contains("which zone number?"),
+				"and the copy asks the user to pick from them, not to type a number");
+		//and what it does with the answer (the 2026-10-14 shared sweep, EncounterEditDialog 207, negate-if, SURVIVED:
+		//no suite pressed Copy)
+		ctrmap.formats.encounters.EncounterTable into =
+			ctrmap.humaninterface.EncounterEditDialog.readEncounters(Workspace.session(), mine);
+		int source = -1;
+		for (int z = mine + 1; z < zones.size() && source < 0; z++) {
+			ctrmap.formats.encounters.EncounterTable t =
+				ctrmap.humaninterface.EncounterEditDialog.readEncounters(Workspace.session(), z);
+			if (!t.isEmpty() && t.banks[0][0].species != into.banks[0][0].species) {
+				source = z;
+			}
+		}
+		check(source >= 0, "CONTROL: a zone after this one has wild data that differs from its own: zone " + source);
+		int was = into.banks[0][0].species;
+		//and the table shown again only once a copy has landed (the 2026-10-16 assembly, EncounterEditDialog 195)
+		int[] shown = {0};
+		java.util.List<String> heard = ctrmap.Ui.record();
+		boolean copied = ctrmap.humaninterface.EncounterEditDialog.copyFrom(null, Workspace.session(), into, () -> shown[0]++);
+		ctrmap.Ui.stopRecording();
+		check(!copied && into.banks[0][0].species == was && heard.size() == 1 && shown[0] == 0,
+				"Copy closed with no zone picked copies nothing, says nothing past its question and redraws nothing: "
+				+ heard + ", shown " + shown[0]);
+		if (source >= 0) {
+			heard = ctrmap.Ui.record(zones.get(source));
+			copied = ctrmap.humaninterface.EncounterEditDialog.copyFrom(null, Workspace.session(), into, () -> shown[0]++);
+			ctrmap.Ui.stopRecording();
+			int want = ctrmap.humaninterface.EncounterEditDialog.readEncounters(Workspace.session(), source).banks[0][0].species;
+			check(copied && into.banks[0][0].species == want && shown[0] == 1,
+					"and a zone picked by name is copied in and the table shown again once: slot 0 is "
+					+ into.banks[0][0].species + ", zone " + source + " holds " + want + ", shown " + shown[0] + " (" + heard + ")");
+		}
 		byte[] neighbourBefore = encountersBytes(neighbour);
 		check(neighbourBefore.length > 0, "control: the zone next door's table was read before the edit ("
 			+ neighbourBefore.length + " bytes of slots)");
@@ -1132,7 +1230,7 @@ public class WorkflowGuardsTest {
 		before.banks[0][0].minLevel = 7;
 		before.banks[0][0].maxLevel = 9;
 		String said = ctrmap.humaninterface.EncounterEditDialog.saveEncounters(
-			Workspace.session(), mine, before);
+			Workspace.session(), mine, before, new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		check(said.contains(String.valueOf(mine)), "saving says which zone it saved: " + said);
 		pack();
 		
@@ -1147,7 +1245,7 @@ public class WorkflowGuardsTest {
 		
 		//THE SECOND EDIT, which starts from what the first one wrote
 		back.banks[0][0].species = 251;
-		ctrmap.humaninterface.EncounterEditDialog.saveEncounters(Workspace.session(), mine, back);
+		ctrmap.humaninterface.EncounterEditDialog.saveEncounters(Workspace.session(), mine, back, new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		pack();
 		ctrmap.formats.encounters.EncounterTable twice =
 			ctrmap.humaninterface.EncounterEditDialog.readEncounters(Workspace.session(), mine);
@@ -1167,7 +1265,7 @@ public class WorkflowGuardsTest {
 			}
 		}
 		String cleared = ctrmap.humaninterface.EncounterEditDialog.saveEncounters(
-			Workspace.session(), mine, twice);
+			Workspace.session(), mine, twice, new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		check(cleared.contains("removed"), "clearing every slot says the wild data was REMOVED,"
 			+ " not saved: " + cleared);
 	}

@@ -16,8 +16,6 @@ import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
-import javax.swing.event.ListSelectionEvent;
-import javax.swing.event.ListSelectionListener;
 
 /**
  * Look through the zones and see each one before opening it.
@@ -135,17 +133,11 @@ public final class ZoneBrowserPane extends JPanel {
 				refilter();
 			}
 		});
-		list.addListSelectionListener(new ListSelectionListener() {
-			@Override
-			public void valueChanged(ListSelectionEvent e) {
-				if (e.getValueIsAdjusting()) {
-					return;
-				}
-				//LOOKING ONLY. Nothing here opens a zone: that is the whole point.
-				int zone = highlighted();
-				if (zone >= 0) {
-					preview.preview(zone);
-				}
+		ctrmap.util.Selections.onSettled(list, () -> {
+			//LOOKING ONLY. Nothing here opens a zone: that is the whole point.
+			int zone = highlighted();
+			if (zone >= 0) {
+				preview.preview(zone);
 			}
 		});
 		load.addActionListener(e -> commit());

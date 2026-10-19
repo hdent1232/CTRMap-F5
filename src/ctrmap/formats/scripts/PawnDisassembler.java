@@ -26,13 +26,8 @@ public class PawnDisassembler {
 	 * is in the result's subroutines and every line that did not is in its
 	 * errors, so the caller decides - the editor's live typing ignores them,
 	 * Commit refuses on them.
-	 */
-	public static PawnAssembly assembleScript(String code) {
-		return assembleScript(code, null);
-	}
-
-	/**
-	 * The same, resolving a {@code SYSREQ_N} written by native name in
+	 *
+	 * <p>A {@code SYSREQ_N} written by native name is resolved in
 	 * nativesFrom's table - the script the text was disassembled from. Null
 	 * accepts indices only.
 	 */

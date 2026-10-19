@@ -172,10 +172,6 @@ public class GFMessageFile {
 		return pads;
 	}
 
-	public static List<String> parse(byte[] data) {
-		return parse(data, false);
-	}
-
 	public static List<String> parse(byte[] data, boolean remapChars) {
 		if (data == null || data.length < 0x14) {
 			throw new IllegalArgumentException("Invalid Text File");

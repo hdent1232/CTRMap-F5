@@ -21,6 +21,17 @@ import java.util.Set;
  */
 public class PropDatabaseTest {
 
+	/** What an area holding {@code avail} lacks for the model, by the set the prop registration imports against. */
+	static List<String> missingTextures(byte[] bch, Set<String> avail) {
+		List<String> out = new ArrayList<>();
+		for (String t : PropDatabase.requiredTextureNames(bch)) {
+			if (avail == null || !avail.contains(t)) {
+				out.add(t);
+			}
+		}
+		return out;
+	}
+
 	private static final String BM_GARC_PATH = "../RomFS_original_garcs/a/0/2/3";
 	private static final String AD_GARC_PATH = "../RomFS_original_garcs/a/0/1/4";
 
@@ -113,7 +124,7 @@ public class PropDatabaseTest {
 			byte[] bch = ctrmap.formats.containers.ContainerBytes.subfile(bm.getDecompressedEntry(pc01.modelIndex), 0);
 			Set<String> required = PropDatabase.getMaterialTextureNames(bch);
 			int donor = pc01.donorAreas.get(0);
-			List<String> missing = PropDatabase.getMissingTextureNames(bch, db.areaTextureNames.get(donor));
+			List<String> missing = missingTextures(bch, db.areaTextureNames.get(donor));
 			System.out.println("com_bm_pc01 requires " + required + " -> missing in donor area " + donor + ": " + missing);
 			if (required.isEmpty()) {
 				System.out.println("FAIL: com_bm_pc01 has no material texture names - material parse is broken");
@@ -143,7 +154,7 @@ public class PropDatabaseTest {
 				continue;
 			}
 			selfChecked++;
-			if (PropDatabase.getMissingTextureNames(bch, db.areaTextureNames.get(m.donorAreas.get(0))).isEmpty()) {
+			if (missingTextures(bch, db.areaTextureNames.get(m.donorAreas.get(0))).isEmpty()) {
 				selfSatisfied++;
 			}
 			if (missModel == -1) {
@@ -151,7 +162,7 @@ public class PropDatabaseTest {
 					if (m.donorAreas.contains(area)) {
 						continue;
 					}
-					List<String> missing = PropDatabase.getMissingTextureNames(bch, db.areaTextureNames.get(area));
+					List<String> missing = missingTextures(bch, db.areaTextureNames.get(area));
 					if (!missing.isEmpty()) {
 						missModel = m.modelIndex;
 						missModelName = m.name;
@@ -171,7 +182,7 @@ public class PropDatabaseTest {
 			Set<String> avail = db.areaTextureNames.get(missArea);
 			for (String s : missNames) {
 				if (avail != null && avail.contains(s)) {
-					System.out.println("FAIL: getMissingTextureNames reported an available texture as missing: " + s);
+					System.out.println("FAIL: the missing-texture answer reported an available texture as missing: " + s);
 					pass = false;
 				}
 			}

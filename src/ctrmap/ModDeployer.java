@@ -186,12 +186,39 @@ public class ModDeployer {
 	}
 
 	/**
+	 * The mod folder the deploy dialog shows once a title is picked: the one that title's id names on this machine,
+	 * or {@code current} when it names none (F238). Out of the combo box's listener, where no suite reached it.
+	 */
+	public static String folderForTitle(Object titleItem, String current) {
+		File picked = azaharModRoot(titleIdIn(titleItem));
+		return picked != null ? picked.getAbsolutePath() : current;
+	}
+
+	/**
 	 * Deploys the current workspace's edits as a LayeredFS mod at modRoot: only
 	 * archives whose decompressed contents differ from the pristine snapshot are
 	 * copied into {@code modRoot/romfs/...}; if codeIps is non-null it is copied
 	 * to {@code modRoot/exefs/code.ips}.
 	 */
 	public static Result deploy(File modRoot, File codeIps) {
+		return deploy(modRoot, codeIps, Workspace.GAMEDIR_PATH);
+	}
+
+	/**
+	 * {@link #deploy(File, File)} against the game folder {@code gameDir}, read by the caller. A worker hands it in:
+	 * the game folder is a plain static the event thread writes, and the deploy's worker read it (EdtReachTest, 2026-10-12).
+	 */
+	@ctrmap.util.NotAnEdit("it copies the archives the workspace changed, and code.ips, into the emulator's mod"
+		+ " folder: the program's output, made again by the next deploy, while the workspace keeps every edit")
+	public static Result deploy(File modRoot, File codeIps, String gameDir) {
+		//NEVER ON THE EVENT THREAD (census M.63). A deploy compares every moddable archive with the retail copy -
+		//two whole archives parsed and every entry of both inflated, hundreds of megabytes - and it ran inside the
+		//pack worker's done(), after the progress dialog had closed: the window froze with nothing on it and
+		//looked hung. Refused here, so no caller can put it back there
+		if (java.awt.EventQueue.isDispatchThread()) {
+			throw new IllegalStateException("a deploy reads every moddable archive and runs for minutes, so it is never"
+					+ " run on the event thread, where it freezes the window");
+		}
 		//DEPLOYING ON TOP OF A PARKED COPY MAKES THE SWITCH UNUSABLE. Turning the
 		//mod off MOVES the folder aside rather than deleting it - that is the promise
 		//("nothing is deleted, save data is never touched") and it is why the switch is
@@ -220,7 +247,7 @@ public class ModDeployer {
 			if (rel == null) {
 				continue;
 			}
-			File live = new File(Workspace.GAMEDIR_PATH + rel);
+			File live = new File(gameDir + rel);
 			if (!live.exists()) {
 				continue;
 			}
@@ -352,6 +379,8 @@ public class ModDeployer {
 	 * boots completely stock. Returns where it was parked. Reversible with
 	 * {@link #enable}; the user's save data is untouched either way.
 	 */
+	@ctrmap.util.NotAnEdit("it moves the deployed mod out of the emulator's load path: nothing is deleted, enable"
+		+ " moves it back, and the workspace is not touched")
 	public static File disable(File modRoot) throws IOException {
 		File parked = parkedRoot(modRoot);
 		moveDir(modRoot, parked);
@@ -359,6 +388,8 @@ public class ModDeployer {
 	}
 
 	/** Turns a parked mod back ON. Returns the mod folder it was restored to. */
+	@ctrmap.util.NotAnEdit("it moves a parked mod back into the emulator's load path: nothing is deleted, disable"
+		+ " moves it out again, and the workspace is not touched")
 	public static File enable(File modRoot) throws IOException {
 		moveDir(parkedRoot(modRoot), modRoot);
 		return modRoot;
@@ -521,12 +552,62 @@ public class ModDeployer {
 		if (ga.length != gb.length) {
 			return false;
 		}
+		//THE SAME BYTES ARE THE SAME ENTRIES (census M.63): both archives are whole by here, so two files byte for
+		//byte alike hold the same decompressed entries, and the 14 archives a deploy did not touch were each
+		//compared by inflating every entry of both - FieldData alone is 857 entries twice. Different bytes can
+		//still be the same entries, packed differently, so those are compared entry by entry as before
+		try {
+			if (a.length() == b.length() && sameBytes(a, b)) {
+				return true;
+			}
+		} catch (IOException unread) {
+			//not a default: the deploy reports a comparison that threw as skipped, with this reason
+			throw new java.io.UncheckedIOException("comparing " + a + " with " + b + ": " + ctrmap.util.Bytes.reason(unread), unread);
+		}
+		return sameEntries(ga, gb, a, b);
+	}
+
+	/**
+	 * Whether two archives of one length hold the same decompressed entries, entry by entry - refusing, naming it,
+	 * an entry either side cannot read.
+	 */
+	public static boolean sameEntries(GARC ga, GARC gb, File a, File b) {
 		for (int i = 0; i < ga.length; i++) {
-			if (!Arrays.equals(ga.getDecompressedEntry(i), gb.getDecompressedEntry(i))) {
+			byte[] ea = ga.getDecompressedEntry(i);
+			byte[] eb = gb.getDecompressedEntry(i);
+			//TWO FAILED READS ARE NOT THE SAME ENTRY (census M.105): getDecompressedEntry answers null for an entry
+			//it could not read, and Arrays.equals(null, null) is true - so a failure at the same index on both
+			//sides voted "unchanged" and the user's edit was not deployed, with nothing in the skipped list
+			if (ea == null || eb == null) {
+				throw new IllegalStateException("entry " + i + " of " + (ea == null ? a : b).getName()
+						+ " could not be read, so it cannot be compared");
+			}
+			if (!Arrays.equals(ea, eb)) {
 				return false;
 			}
 		}
 		return true;
+	}
+
+	/** Whether two files of one length hold the same bytes, read a megabyte at a time. */
+	public static boolean sameBytes(File a, File b) throws IOException {
+		try (java.io.DataInputStream ia = new java.io.DataInputStream(new java.io.BufferedInputStream(new java.io.FileInputStream(a)));
+				java.io.DataInputStream ib = new java.io.DataInputStream(new java.io.BufferedInputStream(new java.io.FileInputStream(b)))) {
+			byte[] ba = new byte[1 << 20];
+			byte[] bb = new byte[1 << 20];
+			for (long left = a.length(); left > 0; ) {
+				int n = (int) Math.min(ba.length, left);
+				ia.readFully(ba, 0, n);
+				ib.readFully(bb, 0, n);
+				for (int k = 0; k < n; k++) {
+					if (ba[k] != bb[k]) {
+						return false;
+					}
+				}
+				left -= n;
+			}
+			return true;
+		}
 	}
 
 	private static void copyFile(File src, File dst) throws IOException {

@@ -53,6 +53,9 @@ public class OrasProfile extends GameProfile {
 			//measured on a retail dump: 776 entries of 36 bytes, all round-tripping
 			case ITEM_DATA: return "/a/1/9/7";
 			case SOUND_BCSAR: return "/sound/sango_sound.bcsar";
+			//MEASURED 2026-10-10 on the dump, pk3DS does not name it: 85 entries, every one a Pawn script that
+			//reads; of the 298 archives under a/, it and ZONE_DATA are the only ones naming a map-change native
+			case SHARED_SCRIPTS: return "/a/0/2/9";
 			default: return null;
 		}
 	}
@@ -229,9 +232,11 @@ public class OrasProfile extends GameProfile {
 	}
 
 	/**
-	 * 1, as the camera form's author recorded ORAS's neutral cameras (X/Y's are 2). Not
-	 * re-read in this tree, which holds no game data: CameraFormTest's dump half reads every
-	 * area's table and refuses any other value.
+	 * 1, as the camera form's author recorded ORAS's neutral cameras (X/Y's are 2). MEASURED
+	 * 2026-10-09 by CameraFormTest's dump half over every retail area's table: ORAS's neutral
+	 * cameras hold 1 AND 2, so 1 is a value the game uses, not the only one - which is why the
+	 * form writes an area's own neutral value and falls back to this only for an area that has
+	 * none.
 	 */
 	@Override
 	public int neutralCameraValue() {

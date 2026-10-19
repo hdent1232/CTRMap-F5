@@ -190,18 +190,29 @@ public class InteriorWirer {
 	 */
 	public static Wired cloneAndWire(int exteriorZone, int extWarpIdx, int interiorDonor, List<Integer> freeSlots)
 			throws IOException {
+		return cloneAndWire(exteriorZone, extWarpIdx, interiorDonor, freeSlots, InteriorWirer::zoneArea);
+	}
+
+	/**
+	 * {@link #cloneAndWire(int, int, int, List)} with the reader of a zone's area handed in, as {@link #rewire} takes
+	 * it. A clone's area is read back from the clone, and no game reaches the refusal of one that will not read: a
+	 * donor whose area cannot be read is no floor at all (the 2026-10-16 assembly, InteriorWirer 224, SURVIVED). A
+	 * suite hands a reader that cannot read the clone back, to ask that the refusal comes and puts everything back.
+	 */
+	static Wired cloneAndWire(int exteriorZone, int extWarpIdx, int interiorDonor, List<Integer> freeSlots,
+			java.util.function.IntUnaryOperator areaOf) throws IOException {
 		//ONE UNIT (F227): the clone was written and persisted, and only then were its exits read,
 		//rewired and written - so a failure after the clone left an interior whose exits led into
 		//the retail exterior. The clones' own units join this one; a failure now puts them all back.
 		try (WorkspaceUnit unit = WorkspaceUnit.begin("Wire an interior", Workspace.session())) {
-			Wired wired = cloneAndWireIn(exteriorZone, extWarpIdx, interiorDonor, freeSlots);
+			Wired wired = cloneAndWireIn(exteriorZone, extWarpIdx, interiorDonor, freeSlots, areaOf);
 			unit.commit();
 			return wired;
 		}
 	}
 
-	private static Wired cloneAndWireIn(int exteriorZone, int extWarpIdx, int interiorDonor, List<Integer> freeSlots)
-			throws IOException {
+	private static Wired cloneAndWireIn(int exteriorZone, int extWarpIdx, int interiorDonor, List<Integer> freeSlots,
+			java.util.function.IntUnaryOperator areaOf) throws IOException {
 		List<Integer> floors = floors(interiorDonor, workspace());
 		if (floors.size() > freeSlots.size()) {
 			throw new IOException("its interior is " + floors.size() + " floors (zones " + floors + ") and "
@@ -219,20 +230,18 @@ public class InteriorWirer {
 			int slot = c.getValue();
 			ZO zo = new ZO(Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, slot), Workspace.session());
 			ZoneEntities ent = new ZoneEntities(zo.getFile(1));
-			int area = zoneArea(slot);
+			int area = areaOf.applyAsInt(slot);
 			if (area < 0) {
 				throw new IOException("the cloned floor (zone " + slot + ")'s area could not be read back, so its stairs"
 						+ " cannot be told from its door");
 			}
-			retail += rewire(ent, area, cloneOf, exteriorZone, extWarpIdx, c.getKey() == interiorDonor,
-					InteriorWirer::zoneArea);
+			retail += rewire(ent, area, cloneOf, exteriorZone, extWarpIdx, c.getKey() == interiorDonor, areaOf);
 			ent.modified = true;
-			byte[] assembled = ent.assembleData();
-			if (assembled == null) {
-				throw new IOException("Could not rebuild the rewired interior (zone " + slot + ").");
-			}
+			//ASSEMBLED INSIDE THE REFUSAL (2026-10-16): assembleData never answers null - it throws, unwrapped, out of
+			//a method that refuses in IOExceptions - so the null check here was dead and a rewired floor that would not
+			//assemble (an NPC whose uid is not its place) left as a bare IllegalStateException naming no zone
 			try {
-				zo.storeFile(1, assembled);
+				zo.storeFile(1, ent.assembleData());
 			} catch (RuntimeException notWritten) {
 				throw new IOException("Could not write the rewired interior (zone " + slot + "): "
 					+ ctrmap.util.Bytes.reason(notWritten), notWritten);

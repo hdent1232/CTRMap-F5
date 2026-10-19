@@ -202,6 +202,7 @@ public class DumpCheck {
 		}
 		List<String> missing = new ArrayList<>();
 		List<String> broken = new ArrayList<>();
+		List<String> unopened = new ArrayList<>();
 		for (ArchiveType t : REQUIRED) {
 			String rel = Workspace.getArchivePath(t, p.type());
 			if (rel == null) {
@@ -210,16 +211,31 @@ public class DumpCheck {
 			File f = new File(folder + rel);
 			if (!f.isFile() || f.length() == 0) {
 				missing.add(friendly(t));
-			} else if (!looksLikeArchive(f)) {
-				broken.add(friendly(t));
+				continue;
+			}
+			try {
+				if (!looksLikeArchive(f)) {
+					broken.add(friendly(t));
+				}
+			} catch (IOException cannotOpen) {
+				//NOT DAMAGE (census M.139): held by the emulator, on a share that went away, not this account's to
+				//read - it was counted as a broken archive, and the user told to unpack a whole game again for a lock
+				unopened.add(friendly(t) + " (" + ctrmap.util.Bytes.reason(cannotOpen) + ")");
 			}
 		}
-		if (missing.isEmpty() && broken.isEmpty()) {
+		if (missing.isEmpty() && broken.isEmpty() && unopened.isEmpty()) {
 			r.status = Status.VALID;
 			r.headline = p.displayName() + " - ready to edit.";
 			return r;
 		}
 		r.status = Status.DAMAGED;
+		if (missing.isEmpty() && broken.isEmpty()) {
+			r.headline = "That looks like " + p.displayName() + ", but CTRMap could not open part of it.";
+			r.detail = "These are there, but could not be opened: " + join(unopened) + ". That is not damage to the"
+					+ " game - close anything that may be holding them, such as the emulator, check this account can"
+					+ " read the folder, and check again.";
+			return r;
+		}
 		r.headline = "That looks like " + p.displayName() + ", but part of it is missing.";
 		StringBuilder sb = new StringBuilder();
 		if (!missing.isEmpty()) {
@@ -229,6 +245,9 @@ public class DumpCheck {
 			sb.append("These are present but unreadable: ").append(join(broken)).append(". ");
 		}
 		sb.append("The unpacking probably did not finish - try unpacking your game again.");
+		if (!unopened.isEmpty()) {
+			sb.append(" And these could not be opened at all, which is not damage: ").append(join(unopened)).append(".");
+		}
 		r.detail = sb.toString();
 		if (isSnapshot(folder)) {
 			r.detail = "This is a backup CTRMap made of a game folder, not the game itself."
@@ -252,8 +271,12 @@ public class DumpCheck {
 				continue;
 			}
 			File f = new File(folder + rel);
-			if (!f.isFile() || f.length() == 0 || !looksLikeArchive(f)) {
-				return false;
+			try {
+				if (!f.isFile() || f.length() == 0 || !looksLikeArchive(f)) {
+					return false;
+				}
+			} catch (IOException cannotOpen) {
+				return false;   //not confirmed a dump: the full check after this one says which could not be opened, and why
 			}
 		}
 		r.status = Status.VALID;
@@ -293,8 +316,11 @@ public class DumpCheck {
 		return out;
 	}
 
-	/** GARC magic check - enough to tell a real archive from a truncated file. */
-	private static boolean looksLikeArchive(File f) {
+	/**
+	 * GARC magic check - enough to tell a real archive from a truncated file. A file it cannot open is thrown,
+	 * not answered false (census M.139): that is not a damaged archive, and the user's instruction differs.
+	 */
+	private static boolean looksLikeArchive(File f) throws IOException {
 		try (RandomAccessFile raf = new RandomAccessFile(f, "r")) {
 			if (raf.length() < 16) {
 				return false;
@@ -302,8 +328,6 @@ public class DumpCheck {
 			byte[] magic = new byte[4];
 			raf.readFully(magic);
 			return magic[0] == 'C' && magic[1] == 'R' && magic[2] == 'A' && magic[3] == 'G';
-		} catch (IOException ex) {
-			return false;
 		}
 	}
 

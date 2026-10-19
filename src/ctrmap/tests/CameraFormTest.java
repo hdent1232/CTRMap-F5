@@ -53,6 +53,8 @@ public class CameraFormTest {
 		try {
 			theRecordComparesWhatItWrites();
 			keepTakesEveryMovedFieldAndNothingElse();
+			keepRefusesARecordItsLayoutDoesNotFit();
+			anAreaWithNoCameraTableIsSaid();
 			theFormWritesWhatItWasMovedTo();
 			aCameraReadInPiecesIsTheSameCamera();
 			theCamerasAreADocumentOfTheZonesHistory();
@@ -190,6 +192,55 @@ public class CameraFormTest {
 	@SuppressWarnings("unchecked")
 	static void move(Object[] field, CameraData c) {
 		((Consumer<CameraData>) field[1]).accept(c);
+	}
+
+	/**
+	 * A record that writes a length its field layout does not account for is refused, never merged field by field.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (CameraData 191, dropped, SURVIVED): keep was never handed a record of the
+	 * wrong length. Dropped, it merged over bytes the field widths no longer line up with - every field after the
+	 * short one taken from the wrong place, a float made of halves - and called it the record the form wrote.
+	 */
+	static void keepRefusesARecordItsLayoutDoesNotFit() {
+		System.out.println("--- a record the field layout does not fit is refused, never merged");
+		CameraData shortOne = base();
+		shortOne.unknownBytes = new byte[15];   //one byte short of the 16 the layout gives it
+		String said;
+		try {
+			CameraData merged = CameraData.keep(shortOne, base(), base());
+			said = "it merged a record of " + merged.bytes().length + " bytes";
+		} catch (IllegalStateException refused) {
+			said = refused.getMessage();
+		} catch (RuntimeException other) {
+			said = "it went on and failed: " + other;
+		}
+		check(said.equals("a camera record wrote " + (CameraData.SIZE - 1) + "/" + CameraData.SIZE + "/" + CameraData.SIZE
+				+ " bytes and its field layout says " + CameraData.SIZE + ": write() and FIELDS disagree"),
+				"a record one byte short of its layout is refused, saying how long each was: " + said);
+	}
+
+	/**
+	 * An area that holds no camera table is refused as that, naming the area - never read on into a subfile that is
+	 * not there, nor opened as a table of nothing.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (CameraDataFile 42, dropped, SURVIVED): no area without subfile 3 was ever
+	 * opened for its cameras. Dropped, the read went on and the container's own "has no subfile 3" was all the owner
+	 * got; swallowed, a table of no cameras opened that a save would write over the area.
+	 */
+	static void anAreaWithNoCameraTableIsSaid() throws Exception {
+		System.out.println("--- an area with no camera table is refused as that, naming the area");
+		FakeGameFiles fake = new FakeGameFiles();
+		fake.plant(ArchiveType.AREA_DATA, 0, HandedGameTest.container("AD", new byte[0], new byte[0], new byte[0]));
+		AD noTable = new AD(fake.staged(ArchiveType.AREA_DATA, 0), fake);
+		String said;
+		try {
+			new ctrmap.formats.cameradata.CameraDataFile(noTable);
+			said = "it opened a camera table the area does not hold";
+		} catch (IllegalStateException refused) {
+			said = refused.getMessage();
+		}
+		check(!noTable.hasFile(3) && said.startsWith("the area holds no camera table (it has no subfile 3): "),
+				"an area of 3 subfiles is refused as one with no camera table: " + said);
 	}
 
 	/** A camera with nothing at a default, so a field moved by the suite always reads as moved. */
@@ -384,6 +435,43 @@ public class CameraFormTest {
 				"an edit to the second of two new cameras lands on the second: yaws "
 				+ form.f.camData.get(0).coords1.yaw + ", " + form.f.camData.get(1).coords1.yaw);
 
+		//(the 2026-10-14 shared sweep, CameraEditForm 262, swallow-throw, SURVIVED: no suite took the record
+		//out from under the form, so the refusal was never reached and the slot's record never at stake)
+		System.out.println("--- a form whose camera is no longer in its slot refuses to write over the slot (F210)");
+		form.loadFrom(area(new CameraData(), new CameraData()));
+		CameraData inSlot = new CameraData();
+		inSlot.boundX1 = 5;
+		form.f.camData.set(0, inSlot);   //the slot holds another record now than the one the form shows
+		((JFormattedTextField) MatrixEditFormGuardsTest.field(form, "yaw1")).setValue(21f);
+		String refused = "nothing";
+		try {
+			form.saveCamera();
+		} catch (IllegalStateException e) {
+			refused = e.getMessage();
+		}
+		check(refused.startsWith("the camera form is showing camera 0 but holds a record that is not in that slot")
+				&& form.f.camData.get(0) == inSlot && inSlot.coords1.yaw == 0f,
+				"it refuses, naming the slot, and the slot keeps the record it holds: " + refused + "; slot "
+				+ (form.f.camData.get(0) == inSlot ? "kept" : "written over"));
+
+		//(the 2026-10-14 shared sweep, CameraEditForm 290, negate-if, SURVIVED: no suite ticked one default box alone)
+		System.out.println("--- one default box ticked marks that set default and the other not; neither, both");
+		javax.swing.JCheckBox d1 = (javax.swing.JCheckBox) MatrixEditFormGuardsTest.field(form, "d1default");
+		javax.swing.JCheckBox d2 = (javax.swing.JCheckBox) MatrixEditFormGuardsTest.field(form, "d2default");
+		form.loadFrom(area(new CameraData(), new CameraData()));
+		d1.setSelected(true);
+		d2.setSelected(false);
+		form.saveCamera();
+		CameraData one = form.f.camData.get(0);
+		check(one.isFirstEnabled == 0 && one.isSecondEnabled == -1,
+				"the first set's box alone: the first default, the second not (" + one.isFirstEnabled + ", " + one.isSecondEnabled + ")");
+		d1.setSelected(false);
+		form.saveCamera();
+		CameraData neither = form.f.camData.get(0);
+		check(neither.isFirstEnabled == 0 && neither.isSecondEnabled == 0,
+				"and neither box on a camera that had one: both sets marked 0 (" + neither.isFirstEnabled + ", "
+				+ neither.isSecondEnabled + ")");
+
 		System.out.println("--- a neutral tick is saved, with this game's value (F097)");
 		javax.swing.JCheckBox neutral = (javax.swing.JCheckBox) MatrixEditFormGuardsTest.field(form, "neutralCheckbox");
 		form.loadFrom(area(new CameraData(), new CameraData()));
@@ -433,10 +521,11 @@ public class CameraFormTest {
 
 	/**
 	 * Every retail area's cameras, shown and switched through with no edit, come back byte for
-	 * byte - and every neutral camera holds ORAS's recorded value.
+	 * byte - and the neutral cameras hold the values measured over them (1 and 2), the profile's
+	 * fallback among them (F097).
 	 */
 	static void everyRetailCameraSurvivesBeingShown(File dump) throws Exception {
-		System.out.println("--- every retail camera is written back as read, and every neutral one holds 1");
+		System.out.println("--- every retail camera is written back as read, and the neutral ones hold the values measured");
 		File garcFile = new File(dump, Workspace.getArchivePath(ArchiveType.AREA_DATA, GameType.ORAS));
 		if (!garcFile.isFile()) {
 			Skip.section("no dump at " + dump + " - UNKNOWN, not passed");
@@ -491,8 +580,14 @@ public class CameraFormTest {
 		}
 		check(areas > 200 && cameras > 200, "control: " + areas + " areas and " + cameras + " cameras read");
 		check(changed.isEmpty(), "every one shown and switched past with no edit comes back byte for byte: " + changed);
-		check(neutralValues.isEmpty() || neutralValues.equals(new TreeSet<>(Arrays.asList(1))),
-				"every neutral camera holds the profile's 1: " + neutralValues);
+		//MEASURED 2026-10-09 over every retail table: ORAS's neutral cameras hold 1 AND 2, not the profile's
+		//1 alone, which this asked. The form writes the AREA'S OWN neutral value and falls back to the
+		//profile's only for an area that has none - so what must hold is that the fallback is a value the game
+		//itself uses, and that the corpus is the one measured; a third value is a new fact to read.
+		check(neutralValues.contains(ctrmap.gamedef.GameProfile.of(ctrmap.gamedef.GameType.ORAS).neutralCameraValue()),
+				"the profile's fallback neutral value is one retail's own neutral cameras hold: " + neutralValues);
+		check(neutralValues.equals(new TreeSet<>(Arrays.asList(1, 2))),
+				"and retail's neutral cameras hold exactly the two values measured, 1 and 2: " + neutralValues);
 	}
 
 	static void check(boolean ok, String what) {

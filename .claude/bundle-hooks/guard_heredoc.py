@@ -61,6 +61,31 @@ _HEREDOC = re.compile(r"(?<!<)<<-?\s*(?![<])(" + chr(39) + r"[^" + chr(39) + r"]
 #: work. Past this many body lines it is a file being typed through a channel that loses bytes.
 MAX_SCRIPT_LINES = 20
 
+#: A PROJECT'S STRICTER RULE IS TWO SETTINGS, NOT A SECOND COPY. CTRMap's owner wrote "No Bash
+#: heredocs for Java or Python - write the script to a file", with no length in it, and CTRMap held
+#: that by keeping its own copy of this guard: two copies of one rule, both asked on every call,
+#: the shape the install check refuses (CTRMap F167). Measured on 29 cases both copies' tests ask,
+#: its copy refused 5 this one let through, and this one refused none its copy let through. Both
+#: are off here, so nothing about this guard changes for a project that sets neither:
+#:   NEVER_FED     a regex over a program's name: no heredoc feeds a program it matches, at any
+#:                 length (CTRMap: Python and Java);
+#:   BODY_ESCAPES  True refuses a BACKSLASH in any heredoc body, and in the code an interpreter is
+#:                 handed with -c, -e or -Command, at any length - the escape is what the command
+#:                 string eats (a word boundary arrived as 0x08, README section 10).
+NEVER_FED = r"py|pythonw?[0-9.]*|java|javaw|javac|jshell"
+BODY_ESCAPES = True
+
+#: Adapted per project: see the bootstrap's ADAPT.md.
+ADAPT = ("NEVER_FED", "BODY_ESCAPES")
+
+#: The settings that ship OFF, at the value they ship at. A project turns them on; the bundle's
+#: own tests turn them off again for their run (`bundle_hooks.settings_off`).
+SHIPPED_OFF = {"NEVER_FED": "", "BODY_ESCAPES": False}
+
+#: The programs BODY_ESCAPES asks when one is handed code as an argument. `git -c` is handed a
+#: setting, and a backslash in a Windows path there is a path, not an escape the shell will eat.
+_INTERPRETER = re.compile(r"py|pythonw?[0-9.]*|perl|ruby|node|bash|sh|zsh|pwsh|powershell", re.I)
+
 BYPASS = bundle_env.name("ALLOW_HEREDOC")
 
 #: A PowerShell here-string: `@'` or `@"` at the end of a line, closed by `'@` / `"@` at the
@@ -148,6 +173,26 @@ def heredocs(command):
     `writes_to_file` is true when the heredoc's own command line redirects to a path - the
     `cat > file <<EOF` shape - as opposed to feeding an interpreter's stdin.
     """
+    return [(delimiter, body, writes)
+            for delimiter, body, writes, _text, _feeds in heredoc_bodies(command)]
+
+
+def heredoc_bodies(command):
+    """`heredocs`, each with its BODY and the program it FEEDS: the program that runs, through any
+    runner (`timeout 9 python - <<EOF` feeds python), or '' when none can be read.
+
+    IN EVERY TEXT A SHELL IS HANDED (`bundle_shell.texts`), as `inline_bodies` reads them. Measured
+    2026-10-09 by CTRMap's HookRefusalsTest: a heredoc this refused as a line passed handed to
+    `bash -c` - it was looked for in the command's own lines only, where the shell body is one
+    quoted word - so a 30-line program and a file write alike went through with one wrapper."""
+    found = []
+    for handed in bundle_shell.texts(command):
+        found.extend(_heredocs_in(handed))
+    return found
+
+
+def _heredocs_in(command):
+    """`heredoc_bodies` of one text, its own lines only."""
     found = []
     lines = command.splitlines()
     for index, line in enumerate(lines):
@@ -159,11 +204,12 @@ def heredocs(command):
             continue
         raw = line[match.start(1):match.end(1)]
         delimiter = raw.strip(chr(39) + '"')
-        body = 0
+        body, text = 0, []
         for following in lines[index + 1:]:
             if following.strip() == delimiter:
                 break
             body += 1
+            text.append(following)
         # ONLY THIS COMMAND'S OWN REDIRECT, AND BOTH SIDES OF THE OPERATOR.
         #
         # Scanning the whole line found the `2>/dev/null` of a `cat` three commands earlier and
@@ -186,7 +232,9 @@ def heredocs(command):
         # stderr somewhere and carries no content into a path; refusing it would be that same
         # false positive reintroduced from the other side.
         writes = bool(re.search(r"(?<![0-9])>>?\s*[^|&\s]", segment)) or "tee " in segment
-        found.append((delimiter, body, writes))
+        runs = [words for words, _bg in bundle_shell.runs(before) if words]
+        feeds = bundle_shell.program_of(runs[0][0][0]) if runs else ""
+        found.append((delimiter, body, writes, chr(10).join(text), feeds))
     return found
 
 
@@ -287,6 +335,12 @@ def long_programs(command):
     node, pwsh, powershell, bash and sh, so `perl -e`, `ruby -e`, `zsh -c` and `php -r` carried a
     long program unasked. Asked of every program's flags instead, and of every command a shell in
     the text is handed - read, not run."""
+    return [(program, body.count(chr(10)) + 1, bool(_BODY_WRITES.search(body)) and chr(92) in body)
+            for program, body in inline_bodies(command)]
+
+
+def inline_bodies(command):
+    """[(program, the code it is handed)] - the one reading `long_programs` and BODY_ESCAPES ask."""
     found = []
     for text in bundle_shell.texts(command):
         for one in bundle_shell.split_commands(text):
@@ -296,9 +350,7 @@ def long_programs(command):
                 for at, (word, _typed) in enumerate(rest[1:-1], 1):
                     if re.fullmatch(r"-[A-Za-z]*[cer]|-command", word, re.I):
                         body = rest[at + 1][1] if rest[at + 1][1] is not None else rest[at + 1][0]
-                        found.append((bundle_shell.program_of(rest[0][0]),
-                                      body.count(chr(10)) + 1,
-                                      bool(_BODY_WRITES.search(body)) and chr(92) in body))
+                        found.append((bundle_shell.program_of(rest[0][0]), body))
                         break
     return found
 
@@ -316,6 +368,18 @@ def verdict(command):
             "that still compiled. A heredoc into a file is refused for it; this is the same "
             "bytes on one line.\n\n"
             "Use the Write tool. It is exact and it is not a shell.\n" % escaped[:160])
+    if BODY_ESCAPES:
+        for program, body in inline_bodies(command):
+            if chr(92) in body and _INTERPRETER.fullmatch(program or ""):
+                return True, (
+                    bundle_shell.policy(__file__) + "\n"
+                    "This hands %s code carrying a BACKSLASH as a command-line argument, and this "
+                    "project refuses that at any length (BODY_ESCAPES): the command string eats "
+                    "one level of escaping on its way to the shell, and a word boundary written "
+                    "this way arrived as 0x08 - the regex compiled, matched nothing, and the count "
+                    "it measured came out the same before and after the change.\n\n"
+                    "Write the program to a file with the Write tool and run the file, or spell "
+                    "the character `chr(92)`.\n" % program)
     for program, body, writes in long_programs(command):
         if body > MAX_SCRIPT_LINES or writes:
             return True, (
@@ -347,7 +411,22 @@ def verdict(command):
                 "Write the program to a file with the Write tool and run the file.\n"
                 % (body, ", writing a file whose content carries backslash escapes"
                    if writes else ""))
-    for delimiter, body, writes in heredocs(command):
+    for delimiter, body, writes, text, feeds in heredoc_bodies(command):
+        if NEVER_FED and feeds and re.fullmatch(NEVER_FED, feeds, re.I):
+            return True, (
+                bundle_shell.policy(__file__) + "\n"
+                "This heredoc (<<%s, %d lines) feeds %s, and this project's rule has no length "
+                "in it: no heredoc feeds %s at all (NEVER_FED).\n\n"
+                "Write the script with the Write tool and run the file. It is exact and it is "
+                "not a shell.\n" % (delimiter, body, feeds, feeds))
+        if BODY_ESCAPES and chr(92) in text:
+            return True, (
+                bundle_shell.policy(__file__) + "\n"
+                "This heredoc body (<<%s) carries a BACKSLASH, and this project refuses that at "
+                "any length (BODY_ESCAPES): the command string eats one level of escaping on its "
+                "way to the shell, and a two-line body is mangled as reliably as a fifty-line "
+                "one - a backslash-n arrived as a real newline, a backslash-b as 0x08.\n\n"
+                "Write the body with the Write tool and run the file.\n" % delimiter)
         if writes:
             return True, (
                 bundle_shell.policy(__file__) + "\n"

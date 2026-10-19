@@ -30,6 +30,25 @@ import static ctrmap.util.LittleEndian.u16;
 public final class Bytes {
 
 	/**
+	 * Deletes {@code f} and, for a folder, everything in it; true when nothing of it is left. THE ONE TREE DELETE
+	 * (2026-10-12): the updater and the workspace session each held a byte-identical copy that dropped every failed
+	 * delete, and the harvester a third - so an update installed into a backup folder it had not cleared, and a
+	 * snapshot that would not go was reported gone. A caller is handed the answer, and says what was left.
+	 */
+	public static boolean deleteTree(java.io.File f) {
+		if (f == null || !f.exists()) {
+			return true;
+		}
+		java.io.File[] kids = f.isDirectory() ? f.listFiles() : null;
+		if (kids != null) {
+			for (java.io.File k : kids) {
+				deleteTree(k);
+			}
+		}
+		return f.delete() || !f.exists();
+	}
+
+	/**
 	 * Writes {@code data} beside {@code f} and then moves it over, so a write that fails leaves the
 	 * file as it was rather than cut short - the rule the containers follow (F048), for a file that
 	 * is not one.
@@ -93,6 +112,13 @@ public final class Bytes {
 	public static String reason(Throwable ex) {
 		String m = ex.getMessage();
 		String said = m == null || m.trim().isEmpty() ? ex.toString() : m;
+		//A FILE'S NAME IS NOT A REASON (census L.56). java.nio's file exceptions carry the path as
+		//their message and the failure only in their class, so a missing file was told to the user
+		//as a bare path - "could not be read - C:\...\471". The class is said now, in words
+		if (ex instanceof java.nio.file.FileSystemException && ((java.nio.file.FileSystemException) ex).getReason() == null
+				&& m != null && !m.trim().isEmpty()) {
+			said = fileFailure((java.nio.file.FileSystemException) ex) + ": " + said;
+		}
 		//WHAT RODE ON IT IS SAID TOO. A unit of work that cannot put a file back attaches that to
 		//the operation's own exception, and WorkspaceUnit's contract was that this method says
 		//it - it did not, so a half-written workspace read as an ordinary refusal to every one of
@@ -101,6 +127,26 @@ public final class Bytes {
 			said += " - and " + reason(rider);
 		}
 		return said;
+	}
+
+	/** What a java.nio file exception that carries no reason of its own failed at, from its class. */
+	static String fileFailure(java.nio.file.FileSystemException ex) {
+		if (ex instanceof java.nio.file.NoSuchFileException) {
+			return "there is no such file";
+		}
+		if (ex instanceof java.nio.file.AccessDeniedException) {
+			return "access was denied (the file is in use, read-only, or not this account's)";
+		}
+		if (ex instanceof java.nio.file.FileAlreadyExistsException) {
+			return "a file is already there";
+		}
+		if (ex instanceof java.nio.file.DirectoryNotEmptyException) {
+			return "the folder is not empty";
+		}
+		if (ex instanceof java.nio.file.NotDirectoryException) {
+			return "it is not a folder";
+		}
+		return "the file system refused (" + ex.getClass().getSimpleName() + ")";
 	}
 
 	/**

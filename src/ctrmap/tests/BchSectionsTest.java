@@ -131,6 +131,14 @@ public class BchSectionsTest {
 		section("a material's unlisted values", () -> aMaterialValueThePortDidNotListOpens(dummy));
 		section("a relocation writes where it is told", BchSectionsTest::aRelocationWritesOnlyWhereItIsTold);
 		section("the BCH reader's position", BchSectionsTest::theReaderIsWhereItRead);
+		section("another revision, and a mesh past the last", () -> anotherRevisionAndAMeshPastTheLastAreRefused(dummy,
+				texturePack()));
+		section("a prefab's donor that will not parse", () -> aPrefabsDonorThatWillNotParseIsRefused(dummy));
+		section("a command block past register 0xFFFF", BchSectionsTest::aCommandBlockPastTheLastRegisterIsRefused);
+		section("a mesh whose index buffer cannot be read", () -> aMeshWhoseIndexBufferCannotBeReadIsRefused(dummy));
+		section("each texture unit's mirrored wrap", () -> eachTextureUnitMirrorsOnlyAsItsMapperSays(dummy));
+		section("a BCH that fails partway", BchSectionsTest::aBchThatFailsPartwayHandsOutNothing);
+		section("every BCH the editor reads", () -> everyBchTheEditorReadsIsClassified(new java.io.File("src/ctrmap")));
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -163,6 +171,192 @@ public class BchSectionsTest {
 		java.util.List<String> again = ctrmap.formats.h3d.BchModelVerifier.verify(dummy);
 		check(!again.contains("no meshes") && again.equals(ctrmap.formats.h3d.BchModelVerifier.verify(dummy)),
 				"and the dummy model's own report is unchanged by verifying another between: " + again.size() + " finding(s)");
+	}
+
+	/**
+	 * A texture pack of another BCH revision, and a mesh the model does not have, are each refused in their own words.
+	 *
+	 * <p>Measured by the 2026-10-14 shared sweep (BchTexturePack 113 and BchMapModel 696, both dropped, SURVIVED): no
+	 * pack of another revision, and no mesh past the last, had been asked for. Dropped, the pack was read as the 0x21
+	 * layout it may not be, and the mesh was refused by the list's index error, naming no model.
+	 */
+	static void anotherRevisionAndAMeshPastTheLastAreRefused(byte[] dummy, byte[] pack) {
+		System.out.println("--- a pack of another BCH revision, and a mesh past the last, are refused in their words");
+		check(!BchTexturePack.parse(pack).isEmpty(), "control: the pack parses to its textures");
+		byte[] other = pack.clone();
+		other[4] = 0x22;
+		String revision;
+		try {
+			revision = "it read " + BchTexturePack.parse(other).size() + " texture(s)";
+		} catch (IllegalArgumentException refused) {
+			revision = refused.getMessage();
+		} catch (RuntimeException crash) {
+			revision = "it failed some other way: " + crash;
+		}
+		check(revision.equals("unsupported BCH backwardCompat 34 (expected 0x21)"),
+				"a texture pack of BCH revision 0x22 is refused, naming it: " + revision);
+		BchMapModel m = new BchMapModel(dummy);
+		check(m.meshCount > 0 && m.getTriangles(0).length > 0, "control: the dummy model's mesh 0 has triangles");
+		String past;
+		try {
+			past = "it answered " + m.getTriangles(m.meshCount).length + " index(es)";
+		} catch (IllegalArgumentException refused) {
+			past = refused.getMessage();
+		} catch (RuntimeException crash) {
+			past = "it failed some other way: " + crash;
+		}
+		check(past.equals("there is no mesh " + m.meshCount + " - the model has " + m.meshCount),
+				"a mesh past the model's last is refused, naming the model's count: " + past);
+	}
+
+	/**
+	 * A prefab whose embedded donor model passes the header check and will not parse is refused when it stamps, naming
+	 * the prefab - never stamped with the check the donor feeds switched off.
+	 *
+	 * <p>Measured by the 2026-10-14 shared sweep (MapPrefab 558, dropped, SURVIVED): no donor that reads as a map model
+	 * by its header and fails its parse had been stamped. Dropped, the donor stayed null, which switches off the check
+	 * that a fast-path target has the donor's vertex layout and not merely its stride (F211).
+	 */
+	static void aPrefabsDonorThatWillNotParseIsRefused(byte[] dummy) {
+		System.out.println("--- a prefab whose donor model will not parse is refused when it stamps, naming it");
+		byte[] torn = dummy.clone();
+		//the models dictionary's pointer, sent past the end: the header still reads as one map model
+		torn[0x44] = torn[0x45] = torn[0x46] = (byte) 0xFF;
+		torn[0x47] = 0x0F;
+		String parse;
+		try {
+			parse = "it parsed, " + new BchMapModel(torn).meshCount + " mesh(es)";
+		} catch (RuntimeException refused) {
+			parse = "refused";
+		}
+		check(BchMapModel.isMapModel(torn) && parse.equals("refused"),
+				"control: the torn donor reads as a map model by its header and will not parse (" + parse + ")");
+		ctrmap.formats.h3d.MapPrefab p = new ctrmap.formats.h3d.MapPrefab();
+		p.name = "torn donor";
+		p.donorModel = torn;
+		String said;
+		try {
+			said = p.stampGeometry(dummy, 0, 0, 0f) == null ? "it answered no result" : "it stamped";
+		} catch (IllegalStateException refused) {
+			said = refused.getMessage();
+		} catch (RuntimeException other) {
+			said = "it failed some other way: " + other;
+		}
+		check(said.startsWith("the embedded donor model of torn donor could not be read: "),
+				"a prefab whose donor model will not parse is refused when it stamps, naming it: " + said);
+	}
+
+	/**
+	 * A PICA command block whose consecutive writes run past register 0xFFFF is refused as damaged - a register is 16
+	 * bits, and the map that holds them would keep one no GPU has.
+	 *
+	 * <p>Measured by the 2026-10-14 shared sweep (PICACommandReader 64, dropped, SURVIVED): no block had run past the
+	 * last register. Dropped, register 0x10000 was written into the map without a word.
+	 */
+	static void aCommandBlockPastTheLastRegisterIsRefused() throws Exception {
+		System.out.println("--- a command block whose writes run past register 0xFFFF is refused as damaged");
+		//one write to 0xFFFF and one more parameter: consecutive, it lands on 0x10000; not, it lands on 0xFFFF again
+		ctrmap.formats.h3d.PICACommandReader plain = new ctrmap.formats.h3d.PICACommandReader(
+				new ctrmap.formats.h3d.RandomAccessBAIS(words(7, 0x001FFFFF, 9)), 3, true);
+		check(plain.getParameter(0xFFFF) == 9, "control: a block writing register 0xFFFF twice keeps the second, "
+				+ plain.getParameter(0xFFFF));
+		String said;
+		try {
+			new ctrmap.formats.h3d.PICACommandReader(new ctrmap.formats.h3d.RandomAccessBAIS(words(7, 0x801FFFFF, 9)), 3, true);
+			said = "it read the block";
+		} catch (java.io.IOException refused) {
+			said = refused.getMessage();
+		} catch (RuntimeException other) {
+			said = "it failed some other way: " + other;
+		}
+		check(said.equals("A PICA command block writes past register 0xFFFF - it is damaged."),
+				"a block whose consecutive writes run past register 0xFFFF is refused as damaged: " + said);
+	}
+
+	/**
+	 * A mesh whose index buffer was never located, or runs past the model, is refused by getTriangles in its own words,
+	 * never read past the end.
+	 *
+	 * <p>Measured by the 2026-10-14 shared sweep (BchMapModel 715, dropped, SURVIVED; 709 its sibling): no mesh with
+	 * an index buffer the model cannot hold had been asked for its triangles. Dropped, the read ran past the model's
+	 * bytes into an index error naming nothing.
+	 */
+	static void aMeshWhoseIndexBufferCannotBeReadIsRefused(byte[] dummy) {
+		System.out.println("--- a mesh whose index buffer cannot be read is refused, never read past the end");
+		byte[] bytes = dummy.clone();
+		BchMapModel m = new BchMapModel(bytes);
+		int count = m.getTriangles(0).length;
+		check(count > 0, "control: the dummy model's mesh 0 reads " + count + " indices");
+		//the model keeps the bytes it was handed: its index count, made larger than the model can hold
+		int countAt = m.ptr(m.meshes.get(0)[3] + 0x2C) + 0x18;
+		java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN).putInt(countAt, 0x00FFFFFF);
+		check(said(() -> m.getTriangles(0)).endsWith(") runs past the model, so its triangles cannot be read"),
+				"a mesh whose index buffer runs past the model is refused: " + said(() -> m.getTriangles(0)));
+		BchMapModel lost = new BchMapModel(dummy.clone());
+		lost.idxBuffers.clear();
+		check(said(() -> lost.getTriangles(0)).equals("mesh 0's index buffer is not located, so its triangles cannot be read"),
+				"a mesh whose index buffer was never located is refused: " + said(() -> lost.getTriangles(0)));
+	}
+
+	/**
+	 * Each texture unit's coordinates are mirrored exactly when its own mapper wraps mirrored - a mirrored unit stores
+	 * {@code 1 - u}, an unmirrored one {@code -u} - so a material mirroring one unit mirrors no other.
+	 *
+	 * <p>Measured by the 2026-10-14 shared sweep (H3DModel 570 and 573, negate-if, SURVIVED): the frames
+	 * OffscreenRenderTest draws mirror only unit 0, so units 1 and 2 were never asked. Inverted, a second or third
+	 * texture drew mirrored where its mapper said repeat, and the other way.
+	 */
+	static void eachTextureUnitMirrorsOnlyAsItsMapperSays(byte[] dummy) throws Exception {
+		System.out.println("--- each texture unit mirrors exactly when its own mapper says so");
+		ctrmap.formats.h3d.model.H3DModel m = new ctrmap.formats.h3d.BCHFile(dummy).models.get(0);
+		ctrmap.formats.h3d.model.H3DModel.H3DMesh mesh = m.meshes.get(0);
+		ctrmap.formats.h3d.texturing.H3DMaterial mat = m.materials.get(mesh.materialId);
+		ctrmap.formats.h3d.model.H3DVertex v = mesh.vertices.get(0);
+		v.texture0.x = 0.25;
+		v.texture1.x = 0.25;
+		v.texture2.x = 0.25;
+		ctrmap.formats.h3d.texturing.H3DMaterial.TextureMapper.TextureWrap mirrored
+				= ctrmap.formats.h3d.texturing.H3DMaterial.TextureMapper.TextureWrap.mirroredRepeat;
+		ctrmap.formats.h3d.texturing.H3DMaterial.TextureMapper.TextureWrap repeat
+				= ctrmap.formats.h3d.texturing.H3DMaterial.TextureMapper.TextureWrap.repeat;
+		StringBuilder wrong = new StringBuilder();
+		//each unit mirrored alone, then none: 1 - 0.25 where mirrored, -0.25 everywhere else
+		for (int mirroredUnit = -1; mirroredUnit < 3; mirroredUnit++) {
+			for (int k = 0; k < 3; k++) {
+				mat.mappers[k].wrapU = k == mirroredUnit ? mirrored : repeat;
+			}
+			mesh.makeBOs(mat);
+			for (int k = 0; k < 3; k++) {
+				double u = mesh.tcbo[k].get(0);
+				double want = k == mirroredUnit ? 0.75 : -0.25;
+				if (u != want) {
+					wrong.append(" unit ").append(k).append(" stored ").append(u).append(" with unit ").append(mirroredUnit)
+							.append(" mirrored (want ").append(want).append(");");
+				}
+			}
+		}
+		check(wrong.length() == 0, "each texture unit mirrors exactly when its own mapper says so:" + (wrong.length() == 0
+				? " units 0, 1 and 2, each alone, and none" : wrong.toString()));
+	}
+
+	/** What a call said: its refusal's words, or what it answered. */
+	static String said(java.util.function.Supplier<int[]> call) {
+		try {
+			return "it answered " + call.get().length + " index(es)";
+		} catch (IllegalStateException refused) {
+			return refused.getMessage();
+		} catch (RuntimeException other) {
+			return "it failed some other way: " + other;
+		}
+	}
+
+	/** Little-endian 32-bit words, as a command block is stored. */
+	static byte[] words(int... w) {
+		java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(w.length * 4).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+		for (int x : w) {
+			b.putInt(x);
+		}
+		return b.array();
 	}
 
 	static void everyReaderMakesOfThemWhatItDid(byte[] dummy, byte[] pack) throws Exception {
@@ -219,6 +413,29 @@ public class BchSectionsTest {
 				+ Integer.toHexString(o.contentsLen) + ")");
 		BchSections old = BchSections.read(withReloc(header(7), 24, 44));
 		check(old.flags == 0 && old.addressCount == 0, "a layout of 7 or older has no flags or address count");
+
+		//measured by the 2026-10-12 sweep (WorldAnim 58, dropped, SURVIVED): the area animation reader was never handed
+		//a layout older than the one it reads. Dropped, it took an 0x20 file - no raw-extension section, every offset
+		//after it moved up - as the layout it assumes, and edited an animation it had misread
+		String newer;
+		try {
+			new ctrmap.formats.area.WorldAnim(withReloc(header(0x21), 28, 52));
+			newer = "read";
+		} catch (RuntimeException refused) {
+			newer = "refused: " + refused;
+		}
+		String older;
+		try {
+			new ctrmap.formats.area.WorldAnim(withReloc(header(0x20), 24, 44));
+			older = "it read an 0x20 file as the layout it reads";
+		} catch (IllegalArgumentException refused) {
+			older = refused.getMessage();
+		} catch (RuntimeException other) {
+			older = "it went on and failed: " + other;
+		}
+		check("read".equals(newer) && older.equals("BCH backwardCompatibility 0x20 predates the layout the area animation reader reads"),
+				"the area animation reader reads the 0x21 layout and refuses an older one, saying so (0x21: " + newer
+				+ "; 0x20: " + older + ")");
 	}
 
 	/**
@@ -338,32 +555,16 @@ public class BchSectionsTest {
 	}
 
 	static void aStringNothingEndsIsRefused() throws Exception {
-		System.out.println("--- a string nothing ends is refused, by the stream reader too (F066)");
-		//the stream answers -1 at its end, which is not 0: the old loop appended it forever. This
-		//stream gives up after 10,000 reads past its end, so a loop that never stops fails here
-		//instead of hanging the suite
-		java.io.InputStream bounded = new java.io.InputStream() {
-			final byte[] b = {'s', 'e', 'a'};
-			int at = 0;
-
-			@Override
-			public int read() {
-				if (at < b.length) {
-					return b[at++];
-				}
-				if (++at > b.length + 10000) {
-					throw new IllegalStateException("read past the end 10,000 times");
-				}
-				return -1;
-			}
-		};
+		System.out.println("--- a string nothing ends is refused, by the reader the model parse uses (F066)");
+		//THE MODEL PARSE'S READER (F204): this asked a stream reader the program never called -
+		//the parse reads names at an address - so it guarded a door nothing used
 		String said;
 		try {
-			said = "read \"" + ctrmap.formats.h3d.StringUtils.readString(new ctrmap.util.LittleEndianDataInputStream(bounded)) + "\"";
-		} catch (java.io.IOException | RuntimeException ex) {
+			said = "read \"" + ctrmap.formats.h3d.StringUtils.readString(0, new byte[]{'s', 'e', 'a'}) + "\"";
+		} catch (java.io.IOException ex) {
 			said = ex.getMessage();
 		}
-		check(said.contains("runs off the end") && said.contains("sea"), "the stream reader says where it ran out: " + said);
+		check(said.contains("runs off the end"), "the address reader says where it ran out: " + said);
 		String strict;
 		try {
 			strict = ctrmap.formats.h3d.StringUtils.cString(new byte[]{'s', 'e', 'a'}, 0);
@@ -373,6 +574,25 @@ public class BchSectionsTest {
 		check(strict.contains("runs off the end"), "and so does the array reader: " + strict);
 		check(ctrmap.formats.h3d.StringUtils.cString(new byte[]{'s', 'e', 'a', 0, 'x'}, 0).equals("sea"),
 				"control: a string its NUL ends is read to the NUL");
+		//AN ADDRESS OUTSIDE THE DATA (StringUtils 35, dropped, SURVIVED the 2026-10-14 shared sweep): dropped, one past
+		//the end took the other refusal's words, and -1 and no data at all were an index and a null-pointer error
+		byte[] five = {'s', 'e', 'a', 0, 'x'};
+		check(cStringSaid(five, 5).equals("A string at byte 5 runs off the end of the data (5 bytes).")
+				&& cStringSaid(five, -1).equals("A string at byte -1 runs off the end of the data (5 bytes).")
+				&& cStringSaid(null, 0).equals("A string at byte 0 runs off the end of the data (absent)."),
+				"a string asked for outside the data, or of no data, is refused saying so: " + cStringSaid(five, 5) + " / "
+				+ cStringSaid(five, -1) + " / " + cStringSaid(null, 0));
+	}
+
+	/** What the array string reader said: the string, or its refusal's words. */
+	static String cStringSaid(byte[] b, int off) {
+		try {
+			return "it read \"" + ctrmap.formats.h3d.StringUtils.cString(b, off) + "\"";
+		} catch (IllegalArgumentException refused) {
+			return refused.getMessage();
+		} catch (RuntimeException other) {
+			return "it failed some other way: " + other;
+		}
 	}
 
 	static String refusal(byte[] b) {
@@ -563,12 +783,6 @@ public class BchSectionsTest {
 		check(in.readFloat() == 1.0f && in.position() == 8, "readFloat reads the IEEE bits low byte first and moves 4");
 		check(in.read() == 0x7F && in.position() == 9, "read() answers the byte and moves 1");
 		check(in.read() == -1 && in.position() == 9, "read() at the end answers -1 and does not move: " + in.position());
-		check(in.read(new byte[4]) == -1 && in.position() == 9,
-				"read(byte[]) at the end answers -1 and does not move: " + in.position());
-		in.seek(7);
-		byte[] two = new byte[4];
-		check(in.read(two) == 2 && two[0] == 0x3F && two[1] == 0x7F && in.position() == 9,
-				"read(byte[]) near the end reads what is there and moves by that: " + in.position());
 		in.seek(0);
 		check(in.skip(100) == 9 && in.position() == 9, "skip past the end stops at the end: " + in.position());
 		in.seek(0);
@@ -590,6 +804,171 @@ public class BchSectionsTest {
 		}
 		in.seek(100);
 		check(in.read() == -1 && in.position() == 100, "a seek past the end is allowed, and reading there answers the end");
+
+		//census M.110: a texture read took whatever bytes were left and decoded the rest as zeros
+		in.seek(5);
+		byte[] three = new byte[3];
+		in.readFully(three);
+		check(three[0] == 0x00 && three[1] == (byte) 0x80 && three[2] == 0x3F && in.position() == 8,
+				"control: readFully reads all of what it is asked, and moves by it");
+		try {
+			in.readFully(new byte[4]);
+			check(false, "readFully past the end throws EOFException");
+		} catch (java.io.EOFException e) {
+			check(in.position() == 8, "readFully past the end throws EOFException and does not move - never part of it: " + in.position());
+		}
+		check(ctrmap.formats.h3d.texturing.TextureCodec.storedSize(8, 8, ctrmap.formats.h3d.PICACommandReader.TextureFormat.etc1) == 32
+				&& ctrmap.formats.h3d.texturing.TextureCodec.storedSize(8, 8, ctrmap.formats.h3d.PICACommandReader.TextureFormat.rgba8) == 256
+				&& ctrmap.formats.h3d.texturing.TextureCodec.storedSize(8, 8, ctrmap.formats.h3d.PICACommandReader.TextureFormat.rgb565) == 128,
+				"a texture's stored size follows its format: ETC1 half a byte a texel, RGBA8 four, RGB565 two");
+		String texture = new String(java.nio.file.Files.readAllBytes(new java.io.File(
+				"src/ctrmap/formats/h3d/texturing/H3DTexture.java").toPath()), java.nio.charset.StandardCharsets.UTF_8);
+		check(texture.contains("TextureCodec.storedSize(") && texture.contains("in.readFully(buffer);") && !texture.contains("in.read(buffer)"),
+				"and a texture is read whole, at the size its format stores, or refused");
+	}
+
+	/**
+	 * A BCH whose read fails partway hands out nothing it read. BCHFile counted a read that threw
+	 * partway as an error and kept the models and textures it had read before it, so the readers that
+	 * never ask its error level - 11 of the 19 the editor has - took half a pack as the whole one
+	 * (found from the 2026-10-14 shared sweep's BuildingPaletteDialog 199). The subject is the pack
+	 * writer's two textures with the second one's name pointed past the end: the first reads whole,
+	 * the second throws.
+	 */
+	static void aBchThatFailsPartwayHandsOutNothing() throws Exception {
+		System.out.println("--- a BCH that fails partway hands out nothing it read");
+		byte[] whole = texturePack();
+		ctrmap.formats.h3d.BCHFile control = new ctrmap.formats.h3d.BCHFile(whole);
+		check(control.errorlevel == 0 && control.textures.size() == 2, "CONTROL: the writer's pack reads whole - error level "
+				+ control.errorlevel + ", " + control.textures.size() + " texture(s)");
+		ctrmap.formats.h3d.BCHFile half = new ctrmap.formats.h3d.BCHFile(secondNameUnreadable(whole));
+		check(half.errorlevel > 0, "CONTROL: the second texture's name past the end fails the read (error level "
+				+ half.errorlevel + ")");
+		check(half.textures.isEmpty() && half.models.isEmpty(), "and a read that failed partway hands out nothing - not the "
+				+ half.textures.size() + " texture(s) it read before it failed");
+	}
+
+	/** {@code pack}, a texture pack of the writer's layout, with its second texture's name offset past the end. */
+	static byte[] secondNameUnreadable(byte[] pack) {
+		byte[] b = pack.clone();
+		int contents = ctrmap.util.LittleEndian.i32(b, 8);
+		int pointers = contents + ctrmap.util.LittleEndian.i32(b, contents + 3 * 12);   //content dict 3: textures
+		int second = contents + ctrmap.util.LittleEndian.i32(b, pointers + 4);
+		MapResizeTest.putI32(b, second + 28, 0x7FFF0000);
+		return b;
+	}
+
+	/** {@code pack}, a texture pack of the writer's layout, whose first texture is of a format no reader knows. */
+	static byte[] firstFormatUnknown(byte[] pack) {
+		byte[] b = pack.clone();
+		MapResizeTest.putI32(b, ctrmap.util.LittleEndian.i32(b, 16) + 24, 99);   //unit 0's type command
+		return b;
+	}
+
+	/** Whether a reader of a BCH refuses one that does not read, or may take it as nothing to draw. */
+	enum BchRead {
+		/** It reads the error level on its own line or one of the next eight, and refuses or answers nothing. */
+		ASKS,
+		/** It draws or classifies what the BCH holds, and one that failed holds nothing: BCHFile empties it. */
+		NOTHING
+	}
+
+	/**
+	 * Every place the editor reads a BCH, by its file and the words of the line - 19 on 2026-10-15. A
+	 * reader that must not take an unreadable BCH as an empty one asks the error level; one that may
+	 * is listed as drawing nothing, which holds because a failed read hands out nothing (above). The
+	 * palette's donor textures were neither: an unreadable pack was taken as holding no textures, and
+	 * the building drew untextured without a word - the silence F211 removed for a pack that throws.
+	 */
+	static final Object[][] BCH_READS = {
+		{"CtrmapMainframe.java", "new ctrmap.formats.h3d.BCHFile(bch)", 1, BchRead.ASKS},
+		{"PropRegistration.java", "new BCHFile(merged)", 1, BchRead.ASKS},
+		{"TerrainTextures.java", "new BCHFile(modelBytes)", 1, BchRead.ASKS},
+		{"ZoneHeader.java", "new BCHFile(adbch1)", 1, BchRead.ASKS},
+		{"BuildingPaletteDialog.java", "new BCHFile(pack)", 1, BchRead.ASKS},
+		{"MapPreview3D.java", "new BCHFile(modelBytes)", 1, BchRead.ASKS},
+		{"GroundMaterialAudit.java", "new BCHFile(model)", 1, BchRead.ASKS},
+		{"GroundMaterialAudit.java", "new BCHFile(wTex)", 1, BchRead.ASKS},
+		{"TerrainDonorHarvester.java", "new BCHFile(merged)", 1, BchRead.ASKS},
+		//a move model or building model that does not read draws nothing: the registries skip a BCH with no model
+		{"NPCRegistry.java", "new BCHFile(new MM(staged, files).getFile(0))", 1, BchRead.NOTHING},
+		{"ADPropRegistry.java", "new BCHFile(new BM(staged, files).getFile(0))", 1, BchRead.NOTHING},
+		//the zone's world textures: a world pack that does not read leaves the map untextured, as F066 decided
+		{"ZoneHeader.java", "new BCHFile(dec)", 1, BchRead.NOTHING},
+		{"ZoneHeader.java", "new BCHFile(wTex)", 1, BchRead.NOTHING},
+		//the container builder names a subfile's type by what it holds; one that holds nothing is named by the rest
+		{"Builder.java", "new BCHFile(file)", 1, BchRead.NOTHING},
+		//the 3D views draw a model that does not read as nothing, which is what they draw for a missing one
+		{"PropEditForm.java", "new BCHFile(bch)", 1, BchRead.NOTHING},
+		{"TileMapPanel.java", "new BCHFile(tg)", 1, BchRead.NOTHING},
+		{"TileMapPanel.java", "new BCHFile(file.getFile(1))", 1, BchRead.NOTHING},
+		{"TileMapPanel.java", "new BCHFile(modelBytes)", 1, BchRead.NOTHING},
+		{"TileMapPanel.java", "new BCHFile(mm.regions.get(j, i).getFile(1))", 1, BchRead.NOTHING}};
+
+	static final java.util.regex.Pattern BCH_READ = java.util.regex.Pattern.compile("new (ctrmap\\.formats\\.h3d\\.)?BCHFile\\(");
+
+	static void everyBchTheEditorReadsIsClassified(java.io.File root) throws Exception {
+		System.out.println("--- every BCH the editor reads is classified, and every one that must refuse asks the error level");
+		Map<Object[], Integer> matched = new java.util.HashMap<>();
+		List<String> unlisted = new ArrayList<>();
+		List<String> unasked = new ArrayList<>();
+		int lines = 0, files = 0;
+		java.util.Deque<java.io.File> walk = new java.util.ArrayDeque<>();
+		walk.push(root);
+		while (!walk.isEmpty()) {
+			java.io.File d = walk.pop();
+			java.io.File[] in = d.listFiles();
+			if (in == null) {
+				check(false, "CONTROL: the source folder " + d + " can be listed");
+				continue;
+			}
+			for (java.io.File f : in) {
+				if (f.isDirectory() && !f.getName().equals("tests")) {
+					walk.push(f);
+				} else if (f.getName().endsWith(".java")) {
+					files++;
+					String[] src = SourceSeamTest.stripComments(DialogSeamTest.read(f)).split("\n", -1);
+					for (int i = 0; i < src.length; i++) {
+						if (!BCH_READ.matcher(src[i]).find()) {
+							continue;
+						}
+						lines++;
+						Object[] entry = null;
+						for (Object[] e : BCH_READS) {
+							if (e[0].equals(f.getName()) && src[i].contains((String) e[1])) {
+								entry = e;
+								break;
+							}
+						}
+						if (entry == null) {
+							unlisted.add(f.getName() + ":" + (i + 1) + " " + src[i].trim());
+							continue;
+						}
+						matched.merge(entry, 1, Integer::sum);
+						boolean asks = false;
+						for (int j = i; j < Math.min(src.length, i + 9); j++) {
+							asks |= src[j].contains(".errorlevel");
+						}
+						if (entry[3] == BchRead.ASKS && !asks) {
+							unasked.add(f.getName() + ":" + (i + 1) + " " + src[i].trim());
+						}
+					}
+				}
+			}
+		}
+		List<String> stale = new ArrayList<>();
+		int listed = 0;
+		for (Object[] e : BCH_READS) {
+			listed += (Integer) e[2];
+			if (!((Integer) e[2]).equals(matched.getOrDefault(e, 0))) {
+				stale.add(e[0] + " " + e[1] + ": " + matched.getOrDefault(e, 0) + " line(s), " + e[2] + " listed");
+			}
+		}
+		check(files > 250 && lines == listed, "CONTROL: " + files + " production sources walked, " + lines
+				+ " BCH read(s) found, " + listed + " listed");
+		check(unlisted.isEmpty(), "every BCH the editor reads is classified - not: " + unlisted);
+		check(stale.isEmpty(), "and every classified read is still there, as many times as listed - not: " + stale);
+		check(unasked.isEmpty(), "and every read that must refuse an unreadable BCH asks its error level - not: " + unasked);
 	}
 
 	static void check(boolean ok, String what) {

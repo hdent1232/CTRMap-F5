@@ -207,10 +207,6 @@ public class PawnInstruction {
 		}
 	}
 
-	public boolean setArgsFromString(String str) {
-		return takeArgs(str).isEmpty();
-	}
-
 	/**
 	 * Takes the arguments the editor's text gives this instruction, or says in words why not - and
 	 * then leaves every cell as it was (F242). The live-edit parser read only decimals, so a native
@@ -420,7 +416,7 @@ public class PawnInstruction {
 			case 0x3E:
 			case 0x3F:
 			case 0x40:
-			case 0x81: // Jump
+			case 0x81: // SWITCH - PawnClosure asks only this for a SWITCH's target
 				return true;
 		}
 		return false;

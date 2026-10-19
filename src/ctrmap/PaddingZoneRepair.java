@@ -59,32 +59,32 @@ public final class PaddingZoneRepair {
 	 * rewriting. {@code then} runs when the repair is finished and not before -
 	 * straight away when there was nothing to repair, which is almost always.
 	 *
+	 * @param ws the workspace the repair writes, handed in like the pack
 	 * @param packer how to pack and then run the callback - the window hands in
 	 *        {@code Workspace::packWorkspace}
+	 * @param keep where the repair is kept (F209d): one change of the workspace's history, handed only when it
+	 *        repaired something - opening a workspace with nothing to repair puts no empty Undo there
 	 * @param then what to do once the repair is done and packed
 	 */
-	public static void repairOnOpen(Component parent, java.util.function.Consumer<Runnable> packer,
-			Runnable then) {
+	public static void repairOnOpen(Component parent, WorkspaceSession ws, java.util.function.Consumer<Runnable> packer,
+			java.util.function.Consumer<WorkspaceUnit.Kept> keep, Runnable then) {
 		final int base = ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES;
-		final GeometryForker.RepairReport r = GeometryForker.repairSharedAppendedZones(base);
-		//AND EVERY OTHER RESOURCE THE APPEND MAKES PRIVATE. The map came first because
-		//it is what the owner saw; area and story text were shared in the same
-		//workspaces for the same reason, and fixing the appender cannot reach any of
-		//them. Driven off the table, so this covers whatever MADE_PRIVATE holds rather
-		//than the two it holds today.
-		GeometryForker.RepairReport rest = GeometryForker.repairSharedResources(base);
-		for (Integer z : rest.forked) {
-			if (!r.forked.contains(z)) {
-				r.forked.add(z);
+		final GeometryForker.RepairReport r;
+		GeometryForker.RepairReport rest;
+		try (WorkspaceUnit unit = WorkspaceUnit.begin("Give the added zones their own maps and resources", ws)) {
+			r = GeometryForker.repairSharedAppendedZones(base);
+			//AND EVERY OTHER RESOURCE THE APPEND MAKES PRIVATE. The map came first because
+			//it is what the owner saw; area and story text were shared in the same
+			//workspaces for the same reason, and fixing the appender cannot reach any of
+			//them. Driven off the table, so this covers whatever MADE_PRIVATE holds rather
+			//than the two it holds today.
+			rest = GeometryForker.repairSharedResources(base);
+			WorkspaceUnit.Kept kept = unit.commitKeeping();
+			if (!r.forked.isEmpty() || !rest.forked.isEmpty()) {
+				keep.accept(kept);
 			}
 		}
-		r.kept.addAll(rest.kept);
-		r.wanted.addAll(rest.wanted);
-		if (r.refusedBecause.isEmpty()) {
-			r.refusedBecause = rest.refusedBecause;
-		} else if (!rest.refusedBecause.isEmpty() && !rest.refusedBecause.equals(r.refusedBecause)) {
-			r.refusedBecause = r.refusedBecause + "; and " + rest.refusedBecause;
-		}
+		mergeInto(r, rest);
 		if (!r.refusedBecause.isEmpty()) {
 			//EITHER PASS, SAID (F024). Only worth a word when a pass found something to repair -
 			//a workspace with no appended zones refuses nothing worth a dialog about a feature
@@ -150,5 +150,26 @@ public final class PaddingZoneRepair {
 			sb.append("\n").append(kept);
 		}
 		return sb.toString();
+	}
+
+	/**
+	 * The resource pass's report folded into the map pass's: its forks, kept slots and findings added, and its reason
+	 * for refusing joined to the map pass's - once when the two refused alike, and never as a dangling "and" when only
+	 * one refused. Out of the repair so a suite asks it: the repair runs behind a unit, a pack and its dialogs (the
+	 * 2026-10-16 assembly, PaddingZoneRepair 96, negate-if, SURVIVED).
+	 */
+	static void mergeInto(GeometryForker.RepairReport r, GeometryForker.RepairReport rest) {
+		for (Integer z : rest.forked) {
+			if (!r.forked.contains(z)) {
+				r.forked.add(z);
+			}
+		}
+		r.kept.addAll(rest.kept);
+		r.wanted.addAll(rest.wanted);
+		if (r.refusedBecause.isEmpty()) {
+			r.refusedBecause = rest.refusedBecause;
+		} else if (!rest.refusedBecause.isEmpty() && !rest.refusedBecause.equals(r.refusedBecause)) {
+			r.refusedBecause = r.refusedBecause + "; and " + rest.refusedBecause;
+		}
 	}
 }

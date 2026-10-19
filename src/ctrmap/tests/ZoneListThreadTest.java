@@ -63,7 +63,7 @@ public class ZoneListThreadTest {
 		java.nio.file.Files.write(text.toPath(), names);
 		ctrmap.formats.text.LocationNames.load(ws, text);
 		ZoneLoadingPanel tab = new ZoneLoadingPanel(new ctrmap.LoadedZone(), MatrixEditFormGuardsTest.TOOLS,
-				MatrixEditFormGuardsTest.EDITORS, MatrixEditFormGuardsTest.ZONE_EDITORS, MatrixEditFormGuardsTest.NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+				MatrixEditFormGuardsTest.EDITORS, MatrixEditFormGuardsTest.ZONE_EDITORS, MatrixEditFormGuardsTest.NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		List<String> off = Collections.synchronizedList(new ArrayList<>());
 		int[] heard = {0};
 		for (String name : new String[]{"zoneList", "tmg", "type", "weather"}) {

@@ -35,6 +35,8 @@ public class UndoHistoryTest {
 		Headless.require();
 		aGestureIsAnEdit();
 		oneGestureAcrossDocumentsIsOneEdit();
+		aWriteThatIsAnEditJoinsItsGesture();
+		aPlaceThatRefusesToBeReadIsSaid();
 		anEditorAddsItsOwnDocuments();
 		aDocumentThatCannotSeeItselfIsRefused();
 		aFormsWidgetsAreADocument();
@@ -46,10 +48,23 @@ public class UndoHistoryTest {
 		ctrlZGoesToTheEditorBeingWorkedIn();
 		aRecordIsCopiedExactly();
 		theZonesEntitiesComeBack();
+		theZonesScriptComesBack();
 		aRegionsTilesComeBack();
 		anotherZoneOrMapStartsAgain();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		System.exit(fails == 0 ? 0 : 1);
+	}
+
+	/** What {@code made} was refused with, or what it did instead. */
+	static String refusalOf(Runnable made) {
+		try {
+			made.run();
+			return "(nothing was refused)";
+		} catch (IllegalArgumentException refused) {
+			return refused.getMessage();
+		} catch (RuntimeException other) {
+			return "not refused in words: " + other;
+		}
 	}
 
 	static void check(boolean ok, String what) {
@@ -165,6 +180,210 @@ public class UndoHistoryTest {
 	}
 
 	/**
+	 * A place whose read refuses - a container's subfile, which refuses in words now rather than answering null
+	 * (census M.4) - is said with its reason and the history's own words: nothing was written.
+	 */
+	static void aPlaceThatRefusesToBeReadIsSaid() throws Exception {
+		System.out.println("--- a place that refuses to be read is said, and nothing is written (census M.4)");
+		final boolean[] wrote = {false};
+		UndoHistory.Place refusing = new UndoHistory.Place() {
+			@Override
+			public byte[] read() {
+				throw new IllegalStateException("planted: subfile 3 of 14 could not be read");
+			}
+
+			@Override
+			public void write(byte[] data) {
+				wrote[0] = true;
+			}
+
+			@Override
+			public String what() {
+				return "the area's camera table";
+			}
+		};
+		Object scope = new Object();
+		UndoHistory h = new UndoHistory(() -> Collections.singletonList(scope), () -> Collections.<UndoHistory.Document<?>>emptyList());
+		String said = null;
+		try {
+			h.write(refusing, new byte[]{1});
+		} catch (IllegalStateException refused) {
+			said = refused.getMessage();
+		}
+		check(said != null && said.contains("the area's camera table could not be read (planted: subfile 3 of 14")
+				&& said.contains("nothing was written"), "the refusal is said with its reason and that nothing was written: " + said);
+		check(!wrote[0] && !h.canUndo(), "and nothing was written, and there is nothing to take back");
+		//and one that reads before the write and not after it: written, and said to be one that cannot be taken back
+		//(the 2026-10-15 shared sweep, UndoHistory 254, drop-throw, SURVIVED: every place a suite wrote read back)
+		final boolean[] written = {false};
+		UndoHistory.Place lost = new UndoHistory.Place() {
+			@Override
+			public byte[] read() {
+				if (written[0]) {
+					throw new IllegalStateException("planted: the file went with the write");
+				}
+				return new byte[]{0};
+			}
+
+			@Override
+			public void write(byte[] data) {
+				written[0] = true;
+			}
+
+			@Override
+			public String what() {
+				return "the area's camera table";
+			}
+		};
+		String afterSaid;
+		try {
+			h.write(lost, new byte[]{1});
+			afterSaid = "(nothing was said)";
+		} catch (IllegalStateException refused) {
+			afterSaid = refused.getMessage();
+		}
+		check(afterSaid.contains("the area's camera table was written and cannot be read back (planted: the file went")
+				&& afterSaid.contains("so it cannot be taken back") && !h.canUndo(),
+				"a write whose place cannot be read back is said to be one that cannot be taken back: " + afterSaid);
+		//and a zone file place whose write the disk refuses says so and goes no further: not listed as an edit, not
+		//reported written (the 2026-10-15 shared sweep, ZoneDocuments 81, drop-throw, SURVIVED: no suite wrote one that
+		//failed). A folder with something in it stands where the file goes.
+		java.io.File folder = Scratch.dir("ctrmap_zonedoc_unwritable");
+		java.io.File inTheWay = new java.io.File(folder, "zone.bin");
+		inTheWay.mkdir();
+		java.nio.file.Files.write(new java.io.File(inTheWay, "held").toPath(), new byte[]{1});
+		ctrmap.WorkspaceSession ws = new ctrmap.WorkspaceSession(Scratch.dir("ctrmap_zonedoc_ws"), folder,
+				ctrmap.gamedef.GameType.ORAS, null);
+		final boolean[] told = {false};
+		UndoHistory.Place zoneFile = ctrmap.humaninterface.ZoneDocuments.file(inTheWay, "the zone's file", ws,
+				() -> told[0] = true);
+		String fileSaid;
+		try {
+			zoneFile.write(new byte[]{2});
+			fileSaid = "(nothing was said)";
+		} catch (IllegalStateException refused) {
+			fileSaid = refused.getMessage();
+		}
+		check(fileSaid.startsWith("could not write zone.bin: ") && !told[0]
+				&& !ws.persistPaths().contains(inTheWay.getAbsolutePath()),
+				"a zone file the disk will not take is refused naming it, not listed as an edit, not reported written: "
+				+ fileSaid + ", told " + told[0]);
+	}
+
+	/** Bytes held in memory as a place: a written file or subfile, for the suites with no workspace. */
+	static final class Held implements UndoHistory.Place {
+
+		byte[] bytes;
+		final String name;
+
+		Held(byte[] bytes, String name) {
+			this.bytes = bytes;
+			this.name = name;
+		}
+
+		@Override
+		public byte[] read() {
+			return bytes == null ? null : bytes.clone();
+		}
+
+		@Override
+		public void write(byte[] data) {
+			bytes = data.clone();
+		}
+
+		@Override
+		public String what() {
+			return name;
+		}
+	}
+
+	/**
+	 * A write that IS an edit - a prop's textures imported into its area, the story line an NPC wizard adds -
+	 * is declared to the history and joined with what the same gesture changed in the documents (F209), so
+	 * one Undo takes back a registration whole. It is put back only over what it left there: a save or
+	 * another editor that wrote the place since is not overwritten.
+	 */
+	static void aWriteThatIsAnEditJoinsItsGesture() {
+		System.out.println("--- a write that is an edit joins its gesture, and is put back only over what it left (F209)");
+		int[] n = {1};
+		UndoHistory h = overOneNumber(n);
+		Held textures = new Held(new byte[]{1, 2}, "the area's prop textures");
+		h.write(textures, new byte[]{1, 2, 3});
+		n[0] = 2;   //the registry entry the same registration added
+		check(h.settle() && "the area's prop textures and 1 more".equals(h.undoName()),
+				"a write and the document its gesture changed are ONE edit, named for the write: " + h.undoName());
+		check(h.undo() && n[0] == 1 && Arrays.equals(textures.bytes, new byte[]{1, 2}) && !h.canUndo(),
+				"one Undo takes back both (" + n[0] + ", " + Arrays.toString(textures.bytes) + ")");
+		check(h.redo() && n[0] == 2 && Arrays.equals(textures.bytes, new byte[]{1, 2, 3}), "and one Redo puts both again");
+		textures.bytes = new byte[]{9};   //a save, or another editor, wrote it since
+		String said = "(nothing was thrown)";
+		try {
+			h.undo();
+		} catch (IllegalStateException refused) {
+			said = refused.getMessage();
+		}
+		check(said.contains("has been written since") && n[0] == 2 && Arrays.equals(textures.bytes, new byte[]{9}) && h.canUndo(),
+				"a place written since refuses the Undo, puts back nothing, and keeps the edit: " + said);
+
+		int[] m = {5};
+		UndoHistory g = overOneNumber(m);
+		Held story = new Held(new byte[]{7}, "story text 12");
+		g.write(story, new byte[]{7, 8});
+		check(!g.settle() && "story text 12".equals(g.undoName()),
+				"a write whose gesture changed no document is an edit of its own: " + g.undoName());
+		check(g.undo() && Arrays.equals(story.bytes, new byte[]{7}), "and Undo puts its bytes back");
+
+		int[] k = {0};
+		UndoHistory f = overOneNumber(k);
+		Held first = new Held(new byte[]{1}, "the first file");
+		Held second = new Held(new byte[]{2}, "the second file");
+		f.write(first, new byte[]{10});
+		f.write(second, new byte[]{20});
+		k[0] = 1;
+		f.settle();
+		first.bytes = new byte[]{99};   //the OLDER write's place was written since: it is taken back last
+		try {
+			f.undo();
+		} catch (IllegalStateException expected) {
+			//said by act() when pressed; here only what it left behind is asked
+		}
+		check(Arrays.equals(second.bytes, new byte[]{20}) && k[0] == 1,
+				"two writes in one gesture are taken back all or none: the newer is on again when the older refuses ("
+				+ Arrays.toString(second.bytes) + ")");
+		first.bytes = new byte[]{10};
+		check(f.undo() && Arrays.equals(first.bytes, new byte[]{1}) && Arrays.equals(second.bytes, new byte[]{2}) && k[0] == 0,
+				"control: with nothing written since, both come back");
+		second.bytes = new byte[]{77};   //the NEWER write's place was written since: it is put again last
+		try {
+			f.redo();
+		} catch (IllegalStateException expected) {
+			//as above
+		}
+		check(Arrays.equals(first.bytes, new byte[]{1}) && k[0] == 0,
+				"and put again all or none: the older is off again when the newer refuses (" + Arrays.toString(first.bytes) + ")");
+
+		final Object[] scope = {new Object()};
+		UndoHistory moved = new UndoHistory(() -> java.util.Collections.singletonList(scope[0]),
+				() -> java.util.Collections.<UndoHistory.Document<?>>emptyList());
+		moved.settle();
+		scope[0] = new Object();   //another workspace opened, and nothing settled since
+		Held mass = new Held(new byte[]{4}, "a mass edit's file");
+		moved.write(mass, new byte[]{5});
+		check(moved.undo() && Arrays.equals(mass.bytes, new byte[]{4}),
+				"an edit added after the scope moved, before any settle, is kept and taken back (" + Arrays.toString(mass.bytes) + ")");
+
+		Held gone = new Held(null, "a file that is not there");
+		String why = "(nothing was thrown)";
+		try {
+			f.write(gone, new byte[]{1});
+		} catch (IllegalStateException refused) {
+			why = refused.getMessage();
+		}
+		check(why.contains("could not be read") && gone.bytes == null,
+				"a place that cannot be read is refused before anything is written: " + why);
+	}
+
+	/**
 	 * An editor handed a history adds its own documents with watch (F209): the painter its canvas. Whoever
 	 * built the history keeps no list of them, so an editor added later cannot be missing from one. Two
 	 * documents over one object are one document - otherwise an edit to it would be recorded, and taken
@@ -264,6 +483,23 @@ public class UndoHistoryTest {
 		pick.setSelectedIndex(1);
 		final ctrmap.humaninterface.WidgetDocument doc = new ctrmap.humaninterface.WidgetDocument(spin, "the form",
 				spin, formatted, text, tick, pick);
+		//one with nothing it shows, no name, or no widgets is refused in words (the 2026-10-15 shared sweep,
+		//WidgetDocument 37, drop-throw, SURVIVED: every one a suite built was whole)
+		String noSubject = refusalOf(() -> new ctrmap.humaninterface.WidgetDocument(null, "the form", spin));
+		String noName = refusalOf(() -> new ctrmap.humaninterface.WidgetDocument(spin, null, spin));
+		String noWidgets = refusalOf(() -> new ctrmap.humaninterface.WidgetDocument(spin, "the form",
+				(javax.swing.JComponent[]) null));
+		//and a history handed no edit refuses it (the 2026-10-15 shared sweep, UndoHistory 223, dropped and swallowed,
+		//SURVIVED): kept, a null edit was pushed, and Undo threw on it later with nothing to say what
+		UndoHistory empty = new UndoHistory(() -> Collections.singletonList(new Object()),
+				() -> Collections.<UndoHistory.Document<?>>emptyList());
+		String noEdit = refusalOf(() -> empty.add(null));
+		check("add was handed no edit".equals(noEdit) && !empty.canUndo(), "a history handed no edit refuses it, in words,"
+				+ " and holds nothing to undo: " + noEdit);
+		String needs = "a widget document needs what it shows, its name and its widgets";
+		check(needs.equals(noSubject) && needs.equals(noName) && needs.equals(noWidgets),
+				"a widget document with nothing it shows, no name or no widgets is refused, in words: " + noSubject + " / "
+				+ noName + " / " + noWidgets);
 		final Object scope = new Object();
 		UndoHistory h = new UndoHistory(() -> Collections.singletonList(scope),
 				() -> Collections.<UndoHistory.Document<?>>singletonList(doc));
@@ -527,6 +763,18 @@ public class UndoHistoryTest {
 		}
 		check(said.contains("not a flat record") && said.contains("inside"),
 				"a record holding a list is refused, by field, because a copy would share it: " + said);
+		//a record put back into one of another class (the 2026-10-14 shared sweep, FlatCopy 48, drop-throw, SURVIVED:
+		//no suite handed it two classes)
+		Nested other = new Nested();
+		other.a = 5;
+		String mixed = "(nothing was thrown)";
+		try {
+			FlatCopy.into(new Rec(), other);
+		} catch (RuntimeException refused) {
+			mixed = refused.getMessage();
+		}
+		check("a Rec cannot be copied into a Nested".equals(mixed) && other.a == 5,
+				"a record is never copied into one of another class, which keeps what it held: " + mixed);
 		int records = 0;
 		for (Class<?> k : ZoneEntities.class.getDeclaredClasses()) {
 			if (!k.isInterface() && !java.lang.reflect.Modifier.isAbstract(k.getModifiers())) {
@@ -572,6 +820,45 @@ public class UndoHistoryTest {
 		check(h.redo() && e.npcs.size() == 1 && e.npcs.get(0).xTile == 4, "redo adds it back where it was added");
 		e.modified = false;
 		check(!h.settle() && h.canRedo(), "a save clearing the modified flag is no edit: the move is still there to redo");
+	}
+
+	/**
+	 * The zone's script is a document of its history (F209): the NPC wizards replace it, the dialogue editor
+	 * re-points it, the script panel edits it. It is read as the bytes it would be saved as, through a decoded
+	 * copy, so a script only decompressed to be looked at is no edit.
+	 */
+	static void theZonesScriptComesBack() throws Exception {
+		System.out.println("--- the zone's script: replaced, it is taken back; decompressed to be read, it is no edit (F209)");
+		ctrmap.LoadedZone lz = new ctrmap.LoadedZone();
+		ctrmap.formats.zone.Zone zone = (ctrmap.formats.zone.Zone) RenderLoopTest.bare(ctrmap.formats.zone.Zone.class);
+		zone.s = new ctrmap.formats.scripts.GFLPawnScript(longCell());
+		lz.table(new ctrmap.formats.zone.Zone[]{zone});
+		lz.open(0, zone);
+		final int[] shown = {0};
+		UndoHistory h = new UndoHistory(ctrmap.humaninterface.ZoneDocuments.scope(lz, () -> null),
+				ctrmap.humaninterface.ZoneDocuments.script(lz, () -> shown[0]++));
+		h.settle();
+		ctrmap.formats.scripts.GFLPawnScript original = zone.s;
+		byte[] raw = zone.s.getScriptBytes();
+		zone.s.decompressThis();
+		check(!Arrays.equals(raw, zone.s.getScriptBytes()), "control: decompressing this script changes the bytes it would be saved as");
+		check(!h.settle() && !h.canUndo(), "a script decompressed to be read is no edit");
+		zone.s = new ctrmap.formats.scripts.GFLPawnScript(PawnHeaderTest.withOnePublic());
+		check(h.settle() && "the zone's script".equals(h.undoName()), "a script replaced - an NPC wizard's commit - is an edit: " + h.undoName());
+		check(h.undo() && zone.s != original && zone.s.publics.isEmpty() && shown[0] == 1,
+				"and Undo puts the script back as it was, and shows it (" + shown[0] + ")");
+		check(h.redo() && zone.s.publics.size() == 1, "Redo puts the replacement again");
+	}
+
+	/**
+	 * A script whose one data cell is stored in two bytes - 0 as 80 00, a continuation byte the editor's
+	 * compressor never writes - so decompressed and saved again its bytes change though nothing it says does.
+	 */
+	static byte[] longCell() {
+		byte[] b = Arrays.copyOf(HandedGameTest.amx(), 0x40);
+		java.nio.ByteBuffer.wrap(b).order(java.nio.ByteOrder.LITTLE_ENDIAN).putInt(0, 0x40).putInt(20, 0x40).putInt(24, 0x40);
+		b[0x3C] = (byte) 0x80;
+		return b;
 	}
 
 	/**

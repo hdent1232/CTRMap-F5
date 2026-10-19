@@ -23,6 +23,141 @@ public final class ZoneDocuments {
 	private ZoneDocuments() {
 	}
 
+	/**
+	 * One subfile of a container, as a place a write that IS an edit lands in (F209): read and stored
+	 * through the container, which reads its table from the file every time (F234), so whoever wrote the
+	 * file last is read correctly. {@code written} runs after every write - the first, an undo's, a redo's -
+	 * to read again whatever is held in memory from it.
+	 */
+	public static UndoHistory.Place subfile(final ctrmap.formats.containers.AbstractGamefreakContainer c, final int num,
+			final String what, final Runnable written) {
+		return new UndoHistory.Place() {
+			@Override
+			public byte[] read() {
+				return c.getFile(num);
+			}
+
+			@Override
+			public void write(byte[] data) {
+				c.storeFile(num, data);   //throws with the file and the subfile named when it cannot
+				written.run();
+			}
+
+			@Override
+			public String what() {
+				return what;
+			}
+		};
+	}
+
+	/**
+	 * A workspace file, as a place a write that IS an edit lands in (F209): written beside and moved over
+	 * through {@link ctrmap.WorkspaceUnit#write}, so a write that fails leaves it as it was, and listed in
+	 * {@code ws} as an edit as part of the same write (F209d) - listed after the history's write, the listing was
+	 * an edit no history held. Null when read, a file that is not there - which the history refuses to write
+	 * unprotected; one that cannot be read throws, naming it, and is never answered as absent.
+	 */
+	public static UndoHistory.Place file(final java.io.File f, final String what, final ctrmap.WorkspaceSession ws,
+			final Runnable written) {
+		return new UndoHistory.Place() {
+			@Override
+			public byte[] read() {
+				if (!f.isFile()) {
+					return null;
+				}
+				try {
+					return java.nio.file.Files.readAllBytes(f.toPath());
+				} catch (java.io.IOException unreadable) {
+					throw new IllegalStateException(f.getName() + " could not be read: " + ctrmap.util.Bytes.reason(unreadable),
+							unreadable);
+				}
+			}
+
+			@Override
+			public void write(byte[] data) {
+				try {
+					ctrmap.WorkspaceUnit.write(f, data);
+				} catch (java.io.IOException notWritten) {
+					throw new IllegalStateException("could not write " + f.getName() + ": " + ctrmap.util.Bytes.reason(notWritten),
+							notWritten);
+				}
+				ws.addPersist(f);
+				written.run();
+			}
+
+			@Override
+			public String what() {
+				return what;
+			}
+		};
+	}
+
+	/**
+	 * The open zone's script (F209): the NPC wizards replace it with a copy they edited, the dialogue editor
+	 * re-points a talker in it, the script panel edits its instructions - one document, read as the bytes it
+	 * would be saved as. Read through a decoded copy, so a script only decompressed to be looked at reads as
+	 * it did: what changes is what it says, never how it happens to be held.
+	 */
+	public static Supplier<List<UndoHistory.Document<?>>> script(LoadedZone zone, Runnable shown) {
+		return () -> {
+			Zone open = zone.isOpen() ? zone.open() : null;
+			if (open == null || open.s == null) {
+				return java.util.Collections.emptyList();
+			}
+			return java.util.Collections.<UndoHistory.Document<?>>singletonList(new Script(zone, shown));
+		};
+	}
+
+	/** The bytes a script would be saved as, through a decoded copy: the same however the script is held. */
+	static byte[] scriptBytes(ctrmap.formats.scripts.GFLPawnScript s) {
+		ctrmap.formats.scripts.GFLPawnScript copy = new ctrmap.formats.scripts.GFLPawnScript(s.getScriptBytes());
+		copy.decompressThis();
+		return copy.getScriptBytes();
+	}
+
+	/**
+	 * Holds the zone's OWNER, never the zone (LoadedZoneTest: only the owner holds one), and reads the open
+	 * zone when asked; the history's scope starts it again when another zone opens.
+	 */
+	static final class Script implements UndoHistory.Document<byte[]> {
+
+		private final LoadedZone zone;
+		private final Runnable shown;
+
+		Script(LoadedZone zone, Runnable shown) {
+			this.zone = zone;
+			this.shown = shown;
+		}
+
+		@Override
+		public Object subject() {
+			return zone.open();
+		}
+
+		@Override
+		public byte[] take() {
+			return scriptBytes(zone.open().s);
+		}
+
+		@Override
+		public void put(byte[] state) {
+			ctrmap.formats.scripts.GFLPawnScript s = new ctrmap.formats.scripts.GFLPawnScript(state);
+			s.decompressThis();
+			zone.open().s = s;   //written at the next save: the zone writes its script when it differs from what was read
+			shown.run();
+		}
+
+		@Override
+		public boolean same(byte[] a, byte[] b) {
+			return java.util.Arrays.equals(a, b);
+		}
+
+		@Override
+		public String what() {
+			return "the zone's script";
+		}
+	}
+
 	/** The open zone's entities, as they are when asked: one document, or none with no zone open. */
 	public static Supplier<List<UndoHistory.Document<?>>> entities(LoadedZone zone, Runnable shown) {
 		return () -> {
@@ -297,10 +432,9 @@ public final class ZoneDocuments {
 		public void put(byte[][][] state) {
 			for (int i = 0; i < state.length; i++) {
 				for (int j = 0; j < state[i].length; j++) {
-					region.setTileData(i, j, state[i][j].clone());   //which marks the region modified
+					region.setTileData(i, j, state[i][j].clone());   //which marks the region modified and paints the tile
 				}
 			}
-			region.updateImage();
 			shown.run();
 		}
 

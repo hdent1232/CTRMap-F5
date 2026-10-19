@@ -141,6 +141,7 @@ public class PokeData {
 	}
 
 	/** True when the game had a PERSONAL archive to read. */
+	@ctrmap.util.ForSuites("SEAM: a suite asks whether the game it handed had a PERSONAL archive, to tell no data from empty data")
 	public boolean available() {
 		return personal != null;
 	}

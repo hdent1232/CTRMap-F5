@@ -3,7 +3,6 @@ package ctrmap.humaninterface;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 
 /**
@@ -23,7 +22,7 @@ public class ESPICAControl extends FormPanel {
 	 */
 	public ESPICAControl() {
 		initComponents();
-		btnClose.setEnabled(false);
+		ctrmap.Ui.offer(btnClose, "Close is offered when the conversion has finished");
 	}
 
 	public ESPICAControl(Runnable doOnSuccess) {
@@ -97,7 +96,7 @@ public class ESPICAControl extends FormPanel {
     private void btnCloseActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnCloseActionPerformed
 		//A PANE IN THE EXTRAS TAB NOW (F243): Close stores the result once and says so - it disposed a
 		//window that no longer exists; Back to Extras leaves
-		btnClose.setEnabled(false);
+		ctrmap.Ui.offer(btnClose, "Closed - the result was stored once");
 		if (onSuccess != null && isSuccess) {
 			onSuccess.run();
 			status.setText("ESPICA has finished and the result was stored. Back to Extras leaves.");
@@ -119,20 +118,24 @@ public class ESPICAControl extends FormPanel {
 							//ONE ARGUMENT PER PATH (F245): this was exec(path + " -i " + input ...), one string
 							//split on whitespace, so a converter, OBJ, donor or output under a folder with a
 							//space in its name - a Windows user folder, most of them - was handed in pieces
-							Process process = new ProcessBuilder(proc.command(ESPICAPath)).start();
-							InputStream is = process.getInputStream();
-							InputStreamReader isr = new InputStreamReader(is);
-							BufferedReader br = new BufferedReader(isr);
-							String line;
-
-							while ((line = br.readLine()) != null) {
-								final String said = line + "\n";
-								javax.swing.SwingUtilities.invokeLater(() -> output.append(said));
+							//ITS ERRORS READ WITH ITS OUTPUT (census H.65): stderr was never drained, so a converter
+							//that said much there stalled on a full pipe, and what it said was never shown
+							Process process = new ProcessBuilder(proc.command(ESPICAPath)).redirectErrorStream(true).start();
+							//CLOSED WHEN READ (census M.92): the reader over the process's output was never closed
+							try (BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+								String line;
+								while ((line = br.readLine()) != null) {
+									final String said = line + "\n";
+									javax.swing.SwingUtilities.invokeLater(() -> output.append(said));
+								}
 							}
+							final String failed = failure(process.waitFor(), proc.output);
+							javax.swing.SwingUtilities.invokeLater(() -> finished(failed));
+						} catch (InterruptedException stopped) {
+							Thread.currentThread().interrupt();
 							javax.swing.SwingUtilities.invokeLater(() -> {
-								status.setText("ESPICA has finished");
+								status.setText("Failed - stopped before ESPICA finished, so nothing was stored");
 								btnClose.setEnabled(true);
-								isSuccess = true;
 							});
 						} catch (IOException ex) {
 							//SAID, AND THE WINDOW LET GO (F206): this was logged and nothing else, so a
@@ -156,6 +159,39 @@ public class ESPICAControl extends FormPanel {
 			status.setText("Failed - unsupported OS");
 			btnClose.setEnabled(true);
 		}
+	}
+
+	/**
+	 * What the pane shows once a converter run has ended, on the event thread: finished, its result stored when
+	 * Close is pressed - or failed, saying why, and nothing stored. Out of the run's thread so a suite reaches it
+	 * without starting a converter (the 2026-10-14 shared sweep, ESPICAControl 134, negate-if, SURVIVED).
+	 *
+	 * @param failed why the run is not a success ({@link #failure}), or null when it is
+	 */
+	public void finished(String failed) {
+		if (failed == null) {
+			status.setText("ESPICA has finished");
+			isSuccess = true;
+		} else {
+			status.setText("Failed - " + failed);
+			output.append(failed + "\n");
+		}
+		btnClose.setEnabled(true);
+	}
+
+	/**
+	 * Why a converter run that ended is not a success, or null when it is (census H.65). It was declared
+	 * successful when its output ended - whatever it exited with, and whether it wrote anything - and Close then
+	 * stored the result.
+	 */
+	public static String failure(int exitCode, File expected) {
+		if (exitCode != 0) {
+			return "ESPICA exited with code " + exitCode + ", so nothing was stored";
+		}
+		if (expected != null && !expected.isFile()) {
+			return "ESPICA wrote no " + expected.getName() + ", so nothing was stored";
+		}
+		return null;
 	}
 
 	public static class ESPICAProcess {

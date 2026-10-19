@@ -107,16 +107,202 @@ public class MsgWrapperInjectTest {
 			System.out.println("FAIL: zone " + MsgWrapperInjector.PREFERRED_DONOR_ZONE + " does not validate as donor: " + ex.getMessage());
 			System.exit(1);
 		}
+		//...and it is the zone pickDonor tries FIRST, alone when it validates; a game with no such zone is never asked
+		//for it (the 2026-10-15 shared sweep, PawnClosure 599, negate-if, SURVIVED: this asked for a donor and never
+		//which). Inverted, the canonical zone was passed over for the first other one that validates, and a game
+		//too short to hold it was asked for it
+		List<String> failures = new ArrayList<>();
+		java.util.List<Integer> asked = new java.util.ArrayList<>();
+		PawnClosure.ScriptSource source = zoneIndex -> {
+			asked.add(zoneIndex);
+			return getZoneScript(garc, zoneIndex);
+		};
 		try {
-			MsgWrapperInjector.pickDonor(new PawnClosure.ScriptSource() {
-				@Override
-				public GFLPawnScript get(int zoneIndex) {
-					return getZoneScript(garc, zoneIndex);
-				}
-			}, ZONE_COUNT);
+			MsgWrapperInjector.pickDonor(source, ZONE_COUNT);
 		} catch (RuntimeException ex) {
 			System.out.println("FAIL: pickDonor found no donor: " + ex.getMessage());
 			System.exit(1);
+		}
+		if (!asked.equals(java.util.Collections.singletonList(MsgWrapperInjector.PREFERRED_DONOR_ZONE))) {
+			failures.add("the donor search asks the canonical zone " + MsgWrapperInjector.PREFERRED_DONOR_ZONE
+					+ " first, and alone when it validates: it asked " + asked);
+		}
+		asked.clear();
+		try {
+			MsgWrapperInjector.pickDonor(source, MsgWrapperInjector.PREFERRED_DONOR_ZONE);
+		} catch (RuntimeException noDonorAmongThem) {
+			//the first zones may hold none; what is asked is the point
+		}
+		if (asked.contains(MsgWrapperInjector.PREFERRED_DONOR_ZONE) || asked.isEmpty()) {
+			failures.add("a game of " + MsgWrapperInjector.PREFERRED_DONOR_ZONE + " zones is searched, never asked for zone "
+					+ MsgWrapperInjector.PREFERRED_DONOR_ZONE + ": it asked " + asked);
+		}
+		//and a game none of whose zones serves is refused in words, never answered with no donor (the 2026-10-15
+		//shared sweep, PawnClosure 615, swallow-throw, SURVIVED: every game this suite searched held one)
+		String noneServes;
+		try {
+			noneServes = "answered " + MsgWrapperInjector.pickDonor(zoneIndex -> null, ZONE_COUNT);
+		} catch (PawnClosure.Refused refused) {
+			noneServes = refused.getMessage();
+		} catch (RuntimeException other) {
+			noneServes = "threw " + other;
+		}
+		if (!noneServes.startsWith("No zone script validates as a ") || !noneServes.endsWith(" donor.")) {
+			failures.add("a game none of whose zones serves is refused in words, naming the routine: " + noneServes);
+		}
+		//and an injection handed no target script is refused in words before anything is read (the 2026-10-15 shared
+		//sweep, PawnClosure 659, drop-throw, SURVIVED: every injection this suite made had a target). Dropped, it was a
+		//NullPointerException out of the first thing done to the target
+		String noTarget;
+		try {
+			MsgWrapperInjector.injectMsgWrapper(NpcScriptGateTest.ORAS, null, donor);
+			noTarget = "injected";
+		} catch (PawnClosure.Refused refused) {
+			noTarget = refused.getMessage();
+		} catch (RuntimeException other) {
+			noTarget = "threw " + other;
+		}
+		if (!"No target script.".equals(noTarget)) {
+			failures.add("an injection handed no target script is refused in words: " + noTarget);
+		}
+		//and a donor handed in as its own target is refused as that, before anything is changed (the 2026-10-15 shared
+		//sweep, PawnClosure 664, drop-throw, SURVIVED: every injection this suite made had two scripts). Dropped, the
+		//script was taken on into the injection - refused later for another reason, or changed under its own reading
+		String itself;
+		try {
+			MsgWrapperInjector.injectMsgWrapper(NpcScriptGateTest.ORAS, donor, donor);
+			itself = "injected";
+		} catch (PawnClosure.Refused refused) {
+			itself = refused.getMessage();
+		} catch (RuntimeException other) {
+			itself = "threw " + other;
+		}
+		if (!"The donor and the target are the same script.".equals(itself)) {
+			failures.add("a donor handed in as its own target is refused as that: " + itself);
+		}
+		//and a target with no script dispatch is refused as that (the 2026-10-15 shared sweep, PawnClosure 667, drop-throw,
+		//SURVIVED: every target this suite handed over was a zone script with its dispatch). A wrapper-less zone whose
+		//entry point names no instruction - the first thing findDispatch reads - so it has none; the control asks first
+		GFLPawnScript undispatched = getZoneScript(garc, withoutWrapper.get(0));
+		undispatched.decompressThis();
+		undispatched.mainEntryPoint = Integer.MAX_VALUE;
+		String noDispatch;
+		if (ZoneScriptAnalyzer.findDispatch(undispatched) != null) {
+			noDispatch = "(control failed: the script still has a dispatch)";
+		} else {
+			try {
+				MsgWrapperInjector.injectMsgWrapper(NpcScriptGateTest.ORAS, undispatched, donor);
+				noDispatch = "injected";
+			} catch (PawnClosure.Refused refused) {
+				noDispatch = refused.getMessage();
+			} catch (RuntimeException other) {
+				noDispatch = "threw " + other;
+			}
+		}
+		if (!"The target script has no script dispatch (main SWITCH/CASETBL).".equals(noDispatch)) {
+			failures.add("a target with no script dispatch is refused as that: " + noDispatch);
+		}
+		//and a target whose prefix entries are not the size every retail script's are is refused, naming the size (the
+		//2026-10-15 shared sweep, PawnClosure 674, drop-throw, SURVIVED: every target here was retail's). Dropped, the
+		//natives were appended at the size the injector assumes into a table of another
+		GFLPawnScript oddPrefix = getZoneScript(garc, withoutWrapper.get(0));
+		oddPrefix.decompressThis();
+		int retailSize = oddPrefix.defsize;
+		oddPrefix.defsize = retailSize + 4;
+		String odd;
+		try {
+			MsgWrapperInjector.injectMsgWrapper(NpcScriptGateTest.ORAS, oddPrefix, donor);
+			odd = "injected";
+		} catch (PawnClosure.Refused refused) {
+			odd = refused.getMessage();
+		} catch (RuntimeException other) {
+			odd = "threw " + other;
+		}
+		if (retailSize != 8 || !("Unexpected target prefix entry size " + (retailSize + 4) + ".").equals(odd)) {
+			failures.add("a target whose prefix entries are not retail's 8 bytes is refused, naming the size (retail "
+					+ retailSize + "): " + odd);
+		}
+		//and a target one of whose native entries is malformed - fewer than its two cells - is refused naming the entry
+		//(the 2026-10-15 shared sweep, PawnClosure 678, drop-throw, SURVIVED: every target's natives were retail's).
+		//Dropped, the injector read on past an entry it could not read
+		GFLPawnScript cutNative = getZoneScript(garc, withoutWrapper.get(0));
+		cutNative.decompressThis();
+		String cut;
+		if (cutNative.natives.isEmpty()) {
+			cut = "(control failed: the script declares no natives)";
+		} else {
+			cutNative.natives.get(0).data = new int[]{cutNative.natives.get(0).data[0]};
+			try {
+				MsgWrapperInjector.injectMsgWrapper(NpcScriptGateTest.ORAS, cutNative, donor);
+				cut = "injected";
+			} catch (PawnClosure.Refused refused) {
+				cut = refused.getMessage();
+			} catch (RuntimeException other) {
+				cut = "threw " + other;
+			}
+		}
+		if (!"Target native entry 0 is malformed.".equals(cut)) {
+			failures.add("a target whose native entry is malformed is refused, naming the entry: " + cut);
+		}
+		//and a target whose stub-shaped sub at 0x4 calls another native than the yield one is refused as that (the
+		//2026-10-15 shared sweep, PawnClosure 689, drop-throw, SURVIVED: every stub at 0x4 this suite met was retail's).
+		//Dropped, it was taken for the yield stub and the routine's yields called whatever it calls. The first
+		//wrapper-less zone that already has the stub, its call pointed at the next native; the control finds one
+		GFLPawnScript stubbed = null;
+		for (int zone : withoutWrapper) {
+			GFLPawnScript s = getZoneScript(garc, zone);
+			s.decompressThis();
+			if (PawnClosure.hasStubAt4(s) && s.natives.size() >= 2) {
+				stubbed = s;
+				break;
+			}
+		}
+		String wrongStub;
+		if (stubbed == null) {
+			wrongStub = "(control failed: no wrapper-less zone has the stub at 0x4)";
+		} else {
+			PawnInstruction call = stubbed.instructions.get(3);
+			call.argumentCells[0] = (call.argumentCells[0] + 1) % stubbed.natives.size();
+			try {
+				MsgWrapperInjector.injectMsgWrapper(NpcScriptGateTest.ORAS, stubbed, donor);
+				wrongStub = "injected";
+			} catch (PawnClosure.Refused refused) {
+				wrongStub = refused.getMessage();
+			} catch (RuntimeException other) {
+				wrongStub = "threw " + other;
+			}
+		}
+		if (!"The stub-shaped sub at 0x4 does not call the yield native.".equals(wrongStub)) {
+			failures.add("a target whose stub at 0x4 calls another native is refused as that: " + wrongStub);
+		}
+		//and a transplant that rewrote other than the spec's count of buffer addresses is refused, naming both (the
+		//2026-10-15 shared sweep, PawnClosure 809, drop-throw, SURVIVED: no donor that passes the donor checks can
+		//reach it). Asked of PawnClosure.requireRewrites with the message wrapper's own spec, through reflection
+		String rewrites;
+		try {
+			java.lang.reflect.Field specField = MsgWrapperInjector.class.getDeclaredField("SPEC");
+			specField.setAccessible(true);
+			Object spec = specField.get(null);
+			java.lang.reflect.Method require = PawnClosure.class.getDeclaredMethod("requireRewrites",
+					Class.forName("ctrmap.formats.scripts.PawnClosure$Spec"), int.class);
+			require.setAccessible(true);
+			StringBuilder heard = new StringBuilder();
+			for (int performed : new int[]{8, 7, 9}) {
+				try {
+					require.invoke(null, spec, performed);
+					heard.append(performed).append(" passed; ");
+				} catch (java.lang.reflect.InvocationTargetException threw) {
+					heard.append(performed).append(" ").append(threw.getCause().getMessage()).append("; ");
+				}
+			}
+			rewrites = heard.toString();
+		} catch (ReflectiveOperationException unreached) {
+			rewrites = "could not be asked: " + unreached;
+		}
+		if (!rewrites.equals("8 passed; 7 Expected 8 buffer-address rewrites, performed 7.; 9 Expected 8 buffer-address"
+				+ " rewrites, performed 9.; ")) {
+			failures.add("a transplant that rewrote other than the spec's 8 buffer addresses is refused, naming both: "
+					+ rewrites);
 		}
 		int[] donorBuf = MsgWrapperInjector.getDonorBufferCells(donor);
 		if (donorBuf.length != MsgWrapperInjector.BUFFER_CELLS) {
@@ -136,7 +322,113 @@ public class MsgWrapperInjectTest {
 		//injection acceptance over every wrapper-less zone
 		int eligible = withoutWrapper.size();
 		int passed = 0;
-		List<String> failures = new ArrayList<>();
+		//EVERY WAY A DONOR CAN BE WRONG is refused in its own words (the 2026-10-14 shared sweep: MsgWrapperInjector 148
+		//and 156, PawnClosure 357 and 361, each dropped, SURVIVED - every donor this suite hands over is retail's, so
+		//each check below was negated and killed, and dropped and never missed). Retail's donor is spoiled one way per
+		//check, and each must be refused in that check's words - not the next check's, which is what a drop leaves.
+		int target = withoutWrapper.isEmpty() ? -1 : withoutWrapper.get(0);
+		GFLPawnScript otherBare = withoutWrapper.size() < 2 ? null : getZoneScript(garc, withoutWrapper.get(1));
+		Object[][] spoils = {
+			{"a donor whose first rewrite site has not the measured shape is refused, naming the site",
+				(Spoil) (s, d) -> site(s, d, 0, at -> at.hasCompressedArgument = false),
+				"Donor rewrite site at 0x[0-9a-f]+ does not match the measured shape\\."},
+			{"a donor whose second rewrite site disagrees with the buffer the first placed is refused, naming both",
+				(Spoil) (s, d) -> site(s, d, 1, at -> at.argumentCells[0] += 4),
+				"Donor rewrite site at 0x[0-9a-f]+ holds -?\\d+, expected -?\\d+\\."},
+			{"a donor whose rewrite sites agree on a buffer no data region holds is refused, naming the base",
+				(Spoil) (s, d) -> everySite(s, d, at -> at.argumentCells[0] += 1),
+				"Donor buffer base -?\\d+ is not a readable 30-cell data region\\."},
+			{"a donor of another prefix entry size is refused, naming the size",
+				(Spoil) (s, d) -> {
+					s.defsize = 4;
+					return s;
+				}, "Unexpected donor prefix entry size 4\\."},
+			{"a donor with no message wrapper is refused",
+				(Spoil) (s, d) -> otherBare, "The donor script has no message wrapper\\."},
+			{"a donor whose closure lost a sub is refused, counting them",
+				(Spoil) (s, d) -> retargetOnce(s, d), "Donor closure has \\d+ subs, expected \\d+\\."},
+			{"a donor whose yield stub is not where the closure reaches it is refused",
+				(Spoil) (s, d) -> swapStubCall(s, d), "Donor closure does not reach the yield stub at 0x4 in canonical order\\."},
+			{"a donor whose sub runs past its measured length is refused, naming the sub",
+				(Spoil) (s, d) -> lengthen(s, d), "Donor closure sub \\d+ has \\d+ cells, expected \\d+\\."},
+			{"a donor with no yield stub at 0x4 is refused",
+				(Spoil) (s, d) -> command(s, s.instructions.get(4), PawnInstruction.Commands.ZERO_ALT),
+				"The donor has no yield stub at 0x4\\."},
+			{"a donor whose stub calls another native is refused",
+				(Spoil) (s, d) -> {
+					PawnInstruction call = s.instructions.get(3);
+					call.argumentCells[0] = (call.argumentCells[0] + 1) % s.natives.size();
+					return s.natives.size() < 2 ? null : s;
+				}, "The donor stub does not call the yield native\\."},
+			{"a donor whose closure content was changed is refused by its fingerprint",
+				(Spoil) (s, d) -> constant(s, d), "Donor closure content fingerprint 0x[0-9a-f]+ does not match the vanilla"
+						+ " message routine \\(0x[0-9a-f]+\\) - the donor zone's code was modified\\."},
+			{"a donor whose closure jumps indirectly is refused, naming the command",
+				(Spoil) (s, d) -> first(s, d, ins -> ins.getCommand() == PawnInstruction.Commands.ZERO_PRI.ordinal(),
+						ins -> command(s, ins, PawnInstruction.Commands.JUMP_PRI)),
+				"Donor closure uses indirect control flow \\(cmd 0x[0-9a-f]+ at 0x[0-9a-f]+\\)\\."},
+			{"a donor whose closure calls a native it does not declare is refused",
+				(Spoil) (s, d) -> first(s, d, ins -> ins.getCommand() == PawnInstruction.Commands.SYSREQ_N.ordinal(), ins -> {
+					ins.argumentCells[0] = s.natives.size();
+					return s;
+				}), "Donor SYSREQ_N at 0x[0-9a-f]+ has no well-formed natives entry\\."},
+			{"a donor whose closure holds a malformed CALL is refused",
+				(Spoil) (s, d) -> malformCall(s, d), "Donor CALL at 0x[0-9a-f]+ is malformed\\."},
+			{"a donor whose branch leaves its sub is refused",
+				(Spoil) (s, d) -> first(s, d, ins -> PawnInstruction.checkJmp(ins), ins -> {
+					ins.argumentCells[0] = 0x100000;
+					return s;
+				}), "Donor branch at 0x[0-9a-f]+ leaves its sub\\."},
+		};
+		for (Object[] spoil : spoils) {
+			String said = spoiledDonor(garc, target, (Spoil) spoil[1]);
+			if (!said.matches((String) spoil[2])) {
+				failures.add(spoil[0] + ": " + said);
+			} else {
+				System.out.println("  ok: " + spoil[0] + ": " + said);
+			}
+		}
+		//NOR A TARGET WHOSE DATA THE BUFFER CANNOT FOLLOW (MsgWrapperInjector 189, dropped, SURVIVED the same sweep: every
+		//retail target's data ends far below the 16-bit address the rebased buffer is written with)
+		String bigSaid = bigTargetRefusal(garc, target);
+		if (!bigSaid.matches("The target data segment is too large to rebase the buffer \\(\\d+ bytes\\)\\.")) {
+			failures.add("a target whose data segment the buffer cannot follow is refused, naming its size: " + bigSaid);
+		} else {
+			System.out.println("  ok: a target whose data segment the buffer cannot follow is refused, naming its size: " + bigSaid);
+		}
+		//neither retail closure holds a SWITCH or a case table, so those are asked of the closure check itself
+		Object[][] tables = {
+			{"a SWITCH that leaves its sub is refused as a branch", selfContained(garc, PawnInstruction.Commands.SWITCH, 0x100000),
+				"Donor branch at 0x[0-9a-f]+ leaves its sub\\."},
+			{"a case table whose default leaves its sub is refused", selfContained(garc, PawnInstruction.Commands.CASETBL, 0, 0x100000),
+				"Donor CASETBL at 0x[0-9a-f]+ leaves its sub\\."},
+			{"a case table whose case leaves its sub is refused", selfContained(garc, PawnInstruction.Commands.CASETBL, 1, -4, 7, 0x100000),
+				"Donor CASETBL at 0x[0-9a-f]+ leaves its sub\\."},
+			{"control: a case table inside its sub passes", selfContained(garc, PawnInstruction.Commands.CASETBL, 1, -4, 7, -12),
+				"it passed"}};
+		for (Object[] t : tables) {
+			if (!((String) t[1]).matches((String) t[2])) {
+				failures.add(t[0] + ": " + t[1]);
+			} else {
+				System.out.println("  ok: " + t[0] + ": " + t[1]);
+			}
+		}
+		//AND NO DONOR AT ALL (PawnClosure 357, dropped, SURVIVED the same sweep): refused in words, never a null pointer
+		String noDonor;
+		try {
+			MsgWrapperInjector.injectMsgWrapper(NpcScriptGateTest.ORAS,
+					getZoneScript(garc, withoutWrapper.isEmpty() ? 0 : withoutWrapper.get(0)), null);
+			noDonor = "it injected";
+		} catch (PawnClosure.Refused refused) {
+			noDonor = refused.getMessage();
+		} catch (RuntimeException other) {
+			noDonor = "it failed some other way: " + other;
+		}
+		if (!noDonor.equals("No donor script.")) {
+			failures.add("no donor script at all is refused in words: " + noDonor);
+		} else {
+			System.out.println("  ok: no donor script at all is refused in words: " + noDonor);
+		}
 		for (int z : withoutWrapper) {
 			try {
 				String err = injectAndVerify(garc, z, donor, donorBuf);
@@ -217,6 +509,11 @@ public class MsgWrapperInjectTest {
 		int preMain = t.mainEntryPoint;
 		int preHeadroom = t.allocatedMem - t.heapStart;
 		int preDataCells = t.data.size();
+		//the count the NPC form and the painter quote before injecting is what the injection adds, the stub's 8 only
+		//when the target lacks it (the 2026-10-15 shared sweep, PawnClosure 511, negate-if, SURVIVED: no suite asked it)
+		int counted = MsgWrapperInjector.countInjectedInstructions(t, donor);
+		int countedBare = MsgWrapperInjector.countInjectedInstructions(null, donor);
+		int preInstructions = t.instructions.size();
 		ZoneScriptAnalyzer.Dispatch preD = ZoneScriptAnalyzer.findDispatch(t);
 		if (preD == null) {
 			return "no dispatch";
@@ -231,6 +528,11 @@ public class MsgWrapperInjectTest {
 			wrapperPtr = MsgWrapperInjector.injectMsgWrapper(NpcScriptGateTest.ORAS, t, donor);
 		} catch (PawnClosure.Refused ex) {
 			return "refused: " + ex.getMessage();
+		}
+		int added = t.instructions.size() - preInstructions;
+		if (added != counted || counted - countedBare != (needStub ? 8 : 0)) {
+			return "the count quoted before injecting is not what it added: " + counted + " quoted (" + countedBare
+					+ " for no target), " + added + " added, the stub " + (needStub ? "needed" : "there already");
 		}
 
 		PawnInstruction w = ZoneScriptAnalyzer.findMsgWrapper(t);
@@ -655,6 +957,303 @@ public class MsgWrapperInjectTest {
 			if (!Arrays.equals(entries.get(i).data, expected.get(i))) {
 				return what + " " + i + " changed";
 			}
+		}
+		return null;
+	}
+
+	/**
+	 * One way to spoil retail's donor: answers the script to hand over - changed in place, or another one - or null
+	 * when the donor holds nothing this spoil can change, which fails the check rather than passing it.
+	 */
+	interface Spoil {
+		GFLPawnScript apply(GFLPawnScript donor, PawnClosure.Donor built) throws Exception;
+	}
+
+	/** A change to one instruction, answering the script to hand over or null. */
+	interface Change {
+		GFLPawnScript apply(PawnInstruction ins) throws Exception;
+	}
+
+	/**
+	 * What injecting from retail's donor, spoiled by {@code spoil}, said: its refusal, or what it did. The closure is
+	 * built from the clean donor first, as the injector builds it, so a spoil can find what it changes.
+	 */
+	static String spoiledDonor(GARC garc, int targetZone, Spoil spoil) throws Exception {
+		if (targetZone < 0) {
+			return "no wrapper-less zone to inject into";
+		}
+		GFLPawnScript donor = getZoneScript(garc, MsgWrapperInjector.PREFERRED_DONOR_ZONE);
+		java.lang.reflect.Field specField = MsgWrapperInjector.class.getDeclaredField("SPEC");
+		specField.setAccessible(true);
+		java.lang.reflect.Method build = PawnClosure.class.getDeclaredMethod("buildDonor",
+				Class.forName("ctrmap.formats.scripts.PawnClosure$Spec"), GFLPawnScript.class);
+		build.setAccessible(true);
+		PawnClosure.Donor d = (PawnClosure.Donor) build.invoke(null, specField.get(null), donor);
+		GFLPawnScript handed = spoil.apply(donor, d);
+		if (handed == null) {
+			return "the donor holds nothing this spoil can change";
+		}
+		try {
+			MsgWrapperInjector.injectMsgWrapper(NpcScriptGateTest.ORAS, getZoneScript(garc, targetZone), handed);
+			return "it injected";
+		} catch (PawnClosure.Refused refused) {
+			return refused.getMessage();
+		} catch (RuntimeException other) {
+			return "it failed some other way: " + other;
+		}
+	}
+
+	/**
+	 * What injecting retail's routine into a wrapper-less zone said once its data segment was grown, cell by cell,
+	 * until the rebased buffer's last address passes what a packed argument holds: its refusal, or what it did.
+	 */
+	static String bigTargetRefusal(GARC garc, int targetZone) throws Exception {
+		if (targetZone < 0) {
+			return "no wrapper-less zone to inject into";
+		}
+		java.lang.reflect.Field delta = MsgWrapperInjector.class.getDeclaredField("MAX_BUFFER_DELTA");
+		delta.setAccessible(true);
+		int maxDelta = delta.getInt(null);
+		GFLPawnScript t = getZoneScript(garc, targetZone);
+		t.decompressThis();
+		PawnInstruction cell = t.data.isEmpty() ? new PawnInstruction(0, 0, "") : t.data.get(0);
+		while (t.data.size() * 4 + maxDelta <= Short.MAX_VALUE) {
+			t.data.add(cell);
+		}
+		try {
+			MsgWrapperInjector.injectMsgWrapper(NpcScriptGateTest.ORAS, t, getZoneScript(garc, MsgWrapperInjector.PREFERRED_DONOR_ZONE));
+			return "it injected";
+		} catch (PawnClosure.Refused refused) {
+			return refused.getMessage();
+		} catch (RuntimeException other) {
+			return "it failed some other way: " + other;
+		}
+	}
+
+	/** Rewrite site {@code n} of the donor's closure, changed by {@code change}. */
+	static GFLPawnScript site(GFLPawnScript s, PawnClosure.Donor d, int n, java.util.function.Consumer<PawnInstruction> change)
+			throws Exception {
+		java.lang.reflect.Field sitesField = MsgWrapperInjector.class.getDeclaredField("REWRITE_SITES");
+		sitesField.setAccessible(true);
+		int[] site = ((int[][]) sitesField.get(null))[n];
+		change.accept(s.lookupInstructionByPtr(d.subPtrs.get(site[0]) + site[1]));
+		return s;
+	}
+
+	/** How many cells an instruction takes: one when its operand is packed into it, else one per operand and its own. */
+	static int width(PawnInstruction ins) {
+		return ins.hasCompressedArgument ? 1 : 1 + ins.argumentCount;
+	}
+
+	/** Every rewrite site of the donor's closure, each changed by {@code change}. */
+	static GFLPawnScript everySite(GFLPawnScript s, PawnClosure.Donor d, java.util.function.Consumer<PawnInstruction> change)
+			throws Exception {
+		java.lang.reflect.Field sitesField = MsgWrapperInjector.class.getDeclaredField("REWRITE_SITES");
+		sitesField.setAccessible(true);
+		for (int n = 0; n < ((int[][]) sitesField.get(null)).length; n++) {
+			site(s, d, n, change);
+		}
+		return s;
+	}
+
+	/** {@code ins} made {@code to}, or null when {@code to} takes another number of cells - a swap that moves no cell. */
+	static GFLPawnScript command(GFLPawnScript s, PawnInstruction ins, PawnInstruction.Commands to) {
+		if (width(new PawnInstruction(0, to.ordinal(), "")) != width(ins)) {
+			return null;
+		}
+		ins.cellValue = (ins.cellValue & ~0x7FFF) | to.ordinal();
+		return s;
+	}
+
+	/** The first instruction of the closure, outside its yield stub, that {@code which} picks, changed by {@code change}. */
+	static GFLPawnScript first(GFLPawnScript s, PawnClosure.Donor d, java.util.function.Predicate<PawnInstruction> which,
+			Change change) throws Exception {
+		for (int ptr : d.subPtrs) {
+			int[] r = d.subRanges.get(ptr);
+			for (int i = r[0]; ptr != 4 && i < r[1]; i++) {
+				if (which.test(s.instructions.get(i))) {
+					return change.apply(s.instructions.get(i));
+				}
+			}
+		}
+		return null;
+	}
+
+	/** Every well-formed CALL in the closure, in the closure's order. */
+	static List<PawnInstruction> calls(GFLPawnScript s, PawnClosure.Donor d) {
+		List<PawnInstruction> out = new ArrayList<>();
+		for (int ptr : d.subPtrs) {
+			int[] r = d.subRanges.get(ptr);
+			for (int i = r[0]; i < r[1]; i++) {
+				PawnInstruction ins = s.instructions.get(i);
+				if (ins.getCommand() == PawnInstruction.Commands.CALL.ordinal() && ins.argumentCells.length == 1) {
+					out.add(ins);
+				}
+			}
+		}
+		return out;
+	}
+
+	/** Where a CALL lands. */
+	static int target(PawnInstruction call) {
+		return call.pointer + call.argumentCells[0];
+	}
+
+	/** How many CALLs in the closure land on {@code ptr}. */
+	static int callers(GFLPawnScript s, PawnClosure.Donor d, int ptr) {
+		int n = 0;
+		for (PawnInstruction c : calls(s, d)) {
+			n += target(c) == ptr ? 1 : 0;
+		}
+		return n;
+	}
+
+	/** The closure walked again over the script as it now stands, from the same entry. */
+	static PawnClosure.Donor walked(GFLPawnScript s, PawnClosure.Donor d) {
+		PawnClosure.Donor again = new PawnClosure.Donor();
+		PawnClosure.dfsClosure(s, d.wrapperPtr, again);
+		return again;
+	}
+
+	/** Do two walks hold the same subs, in the same order, of the same sizes? */
+	static boolean sameWalk(PawnClosure.Donor a, PawnClosure.Donor b) {
+		if (!a.subPtrs.equals(b.subPtrs)) {
+			return false;
+		}
+		for (int ptr : a.subPtrs) {
+			if (a.subCells.get(ptr).length != b.subCells.get(ptr).length) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** A CALL whose callee nothing else in the closure calls, sent to the yield stub - so the callee leaves the closure. */
+	static GFLPawnScript retargetOnce(GFLPawnScript s, PawnClosure.Donor d) {
+		for (PawnInstruction c : calls(s, d)) {
+			if (target(c) != 4 && callers(s, d, target(c)) == 1) {
+				c.argumentCells[0] = 4 - c.pointer;
+				return s;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Two CALLs with their targets swapped, the first pair whose closure, walked again, keeps its count and no longer
+	 * holds the yield stub where the spec measured it - every pair is tried, so it does not hang on how often the stub
+	 * is called (3 times in the message routine).
+	 */
+	static GFLPawnScript swapStubCall(GFLPawnScript s, PawnClosure.Donor d) throws Exception {
+		java.lang.reflect.Field at = MsgWrapperInjector.class.getDeclaredField("STUB_DFS_INDEX");
+		at.setAccessible(true);
+		int stubAt = at.getInt(null);
+		List<PawnInstruction> all = calls(s, d);
+		for (int i = 0; i < all.size(); i++) {
+			for (int j = i + 1; j < all.size(); j++) {
+				PawnInstruction a = all.get(i);
+				PawnInstruction b = all.get(j);
+				int ta = target(a);
+				int tb = target(b);
+				if (ta == tb) {
+					continue;
+				}
+				a.argumentCells[0] = tb - a.pointer;
+				b.argumentCells[0] = ta - b.pointer;
+				PawnClosure.Donor again = walked(s, d);
+				if (again.subPtrs.size() == d.subPtrs.size() && again.subPtrs.get(stubAt) != 4) {
+					return s;
+				}
+				a.argumentCells[0] = ta - a.pointer;
+				b.argumentCells[0] = tb - b.pointer;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * What the closure's own check said of retail's donor with one instruction outside its stub replaced by
+	 * {@code made}: its refusal, or that it passed. Asked of requireSelfContained directly, after the walk - neither
+	 * retail closure holds a SWITCH or a case table, so no spoiled donor reaches these lines through buildDonor.
+	 */
+	static String selfContained(GARC garc, PawnInstruction.Commands made, int... operands) throws Exception {
+		GFLPawnScript donor = getZoneScript(garc, MsgWrapperInjector.PREFERRED_DONOR_ZONE);
+		java.lang.reflect.Field specField = MsgWrapperInjector.class.getDeclaredField("SPEC");
+		specField.setAccessible(true);
+		java.lang.reflect.Method build = PawnClosure.class.getDeclaredMethod("buildDonor",
+				Class.forName("ctrmap.formats.scripts.PawnClosure$Spec"), GFLPawnScript.class);
+		build.setAccessible(true);
+		PawnClosure.Donor d = (PawnClosure.Donor) build.invoke(null, specField.get(null), donor);
+		int[] r = d.subRanges.get(d.subPtrs.get(0));
+		PawnInstruction was = donor.instructions.get(r[0] + 1);
+		PawnInstruction in = new PawnInstruction(was.pointer, made.ordinal(), "");
+		in.argumentCells = operands;
+		in.argumentCount = operands.length;
+		in.hasCompressedArgument = false;
+		donor.instructions.set(r[0] + 1, in);
+		java.lang.reflect.Method check = PawnClosure.class.getDeclaredMethod("requireSelfContained", GFLPawnScript.class,
+				PawnClosure.Donor.class);
+		check.setAccessible(true);
+		try {
+			check.invoke(null, donor, d);
+			return "it passed";
+		} catch (java.lang.reflect.InvocationTargetException e) {
+			return e.getCause() instanceof PawnClosure.Refused ? e.getCause().getMessage() : "it failed some other way: " + e.getCause();
+		}
+	}
+
+	/**
+	 * The PROC that ends a closure sub made a RETN, where nothing in the closure calls it and what follows it calls
+	 * nothing: the sub runs on to the next PROC, longer than measured, and the closure is otherwise the same.
+	 */
+	static GFLPawnScript lengthen(GFLPawnScript s, PawnClosure.Donor d) {
+		for (int ptr : d.subPtrs) {
+			int end = d.subRanges.get(ptr)[1];
+			if (end >= s.instructions.size() || d.subCells.containsKey(s.instructions.get(end).pointer)) {
+				continue;
+			}
+			boolean callsOut = false;
+			for (int i = end + 1; i < s.instructions.size() && s.instructions.get(i).getCommand() != PawnInstruction.Commands.PROC.ordinal(); i++) {
+				callsOut |= s.instructions.get(i).getCommand() == PawnInstruction.Commands.CALL.ordinal();
+			}
+			if (!callsOut) {
+				return command(s, s.instructions.get(end), PawnInstruction.Commands.RETN);
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * One operand in the closure, outside the stub, every rewrite site, every CALL, branch, case table and native
+	 * call, changed by one: a cell only the fingerprint reads.
+	 */
+	static GFLPawnScript constant(GFLPawnScript s, PawnClosure.Donor d) throws Exception {
+		java.util.Set<Integer> fixed = new java.util.HashSet<>(java.util.Arrays.asList(
+				PawnInstruction.Commands.CALL.ordinal(), PawnInstruction.Commands.CASETBL.ordinal(),
+				PawnInstruction.Commands.SWITCH.ordinal(), PawnInstruction.Commands.SYSREQ_N.ordinal(),
+				PawnInstruction.Commands.CONST_P_PRI.ordinal(), PawnInstruction.Commands.PUSH_P_C.ordinal()));
+		return first(s, d, ins -> ins.argumentCount >= 1 && !fixed.contains(ins.getCommand()) && !PawnInstruction.checkJmp(ins),
+				ins -> {
+					ins.argumentCells[0] += 1;
+					return s;
+				});
+	}
+
+	/**
+	 * A CALL given a second operand, where its callee is reached another way and the closure walks the same without
+	 * it - so the one thing wrong is the CALL itself.
+	 */
+	static GFLPawnScript malformCall(GFLPawnScript s, PawnClosure.Donor d) {
+		for (PawnInstruction c : calls(s, d)) {
+			if (callers(s, d, target(c)) < 2) {
+				continue;
+			}
+			int[] was = c.argumentCells;
+			c.argumentCells = new int[]{was[0], 0};
+			if (sameWalk(d, walked(s, d))) {
+				return s;
+			}
+			c.argumentCells = was;
 		}
 		return null;
 	}

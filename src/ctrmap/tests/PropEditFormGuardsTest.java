@@ -124,7 +124,28 @@ public class PropEditFormGuardsTest {
 		}
 	}
 
+	/**
+	 * A prop palette whose database build threw says why - not "requires a workspace" (census M.132). The thrown
+	 * build and the absent workspace were the same null, so a damaged archive sent the user to Workspace settings.
+	 * The worker is a SwingWorker over a live list no suite can open, so its done() is read in the source.
+	 */
+	static void aPaletteThatCouldNotBeBuiltSaysWhy() throws Exception {
+		System.out.println("--- a prop palette that could not be built says why, not 'no workspace' (census M.132)");
+		String form = SourceSeamTest.stripComments(new String(java.nio.file.Files.readAllBytes(
+				new File("src/ctrmap/humaninterface/PropEditForm.java").toPath()), java.nio.charset.StandardCharsets.UTF_8));
+		int at = form.indexOf("PropDatabase db = null;");
+		int end = at < 0 ? -1 : form.indexOf("}.execute();", at);
+		String done = at >= 0 && end > at ? form.substring(at, end) : "";
+		check(done.contains("db = get();"), "control: the palette worker's done() is found");
+		int caught = done.indexOf("catch (Exception ex) {");
+		int said = done.indexOf("failed = ctrmap.Ui.reason(", caught);
+		check(caught > 0 && said > caught && !done.contains("printStackTrace")
+				&& done.contains("\"The prop palette could not be built: \" + failed"),
+				"a build that threw is shown in the palette with its reason, apart from the no-workspace sentence");
+	}
+
 	static void run(String[] args) throws Exception {
+		aPaletteThatCouldNotBeBuiltSaysWhy();
 		aPropIsRefusedWhenItsAreaCannotBeToldShared();
 		theRecordIsEditedNotRebuilt();
 		thePropsAndTheRegistryAreDocumentsOfTheZonesHistory();
@@ -146,9 +167,14 @@ public class PropEditFormGuardsTest {
 		TestWindow.m3DDebugPanel(new H3DRenderingPanel(new ArrayList<CM3DRenderable>(), TOOLS));
 
 		theRegionIsTheOneTheseChecksDescribe();
+		//first: a later section types a model number in too, and the inversion throws out of it before this can speak
+		aTypedModelWhoseRegistrationIsRefusedRegistersNothing();
 		openingARegionShowsTheFirstProp();
 		openingARegionLeavesTheFormLive();
+		closingTheRegistryEditorShowsThePropAgain();
+		anEntryMovedOntoATakenReferenceIsNotSaved();
 		theGizmoFollowsThePropTheFormShows();
+		aClickInThe3DViewShowsThePropUnderIt();
 		saveWithNothingTypedWritesNothing();
 		saveKeepsWhatTheFieldsCannotShow();
 		saveWritesTheTypedNumbersAndKeepsTheTail();
@@ -161,7 +187,14 @@ public class PropEditFormGuardsTest {
 		savingWithNowhereToWriteRefusesAndSaysSo();
 		savingPropsThatCouldNotBeReadRefuses();
 		withoutARegistryNewIsRefusedAndRemoveRemoves();
+		aPaletteRegistrationRefusedPlacesNothing();
+		aDiscardedPropRegistryNamesThePropsLeftWithout();
+		aPropTheRegistryDoesNotHoldIsDrawnFromItsModelNumber();
+		anAreaWriteTheHistoryRefusesIsThrown();
+		aTypedModelImportsUnaskedAndThePaletteAsks();
 		unloadLeavesNothingBehind();
+		//last: it registers a model into an area of the scratch game, which every check above reads as retail
+		aModelRegisteredAnewIsDrawn();
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		//the form owns a GL preview and the 3D view owns an animator, both of
@@ -409,8 +442,10 @@ public class PropEditFormGuardsTest {
 	 */
 	static void saveWritesTheTypedNumbersAndKeepsTheTail() throws Exception {
 		Fixture f = open(true);
-		//the model spinner registers on every change, and a model this area cannot texture is
-		//refused registration - and the spinner goes back to the model the record names (F161)
+		//the model spinner registers on every change, and a registration that cannot be made is
+		//refused - and the spinner goes back to the model the record names (F161). This fixture opens
+		//no zone (LOADED is a bare LoadedZone), so the refusal is the one registration's own "no area
+		//is loaded"; before F107 the same case read as "no donor area contains them all"
 		int registered = f.form.reg.entries.size();
 		int uid0 = f.form.prop.uid;
 		List<String> said = ctrmap.Ui.record();
@@ -419,8 +454,8 @@ public class PropEditFormGuardsTest {
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
-		check(said.size() == 1 && said.get(0).contains("it was not registered"),
-				"typing an unregistered model says it was not registered: " + said);
+		check(said.size() == 1 && said.get(0).startsWith("Prop registration: ") && said.get(0).contains("nothing was placed"),
+				"typing a model this form cannot register says nothing was placed: " + said);
 		check(f.form.reg.entries.size() == registered && !f.form.reg.entries.containsKey(321),
 				"and no entry is invented for it");
 		check(((Integer) ((JSpinner) field(f.form, "mdlNum")).getValue()) == uid0 && f.form.prop.uid == uid0,
@@ -530,6 +565,20 @@ public class PropEditFormGuardsTest {
 		check(!no.form.props.modified && no.form.props.props.get(0).x == f32(records(untouched)[0], 28),
 				"and puts the props back to what the region holds, so nothing discarded stays on screen (F106): X is "
 				+ no.form.props.props.get(0).x);
+		//on the prop that was shown (the 2026-10-15 shared sweep, PropEditForm 832, negate-if, SURVIVED: every discard a
+		//suite made was on prop 0) - inverted, No on prop 1 came back showing prop 0
+		Fixture second = open(true);
+		second.form.setProp(1);
+		type(second.form, "x", 12.5f);
+		second.form.saveProp();
+		said = ctrmap.Ui.record(JOptionPane.NO_OPTION);
+		try {
+			ok = second.form.store(true);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(ok && second.form.propIndex == 1 && second.form.prop == second.form.props.props.get(1)
+				&& !second.form.props.modified, "and No on prop 1 shows prop 1 again, put back: prop " + second.form.propIndex);
 
 		Fixture cancel = open(true);
 		untouched = cancel.propdata();
@@ -605,6 +654,27 @@ public class PropEditFormGuardsTest {
 				"it is refused in words: " + said);
 		check(f.form.props.props.size() == 2 && f.form.models.isEmpty() && !f.form.props.modified,
 				"and nothing changed: " + f.form.props.props.size() + " props, modified " + f.form.props.modified);
+		//and the palette's Place (the 2026-10-15 shared sweep, PropEditForm 480, negate-if, SURVIVED: no suite placed
+		//from the palette) - inverted, the refusal was said and the placing went on over no registry
+		ctrmap.formats.propdata.PropDatabase.get(Workspace.session());   //built here, as the palette's worker builds it
+		f.form.ensurePaletteLoaded();
+		javax.swing.JList<?> palette = (javax.swing.JList<?>) field(f.form, "paletteList");
+		palette.setSelectedIndex(0);
+		check(((Object[]) field(f.form, "paletteEntries")).length > 0 && palette.getSelectedIndex() == 0,
+				"control: the palette holds the game's props, the first one selected");
+		said = ctrmap.Ui.record();
+		Throwable place = null;
+		try {
+			invoke(f.form, "btnPalettePlaceActionPerformed");
+		} catch (Throwable t) {
+			place = t;
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(place == null && said.size() == 1 && said.get(0).contains("The prop palette needs an area prop registry")
+				&& f.form.props.props.size() == 2 && !f.form.props.modified,
+				"Place from the palette with no registry is refused in words, and nothing changed: " + place + ", " + said
+				+ ", " + f.form.props.props.size() + " props");
 
 		Fixture g = openSingleRegion();
 		Throwable rem = null;
@@ -616,6 +686,272 @@ public class PropEditFormGuardsTest {
 		check(rem == null, "Remove entry with no registry does not throw: " + rem);
 		check(g.form.props.props.size() == 1 && g.form.props.modified,
 				"and removes the selected record: " + g.form.props.props.size() + " props left");
+	}
+
+	/**
+	 * The palette's Place, its registration refused, places nothing (the 2026-10-15 shared sweep, PropEditForm 487,
+	 * negate-if, SURVIVED: no suite placed from the palette). Inverted, a refused registration went on to place a prop
+	 * under no reference, and an accepted one placed nothing. A form with a registry and no area open: the registration
+	 * is refused, and says why.
+	 */
+	static void aPaletteRegistrationRefusedPlacesNothing() throws Exception {
+		Fixture f = open(true);
+		check(f.form.reg != null && !LOADED.isOpen(), "control: a registry, and no area open to register a prop in");
+		ctrmap.formats.propdata.PropDatabase.get(Workspace.session());
+		f.form.ensurePaletteLoaded();
+		javax.swing.JList<?> palette = (javax.swing.JList<?>) field(f.form, "paletteList");
+		palette.setSelectedIndex(0);
+		int props = f.form.props.props.size();
+		List<String> said = ctrmap.Ui.record();
+		Throwable place = null;
+		try {
+			invoke(f.form, "btnPalettePlaceActionPerformed");
+		} catch (Throwable t) {
+			place = t;
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(place == null && said.size() == 1 && said.get(0).contains("No area is loaded to register the prop in")
+				&& f.form.props.props.size() == props && !f.form.props.modified,
+				"Place from the palette whose registration is refused places nothing, and says why: " + place + ", "
+				+ said + ", " + f.form.props.props.size() + " props");
+	}
+
+	/**
+	 * A prop registry discarded under props that name an entry it drops says which (F106; the 2026-10-15 shared sweep,
+	 * PropEditForm 815, negate-if, SURVIVED: no suite discarded the prop registry). Answered No to the form's own
+	 * question, as a user would - the NPC form's twin, asked in NpcEditFormGuardsTest.
+	 */
+	static void aDiscardedPropRegistryNamesThePropsLeftWithout() throws Exception {
+		Fixture f = open(true);
+		int ref = f.form.reg.register(new ADPropRegistry.ADPropRegistryEntry(), 900);
+		f.form.reg.modified = true;
+		//prop 1, not the prop shown: a save writes the shown one from its fields, which would read as a props edit
+		f.form.props.props.get(1).uid = ref;
+		check(!f.form.props.modified && f.form.reg.entries.containsKey(ref) && f.form.propIndex == 0,
+				"control: only the registry holds an edit - entry " + ref + ", which prop 1 names, prop 0 shown");
+		List<String> said = ctrmap.Ui.record(JOptionPane.NO_OPTION);
+		String answered;
+		try {
+			answered = String.valueOf(f.form.store(true));
+		} catch (RuntimeException threw) {
+			answered = "threw " + threw;
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(answered.equals("true") && !f.form.reg.entries.containsKey(ref) && said.size() == 2
+				&& said.get(1).startsWith("Prop registry: The props kept here name registry reference(s) [" + ref + "]"),
+				"No puts the registry back, and names the props left naming an entry it dropped: " + answered + ", " + said);
+	}
+
+	/**
+	 * A prop whose reference the registry does not hold is drawn from the building model of that number (the 2026-10-15
+	 * shared sweep, PropEditForm 968, negate-if, SURVIVED: every prop a suite showed had its registry's model).
+	 * Inverted, the model built was dropped. A number past the archive is refused by buildingModel itself, so the
+	 * null branch is for an entry with no mesh, which the dump has none of to hand.
+	 */
+	static void aPropTheRegistryDoesNotHoldIsDrawnFromItsModelNumber() throws Exception {
+		Fixture f = open(true);
+		int free = 0;
+		while (f.form.reg.entries.containsKey(free)) {
+			free++;
+		}
+		check(ADPropRegistry.buildingModel(Workspace.session(), free, null) != null,
+				"control: reference " + free + " is not in the registry, and building model " + free + " decodes");
+		f.form.props.props.get(1).uid = free;
+		String drawn;
+		try {
+			f.form.updateModel(1);
+			drawn = f.form.models.get(1) == null ? "nothing" : "a model";
+		} catch (RuntimeException threw) {
+			drawn = "threw " + threw;
+		}
+		check("a model".equals(drawn), "a prop the registry does not hold is drawn from building model " + free + ": " + drawn);
+	}
+
+	/**
+	 * A model number typed in, its registration refused, registers nothing and throws nothing (the 2026-10-15 shared
+	 * sweep, PropEditForm 1020, negate-if, SURVIVED: every registration a suite asked of the form went through).
+	 * Inverted, a refused registration was read as made - a NullPointerException - and a made one answered nothing.
+	 * A form with a registry and no area open, so the registration is refused and says why.
+	 */
+	static void aTypedModelWhoseRegistrationIsRefusedRegistersNothing() throws Exception {
+		Fixture f = open(true);
+		ctrmap.formats.propdata.PropDatabase.get(Workspace.session());
+		int free = 0;
+		while (f.form.reg.entries.containsKey(free)) {
+			free++;
+		}
+		int entries = f.form.reg.entries.size();
+		Method auto = PropEditForm.class.getDeclaredMethod("autoRegisterProp", int.class);
+		auto.setAccessible(true);
+		List<String> said = ctrmap.Ui.record();
+		String answered;
+		try {
+			answered = String.valueOf(auto.invoke(f.form, free));
+		} catch (InvocationTargetException threw) {
+			answered = "threw " + threw.getCause();
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(answered.equals("null") && f.form.reg.entries.size() == entries && said.size() == 1
+				&& said.get(0).contains("No area is loaded to register the prop in"),
+				"model " + free + " typed in, its registration refused, registers nothing and says why: " + answered + ", "
+				+ said);
+	}
+
+	/**
+	 * A registration's write into its area that the history refuses is thrown, naming the subfile - never swallowed
+	 * as if written (the 2026-10-15 shared sweep, PropEditForm 1080, drop-throw, SURVIVED: every write a suite made
+	 * went through). A subfile the area does not hold cannot be read, so the history refuses to write it.
+	 */
+	static void anAreaWriteTheHistoryRefusesIsThrown() throws Exception {
+		AD area = new AD(Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, AREA), Workspace.session());
+		PropEditForm.ThroughHistory through = new PropEditForm.ThroughHistory(UndoHistoryTest.overOneNumber(new int[]{0}),
+				area, AREA, 0, registry(), ctrmap.formats.propdata.PropDatabase.get(Workspace.session()));
+		String said;
+		try {
+			through.put(99, new byte[4]);
+			said = "(nothing was thrown)";
+		} catch (java.io.IOException refused) {
+			said = refused.getMessage();
+		} catch (RuntimeException other) {
+			said = "not said as a write that failed: " + other;
+		}
+		check(said.startsWith("could not write the area's subfile 99: "),
+				"a write into the area the history refuses is thrown, naming the subfile: " + said);
+	}
+
+	/**
+	 * The registration's voice: a typed model number imports the textures its area lacks without a word; the palette
+	 * says something first - the shared-area refusal or the question - and imports only on a yes (the 2026-10-15 shared
+	 * sweep, PropEditForm 1121, negate-if, SURVIVED: no suite registered a prop that needed textures). Inverted, the
+	 * typed number was asked and the palette imported unasked. Over area {@link #AREA} of the scratch game.
+	 */
+	static void aTypedModelImportsUnaskedAndThePaletteAsks() throws Exception {
+		List<String> said = ctrmap.Ui.record(JOptionPane.OK_OPTION);
+		boolean typed;
+		try {
+			typed = new PropEditForm.FormVoice(null, false, AREA, -1, id -> "area " + id)
+					.importFrom(5, Arrays.asList("tex_a", "tex_b"));
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(typed && said.isEmpty(), "a typed model number imports its textures without a word: " + typed + ", " + said);
+		said = ctrmap.Ui.record(JOptionPane.OK_OPTION);
+		boolean palette;
+		try {
+			palette = new PropEditForm.FormVoice(null, true, AREA, -1, id -> "area " + id)
+					.importFrom(5, Arrays.asList("tex_a", "tex_b"));
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		boolean refused = said.size() == 1 && said.get(0).startsWith("Shared area:") && !palette;
+		boolean asked = said.size() == 1 && said.get(0).startsWith("Missing textures: This prop's textures (tex_a, tex_b)")
+				&& palette;
+		check(refused || asked, "the palette says something first - " + (refused ? "the shared-area refusal" : asked
+				? "the question, answered yes" : "neither") + ": " + palette + ", " + said);
+	}
+
+	/**
+	 * A model registered anew is drawn: its model is put in the registry under its reference (the 2026-10-15 shared
+	 * sweep, PropEditForm 1149, negate-if, SURVIVED: every registration a suite made through the form was refused).
+	 * Inverted, a new registration drew nothing and an existing one was decoded again. The first zone whose area no
+	 * other zone uses open, the form on that area's registry, and a building model the area does not register,
+	 * registered as a typed model number registers.
+	 */
+	static void aModelRegisteredAnewIsDrawn() throws Exception {
+		System.out.println("--- a model registered anew is drawn under its reference");
+		int zones = Workspace.getArchive(ArchiveType.ZONE_DATA).length;
+		ctrmap.formats.zone.Zone onArea = null;
+		int at = -1;
+		int read = 0;
+		String lastUnread = "none";
+		for (int z = 0; z < zones && onArea == null; z++) {
+			try {
+				ctrmap.formats.zone.Zone zone = new ctrmap.formats.zone.Zone(new ctrmap.formats.containers.ZO(
+						Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, z), Workspace.session()), Workspace.game());
+				read++;
+				//an area no other zone uses: a registration that carries textures into a shared one is refused, rightly
+				if (zone.header != null && ctrmap.formats.h3d.BchTexturePack.zonesUsingArea(Workspace.session(),
+						zone.header.areadataID, z) == null) {
+					zone.header.fetchArchives(Workspace.session());   //as the Zone tab opens one: its area with it
+					onArea = zone;
+					at = z;
+				}
+			} catch (RuntimeException notAZone) {
+				//the archive's last entries are tables, not zones; one that does not read is not the one sought
+				lastUnread = "zone " + z + ": " + notAZone;
+			}
+		}
+		check(onArea != null, "control: a zone whose area no other zone uses is found (zone " + at + ", area "
+				+ (onArea == null ? "-" : String.valueOf(onArea.header.areadataID)) + ", " + read + " zone(s) read, the last"
+				+ " unread " + lastUnread + ")");
+		if (onArea == null) {
+			return;
+		}
+		LOADED.open(at, onArea);
+		try {
+			Fixture f = open(true);
+			//the form's registry is that area's own, as the Zone tab hands it
+			f.form.loadDataFile(new ctrmap.formats.propdata.GRPropData(f.gr), new ADPropRegistry(onArea.header.areadata),
+					null);
+			ctrmap.formats.propdata.PropDatabase db = ctrmap.formats.propdata.PropDatabase.get(Workspace.session());
+			java.util.Set<Integer> held = new java.util.HashSet<>();
+			for (ADPropRegistry.ADPropRegistryEntry e : f.form.reg.entries.values()) {
+				held.add(e.model);
+			}
+			ctrmap.formats.propdata.PropDatabase.PropModel fresh = null;
+			for (ctrmap.formats.propdata.PropDatabase.PropModel m : db.getNamedModels()) {
+				if (!held.contains(m.modelIndex)) {
+					fresh = m;
+					break;
+				}
+			}
+			check(fresh != null, "control: a building model that area does not register ("
+					+ (fresh == null ? "none" : fresh.name + ", model " + fresh.modelIndex) + ")");
+			if (fresh == null) {
+				return;
+			}
+			Method here = PropEditForm.class.getDeclaredMethod("registerHere",
+					ctrmap.formats.propdata.PropDatabase.PropModel.class, boolean.class);
+			here.setAccessible(true);
+			List<String> said = ctrmap.Ui.record();
+			Object made;
+			try {
+				made = here.invoke(f.form, fresh, false);
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
+			ctrmap.formats.propdata.PropRegistration.Registered r = (ctrmap.formats.propdata.PropRegistration.Registered) made;
+			check(r != null && !r.already && f.form.reg.models.get(r.reference) != null,
+					"model " + fresh.modelIndex + " registered anew is drawn under its reference: "
+					+ (r == null ? "not registered, " + said : "reference " + r.reference + ", "
+					+ (f.form.reg.models.get(r.reference) != null ? "drawn" : "not drawn")));
+			//and the same model number typed in again: the entry when the area registers it under that number, else
+			//refused naming the reference it does use (the 2026-10-16 assembly, PropEditForm 1020, negate-if, SURVIVED:
+			//no suite typed a model the area already held). Inverted, the model's own entry was refused as held under
+			//itself, and one held under another reference was answered as this one's
+			if (r != null) {
+				Method auto = PropEditForm.class.getDeclaredMethod("autoRegisterProp", int.class);
+				auto.setAccessible(true);
+				said = ctrmap.Ui.record();
+				Object typed;
+				try {
+					typed = auto.invoke(f.form, fresh.modelIndex);
+				} finally {
+					ctrmap.Ui.stopRecording();
+				}
+				boolean own = r.reference == fresh.modelIndex;
+				check(own ? typed == f.form.reg.entries.get(r.reference) && said.isEmpty()
+						: typed == null && said.size() == 1 && said.get(0).contains("under reference " + r.reference),
+						"a model number typed in again is its entry when held under that number, else refused naming the"
+						+ " reference: model " + fresh.modelIndex + ", held under " + r.reference + ", answered "
+						+ (typed == null ? "nothing" : "an entry") + ", " + said);
+			}
+		} finally {
+			LOADED.release();
+		}
 	}
 
 	/** Closing a region must leave the form holding nothing of it. */
@@ -790,6 +1126,97 @@ public class PropEditFormGuardsTest {
 	}
 
 	/**
+	 * Closing the registry editor shows the prop form's prop again, so an entry edited there is what the form draws;
+	 * an editor with no form behind it closes all the same. Measured by the 2026-10-14 shared sweep
+	 * (ADPropRegistryEditor 56, negated, SURVIVED): no suite closed one, so a form left showing the old entry, and an
+	 * editor with no form threw on close, both went unseen.
+	 */
+	static void closingTheRegistryEditorShowsThePropAgain() throws Exception {
+		System.out.println("--- closing the prop registry editor shows the form's prop again, and closes with no form behind it");
+		final int[] shown = {0};
+		final int[] at = {-1};
+		PropEditForm form = new PropEditForm(LOADED, TOOLS, REDRAW, NAVI, TestWindow.mTileMapPanel(), pane -> { },
+				UndoHistoryTest.overOneNumber(new int[]{0})) {
+			@Override
+			public void setProp(int index) {
+				shown[0]++;
+				at[0] = index;
+			}
+		};
+		form.propIndex = 3;
+		String closed;
+		try {
+			closed = String.valueOf(new ctrmap.humaninterface.ADPropRegistryEditor(form).closeRequested());
+		} catch (RuntimeException ex) {
+			closed = "it threw " + ex;
+		}
+		check("true".equals(closed) && shown[0] == 1 && at[0] == 3,
+				"with a form behind it, it closes and shows the form's prop 3 again (" + closed + ", shown " + shown[0]
+				+ " time(s), prop " + at[0] + ")");
+		String alone;
+		try {
+			alone = String.valueOf(new ctrmap.humaninterface.ADPropRegistryEditor(null).closeRequested());
+		} catch (RuntimeException ex) {
+			alone = "it threw " + ex;
+		}
+		check("true".equals(alone), "with no form behind it, it closes all the same: " + alone);
+	}
+
+	/**
+	 * The registry editor refuses to save an entry under a reference another entry holds, says so, and leaves the
+	 * registry as it was. Measured by the 2026-10-14 shared sweep (ADPropRegistryEditor 120, negated, SURVIVED): no
+	 * suite saved through the editor, so a test that refused every save but the clashing one went unseen.
+	 */
+	static void anEntryMovedOntoATakenReferenceIsNotSaved() throws Exception {
+		System.out.println("--- the prop registry editor refuses an entry moved onto a reference another holds");
+		ADPropRegistry reg = registry();
+		List<Integer> held = new ArrayList<>(reg.entries.keySet());
+		if (held.size() < 2) {
+			check(false, "control: the fixture's registry holds two entries to clash (" + held + ")");
+			return;
+		}
+		ctrmap.humaninterface.ADPropRegistryEditor editor = new ctrmap.humaninterface.ADPropRegistryEditor(null);
+		editor.loadRegistry(reg, new ArrayList<ctrmap.formats.h3d.texturing.H3DTexture>());
+		editor.showEntry(held.get(0));
+		List<String> said = ctrmap.Ui.record();
+		String ownSaved;
+		String clashSaved;
+		try {
+			ownSaved = saved(editor);
+			((javax.swing.JSpinner) field(editor, "uid")).setValue(held.get(1));
+			clashSaved = saved(editor);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check("true".equals(ownSaved), "control: an entry saved under its own reference is saved: " + ownSaved);
+		check("false".equals(clashSaved) && said.contains("UID not unique: The specified UID is already registered. Please use another one."),
+				"moved onto reference " + held.get(1) + ", which another holds, it is refused and says so: " + clashSaved + ", " + said);
+		check(reg.entries.keySet().equals(new java.util.LinkedHashSet<>(held)) && reg.entries.get(held.get(0)).reference == held.get(0),
+				"and the registry is as it was: " + reg.entries.keySet());
+		//moved onto a FREE reference it is saved, and its row in the editor's list says the new reference (ADPropRegistry-
+		//Editor 155, negated, SURVIVED the same sweep: no save ever changed one, so a row left naming the old went unseen)
+		int free = 300;
+		while (reg.entries.containsKey(free)) {
+			free++;
+		}
+		((javax.swing.JSpinner) field(editor, "uid")).setValue(free);
+		String movedSaved = saved(editor);
+		String row = String.valueOf(((javax.swing.DefaultListModel<?>) field(editor, "model")).getElementAt(0));
+		check("true".equals(movedSaved) && reg.entries.containsKey(free) && !reg.entries.containsKey(held.get(0))
+				&& row.startsWith("UID: " + free + " | Model: "),
+				"moved onto free reference " + free + ", it is saved and its row says so: " + movedSaved + ", " + row);
+	}
+
+	/** What the registry editor's save answered, or what it threw - so a check reads either, and never stops on one. */
+	static String saved(ctrmap.humaninterface.ADPropRegistryEditor editor) {
+		try {
+			return String.valueOf(editor.saveEntry(false));
+		} catch (RuntimeException thrown) {
+			return "it threw " + thrown;
+		}
+	}
+
+	/**
 	 * Opening a region leaves the form LIVE, without the suite arming it.
 	 *
 	 * <p>WHY THIS IS THE PROOF. This suite used to set {@code loaded = true} by
@@ -840,6 +1267,71 @@ public class PropEditFormGuardsTest {
 		check(NAVI.following() == f.form.prop,
 				"showing a different prop moves it to that one (" + f.form.propIndex + ")");
 		check(NAVI.following() != null, "which is a record, not nothing");
+	}
+
+	/**
+	 * A click on a prop in the 3D view, with the prop tool up, shows that prop; a click on none shows the same one
+	 * (the 2026-10-15 shared sweep, PropEditForm 1676, negate-if, SURVIVED: no suite clicked the 3D view). Inverted,
+	 * the prop under the click was the one never picked and any prop off it was. Two unit cubes in UtilsTest's
+	 * headless projection - window x = 100 + 50 * world x on a 200-pixel panel - prop 1 at the origin under a
+	 * click at (100,100), prop 0 three units right, off it; prop 0 is the one showing.
+	 */
+	static void aClickInThe3DViewShowsThePropUnderIt() throws Exception {
+		System.out.println("--- a click in the 3D view shows the prop under it, and a click on none shows the same one");
+		Fixture f = open(true);
+		float[] mv = new float[]{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+		float[] proj = new float[]{0.5f, 0, 0, 0, 0, 0.5f, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1};
+		int[] view = new int[]{0, 0, 200, 200};
+		javax.swing.JPanel panel = new javax.swing.JPanel();
+		panel.setSize(200, 200);
+		ArrayList<ctrmap.formats.h3d.model.H3DModel> drawn = new ArrayList<>(f.form.models);
+		f.form.models.clear();
+		//a model is only ever read out of a BCH; the picking reads its box and its meshes, so one is made with no
+		//constructor run and those two are filled in
+		Field theUnsafe = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe");
+		theUnsafe.setAccessible(true);
+		Object unsafe = theUnsafe.get(null);
+		for (int i = 0; i < 2; i++) {
+			ctrmap.formats.h3d.model.H3DModel cube = (ctrmap.formats.h3d.model.H3DModel) unsafe.getClass()
+					.getMethod("allocateInstance", Class.class).invoke(unsafe, ctrmap.formats.h3d.model.H3DModel.class);
+			cube.boxVectors = new float[32][];
+			ctrmap.formats.h3d.model.OhanaMeshUtils.makeBox(cube.boxVectors, new ctrmap.formats.vectors.Vec3f(-1, -1, -1),
+					new ctrmap.formats.vectors.Vec3f(1, 1, 1));
+			ctrmap.formats.h3d.model.H3DModel.H3DMesh mesh = new ctrmap.formats.h3d.model.H3DModel.H3DMesh();
+			ctrmap.formats.h3d.model.H3DVertex v = new ctrmap.formats.h3d.model.H3DVertex();
+			v.position = new ctrmap.formats.vectors.Vec3f(0, 0, 0);
+			mesh.vertices.add(v);
+			cube.meshes = new ArrayList<>(Arrays.asList(mesh));
+			f.form.models.add(cube);
+			GRProp p = f.form.props.props.get(i);
+			p.x = i == 0 ? 3 : 0;
+			p.y = 0;
+			p.z = 0;
+			p.scaleX = p.scaleY = p.scaleZ = 1;
+			p.rotateX = p.rotateY = p.rotateZ = 0;
+		}
+		TOOLS.switchTo(() -> new ctrmap.humaninterface.tools.PropTool(new RecordingHost(), f.form) {
+			@Override
+			public void onToolInit() {
+			}
+		});
+		String missed;
+		String hit;
+		try {
+			check(f.form.propIndex == 0, "control: prop 0 is the one showing (" + f.form.propIndex + ")");
+			f.form.doSelectionLoop(new java.awt.event.MouseEvent(panel, java.awt.event.MouseEvent.MOUSE_CLICKED, 0L, 0, 20,
+					100, 1, false), panel, mv, proj, view, new ctrmap.formats.vectors.Vec3f(0, 0, 0));
+			missed = "prop " + f.form.propIndex;
+			f.form.doSelectionLoop(new java.awt.event.MouseEvent(panel, java.awt.event.MouseEvent.MOUSE_CLICKED, 0L, 0, 100,
+					100, 1, false), panel, mv, proj, view, new ctrmap.formats.vectors.Vec3f(0, 0, 0));
+			hit = "prop " + f.form.propIndex;
+		} finally {
+			TOOLS.drop();
+			f.form.models.clear();
+			f.form.models.addAll(drawn);
+		}
+		check("prop 0".equals(missed), "a click on no prop leaves the one showing: " + missed);
+		check("prop 1".equals(hit), "a click on prop 1 shows prop 1: " + hit);
 	}
 
 	/** The region the way File &gt; Open GR opens it: no registry at all. */

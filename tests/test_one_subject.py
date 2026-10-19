@@ -22,6 +22,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 HERE = _tree_root.require(__file__)
 sys.path.insert(0, os.path.join(HERE, "tools"))
 sys.path.insert(0, os.path.join(HERE, "tools", "guard"))
@@ -39,8 +40,8 @@ class TheRecordAndTheGateMeasureOneSubject(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.repo = os.path.join(self.tmp, "repo")
         os.makedirs(os.path.join(self.repo, "src"))
-        subprocess.run(["git", "init", "-q"], cwd=self.repo, capture_output=True, timeout=120,
-                       creationflags=NO_WINDOW)
+        bounded.run(["git", "init", "-q"], cwd=self.repo, capture_output=True, timeout=120,
+                    creationflags=NO_WINDOW)
         io.open(os.path.join(self.repo, "src", "A.java"), "w", encoding="utf-8").write("class A {}" + LF)
         # THE RULE FILE ABOVE THE ROOT, where the two bodies read it differently
         io.open(os.path.join(self.tmp, "CLAUDE.md"), "w", encoding="utf-8").write("a rule" + LF)

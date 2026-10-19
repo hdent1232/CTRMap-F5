@@ -45,10 +45,16 @@ public final class ZoneLinkDialog {
 	 * @param ws the open game, handed in
 	 * @param zones the zone table, for the default and the range
 	 * @param onClose what to do when the user is finished; the host puts the browser back
+	 * @param ops the workspace's history, which keeps each connection (F209c)
+	 * @param reread what reads the zones again when a connection is taken back or put again
 	 * @return the form, or null when there is nothing to connect (it says why first)
 	 */
 	public static javax.swing.JComponent panel(Component parent, WorkspaceSession ws,
-			LoadedZone zones, Runnable onClose) {
+			LoadedZone zones, Runnable onClose, ctrmap.humaninterface.SaveHistory ops, Runnable reread) {
+		if (ops == null || reread == null) {
+			throw new IllegalArgumentException("Connect zones must be handed the history that keeps its connections and"
+					+ " what reads the zones again");
+		}
 		if (ws == null || zones == null || zones.count() == 0) {
 			ctrmap.Ui.error(parent, "Load a workspace first (Options > Workspace settings).",
 					"Connect zones");
@@ -93,7 +99,7 @@ public final class ZoneLinkDialog {
 		javax.swing.JButton cancel = new javax.swing.JButton("Cancel");
 		ok.addActionListener(e -> connect(parent, ws, (Integer) zoneA.getValue(),
 			(Integer) warpA.getValue(), (Integer) zoneB.getValue(), (Integer) warpB.getValue(),
-			both.isSelected(), onClose));
+			both.isSelected(), onClose, ops, reread));
 		cancel.addActionListener(e -> onClose.run());
 		buttons.add(ok);
 		buttons.add(cancel);
@@ -106,7 +112,7 @@ public final class ZoneLinkDialog {
 	 * link. Unchanged apart from being handed its numbers instead of reading spinners.
 	 */
 	private static void connect(Component parent, WorkspaceSession ws, int za, int wa,
-			int zb, int wb, boolean both, Runnable onClose) {
+			int zb, int wb, boolean both, Runnable onClose, ctrmap.humaninterface.SaveHistory ops, Runnable reread) {
 
 		//WHAT IT WOULD ABANDON, between the choice and the write
 		try {
@@ -132,7 +138,7 @@ public final class ZoneLinkDialog {
 		}
 
 		try {
-			String said = ZoneLinker.link(ws, za, wa, zb, wb, both);
+			String said = ctrmap.WorkspaceOps.link(ws, za, wa, zb, wb, both, ops, reread);
 			ctrmap.Ui.message(parent, said, "Connect zones", JOptionPane.INFORMATION_MESSAGE);
 		} catch (Exception ex) {
 			ctrmap.Ui.error(parent, ctrmap.Ui.reason(ex), "Connect zones");

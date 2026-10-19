@@ -230,11 +230,8 @@ public class MapResizer {
 		}
 		File mmDir = ws.getExtractionDirectory(ArchiveType.MAP_MATRIX);
 		File fdDir = ws.getExtractionDirectory(ArchiveType.FIELD_DATA);
-		int newMatrix = mm.length;
+		int newMatrix = GeometryForker.nextFreeMatrix(ws, mm);
 		File matrixOut = new File(mmDir, String.valueOf(newMatrix));
-		if (ws.isPendingArtifact(matrixOut)) {
-			throw new IOException("A map append is already pending. Pack the workspace first.");
-		}
 
 		File zoneFile = ws.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
 		byte[][] read = zoneAndMap(ws, zoneIndex);
@@ -243,11 +240,11 @@ public class MapResizer {
 		int oldMatrix = u16(zoBytes, hdrOff + 4);
 		byte[] matBytes = read[1];
 
-		//template = the zone's first region (same area -> textures guaranteed)
+		//template = the zone's OWN first region (same area -> textures guaranteed). The matrix's first filled
+		//cell, which this took, is a neighbour's on a shared matrix, in another area with other textures (census M.54)
 		MapMatrix.Grid grid = MapMatrix.Grid.of(matBytes);
 		int w = grid.width, h = grid.height;
-		int first = grid.firstFilledCell();
-		int templateRegion = first < 0 ? -1 : grid.id(first);
+		int templateRegion = MapMatrix.ownRegionId(matBytes, zoneIndex);
 		if (templateRegion < 0) {
 			throw new IOException("The zone's matrix has no regions.");
 		}
@@ -334,8 +331,10 @@ public class MapResizer {
 				//This was a private copy of the subfile numbering, and it floored the new
 				//cells with the BIGGEST mesh - a wall, a fence or the sea on 312 of the
 				//first 400 retail regions, which is why Blank canvas stopped doing it.
-				if (BchMapModel.isMapModel(reg.getFile(1)) && !RegionFactory.blankRegionFiles(reg, -1)) {
-					throw new IOException("Region " + id + " could not be blanked, so the map was not grown.");
+				//a write that fails part-way throws with its reason, and the unit puts the half back (census H.59)
+				if (BchMapModel.isMapModel(reg.getFile(1)) && !RegionFactory.blankOrThrow(reg, -1)) {
+					throw new IOException("Region " + id + "'s model is one the blank canvas cannot rebuild, so the map"
+							+ " was not grown.");
 				}
 				ws.addPersist(f);
 				ws.registerPendingCompression(ArchiveType.FIELD_DATA, id, gr.isEntryCompressed(templateRegion));

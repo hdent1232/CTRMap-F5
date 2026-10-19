@@ -192,20 +192,25 @@ public class BuildingPaletteDialog {
 					+ " Reopen the workspace to take the snapshot, or seal a backup under Options.");
 		}
 		byte[] entry = new ctrmap.formats.garc.GARC(garcFile).getDecompressedEntry(areaId);
-		File tmp = new File(session.scratch(), "bcat_area_" + areaId);
-		try (java.io.FileOutputStream fo = new java.io.FileOutputStream(tmp)) {
-			fo.write(entry);
-		}
-		ctrmap.formats.containers.AD ad = new ctrmap.formats.containers.AD(tmp, session);
+		ctrmap.formats.containers.AD ad = new ctrmap.formats.containers.AD(session.toScratch("bcat_area_" + areaId + "_", entry),
+				session);
 		for (int sub : new int[]{11, 1}) {
 			byte[] pack = ad.getFile(sub);
-			if (pack != null && pack.length > 0x44) {
+			if (pack.length > 0x44) {
+				BCHFile bch;
 				try {
-					out.addAll(new BCHFile(pack).textures);
+					bch = new BCHFile(pack);
 				} catch (RuntimeException ex) {
 					throw new java.io.IOException("its texture pack (file " + sub + ") could not be read: "
 							+ ctrmap.Ui.reason(ex), ex);
 				}
+				//an unreadable pack raises the error level and holds nothing: taken as no textures, the
+				//building drew untextured without a word, the silence the throw above was made to end
+				if (bch.errorlevel != 0) {
+					throw new java.io.IOException("its texture pack (file " + sub + ") could not be read: it is not a"
+							+ " whole BCH (error level " + bch.errorlevel + ")");
+				}
+				out.addAll(bch.textures);
 			}
 		}
 		kept.put(areaId, out);
@@ -215,6 +220,138 @@ public class BuildingPaletteDialog {
 	/** Whether this session has said what the catalog could not read. */
 	private static boolean catalogProblemsSaid;
 
+	/** What a click on a row of the palette's list does. */
+	public enum Click {
+		/** a heading opened or closed */
+		TOGGLE,
+		/** what is selected placed, as Place on the map does */
+		CHOOSE,
+		/** nothing */
+		NONE
+	}
+
+	/**
+	 * What {@code clicks} on {@code row} do: a single click on a heading opens or closes it - a double click's second
+	 * press does not close it again - and a double click anywhere else chooses. Out of the palette so a suite reaches
+	 * it (the 2026-10-14 shared sweep, BuildingPaletteDialog 434, negate-if, SURVIVED).
+	 */
+	public static Click onClick(Object row, int clicks) {
+		if (row instanceof Heading) {
+			return clicks == 1 ? Click.TOGGLE : Click.NONE;
+		}
+		return clicks == 2 ? Click.CHOOSE : Click.NONE;
+	}
+
+	/**
+	 * Whether Place on the map, or a double click, leaves the palette open: a place's heading is not a building. Out of
+	 * the palette so a suite reaches it (the 2026-10-14 shared sweep, BuildingPaletteDialog 421, negate-if, SURVIVED).
+	 */
+	public static boolean staysOpen(Object chosen) {
+		return chosen instanceof Heading;
+	}
+
+	/**
+	 * Place on the map, or a double click, with {@code chosen} selected: a heading leaves the palette open and answers
+	 * nothing; a building is answered into {@code result} and the palette {@code close}d. The whole step, so a suite asks
+	 * what the palette does and not only what it decides (the 2026-10-16 assembly, BuildingPaletteDialog 469,
+	 * negate-if, SURVIVED: the 2026-10-14 guard asked staysOpen, and the if obeying it was left in the modal palette).
+	 */
+	public static void placeChosen(Object chosen, boolean passengers, Pick[] result, Runnable close) {
+		if (staysOpen(chosen)) {
+			return;
+		}
+		result[0] = pickOf(chosen, passengers);
+		close.run();
+	}
+
+	/**
+	 * The palette's list filled with {@code built}, and the row {@link #selectionAfter} names selected and scrolled to,
+	 * none when it names none. The whole rebuild once the rows are made, so a suite asks what the list shows (the
+	 * 2026-10-16 assembly, BuildingPaletteDialog 388, negate-if, SURVIVED: selectionAfter was asked, and the if
+	 * applying it was left in the modal palette).
+	 */
+	public static void fill(javax.swing.DefaultListModel<Object> model, JList<Object> list, List<Object> built, String keep) {
+		model.clear();
+		for (Object row : built) {
+			model.addElement(row);
+		}
+		int at = selectionAfter(built, keep);
+		if (at >= 0) {
+			list.setSelectedIndex(at);
+			list.ensureIndexIsVisible(at);
+		}
+	}
+
+	/** What the palette answers for {@code chosen}, a building or nothing: the building, and whether its passengers go with it. */
+	public static Pick pickOf(Object chosen, boolean passengers) {
+		return chosen == null ? null : new Pick((BuildingCatalog.Entry) chosen, passengers);
+	}
+
+	/**
+	 * The catalog entry a selection previews, or null for nothing or a place's heading - the last preview then stays
+	 * up. Out of the palette so a suite reaches it: the palette is a modal window (the 2026-10-14 shared sweep,
+	 * BuildingPaletteDialog 362, negate-if, SURVIVED).
+	 */
+	public static BuildingCatalog.Entry previewed(Object selected) {
+		return selected instanceof BuildingCatalog.Entry ? (BuildingCatalog.Entry) selected : null;
+	}
+
+	/**
+	 * A heading clicked: the place it names leaves {@code flipped} when it was there and joins it when not, so a second
+	 * click puts a heading back as the defaults have it. Out of the palette so a suite reaches it: the palette is a
+	 * modal window (the 2026-10-14 shared sweep, BuildingPaletteDialog 306, negate-if, SURVIVED).
+	 */
+	public static void flip(java.util.Set<String> flipped, String title) {
+		if (!flipped.remove(title)) {
+			flipped.add(title);
+		}
+	}
+
+	/**
+	 * Which row the palette selects once its rows are rebuilt: the heading titled {@code keep} that was clicked open
+	 * or closed, or with none, the first entry; -1 when there is no such row. Out of the palette so a suite reaches it:
+	 * the palette is a modal window (the 2026-10-14 shared sweep, BuildingPaletteDialog 294, negate-if, SURVIVED).
+	 */
+	public static int selectionAfter(List<?> rows, String keep) {
+		for (int i = 0; i < rows.size(); i++) {
+			Object row = rows.get(i);
+			if (keep == null ? row instanceof BuildingCatalog.Entry : row instanceof Heading && ((Heading) row).title.equals(keep)) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	/**
+	 * What a row of the palette's list says: a heading in bold, an entry indented with its size, whether it can be
+	 * entered and how often the game has it. Out of the list's renderer so a suite reaches it: the palette is a modal
+	 * window (the 2026-10-14 shared sweep, BuildingPaletteDialog 270, negate-if, SURVIVED).
+	 */
+	public static String rowText(Object row) {
+		if (row instanceof Heading) {
+			return "<html><b>" + Ui.html(row.toString()) + "</b></html>";
+		}
+		BuildingCatalog.Entry en = (BuildingCatalog.Entry) row;
+		return "<html>&nbsp;&nbsp;" + Ui.html(en.name) + " <small>(" + en.tilesW() + "x" + en.tilesH()
+				+ (en.enterable() ? ", enterable" : "")
+				+ (en.retailCount > 1 ? ", x" + en.retailCount + " in game" : "") + ")</small></html>";
+	}
+
+	/**
+	 * Says, once a session, the rows the building catalog could not read and skipped - they went to stderr (F067).
+	 * Out of the palette so a suite reaches it: the palette is a modal window (the 2026-10-14 shared sweep,
+	 * BuildingPaletteDialog 234, negate-if, SURVIVED: the shipped catalog reads whole, so no suite had a row to say).
+	 */
+	public static void sayCatalogProblems(java.awt.Component parent) {
+		if (!catalogProblemsSaid && !BuildingCatalog.loadProblems().isEmpty()) {
+			catalogProblemsSaid = true;
+			List<String> p = BuildingCatalog.loadProblems();
+			ctrmap.Ui.message(parent, "The building catalog skipped " + p.size() + " row(s) it could not read; the"
+					+ " rest are offered:\n" + String.join("\n", p.subList(0, Math.min(5, p.size())))
+					+ (p.size() > 5 ? "\n..." : ""), "Building palette", javax.swing.JOptionPane.WARNING_MESSAGE);
+		}
+	}
+
 	/**
 	 * Shows the palette; returns the choice or null. {@code baseDonor} is the
 	 * current zone's region model (the grass base the preview stamps onto).
@@ -223,6 +360,7 @@ public class BuildingPaletteDialog {
 		List<BuildingCatalog.Entry> all = BuildingCatalog.entries();
 		final Pick[] result = {null};
 		final JDialog dlg = new JDialog(parent, "Building palette", true);
+		dlg.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);   //the title bar's X lets it go (census L.53)
 		dlg.setLayout(new BorderLayout(8, 8));
 		((JPanel) dlg.getContentPane()).setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
@@ -232,14 +370,7 @@ public class BuildingPaletteDialog {
 					"Building palette");
 			return null;
 		}
-		//WHAT THE CATALOG COULD NOT READ IS SAID, once (F067): it went to stderr
-		if (!catalogProblemsSaid && !BuildingCatalog.loadProblems().isEmpty()) {
-			catalogProblemsSaid = true;
-			List<String> p = BuildingCatalog.loadProblems();
-			ctrmap.Ui.message(parent, "The building catalog skipped " + p.size() + " row(s) it could not read; the"
-					+ " rest are offered:\n" + String.join("\n", p.subList(0, Math.min(5, p.size())))
-					+ (p.size() > 5 ? "\n..." : ""), "Building palette", javax.swing.JOptionPane.WARNING_MESSAGE);
-		}
+		sayCatalogProblems(parent);
 
 		final JTextField search = new JTextField();
 		//category + location filters make the harvested game-wide catalog
@@ -269,14 +400,7 @@ public class BuildingPaletteDialog {
 			@Override
 			public java.awt.Component getListCellRendererComponent(JList<?> l, Object v, int i, boolean sel, boolean foc) {
 				JLabel lbl = (JLabel) super.getListCellRendererComponent(l, v, i, sel, foc);
-				if (v instanceof Heading) {
-					lbl.setText("<html><b>" + Ui.html(v.toString()) + "</b></html>");
-					return lbl;
-				}
-				BuildingCatalog.Entry en = (BuildingCatalog.Entry) v;
-				lbl.setText("<html>&nbsp;&nbsp;" + Ui.html(en.name) + " <small>(" + en.tilesW() + "x" + en.tilesH()
-						+ (en.enterable() ? ", enterable" : "")
-						+ (en.retailCount > 1 ? ", x" + en.retailCount + " in game" : "") + ")</small></html>");
+				lbl.setText(rowText(v));
 				return lbl;
 			}
 		});
@@ -287,27 +411,14 @@ public class BuildingPaletteDialog {
 			String q = search.getText();
 			String cat = catBox.getSelectedIndex() > 0 ? (String) catBox.getSelectedItem() : null;
 			String loc = locBox.getSelectedIndex() > 0 ? (String) locBox.getSelectedItem() : null;
-			model.clear();
-			for (Object row : rows(shown(all, q, cat, loc), flipped, !q.trim().isEmpty() || loc != null)) {
-				model.addElement(row);
-			}
-			for (int i = 0; i < model.size(); i++) {
-				Object row = model.get(i);
-				if (keep == null ? row instanceof BuildingCatalog.Entry : row instanceof Heading && ((Heading) row).title.equals(keep)) {
-					list.setSelectedIndex(i);
-					list.ensureIndexIsVisible(i);
-					break;
-				}
-			}
+			fill(model, list, rows(shown(all, q, cat, loc), flipped, !q.trim().isEmpty() || loc != null), keep);
 		};
 		Runnable refilter = () -> {
 			flipped.clear();
 			rebuild.accept(null);
 		};
 		final java.util.function.Consumer<Heading> toggle = h -> {
-			if (!flipped.remove(h.title)) {
-				flipped.add(h.title);
-			}
+			flip(flipped, h.title);
 			rebuild.accept(h.title);
 		};
 		catBox.addActionListener(e -> refilter.run());
@@ -360,59 +471,14 @@ public class BuildingPaletteDialog {
 		//or built, and the grass every preview stands on is built once, on the worker, not per row
 		final NewestOnly previews = new NewestOnly("building-preview");
 		final byte[][] grassBase = {null};
-		list.addListSelectionListener(ev -> {
-			if (ev.getValueIsAdjusting()) {
-				return;
-			}
-			if (!(list.getSelectedValue() instanceof BuildingCatalog.Entry)) {
+		ctrmap.util.Selections.onSettled(list, () -> {
+			final BuildingCatalog.Entry e = previewed(list.getSelectedValue());
+			if (e == null) {
 				return;   //nothing, or a place's heading: the last preview stays up
 			}
-			final BuildingCatalog.Entry e = (BuildingCatalog.Entry) list.getSelectedValue();
 			info.setText("  Loading preview: " + e.name + "...");
-			previews.ask(ticket -> {
-				Preview out = new Preview();
-				try {
-					MapPrefab p = BuildingCatalog.prefab(Workspace.session(), e);
-					if (p == null) {
-						out.note = "  Could not cut this piece from the dump (see log).";
-					} else if (ticket.current()) {
-						if (grassBase[0] == null) {
-							TilePalette[][] grass = new TilePalette[40][40];
-							for (TilePalette[] row : grass) {
-								java.util.Arrays.fill(row, TilePalette.GRASS);
-							}
-							grassBase[0] = PaintedRegionBuilder.build(Workspace.session(), baseDonor, grass, null, null,
-									TerrainLighting.daytime(), false).model;
-						}
-						int ax = 20 - e.tilesW() / 2, ay = 20 - e.tilesH() / 2;
-						MapPrefab.StampResult r = p.stampGeometry(grassBase[0], ax, ay, -e.baseY);
-						out.model = r.newModel;
-						if (baseTextures != null) {
-							out.textures.addAll(baseTextures);
-						}
-						String untextured = "";
-						try {
-							out.textures.addAll(donorTextures(e.donorArea));
-						} catch (Exception ex) {
-							untextured = "  [shown untextured: donor area " + e.donorArea + "'s textures could not be"
-									+ " read - " + Ui.reason(ex) + "]";
-						}
-						out.note = "  " + e.name + " - " + e.tilesW() + "x" + e.tilesH() + " tiles, " + p.manifest(r, e.baseY)
-								+ (e.enterable() ? ", enterable (door + interior wiring on Apply)" : "")
-								+ (r.missingMaterials.isEmpty() ? "" : "  [" + r.missingMaterials.size() + " of "
-								+ p.pieces.size() + " piece(s) cannot be placed on this map: " + r.missingMaterials + "]")
-								+ untextured;
-					}
-				} catch (Exception ex) {
-					out.note = "  Preview failed: " + Ui.reason(ex);
-				}
-				return out;
-			}, shown -> {
-				if (shown.model != null && view != null) {
-					view.setRegion(shown.model, shown.textures);
-				}
-				info.setText("<html>" + Ui.html(shown.note) + "</html>"); //wraps: the manifest outgrows one line
-			}, null);
+			previews.ask(ticket -> preview(Workspace.session(), e, ticket::current, grassBase, baseDonor, baseTextures),
+					shown -> show(shown, view, info), null);
 		});
 
 		JPanel buttons = new JPanel();
@@ -421,14 +487,7 @@ public class BuildingPaletteDialog {
 		buttons.add(place);
 		buttons.add(cancel);
 		dlg.add(buttons, BorderLayout.SOUTH);
-		Runnable choose = () -> {
-			Object chosen = list.getSelectedValue();
-			if (chosen instanceof Heading) {
-				return;   //a place is not a building: the palette stays open
-			}
-			result[0] = chosen == null ? null : new Pick((BuildingCatalog.Entry) chosen, !leave.isSelected());
-			dlg.dispose();
-		};
+		Runnable choose = () -> placeChosen(list.getSelectedValue(), !leave.isSelected(), result, dlg::dispose);
 		place.addActionListener(ev -> choose.run());
 		cancel.addActionListener(ev -> dlg.dispose());
 		list.addMouseListener(new java.awt.event.MouseAdapter() {
@@ -436,12 +495,15 @@ public class BuildingPaletteDialog {
 			public void mouseClicked(java.awt.event.MouseEvent e) {
 				int at = list.locationToIndex(e.getPoint());
 				Object row = at < 0 ? null : model.get(at);
-				if (row instanceof Heading) {
-					if (e.getClickCount() == 1) {   //a double click's second press does not close it again
+				switch (onClick(row, e.getClickCount())) {
+					case TOGGLE:
 						toggle.accept((Heading) row);
-					}
-				} else if (e.getClickCount() == 2) {
-					choose.run();
+						break;
+					case CHOOSE:
+						choose.run();
+						break;
+					default:
+						break;
 				}
 			}
 		});
@@ -476,11 +538,71 @@ public class BuildingPaletteDialog {
 		return result[0];
 	}
 
-	/** What the preview worker hands the event thread for one row. */
-	private static final class Preview {
+	/**
+	 * One row's preview, built on the preview worker: the entry cut from the game's untouched copy and stood on a grass
+	 * base built once from {@code baseDonor} into {@code grassBase}, its textures, and a note saying what it is and what
+	 * cannot be placed. A row no longer {@code current} - arrowed past before its turn - is cut but not built (F206). Out
+	 * of the palette so a suite reaches it: the palette is a modal window (the 2026-10-14 shared sweep,
+	 * BuildingPaletteDialog 373, negate-if, SURVIVED).
+	 */
+	public static Preview preview(ctrmap.formats.GameFiles game, BuildingCatalog.Entry e, java.util.function.BooleanSupplier current,
+			byte[][] grassBase, byte[] baseDonor, List<H3DTexture> baseTextures) {
+		Preview out = new Preview();
+		try {
+			MapPrefab p = BuildingCatalog.prefab(game, e);
+			if (p == null) {
+				out.note = "  Could not cut this piece from the dump (see log).";
+			} else if (current.getAsBoolean()) {
+				if (grassBase[0] == null) {
+					TilePalette[][] grass = new TilePalette[40][40];
+					for (TilePalette[] row : grass) {
+						java.util.Arrays.fill(row, TilePalette.GRASS);
+					}
+					grassBase[0] = PaintedRegionBuilder.build(game, baseDonor, grass, null, null,
+							TerrainLighting.daytime(), false).model;
+				}
+				int ax = 20 - e.tilesW() / 2, ay = 20 - e.tilesH() / 2;
+				MapPrefab.StampResult r = p.stampGeometry(grassBase[0], ax, ay, -e.baseY);
+				out.model = r.newModel;
+				if (baseTextures != null) {
+					out.textures.addAll(baseTextures);
+				}
+				String untextured = "";
+				try {
+					out.textures.addAll(donorTextures(e.donorArea));
+				} catch (Exception ex) {
+					untextured = "  [shown untextured: donor area " + e.donorArea + "'s textures could not be"
+							+ " read - " + Ui.reason(ex) + "]";
+				}
+				out.note = "  " + e.name + " - " + e.tilesW() + "x" + e.tilesH() + " tiles, " + p.manifest(r, e.baseY)
+						+ (e.enterable() ? ", enterable (door + interior wiring on Apply)" : "")
+						+ (r.missingMaterials.isEmpty() ? "" : "  [" + r.missingMaterials.size() + " of "
+						+ p.pieces.size() + " piece(s) cannot be placed on this map: " + r.missingMaterials + "]")
+						+ untextured;
+			}
+		} catch (Exception ex) {
+			out.note = "  Preview failed: " + Ui.reason(ex);
+		}
+		return out;
+	}
 
-		String note = " ";
-		byte[] model;
-		final List<H3DTexture> textures = new ArrayList<>();
+	/**
+	 * Shows one row's preview, on the event thread: its model in {@code view} when it has one and there is a 3D view
+	 * (none where OpenGL cannot start), and its note under it, wrapped - the manifest outgrows one line. Out of the
+	 * palette so a suite reaches it (the 2026-10-14 shared sweep, BuildingPaletteDialog 406, negate-if, SURVIVED).
+	 */
+	public static void show(Preview shown, MapPreview3D view, JLabel info) {
+		if (shown.model != null && view != null) {
+			view.setRegion(shown.model, shown.textures);
+		}
+		info.setText("<html>" + Ui.html(shown.note) + "</html>");
+	}
+
+	/** What the preview worker hands the event thread for one row. */
+	public static final class Preview {
+
+		public String note = " ";
+		public byte[] model;
+		public final List<H3DTexture> textures = new ArrayList<>();
 	}
 }

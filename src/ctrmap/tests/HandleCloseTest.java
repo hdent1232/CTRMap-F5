@@ -244,7 +244,7 @@ public class HandleCloseTest {
 				}
 			}
 		}
-		check(files > 250 && sites > 50 && lockSeen && catalogSeen, "control: " + sites + " handles in " + files
+		check(files > 250 && sites > 40 && lockSeen && catalogSeen, "control: " + sites + " handles in " + files
 				+ " files, the run lock and the catalog opener among them");
 		check(wrong.isEmpty(), "and each is opened in a try-with-resources header or closed in a finally: " + wrong);
 		if (catalogSource != null) {

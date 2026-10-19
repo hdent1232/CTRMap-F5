@@ -94,6 +94,16 @@ public class GarcHeaderTest {
 		check(fatb + i32(rebuild, fatb + 4) == fimb && rebuild[fimb] == 'B' && rebuild[fimb + 1] == 'M',
 				"the FATB's length is its section's, so it reaches the FIMB (FATB at 0x" + Integer.toHexString(fatb)
 				+ ", length 0x" + Integer.toHexString(i32(rebuild, fatb + 4)) + ", FIMB at 0x" + Integer.toHexString(fimb) + ")");
+		//THE HINT RAISED BY A BIGGER ENTRY (the 2026-10-16 assembly, GarcRebuilder 48, flip-return, SURVIVED: every
+		//rebuild here wrote the template's own entries, so the hint never had to move). The game sizes a read buffer
+		//from it; an entry above it is read past that buffer's end
+		int before = i32(laid, 0x18);
+		entries.add(new byte[4096]);
+		File grown = new File(dir, "grown");
+		ctrmap.formats.garc.GarcRebuilder.write(hand, grown, entries);
+		int hint = i32(Files.readAllBytes(grown.toPath()), 0x18);
+		check(before < 4096 && hint >= 4096, "a rebuild holding an entry larger than the template's largest-entry hint"
+				+ " raises the hint to it (" + before + " -> " + hint + " for a 4096-byte entry)");
 	}
 
 	static String firstDifference(byte[] a, byte[] b) {

@@ -226,7 +226,7 @@ public class MapPrefab {
 		//movement tiles (raw subfile-0 parse - no UI dependency)
 		byte[] tmap = gr.getFile(0);
 		int lx0 = Math.min(tx0, tx1), ly0 = Math.min(ty0, ty1);
-		if (tmap != null && tmap.length >= 4 + 40 * 40 * 4) {
+		if (tmap.length >= 4 + 40 * 40 * 4) {
 			p.tiles = new byte[p.tilesW][p.tilesH][];
 			for (int y = 0; y < p.tilesH; y++) {
 				for (int x = 0; x < p.tilesW; x++) {
@@ -806,6 +806,8 @@ public class MapPrefab {
 
 	// ---- persistence ------------------------------------------------------
 
+	@ctrmap.util.NotAnEdit("it writes the stamp copied from the map to the file the user named for it: the map it"
+		+ " was copied from is read, not changed")
 	public void save(File f) throws IOException {
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		DataOutputStream o = new DataOutputStream(baos);

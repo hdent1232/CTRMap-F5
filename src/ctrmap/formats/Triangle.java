@@ -1,6 +1,5 @@
 package ctrmap.formats;
 
-import com.jogamp.opengl.GL2;
 import java.awt.Polygon;
 import java.util.Random;
 
@@ -55,25 +54,8 @@ public class Triangle {
 
 	private static final java.util.Map<Long, float[]> HEIGHT_COLOURS = new java.util.concurrent.ConcurrentHashMap<>();
 
-    public void render(GL2 gl) {
-        float averageheight = (Math.max(y[0], Math.max(y[1], y[2])) + Math.min(y[0], Math.min(y[1], y[2])))/2f;
-        float[] colour = heightColour((long) averageheight);
-        gl.glColor3f(colour[0], colour[1], colour[2]);
-        for (int i = 0; i < 3; i++) {
-            gl.glVertex3f(x[i], y[i], z[i]);
-        }
-        if (selected){
-            gl.glColor3f(1f, 1f, 1f);
-            for (int i = 0; i < 3; i++){
-                int c0 = i;
-                int c1 = (i + 1 == 3) ? 0 : i + 1;
-                gl.glVertex3f(x[c0], y[c0] + 1f, z[c0]);
-                gl.glVertex3f(x[c1], y[c1] + 1f, z[c1]);
-                gl.glVertex3f(x[c1], y[c1] + 1f, z[c1] + 1f);
-                gl.glVertex3f(x[c0], y[c0] + 1f, z[c0]);
-                gl.glVertex3f(x[c1], y[c1] + 1f, z[c1] + 1f);
-                gl.glVertex3f(x[c0], y[c0] + 1f, z[c0] + 1f);
-            }
-        }
-    }
+	/** Whether the collision editor has this triangle selected - drawn raised and outlined. */
+	public boolean isSelected() {
+		return selected;
+	}
 }

@@ -19,7 +19,10 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 HERE = _tree_root.require(__file__)
+sys.path.insert(0, os.path.join(HERE, "tools"))
+import hook_command  # noqa: E402  - the one spelling of a hook command, read back here
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
 #: Events whose hooks the harness cannot refuse with: their answer is said, not enforced.
@@ -34,12 +37,10 @@ def wired(root=HERE):
     with open(os.path.join(root, ".claude", "settings.json"), encoding="utf-8") as handle:
         settings = json.load(handle)
     out = []
-    for event, groups in (settings.get("hooks") or {}).items():
-        for group in groups or []:
-            for hook in group.get("hooks") or []:
-                found = re.search(r"\$CLAUDE_PROJECT_DIR[/\\]+([^\"\s]+\.py)", hook.get("command", ""))
-                if found:
-                    out.append((event, os.path.join(root, *re.split(r"[/\\]+", found.group(1)))))
+    for event, said in hook_command.commands_in(settings):
+        rel = hook_command.hook_of(said)
+        if rel:
+            out.append((event, os.path.join(root, *re.split(r"[/\\]+", rel))))
     return out
 
 
@@ -47,8 +48,8 @@ def run(script, raw):
     """(exit code, stdout, stderr) of `script` handed `raw`, with no owner override set."""
     env = {k: v for k, v in os.environ.items() if not k.endswith("_ALLOW_UNREADABLE")}
     env["CLAUDE_PROJECT_DIR"] = HERE
-    done = subprocess.run([sys.executable, "-B", script], input=raw.encode("utf-8"), cwd=HERE,
-                          capture_output=True, timeout=120, env=env, creationflags=NO_WINDOW)
+    done = bounded.run([sys.executable, "-B", script], input=raw.encode("utf-8"), cwd=HERE,
+                       capture_output=True, timeout=120, env=env, creationflags=NO_WINDOW)
     return (done.returncode, done.stdout.decode("utf-8", "replace"),
             done.stderr.decode("utf-8", "replace"))
 
@@ -109,9 +110,9 @@ class EveryWiredHookRefusesAPayloadItCannotRead(unittest.TestCase):
         for event, script in self.judges():
             with self.subTest(event=event, hook=os.path.basename(script)):
                 env = dict(os.environ, CLAUDE_PROJECT_DIR=HERE, **{n: "1" for n in names})
-                done = subprocess.run([sys.executable, "-B", script], input=b"this is not json",
-                                      cwd=HERE, capture_output=True, timeout=120, env=env,
-                                      creationflags=NO_WINDOW)
+                done = bounded.run([sys.executable, "-B", script], input=b"this is not json",
+                                   cwd=HERE, capture_output=True, timeout=120, env=env,
+                                   creationflags=NO_WINDOW)
                 out = done.stdout.decode("utf-8", "replace")
                 self.assertFalse(refused(done.returncode, out),
                                  "OVERRIDE: %s refused with the owner's way past set"

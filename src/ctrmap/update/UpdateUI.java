@@ -140,8 +140,10 @@ public class UpdateUI {
 		String[] options = install == null
 				? new String[]{"Open the releases page", "Not now"}
 				: new String[]{"Download and install", "Not now", "Skip this version"};
-		int pick = JOptionPane.showOptionDialog(parent, body, "Update available",
-				JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null, options, options[0]);
+		//the startup offer arrives whenever the network answers: it waits until the editor is in use (Ui.untilInUse)
+		ctrmap.Ui.untilInUse();
+		int pick = ctrmap.Ui.formOption(parent, body, "Update available",
+				JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, options, options[0]);
 		if (startup) {
 			UpdateChecker.setCheckOnStartup(noStartup.isSelected());
 		}

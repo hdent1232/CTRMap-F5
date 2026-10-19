@@ -63,7 +63,7 @@ public class GFMessageFileRoundTripTest {
 			0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00
 		};
 		check("G1 empty file bytes", Arrays.equals(empty, emptyExpected));
-		check("G2 empty file parses to 0 lines", GFMessageFile.parse(empty).isEmpty());
+		check("G2 empty file parses to 0 lines", GFMessageFile.parse(empty, false).isEmpty());
 		check("G3 null lines writes empty file", Arrays.equals(GFMessageFile.write(null), emptyExpected));
 
 		//adversarial: 0xFFFF-adjacent and PUA-boundary chars
@@ -110,7 +110,7 @@ public class GFMessageFileRoundTripTest {
 	private static void roundTrip(String name, List<String> lines) {
 		try {
 			byte[] b1 = GFMessageFile.write(lines);
-			List<String> reparsed = GFMessageFile.parse(b1);
+			List<String> reparsed = GFMessageFile.parse(b1, false);
 			if (!lines.equals(reparsed)) {
 				fail(name + " (lines)", "expected " + lines + " got " + reparsed);
 				return;

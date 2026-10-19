@@ -115,6 +115,7 @@ public class PaintApplyGuardsTest {
 		aRegionThatCannotBeWrittenStopsTheApply();
 		anAreaThatCannotBeWrittenStopsTheApply();
 		aDoorPropTheAreaHasNotRegisteredIsAnAreaWrite();
+		aDeclinedSignRoutineTransplantsNothing();
 		//these two fork zone 74's area, so nothing above may run after them
 		cancellingTheSharedAreaQuestionWritesNothing();
 		acceptingTheForkPaintsTheZone();
@@ -883,10 +884,101 @@ public class PaintApplyGuardsTest {
 			throw new IllegalStateException("prop database did not build");
 		}
 		loaded = new LoadedZone();
-		TestWindow.mZonePnl(new ZoneLoadingPanel(loaded, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0})));
+		TestWindow.mZonePnl(new ZoneLoadingPanel(loaded, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList())));
 		for (int[] row : ramp) {
 			Arrays.fill(row, PaintedGeometry.NO_RAMP);
 		}
+	}
+
+	/**
+	 * A sign placed on a zone with no sign routine, whose transplant the owner declines, is scenery and nothing
+	 * more: no text asked for, no line, no furniture, no script.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (MapPainter 1205, negated, SURVIVED): no suite's host ever said no -
+	 * the test world's says yes to every question. With the answer read backwards, a NO went on to transplant
+	 * the routine and wire the sign anyway, and a YES placed it as scenery.
+	 */
+	static void aDeclinedSignRoutineTransplantsNothing() throws Exception {
+		System.out.println("--- a declined sign-routine transplant leaves the sign as scenery, and writes nothing");
+		int zone = -1;
+		for (int z = 0; z < 60 && zone < 0; z++) {
+			open(z);
+			ctrmap.formats.containers.ZO zo = new ctrmap.formats.containers.ZO(
+					Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, z), Workspace.session());
+			ctrmap.formats.scripts.GFLPawnScript s = new ctrmap.formats.scripts.GFLPawnScript(zo.getFile(2));
+			s.decompressThis();
+			if (ctrmap.formats.scripts.ZoneScriptAnalyzer.findSignWrapper(s) == null
+					&& ctrmap.MapPainter.firstRegionCell(loaded) != null) {
+				zone = z;
+			}
+		}
+		check(zone >= 0, "CONTROL: one of the first 60 retail zones has a map and no sign routine (" + zone + ")");
+		if (zone < 0) {
+			return;
+		}
+		open(zone);
+		File zoneFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zone);
+		byte[] before = Files.readAllBytes(zoneFile.toPath());
+		java.util.List<String> editsBefore = new ArrayList<>(Workspace.session().persistPaths());
+		ctrmap.formats.h3d.BuildingCatalog.Entry sign = new ctrmap.formats.h3d.BuildingCatalog.Entry();
+		sign.kind = "SIGN";
+		sign.name = "Sign post";
+		int[] transplantAsked = {0}, textAsked = {0};
+		java.util.List<String> told = new ArrayList<>();
+		ctrmap.MapPainter.Host declines = new ctrmap.MapPainter.Host() {
+			@Override
+			public ctrmap.AreaForker.ForkResult ownArea(LoadedZone l, int z, String why) {
+				throw new IllegalStateException("not asked here");
+			}
+
+			@Override
+			public ctrmap.MapPainter.DoorWiring doorWiring(int enterable) {
+				return ctrmap.MapPainter.DoorWiring.CLONE;
+			}
+
+			@Override
+			public boolean transplantSignRoutine(int instructions) {
+				transplantAsked[0]++;
+				return false;
+			}
+
+			@Override
+			public ctrmap.MapPainter.SignText signText(ctrmap.MapPainter.Placed placed) {
+				textAsked[0]++;
+				return new ctrmap.MapPainter.SignText("A sign nobody wanted wired.", 0);
+			}
+
+			@Override
+			public void tell(String text, String title) {
+				told.add(text);
+			}
+
+			@Override
+			public void error(String text, String title) {
+				told.add(text);
+			}
+
+			@Override
+			public void slotTaken(int slot) {
+			}
+
+			@Override
+			public void pack(int zoneIndex, String report) {
+			}
+		};
+		java.lang.reflect.Method wire = ctrmap.MapPainter.class.getDeclaredMethod("wireSigns", LoadedZone.class,
+				int.class, java.util.List.class, ctrmap.MapPainter.Host.class);
+		wire.setAccessible(true);
+		Object wired = wire.invoke(null, loaded, zone,
+				java.util.Collections.singletonList(new ctrmap.MapPainter.Placed(sign, 10, 10)), declines);
+		check(transplantAsked[0] == 1, "CONTROL: the owner was asked about the transplant once (" + transplantAsked[0] + ")");
+		//A NO ENDS IT, SILENTLY: nothing transplanted means nothing tried - so nothing failing to be tried, said to
+		//the owner (read backwards, the NO went on to a transplant that failed on this zone and told them so)
+		check(Integer.valueOf(0).equals(wired) && textAsked[0] == 0 && told.isEmpty()
+				&& Arrays.equals(before, Files.readAllBytes(zoneFile.toPath()))
+				&& editsBefore.equals(Workspace.session().persistPaths()),
+				"a declined transplant wires nothing and tries nothing - " + wired + " wired, text asked "
+						+ textAsked[0] + " time(s), told " + told + ", zone file and pack list as they were");
 	}
 
 	/** The zone owner the painter and the apply are handed: what the editor's Zone tab would hold. */
@@ -913,7 +1005,7 @@ public class PaintApplyGuardsTest {
 	static Exception apply(int zoneIndex, List<ctrmap.MapPainter.Placed> placed) {
 		try {
 			report = ctrmap.MapPainter.applyToZone(loaded, zoneIndex, grid, height, ramp, TerrainLighting.daytime(), false, placed, touched,
-					new ctrmap.humaninterface.PaintForm.Prompts(ZONES));
+					new ctrmap.humaninterface.PaintForm.Prompts(ZONES, PaintFormGuardsTest.OPS, () -> { }));
 			return null;
 		} catch (Exception ex) {
 			report = null;

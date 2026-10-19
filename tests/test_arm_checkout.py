@@ -21,6 +21,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 HERE = _tree_root.require(__file__)
 sys.path.insert(0, os.path.join(HERE, "tools"))
 import arm_checkout  # noqa: E402  - the tool under test
@@ -30,8 +31,8 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def _git(root, *args):
-    done = subprocess.run(["git", "-C", root] + list(args), capture_output=True, text=True,
-                          timeout=60, creationflags=NO_WINDOW)
+    done = bounded.run(["git", "-C", root] + list(args), capture_output=True, text=True,
+                       timeout=60, creationflags=NO_WINDOW)
     return done.returncode, (done.stdout or "").strip()
 
 
@@ -43,8 +44,8 @@ class AFreshCloneArmsItsOwnHooks(unittest.TestCase):
         self.addCleanup(shutil.rmtree, base, True)
         root = os.path.join(base, "clone")
         os.makedirs(os.path.join(root, arm_checkout.HOOKS_DIR))
-        subprocess.run(["git", "init", "-q", root], capture_output=True, timeout=60,
-                       creationflags=NO_WINDOW)
+        bounded.run(["git", "init", "-q", root], capture_output=True, timeout=60,
+                    creationflags=NO_WINDOW)
         with io.open(os.path.join(root, arm_checkout.HOOKS_DIR, "commit-msg"), "w",
                      encoding="utf-8", newline=LF) as handle:
             handle.write("#!/bin/sh" + LF + "exit 0" + LF)
@@ -244,10 +245,10 @@ class AFreshMachineGetsTheNotes(unittest.TestCase):
         as UTF-8 bytes, its stdout a pipe - in cp1252, as a Windows pipe is, on any platform."""
         env = dict(os.environ, PYTHONIOENCODING="cp1252")
         env.pop("PYTHONUTF8", None)
-        done = subprocess.run([sys.executable, "-B", os.path.join(HERE, "tools", "arm_checkout.py"),
-                               "--root", root], input=json.dumps(self.payload,
-                                                                 ensure_ascii=False).encode("utf-8"),
-                              capture_output=True, env=env, timeout=300, creationflags=NO_WINDOW)
+        done = bounded.run([sys.executable, "-B", os.path.join(HERE, "tools", "arm_checkout.py"),
+                            "--root", root], input=json.dumps(self.payload,
+                                                              ensure_ascii=False).encode("utf-8"),
+                           capture_output=True, env=env, timeout=300, creationflags=NO_WINDOW)
         return done.returncode, done.stdout.decode("utf-8", errors="replace"), done.stderr
 
     def test_the_session_is_shown_the_notes_through_a_code_page_pipe(self):

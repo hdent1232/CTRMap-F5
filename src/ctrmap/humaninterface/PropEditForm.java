@@ -5,7 +5,6 @@ import ctrmap.LoadedZone;
 import ctrmap.formats.propdata.GRProp;
 import ctrmap.formats.propdata.GRPropData;
 import ctrmap.Workspace;
-import ctrmap.formats.containers.BM;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.h3d.BchTexturePack;
@@ -23,7 +22,6 @@ import ctrmap.humaninterface.tools.PropTool;
 import java.awt.Component;
 import java.awt.Point;
 import java.awt.event.MouseEvent;
-import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -40,6 +38,9 @@ import javax.swing.text.NumberFormatter;
  * GUI form for modifying GR-3 prop data.
  */
 public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
+
+	/** What this view draws its models with: the drawing left the format classes (F214). */
+	final ctrmap.render.ModelRenderer draw = new ctrmap.render.ModelRenderer();
 
 	public GR gr;
 	public GRPropData props;
@@ -97,6 +98,9 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	private final Navigator navi;
 
 
+	/** The zone's history: a registration's texture import is written through it, as an edit (F209). */
+	private final UndoHistory history;
+
 	/**
 	 * Where this form puts a pane of its own - the tool column beside the map.
 	 *
@@ -119,6 +123,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			throw new IllegalArgumentException("PropEditForm must be handed the zone's history its props and"
 					+ " the area's registry are documents of");
 		}
+		this.history = history;
 		//the region's props and the area's registry, while loaded, are documents of the zone's history (F209)
 		history.watch(() -> {
 			java.util.List<UndoHistory.Document<?>> out = new java.util.ArrayList<>();
@@ -291,14 +296,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				ensurePaletteLoaded();
 			}
 		});
-		paletteList.addListSelectionListener(new javax.swing.event.ListSelectionListener() {
-			@Override
-			public void valueChanged(javax.swing.event.ListSelectionEvent e) {
-				if (!e.getValueIsAdjusting()) {
-					previewPaletteSelection();
-				}
-			}
-		});
+		ctrmap.util.Selections.onSettled(paletteList, this::previewPaletteSelection);
 	}
 
 	/**
@@ -333,17 +331,21 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			protected void done() {
 				paletteLoading = false;
 				PropDatabase db = null;
+				String failed = null;
 				try {
 					db = get();
 				} catch (Exception ex) {
-					ex.printStackTrace();
+					//THE CAUSE, NOT "NO WORKSPACE" (census M.132): a build that threw and a workspace that is not
+					//open were the same null, and a damaged archive sent the user to Workspace settings
+					failed = ctrmap.Ui.reason(ex.getCause() != null ? ex.getCause() : ex);
 				}
 				if (db != null) {
 					refreshPalette();
 				} else {
-					//no workspace - explain the empty list instead of staying silent
+					//no workspace, or a build that failed - each said as what it is, instead of an empty list
 					DefaultListModel<String> listModel = new DefaultListModel<>();
-					listModel.addElement("Palette requires a workspace (Options > Workspace settings)");
+					listModel.addElement(failed != null ? "The prop palette could not be built: " + failed
+							: "Palette requires a workspace (Options > Workspace settings)");
 					paletteEntries = new PropDatabase.PropModel[0];
 					paletteList.setModel(listModel);
 				}
@@ -560,12 +562,15 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	}
 
 	public void loadDataFile(GR f, List<H3DTexture> propTextures) {
-		gr = f;
-		props = new GRPropData(gr);
+		props = new GRPropData(f);
 		loadDataFile(props, null, propTextures);
+		gr = f;   //AFTER the general load, which forgets any loose map: these props are this one's
 	}
 
 	public void loadDataFile(GRPropData f, ADPropRegistry reg, List<H3DTexture> propTextures) {
+		//PROPS NOT FROM A LOOSE MAP FORGET THE LAST ONE (census M.133): gr was set by opening a loose GR once and never
+		//reset, so a later zone whose matrix load failed wrote its props through that stale file and marked them clean
+		gr = null;
 		saidAShowFailed = false;   //a new region gets its own first report
 		this.propTextures = propTextures;
 		models.clear();
@@ -603,6 +608,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		models.clear();
 		reg = null;
 		regentry = null;
+		gr = null;   //and the loose map with them (census M.133)
 		entryBox.setSelectedIndex(-1);
 		entryBox.removeAllItems();
 	}
@@ -835,7 +841,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			for (int i = 0; i < models.size(); i++) {
 				if (models.size() > i && models.get(i) != null) {
 					updateH3D(i);
-					models.get(i).render(gl);
+					draw.render(gl, models.get(i));
 				}
 			}
 		}
@@ -848,7 +854,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				if (models.size() > i && models.get(i) != null) {
 					if (i == propIndex && tools.holding(PropTool.class)) {
 						updateH3D(i);
-						models.get(i).renderBox(gl);
+						draw.renderBox(gl, models.get(i));
 					}
 				}
 			}
@@ -859,7 +865,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	public void uploadBuffers(GL2 gl) {
 		for (int i = 0; i < models.size(); i++) {
 			if (models.get(i) != null) {
-				models.get(i).uploadAllBOs(gl);
+				draw.upload(gl, models.get(i));
 			}
 		}
 	}
@@ -868,7 +874,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	public void deleteGLInstanceBuffers(GL2 gl) {
 		for (int i = 0; i < models.size(); i++) {
 			if (models.get(i) != null) {
-				models.get(i).destroyAllBOs(gl);
+				draw.destroy(gl, models.get(i));
 			}
 		}
 	}
@@ -955,20 +961,13 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			if (reg != null && reg.entries.containsKey(mdlIndex)) {
 				mdlIndex = reg.entries.get(mdlIndex).model;
 			}
-			File f = Workspace.getWorkspaceFile(ArchiveType.BUILDING_MODELS, mdlIndex);
-			if (f.exists()) {
-				BCHFile bch = new BCHFile(new BM(f, Workspace.session()).getFile(0));
-				bch.models.get(0).setMaterialTextures(bch.textures);
-				if (propTextures != null) {
-					//A REGION OPENED ON ITS OWN HAS NONE. File > Open GR Mapfile passes
-					//null here, and so does every suite that is not testing meshes;
-					//setMaterialTextures then threw inside, straight into showProp's
-					//catch-all, which is what left the whole prop editor inert. The
-					//line above has already applied the model's own textures.
-					bch.models.get(0).setMaterialTextures(propTextures);
-				}
-				bch.models.get(0).makeAllBOs();
-				models.set(index, bch.models.get(0));
+			//THROUGH THE REGISTRY'S ONE DECODE (census M.58): this decoded the model itself, without its empty-model
+			//guard. A region opened on its own has no prop textures - File > Open GR Mapfile passes null - and the
+			//decode applies the model's own then
+			ctrmap.formats.h3d.model.H3DModel failsafe = ADPropRegistry.buildingModel(Workspace.session(), mdlIndex, propTextures);
+			if (failsafe != null) {
+				failsafe.makeAllBOs();
+				models.set(index, failsafe);
 			}
 		}
 		PropPreview.loadModel(models.get(index));
@@ -1030,6 +1029,137 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	}
 
 	/**
+	 * What a registration from this form says and asks (F107): a model number typed in imports the textures its area
+	 * lacks without asking, as it always did; the palette refuses an import into an area other zones share, and asks
+	 * before any other. Named, not anonymous, so a suite asks it (the 2026-10-15 shared sweep, PropEditForm 1121,
+	 * negate-if, SURVIVED: no suite registered a prop that needed textures).
+	 */
+	public static final class FormVoice implements PropRegistration.Voice {
+
+		/**
+		 * An area's name for the user, by its id. Its own type, not an IntFunction: EdtReachTest's scanner answers an
+		 * interface call with every implementation of that interface, and a worker elsewhere applies an IntFunction -
+		 * handed one, the form's name lookup (read on the event thread only) was counted as read by that worker.
+		 */
+		public interface AreaNames {
+
+			String of(int area);
+		}
+
+		private final java.awt.Component parent;
+		private final boolean ask;
+		private final int areaId;
+		private final int zone;
+		private final AreaNames areaName;
+
+		/**
+		 * @param ask whether to ask before the area's texture pack grows: the palette asks; a typed model number
+		 *        registers as it is typed
+		 * @param areaName an area's name for the user, by its id
+		 */
+		public FormVoice(java.awt.Component parent, boolean ask, int areaId, int zone,
+				AreaNames areaName) {
+			this.parent = parent;
+			this.ask = ask;
+			this.areaId = areaId;
+			this.zone = zone;
+			this.areaName = areaName;
+		}
+
+		@Override
+		public boolean importFrom(int donorArea, List<String> textures) {
+			if (!ask) {
+				return true;
+			}
+			String inline = String.join(", ", textures);
+			//the shared-area refusal BEFORE the question, so nobody is talked into an import the
+			//rule then turns down
+			if (refuseSharedArea(parent, areaId, zone, areaName.of(areaId), inline)) {
+				return false;
+			}
+			return ctrmap.Ui.confirm(parent, "This prop's textures (" + inline + ") are not in this area.\n"
+					+ "Import them from " + areaName.of(donorArea) + "?\n\n"
+					+ "This modifies the area's texture data.",
+					"Missing textures", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE) == JOptionPane.OK_OPTION;
+		}
+
+		@Override
+		public void note(String line) {
+			ctrmap.Ui.message(parent, line, "Prop registration", JOptionPane.INFORMATION_MESSAGE);
+		}
+	}
+
+	/**
+	 * An area as a registration from this form lands in it (F107, F209): written at once, every write an edit
+	 * of the zone's history joined with the registry entry the same registration adds, so one Undo takes back
+	 * both - and only the subfile it wrote, so a save of the registry into the same area file between them
+	 * leaves the Undo standing. The database's names for the area are read again from its pack after every
+	 * write, an undo's and a redo's included.
+	 */
+	public static final class ThroughHistory implements PropRegistration.Area {
+
+		private final UndoHistory history;
+		private final ctrmap.formats.containers.AD area;
+		private final int id;
+		private final int zone;
+		private final ADPropRegistry reg;
+		private final PropDatabase db;
+
+		public ThroughHistory(UndoHistory history, ctrmap.formats.containers.AD area, int id, int zone, ADPropRegistry reg,
+				PropDatabase db) {
+			this.history = history;
+			this.area = area;
+			this.id = id;
+			this.zone = zone;
+			this.reg = reg;
+			this.db = db;
+		}
+
+		@Override
+		public int id() {
+			return id;
+		}
+
+		@Override
+		public int editingZone() {
+			return zone;
+		}
+
+		@Override
+		public byte[] file(int subfile) {
+			return area.getFile(subfile);
+		}
+
+		@Override
+		public void put(int subfile, byte[] data) throws IOException {
+			try {
+				//AN EDIT, NOT A SAVE (F209)
+				history.write(ZoneDocuments.subfile(area, subfile,
+						subfile == 1 ? "the area's prop textures" : "the area's subfile " + subfile,
+						() -> db.areaPackIs(id, area.getFile(1))), data);
+			} catch (RuntimeException notWritten) {
+				throw new IOException("could not write the area's subfile " + subfile + ": "
+						+ ctrmap.util.Bytes.reason(notWritten), notWritten);
+			}
+		}
+
+		@Override
+		public ADPropRegistry registry() {
+			return reg;
+		}
+
+		@Override
+		public void registryChanged() {
+			reg.modified = true;
+		}
+
+		@Override
+		public void whenWritten(Runnable then) {
+			then.run();   //written already: the history wrote the file and records the edit
+		}
+	}
+
+	/**
 	 * Registers a prop model in the open zone's area through the one registration (F107), and draws
 	 * it: the textures it imported join the area's, and its model is put under its reference the way
 	 * the registry loader does. Null, having said why, when the import was declined or refused.
@@ -1045,70 +1175,8 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			return null;
 		}
 		int zone = loadedZone.index();
-		PropRegistration.Area area = new PropRegistration.Area() {
-			@Override
-			public int id() {
-				return header.areadataID;
-			}
-
-			@Override
-			public int editingZone() {
-				return zone;
-			}
-
-			@Override
-			public byte[] file(int subfile) {
-				return header.areadata.getFile(subfile);
-			}
-
-			@Override
-			public void put(int subfile, byte[] data) throws IOException {
-				try {
-					header.areadata.storeFile(subfile, data);
-				} catch (RuntimeException notWritten) {
-					throw new IOException("could not write the area's subfile " + subfile + ": "
-							+ ctrmap.util.Bytes.reason(notWritten), notWritten);
-				}
-			}
-
-			@Override
-			public ADPropRegistry registry() {
-				return reg;
-			}
-
-			@Override
-			public void registryChanged() {
-				reg.modified = true;
-			}
-
-			@Override
-			public void whenWritten(Runnable then) {
-				then.run();   //written already: storeFile writes the file and records the edit
-			}
-		};
-		PropRegistration.Voice voice = new PropRegistration.Voice() {
-			@Override
-			public boolean importFrom(int donorArea, List<String> textures) {
-				if (!ask) {
-					return true;
-				}
-				String inline = String.join(", ", textures);
-				//the shared-area refusal BEFORE the question, so nobody is talked into an import the
-				//rule then turns down
-				if (refuseSharedArea(PropEditForm.this, header.areadataID, zone, getAreaDisplayName(header.areadataID), inline)) {
-					return false;
-				}
-				return ctrmap.Ui.confirm(PropEditForm.this, "This prop's textures (" + inline + ") are not in this area.\n"
-						+ "Import them from " + getAreaDisplayName(donorArea) + "?\n\n"
-						+ "This modifies the area's texture data.",
-						"Missing textures", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE) == JOptionPane.OK_OPTION;
-			}
-
-			@Override
-			public void note(String line) {
-				ctrmap.Ui.message(PropEditForm.this, line, "Prop registration", JOptionPane.INFORMATION_MESSAGE);
-			}
-		};
+		PropRegistration.Area area = new ThroughHistory(history, header.areadata, header.areadataID, zone, reg, db);
+		PropRegistration.Voice voice = new FormVoice(this, ask, header.areadataID, zone, this::getAreaDisplayName);
 		PropRegistration.Registered r;
 		try {
 			r = PropRegistration.register(Workspace.session(), db, pm, area, voice);
@@ -1131,19 +1199,17 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * prop is drawn whether or not its reference is its model number.
 	 */
 	private void drawRegistered(int reference, int model) {
+		//THROUGH THE REGISTRY'S ONE DECODE (census M.58); a failure here printed to a console nobody has, and
+		//the prop just did not draw - it is said now, beside the registration that did happen
 		try {
-			BCHFile mdlBch = new BCHFile(new BM(Workspace.getWorkspaceFile(ArchiveType.BUILDING_MODELS, model), Workspace.session()).getFile(0));
-			if (!mdlBch.models.isEmpty()) {
-				H3DModel mdl = mdlBch.models.get(0);
-				mdl.setMaterialTextures(mdlBch.textures);
-				if (propTextures != null) {
-					mdl.setMaterialTextures(propTextures);
-				}
+			H3DModel mdl = ADPropRegistry.buildingModel(Workspace.session(), model, propTextures);
+			if (mdl != null) {
 				mdl.makeAllBOs();
 				reg.models.put(reference, mdl);
 			}
-		} catch (Exception ex) {
-			ex.printStackTrace();
+		} catch (RuntimeException unread) {
+			ctrmap.Ui.error(this, "The prop was registered, but its model " + model + " could not be drawn: "
+					+ ctrmap.Ui.reason(unread), "Register prop");
 		}
 	}
 

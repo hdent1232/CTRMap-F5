@@ -7,7 +7,6 @@ import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.nio.file.Files;
 import java.util.List;
 import javax.swing.JButton;
@@ -30,6 +29,33 @@ import javax.swing.table.AbstractTableModel;
 public class TrainerEditDialog {
 
 	/**
+	 * The Save button's work: trainer {@code tid}'s record and party, and its name when it changed, written
+	 * as one change and kept in {@code saves} so it can be taken back (F209c). It wrote two files through
+	 * truncating streams and the name with a bare write, one after another, and a failure part way left
+	 * the first ones changed; nothing could take any of it back. Public so a suite can press it headless.
+	 */
+	public static void save(int tid, TrainerEntry t, String origName, String newName, ctrmap.WorkspaceSession ws,
+			SaveHistory saves) throws java.io.IOException {
+		File df = ws.getWorkspaceFile(ArchiveType.TRAINER_DATA, tid);
+		File pf = ws.getWorkspaceFile(ArchiveType.TRAINER_POKE, tid);
+		try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Save trainer " + tid, ws)) {
+			ctrmap.WorkspaceUnit.write(df, t.toTrdata());
+			ctrmap.WorkspaceUnit.write(pf, t.toTrpoke());
+			ws.addPersist(df);
+			ws.addPersist(pf);
+			if (!newName.equals(origName.trim())) {
+				int entry = ws.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.TRAINER_NAMES);
+				File nf = ws.getWorkspaceFile(ArchiveType.GAMETEXT, entry);
+				GFMessageFile nmsg = new GFMessageFile(Files.readAllBytes(nf.toPath()));
+				nmsg.setLine(tid, newName);
+				ctrmap.WorkspaceUnit.write(nf, nmsg.write());
+				ws.addPersist(nf);
+			}
+			saves.keep(unit.commitKeeping());
+		}
+	}
+
+	/**
 	 * Opens the editor, defaulting to the selected NPC's trainer when it is one.
 	 *
 	 * @param selectedNpcScript the script of the NPC the user has selected, or null when none
@@ -38,7 +64,10 @@ public class TrainerEditDialog {
 	 *        about which editor is on screen.
 	 */
 	public static javax.swing.JComponent panelForSelection(java.awt.Component parent,
-			Integer selectedNpcScript, Runnable onClose) {
+			Integer selectedNpcScript, Runnable onClose, SaveHistory saves) {
+		if (saves == null) {
+			throw new IllegalArgumentException("the trainer editor must be handed the history its saves are kept in");
+		}
 		//TRAINER_EDITING, not "is it ORAS". "Load an ORAS workspace first" was
 		//an instruction a user with X/Y open could not act on and was not even
 		//true - a workspace WAS loaded - and Sun/Moon got the same sentence.
@@ -73,32 +102,67 @@ public class TrainerEditDialog {
 				def = s - 5000;
 			}
 		}
-		String in = (String) ctrmap.Ui.input(parent,
-				"Trainer ID (1.." + ctrmap.formats.scripts.NpcTemplates.TRAINER_ID_MAX + "). A map NPC with script 3000+ID battles that trainer;\n"
-				+ "the selected NPC's trainer is pre-filled when it is one.", "Input", JOptionPane.QUESTION_MESSAGE, null, def);
-		if (in == null) {
-			return null;
-		}
-		try {
-			int tid = Integer.parseInt(in.trim());
-			//THE SHARED BOUND, not a fifth copy of the number. This refused 948 and
-			//above while the prompt one line up offered 1..949, so a user who typed
-			//the number they had just been given was told they had typed it wrong -
-			//and trainer 949 is real: the trainer archives hold 950 entries with 0
-			//as the dummy, and TrainerDataTest round-trips every one of 1..949
-			//byte-identically. Four other places already agree on 949
-			//(NpcTemplates.TRAINER_ID_MAX and its own range check, the gauntlet
-			//wizard, the challenge form's lineup); this was the only outlier, so it
-			//now names the same constant instead of repeating the digits.
-			if (tid < 1 || tid > ctrmap.formats.scripts.NpcTemplates.TRAINER_ID_MAX) {
-				throw new NumberFormatException();
+		//BROWSED, NOT TYPED (census M.150): this opened on a prompt for a trainer id the program offered no way to
+		//look up - 949 of them, and the only Game Data editor with nothing to browse. The trainers are listed by
+		//name beside the editor, filterable, the selected NPC's chosen when it is one - in the tab, not a window
+		java.util.List<String> unread = new java.util.ArrayList<>();
+		String[] names = Workspace.textLines(ctrmap.formats.scripts.NpcTemplates.gametextTrainerNames(prof), unread);
+		ctrmap.Ui.saidUnread(parent, unread, "Trainer editor");
+		final IdChooser chooser = new IdChooser(names == null ? null : java.util.Arrays.asList(names),
+				ctrmap.formats.scripts.NpcTemplates.TRAINER_ID_MAX, def);
+		final JPanel tab = new JPanel(new BorderLayout(6, 0));
+		JPanel list = new JPanel(new BorderLayout(0, 4));
+		list.add(new JLabel("Trainers - a map NPC with script 3000+ID battles that one"), BorderLayout.NORTH);
+		list.add(chooser, BorderLayout.CENTER);
+		JPanel listButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+		JButton open = new JButton("Edit this trainer");
+		JButton close = new JButton("Close");
+		listButtons.add(open);
+		listButtons.add(close);
+		list.add(listButtons, BorderLayout.SOUTH);
+		tab.add(list, BorderLayout.WEST);
+		final javax.swing.JComponent[] shown = {null};
+		final int[] shownId = {-1};
+		//the editor's own Save and Close put it away and leave the list, to pick the next
+		final Runnable putAway = () -> {
+			if (shown[0] != null) {
+				tab.remove(shown[0]);
+				shown[0] = null;
+				shownId[0] = -1;
+				tab.revalidate();
+				tab.repaint();
 			}
-			return panel(parent, tid, onClose);
-		} catch (NumberFormatException ex) {
-			ctrmap.Ui.error(parent, "Enter a trainer id between 1 and "
-					+ ctrmap.formats.scripts.NpcTemplates.TRAINER_ID_MAX + ".", "Trainer editor");
+		};
+		final java.util.function.IntConsumer show = tid -> {
+			javax.swing.JComponent next = panel(parent, tid, putAway, saves);
+			if (next != null) {
+				putAway.run();
+				shown[0] = next;
+				shownId[0] = tid;
+				tab.add(next, BorderLayout.CENTER);
+				tab.revalidate();
+				tab.repaint();
+			}
+		};
+		open.addActionListener(e -> {
+			int tid = chooser.getId();
+			if (tid < 1 || tid > ctrmap.formats.scripts.NpcTemplates.TRAINER_ID_MAX) {
+				ctrmap.Ui.error(parent, "Pick a trainer from the list first.", "Trainer editor");
+				return;
+			}
+			//ASKED, NOT DROPPED: the editor shown may hold changes nobody saved
+			if (shown[0] != null && tid != shownId[0] && ctrmap.Ui.confirm(parent, "Open trainer " + tid + " instead? Changes"
+					+ " to trainer " + shownId[0] + " that were not saved are dropped.", "Trainer editor", JOptionPane.YES_NO_OPTION,
+					JOptionPane.QUESTION_MESSAGE) != JOptionPane.YES_OPTION) {
+				return;
+			}
+			show.accept(tid);
+		});
+		close.addActionListener(e -> onClose.run());
+		if (selectedNpcScript != null && def >= 1) {
+			show.accept(def);   //the selected NPC's trainer, opened at once, as the prompt pre-filled it
 		}
-		return null;
+		return tab;
 	}
 
 	/**
@@ -113,19 +177,22 @@ public class TrainerEditDialog {
 	 * @return the editor, or null when there is nothing to edit (it says why first)
 	 */
 	public static javax.swing.JComponent panel(java.awt.Component parent, int tid,
-			Runnable onClose) {
+			Runnable onClose, SaveHistory saves) {
+		if (saves == null) {
+			throw new IllegalArgumentException("the trainer editor must be handed the history its saves are kept in");
+		}
 		try {
 			byte[] d = Files.readAllBytes(Workspace.getWorkspaceFile(ArchiveType.TRAINER_DATA, tid).toPath());
 			byte[] p = Files.readAllBytes(Workspace.getWorkspaceFile(ArchiveType.TRAINER_POKE, tid).toPath());
 			final TrainerEntry t = TrainerEntry.read(d, p);
 			ctrmap.gamedef.GameProfile prof = Workspace.profile();
-			String[] species = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.SPECIES_NAMES)),
-					items = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.ITEM_NAMES)),
-					moves = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.MOVE_NAMES)),
-					classes = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.TRAINER_CLASS_NAMES)),
-					names = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.TRAINER_NAMES));
-			String trName = tid < names.length ? names[tid] : "#" + tid;
-			String clName = t.classId < classes.length ? classes[t.classId] : "#" + t.classId;
+			java.util.List<String> unread = new java.util.ArrayList<>();
+			String[] species = Workspace.textLines(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.SPECIES_NAMES), unread),
+					items = Workspace.textLines(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.ITEM_NAMES), unread),
+					moves = Workspace.textLines(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.MOVE_NAMES), unread),
+					classes = Workspace.textLines(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.TRAINER_CLASS_NAMES), unread),
+					names = Workspace.textLines(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.TRAINER_NAMES), unread);
+			ctrmap.Ui.saidUnread(parent, unread, "Trainer");
 
 			final PartyModel model = new PartyModel(t, species, items, moves);
 			JTable jt = new JTable(model);
@@ -210,25 +277,7 @@ public class TrainerEditDialog {
 					t.classId = (Integer) classSpin.getValue();
 					t.battleType = (Integer) typeSpin.getValue();
 					t.moneyRate = (Integer) moneySpin.getValue();
-					File df = Workspace.getWorkspaceFile(ArchiveType.TRAINER_DATA, tid);
-					File pf = Workspace.getWorkspaceFile(ArchiveType.TRAINER_POKE, tid);
-					try (FileOutputStream fos = new FileOutputStream(df)) {
-						fos.write(t.toTrdata());
-					}
-					try (FileOutputStream fos = new FileOutputStream(pf)) {
-						fos.write(t.toTrpoke());
-					}
-					Workspace.addPersist(df);
-					Workspace.addPersist(pf);
-					String newName = nameField.getText().trim();
-					if (!newName.equals(origName.trim())) {
-						int entry = Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.TRAINER_NAMES);
-						File nf = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT, entry);
-						GFMessageFile nmsg = new GFMessageFile(Files.readAllBytes(nf.toPath()));
-						nmsg.setLine(tid, newName);
-						Files.write(nf.toPath(), nmsg.write());
-						Workspace.addPersist(nf);
-					}
+					save(tid, t, origName, nameField.getText().trim(), Workspace.session(), saves);
 					onClose.run();
 					ctrmap.Ui.message(parent, "Trainer " + tid + " saved. Deploy to emulator to apply.",
 							"Trainer editor", JOptionPane.INFORMATION_MESSAGE);
@@ -243,16 +292,6 @@ public class TrainerEditDialog {
 			ctrmap.Ui.error(parent, "Could not open trainer " + tid + ":\n" + ctrmap.util.Bytes.reason(ex), "Trainer editor");
 		}
 		return null;
-	}
-
-	private static String[] text(int entry) {
-		try {
-			File f = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT, entry);
-			List<String> lines = GFMessageFile.getStrings(Files.readAllBytes(f.toPath()));
-			return lines.toArray(new String[0]);
-		} catch (Exception ex) {
-			return new String[0];
-		}
 	}
 
 	private static class PartyModel extends AbstractTableModel {

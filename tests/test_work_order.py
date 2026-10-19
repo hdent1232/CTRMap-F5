@@ -65,7 +65,9 @@ class AQueueOrATreeItCannotReadIsNotClear(unittest.TestCase):
 
         def no_git(*args, **kwargs):
             raise OSError("git is not on PATH")
-        with mock.patch.object(work_order.subprocess, "run", no_git):
+        #THE CALL work_order MAKES: it asks git through bounded.run, and a fake of subprocess.run caught
+        #nothing - the real git answered and this went red the day the deadline moved (2026-10-10)
+        with mock.patch.object(work_order.bounded, "run", no_git):
             self.assertIsNone(work_order.dirty_files(), "a git that could not be started was read as a clean tree")
 
     def test_the_gate_refuses_what_it_could_not_look_at(self):
@@ -148,6 +150,81 @@ class ThePlantProofIsAboutThisTree(unittest.TestCase):
             json.dump(stale, h)
         why = self.answer(base)
         self.assertTrue(why and "src/ has changed" in why[0], "a stale src digest was not named: %r" % why)
+
+
+class ASweepIsRefusedWhileTheCommitItServesIs(unittest.TestCase):
+    """2026-10-18: days of sweeps for 1.0.4 ran while its release commit could never land - a check the commit runs
+    failed, and owed plants were in no ledger any more - and every one of them was started with --anyway. So the
+    sweep's gate asks the commit's own checks and the owed record first, and --anyway does not reach that list."""
+
+    def scratch(self):
+        base = tempfile.mkdtemp(prefix="ctrmap-releaseblock-")
+        self.addCleanup(shutil.rmtree, base, True)
+        return base
+
+    def write(self, base, rel, text):
+        path = os.path.join(base, *rel.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with io.open(path, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        return path
+
+    def test_the_hooks_own_checks_are_read_and_an_unread_hook_is_unknown(self):
+        base = self.scratch()
+        hook = self.write(base, ".githooks/pre-commit", "#!/bin/sh" + LF + "# \"$PY\" -B tools/commented.py" + LF
+                          + "\"$PY\" -B tools/first.py || exit 1" + LF + "exec \"$PY\" -B tools/last.py --owed" + LF)
+        self.assertEqual(work_order.precommit_checks(hook), [["tools/first.py"], ["tools/last.py", "--owed"]],
+                         "the hook's own commands were not read as it spells them")
+        self.assertIsNone(work_order.precommit_checks(os.path.join(base, "no-such-hook")),
+                          "a hook that cannot be read was read as one that asks nothing")
+        with mock.patch.object(work_order, "precommit_checks", lambda hook=None: None):
+            self.assertTrue(any("UNKNOWN" in w for w in work_order.failing_checks()),
+                            "a hook that cannot be read was read as no check failing")
+        self.assertEqual(work_order.failing_checks(checks=[]), [], "control: no checks, nothing failing")
+
+    def test_an_owed_plant_no_tree_can_drive_is_named(self):
+        import json
+        base = self.scratch()
+        self.write(base, "src/here.java", "class Here {}" + LF)
+        self.write(base, "tools/guard/plants.json", json.dumps({"plants": [
+            {"id": "p-ok", "file": "src/here.java"}, {"id": "p-file", "file": "src/gone.java"}]}))
+        self.write(base, "tests/plants.json", json.dumps({"plants": {"k-ok": {"file": "src/here.java"}}}))
+        self.write(base, "tools/guard/gate_owed.json", json.dumps({
+            "plants": [{"id": "p-ok"}, {"id": "p-file"}, {"id": "p-gone"}], "bundle_plants": ["k-ok", "k-gone"]}))
+        said = LF.join(work_order.undrivable_owed(base))
+        for named in ("p-gone - in no plant", "p-file - its file src/gone.java is gone", "k-gone - in no plant"):
+            self.assertIn(named, said, "an owed plant no tree here can drive was not named: %s" % said)
+        self.assertNotIn("p-ok", said, "a plant that can be driven was named as one that cannot")
+        self.assertNotIn("k-ok", said, "a bundle plant that can be driven was named as one that cannot")
+        self.write(base, "tools/guard/gate_owed.json", json.dumps({"plants": [{"id": "p-ok"}], "bundle_plants": ["k-ok"]}))
+        said = LF.join(work_order.undrivable_owed(base))
+        self.assertIn("2 plant(s) are owed", said,
+                      "owed plants not yet driven did not refuse the sweep - a plant that will not redden is found"
+                      " only by driving it: %s" % said)
+        self.assertNotIn("can be driven by no tree", said, "every owed plant here is drivable, yet one was named")
+        self.write(base, "tools/guard/gate_owed.json", json.dumps({"plants": [], "bundle_plants": []}))
+        self.assertEqual(work_order.undrivable_owed(base), [], "control: nothing owed, nothing named")
+
+    def test_anyway_does_not_reach_the_release_blockers_and_the_owner_does(self):
+        def ask(release, owner, queued, argv):
+            with mock.patch.object(work_order, "release_blockers", lambda: release), \
+                    mock.patch.object(work_order, "_owner_allows_release_blocked", lambda: owner), \
+                    mock.patch.object(work_order, "blockers", lambda: queued), \
+                    mock.patch("sys.stderr", new_callable=io.StringIO) as err, \
+                    mock.patch("sys.stdout", new_callable=io.StringIO):
+                try:
+                    return work_order.require_frozen("the mutation sweep", argv), err.getvalue()
+                except SystemExit as stop:
+                    return ("refused", stop.code), err.getvalue()
+        anyway = ["--anyway", "because the queue is the owner's"]
+        answer, said = ask(["`tools/bundle_install.py` refuses the commit: 18 problem(s)"], False, [], anyway)
+        self.assertEqual(answer, ("refused", 1), "--anyway reached the release blockers: the sweep started")
+        self.assertIn("bundle_install", said, "the refusal did not name what refuses the commit: %s" % said)
+        answer, _said = ask(["`tools/bundle_install.py` refuses the commit"], True, [], [])
+        self.assertIsNone(answer, "the owner's own override did not pass the release blockers")
+        answer, _said = ask([], False, ["OUTSTANDING.md has 1 open item(s):"], anyway)
+        self.assertEqual(answer, "because the queue is the owner's",
+                         "control: with no release blocker, --anyway still passes the queue as before")
 
 
 if __name__ == "__main__":

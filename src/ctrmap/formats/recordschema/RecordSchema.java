@@ -83,16 +83,19 @@ public final class RecordSchema {
 		return new RecordSchema(name, about, archive, recordCount, stride, fields);
 	}
 
+	@ctrmap.util.ForSuites("SEAM: a suite reads a schema's name back, to see the registry hands the schema it was asked for")
 	public String name() {
 		return name;
 	}
 
 	/** One paragraph saying what this is and, more importantly, what it is not. */
+	@ctrmap.util.ForSuites("CAPABILITY: the schema's paragraph of what its records are and are not; the record editor would show it above its fields, and does not yet")
 	public String about() {
 		return about;
 	}
 
 	/** The archive holding the records, one per entry. */
+	@ctrmap.util.ForSuites("SEAM: a suite reads which archive a schema describes, to hold the schema to the records it reads")
 	public ArchiveType archive() {
 		return archive;
 	}
@@ -101,6 +104,7 @@ public final class RecordSchema {
 		return stride;
 	}
 
+	@ctrmap.util.ForSuites("SEAM: a suite reads the schema's fields flat, to hold each to the record bytes; the editor lays them out by group")
 	public List<RecordField> fields() {
 		return fields;
 	}

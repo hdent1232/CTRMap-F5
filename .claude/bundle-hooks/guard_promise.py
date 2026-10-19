@@ -307,6 +307,10 @@ QUEUE = ("OUTSTANDING.md",)
 #: where the project keeps its queue.
 ADAPT = ("CHECKABLE", "QUEUE")
 
+#: The settings that ship OFF, at the value they ship at. A project turns them on; the bundle's
+#: own tests turn them off again for their run (`bundle_hooks.settings_off`).
+SHIPPED_OFF = {"QUEUE": ()}
+
 
 def sentences(text):
     """The text as sentences, keeping enough boundary for the inceptive pattern to anchor."""

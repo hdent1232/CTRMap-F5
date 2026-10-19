@@ -47,6 +47,9 @@ public class ForkGuardsTest {
 
 	/** The zone owner every panel and form built here shares, as the window's would. */
 	static final LoadedZone LOADED = new LoadedZone();
+	/** The history the prompt keeps its forks in (F209c); nothing here undoes through it. */
+	static final ctrmap.humaninterface.SaveHistory OPS = new ctrmap.humaninterface.SaveHistory(
+			() -> java.util.Collections.<Object>emptyList());
 
 	/** Zones with three different retail areas; any three would do. */
 	private static final int[] ZONES = {15, 20, 30};
@@ -57,9 +60,14 @@ public class ForkGuardsTest {
 
 	static int fails = 0;
 
+	/** A complete game folder, beside the partial dump, that a scratch game may take a missing archive from. */
+	static File whole;
+
 	public static void main(String[] args) throws Exception {
 		aForkedAreaCanBeForkedAgain();
+		aMasterRowRepointWithNoWorkspaceIsRefusedAsARepoint();
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
+		whole = args.length > 1 ? new File(args[1]) : null;
 		if (!dump.isDirectory()) {
 			Skip.section("no dump at " + dump);
 			System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -76,6 +84,8 @@ public class ForkGuardsTest {
 		gappedAppendIsRefused();
 		aRegistryAlreadyPastTheNewAreaIdIsRefusedOutLoud();
 		anAppendThatRunsOutOfAreaIdsStagesNothing(dump);
+		anAppendAfterAnUnpackedMapForkIsRefused(dump);
+		anAppendAfterAnUnpackedAreaForkIsRefused(dump);
 		anAreaForkThatFailsAtTheMasterRowPutsEverythingBack(dump);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -114,6 +124,27 @@ public class ForkGuardsTest {
 	}
 
 	/**
+	 * A master-row repoint with no workspace is refused as a REPOINT.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep: dropping GeometryForker's own null refusal survived,
+	 * because MasterTable.read refuses a null session too - in its own words, which name a table
+	 * and not the repoint that was asked for. The refusal a user reads names what they did.
+	 */
+	static void aMasterRowRepointWithNoWorkspaceIsRefusedAsARepoint() {
+		System.out.println("--- a master-row repoint with no workspace is refused, and says it was the repoint");
+		String refused = null;
+		try {
+			GeometryForker.repointMasterRow((ctrmap.WorkspaceSession) null, null, 0, ctrmap.ZoneResource.MAP, 1);
+		} catch (IOException ex) {
+			refused = ex.getMessage();
+		} catch (RuntimeException ex) {
+			refused = "threw " + ex;
+		}
+		check(refused != null && refused.contains("No workspace is loaded") && refused.contains("to repoint"),
+				"the refusal names the repoint it refused: " + refused);
+	}
+
+	/**
 	 * F040: an append that runs out of area ids stages nothing.
 	 *
 	 * <p>The map fork staged every new zone's regions and matrix before the area fork checked its
@@ -123,7 +154,15 @@ public class ForkGuardsTest {
 	 */
 	static void anAppendThatRunsOutOfAreaIdsStagesNothing(File dump) throws Exception {
 		System.out.println("--- an append that runs out of area ids stages nothing");
-		ScratchGame.open(dump);
+		//AN APPEND GIVES EVERY ZONE ITS OWN DIALOGUE FILE, so with no STORYTEXT it refuses for that first and
+		//never reaches the id budget this asks about; the whole game supplies the archive the dump lacks
+		ScratchGame.open(dump, whole == null ? new File[0] : new File[]{whole});
+		if (Workspace.session().archiveFile(ArchiveType.STORYTEXT) == null
+				|| !Workspace.session().archiveFile(ArchiveType.STORYTEXT).isFile()) {
+			Skip.section("neither " + dump + " nor the whole game (" + whole + ") holds STORYTEXT, so an append"
+					+ " cannot reach its area-id budget here");
+			return;
+		}
 		int left = AreaForker.areaIdsLeft();
 		java.util.List<String> persistedBefore = new java.util.ArrayList<>(Workspace.session().persistPaths());
 		File fd = Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA);
@@ -135,15 +174,89 @@ public class ForkGuardsTest {
 			ctrmap.ZoneAppender.appendZones(left + 1, 533, true);
 		} catch (java.io.IOException ex) {
 			refused = ex.getMessage();
+			//WHAT THE PUT-BACK COULD NOT DO rides on the refusal as a suppressed exception - the unit's close()
+			//throws while the refusal is in flight - so it is said here, or a failed put-back is silent
+			for (Throwable lost : ex.getSuppressed()) {
+				System.out.println("  note: the refusal carried " + lost);
+			}
 		}
 		check(refused != null && refused.contains("area id"),
 				"asking for " + (left + 1) + " zones with " + left + " area ids left is refused: " + refused);
 		check(Workspace.session().persistPaths().equals(persistedBefore),
 				"and the list of staged edits is exactly as it was (" + Workspace.session().persistPaths().size()
 				+ " vs " + persistedBefore.size() + ")");
-		check(java.util.Arrays.equals(sorted(fd.list()), sorted(fdBefore))
-				&& java.util.Arrays.equals(sorted(mm.list()), sorted(mmBefore)),
-				"and no region or matrix the map fork copied is left in the workspace");
+		java.util.List<String> regionsLeft = notExtracted(fd, ArchiveType.FIELD_DATA, fdBefore);
+		java.util.List<String> matricesLeft = notExtracted(mm, ArchiveType.MAP_MATRIX, mmBefore);
+		check(regionsLeft.isEmpty() && matricesLeft.isEmpty(),
+				"and no region or matrix the map fork copied is left in the workspace - only its sources, read as the"
+				+ " archive holds them (copies left: regions " + regionsLeft + ", matrices " + matricesLeft + ")");
+	}
+
+	/**
+	 * Census H.11: an append made while a map fork is still unpacked is refused, and the fork is left as it was.
+	 *
+	 * <p>The append's map fork took {@code mm.length} for its first new matrix without asking whether a fork
+	 * already staged one there - its three sibling allocators asked - so Fork geometry followed by Add zone,
+	 * with no pack between, wrote the new zone's matrix over the forked zone's, and at pack both zones shared
+	 * one map: the very sharing the fork existed to end.
+	 */
+	static void anAppendAfterAnUnpackedMapForkIsRefused(File dump) throws Exception {
+		System.out.println("--- an append while a map fork is staged and unpacked is refused, and the fork is kept");
+		ScratchGame.open(dump, whole == null ? new File[0] : new File[]{whole});
+		if (Workspace.session().archiveFile(ArchiveType.STORYTEXT) == null
+				|| !Workspace.session().archiveFile(ArchiveType.STORYTEXT).isFile()) {
+			Skip.section("neither " + dump + " nor the whole game (" + whole + ") holds STORYTEXT, so an append"
+					+ " cannot reach its map fork here");
+			return;
+		}
+		GeometryForker.ForkResult fork = GeometryForker.ensurePrivate(SHARED_ZONE);
+		check(fork.forked, "CONTROL: zone " + SHARED_ZONE + " was given a map of its own, staged and not packed");
+		File staged = new File(Workspace.getExtractionDirectory(ArchiveType.MAP_MATRIX),
+				String.valueOf(Workspace.getArchive(ArchiveType.MAP_MATRIX).length));
+		check(staged.isFile(), "CONTROL: the fork's matrix is staged at the archive's next slot (" + staged.getName() + ")");
+		byte[] before = staged.isFile() ? Files.readAllBytes(staged.toPath()) : new byte[0];
+		String refused = null;
+		try {
+			ctrmap.ZoneAppender.appendZones(1, 533, true);
+		} catch (IOException ex) {
+			refused = ex.getMessage();
+		}
+		check(refused != null && refused.contains("already staged and not yet packed"),
+				"an append made while a map fork is unpacked is refused: " + refused);
+		check(staged.isFile() && Arrays.equals(Files.readAllBytes(staged.toPath()), before),
+				"and the forked zone's staged matrix is exactly as the fork left it");
+	}
+
+	/**
+	 * The area half of census H.11: an append made while an AREA fork is still unpacked is refused, and the fork is
+	 * left as it was. The append's area ids start at the archive's end, where an unpacked area fork already staged
+	 * one, and the refusal before any write was asserted by nothing: the 2026-10-12 sweep dropped it and turned it
+	 * into a return, and every suite stayed green.
+	 */
+	static void anAppendAfterAnUnpackedAreaForkIsRefused(File dump) throws Exception {
+		System.out.println("--- an append while an area fork is staged and unpacked is refused, and the fork is kept");
+		ScratchGame.open(dump, whole == null ? new File[0] : new File[]{whole});
+		if (Workspace.session().archiveFile(ArchiveType.STORYTEXT) == null
+				|| !Workspace.session().archiveFile(ArchiveType.STORYTEXT).isFile()) {
+			Skip.section("neither " + dump + " nor the whole game (" + whole + ") holds STORYTEXT, so an append"
+					+ " cannot reach its area fork here");
+			return;
+		}
+		AreaForker.ForkResult fork = AreaForker.forkArea(ZONES[0]);
+		File staged = new File(Workspace.getExtractionDirectory(ArchiveType.AREA_DATA), String.valueOf(fork.newArea));
+		check(fork.forked && staged.isFile() && Workspace.isPendingArtifact(staged),
+				"CONTROL: zone " + ZONES[0] + " was given an area of its own, staged at " + fork.newArea + " and not packed");
+		byte[] before = staged.isFile() ? Files.readAllBytes(staged.toPath()) : new byte[0];
+		String refused = null;
+		try {
+			ctrmap.ZoneAppender.appendZones(1, 533, true);
+		} catch (IOException ex) {
+			refused = ex.getMessage();
+		}
+		check(refused != null && refused.contains("An area fork is already staged and not yet packed"),
+				"an append made while an area fork is unpacked is refused: " + refused);
+		check(staged.isFile() && Arrays.equals(Files.readAllBytes(staged.toPath()), before),
+				"and the forked zone's staged area is exactly as the fork left it");
 	}
 
 	/**
@@ -161,7 +274,7 @@ public class ForkGuardsTest {
 		ctrmap.formats.garc.GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
 		File zoneFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zone);
 		File tableFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, AreaForker.AD_GLOBAL_TABLE);
-		File master = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, ctrmap.ZoneTables.masterIndex(zo));
+		File master = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, ctrmap.ZoneTables.zoneCount(zo));
 		byte[] zoneBefore = Files.readAllBytes(zoneFile.toPath());
 		byte[] tableBefore = Files.readAllBytes(tableFile.toPath());
 		File ad = Workspace.getExtractionDirectory(ArchiveType.AREA_DATA);
@@ -171,7 +284,9 @@ public class ForkGuardsTest {
 		String refused = null;
 		try {
 			AreaForker.forkArea(zone);
-		} catch (IOException ex) {
+		} catch (IOException | IllegalStateException ex) {
+			//EITHER IS THE REFUSAL: the undo round reads a file before changing it, so a master table that
+			//cannot be read refuses there, as IllegalStateException, before the write would have failed
 			refused = ex.getMessage();
 		} finally {
 			master.delete();
@@ -181,8 +296,43 @@ public class ForkGuardsTest {
 				"zone " + zone + "'s header is exactly as it was");
 		check(Arrays.equals(Files.readAllBytes(tableFile.toPath()), tableBefore),
 				"the per-area table is exactly as it was");
-		check(Arrays.equals(sorted(ad.list()), sorted(adBefore)), "no area the fork copied is left staged");
+		java.util.List<String> areasLeft = notExtracted(ad, ArchiveType.AREA_DATA, adBefore);
+		check(areasLeft.isEmpty(), "no area the fork copied is left staged - only its source, read as the archive"
+				+ " holds it (copies left: " + areasLeft + ")");
 		check(Workspace.session().persistPaths().equals(persistedBefore), "and the list of staged edits is as it was");
+	}
+
+	/**
+	 * Of the files in {@code dir} that {@code before} did not hold, the ones that are NOT an entry of the
+	 * archive extracted unchanged - a copy the refusal should have taken back. A fork reads its sources through
+	 * the workspace, which extracts each one the first time it is asked for, the archive's own bytes and no edit
+	 * (WorkspaceSession.getWorkspaceFile); listing the folder counted those as staged copies, and the refused
+	 * append and fork read red for the region, matrix and area they had only READ (2026-10-09).
+	 */
+	static java.util.List<String> notExtracted(File dir, ArchiveType type, String[] before) throws IOException {
+		ctrmap.formats.garc.GARC garc = Workspace.getArchive(type);
+		java.util.List<String> out = new java.util.ArrayList<>();
+		for (String name : added(dir.list(), before)) {
+			int index;
+			try {
+				index = Integer.parseInt(name);
+			} catch (NumberFormatException notAnEntry) {
+				out.add(name);
+				continue;
+			}
+			if (garc == null || index >= garc.length
+					|| !Arrays.equals(Files.readAllBytes(new File(dir, name).toPath()), garc.getDecompressedEntry(index))) {
+				out.add(name);
+			}
+		}
+		return out;
+	}
+
+	/** The names in {@code now} that {@code before} did not hold - what a refusal left behind. */
+	static java.util.List<String> added(String[] now, String[] before) {
+		java.util.List<String> out = new java.util.ArrayList<>(Arrays.asList(sorted(now)));
+		out.removeAll(Arrays.asList(sorted(before)));
+		return out;
 	}
 
 	static String[] sorted(String[] names) {
@@ -294,19 +444,19 @@ public class ForkGuardsTest {
 
 		//nobody there to answer: that is a cancel, not consent
 		List<String> said = Ui.record();
-		AreaForker.ForkResult r = AreaForkPrompt.ensurePrivate(LOADED, null, zone, area, edit);
+		AreaForker.ForkResult r = AreaForkPrompt.ensurePrivate(LOADED, null, zone, edit, OPS, () -> { });
 		Ui.stopRecording();
 		check(said.size() == 1 && said.get(0).contains("SHARES its area"),
 				"a zone that shares its area is asked: " + said);
 		check(r == null, "and an unanswered question hands back nothing to edit with: " + r);
 
 		Ui.record("Cancel");
-		r = AreaForkPrompt.ensurePrivate(LOADED, null, zone, area, edit);
+		r = AreaForkPrompt.ensurePrivate(LOADED, null, zone, edit, OPS, () -> { });
 		Ui.stopRecording();
 		check(r == null, "Cancel hands back nothing to edit with: " + r);
 
 		Ui.record("Edit the shared area anyway");
-		r = AreaForkPrompt.ensurePrivate(LOADED, null, zone, area, edit);
+		r = AreaForkPrompt.ensurePrivate(LOADED, null, zone, edit, OPS, () -> { });
 		Ui.stopRecording();
 		check(r != null && !r.forked && r.newArea == area && r.oldArea == area && r.zoneIndex == zone,
 				"declining the fork hands back the shared area " + area + " as it is, forked=false");
@@ -315,7 +465,7 @@ public class ForkGuardsTest {
 				+ AreaForker.currentArea(zone) + ", AreaData " + areaData().length + ")");
 
 		Ui.record("Give this zone its own area");
-		r = AreaForkPrompt.ensurePrivate(LOADED, null, zone, area, edit);
+		r = AreaForkPrompt.ensurePrivate(LOADED, null, zone, edit, OPS, () -> { });
 		Ui.stopRecording();
 		check(r != null && r.forked && r.oldArea == area && r.newArea != area && r.newArea == areas,
 				"accepting forks, and the result says so: area " + area + " -> "
@@ -346,7 +496,7 @@ public class ForkGuardsTest {
 
 		//and the prompt itself does not ask about a private area
 		said = Ui.record();
-		r = AreaForkPrompt.ensurePrivate(LOADED, null, zone, r.newArea, edit);
+		r = AreaForkPrompt.ensurePrivate(LOADED, null, zone, edit, OPS, () -> { });
 		Ui.stopRecording();
 		check(said.isEmpty() && r != null && !r.forked && r.newArea == r.oldArea
 				&& r.newArea == AreaForker.currentArea(zone),

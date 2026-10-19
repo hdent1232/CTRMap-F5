@@ -23,6 +23,9 @@ import javax.swing.JPanel;
  */
 public class CustomH3DPreview extends JPanel implements GLEventListener {
 
+	/** What this view draws its models with: the drawing left the format classes (F214). */
+	final ctrmap.render.ModelRenderer draw = new ctrmap.render.ModelRenderer();
+
 	private static final long serialVersionUID = -6824913720967100278L;
 
 	private H3DModel model;
@@ -98,7 +101,7 @@ public class CustomH3DPreview extends JPanel implements GLEventListener {
 	/** Frees the shown model's buffers from the context going away. */
 	public void release(GL2 gl) {
 		if (uploaded != null) {
-			uploaded.destroyAllBOs(gl);
+			draw.destroy(gl, uploaded);
 		}
 		uploaded = null;
 	}
@@ -129,20 +132,20 @@ public class CustomH3DPreview extends JPanel implements GLEventListener {
 	public void drawModel(GL2 gl, Object context) {
 		if (reupload || uploaded != model || uploadedIn != context) {
 			if (uploaded != null && uploaded != model && uploadedIn == context) {
-				uploaded.destroyAllBOs(gl);
+				draw.destroy(gl, uploaded);
 			}
 			if (model.meshes.size() > 0 && model.meshes.get(0).vbo == null) {
 				model.makeAllBOs();
 			}
 			for (int i = 0; i < model.meshes.size(); i++) {
-				model.meshes.get(i).uploadVBO(gl);
+				draw.upload(gl, model.meshes.get(i));
 			}
 			uploaded = model;
 			uploadedIn = context;
 			reupload = false;
 		}
 		for (int i = 0; i < model.meshes.size(); i++) { //direct rendering to bypass translation
-			model.meshes.get(i).render(gl, (model.materials.size() > model.meshes.get(i).materialId) ? model.materials.get(model.meshes.get(i).materialId) : null);
+			draw.render(gl, model.meshes.get(i), ctrmap.render.ModelRenderer.materialOf(model, i));
 		}
 	}
 

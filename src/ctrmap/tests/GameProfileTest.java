@@ -364,7 +364,6 @@ public class GameProfileTest {
 		int orasCount = ZoneTables.zoneCount(zo);
 		check(orasCount == zo.length - 2, "ORAS: ZoneTables counts " + orasCount + " zones from "
 				+ zo.length + " entries");
-		check(ZoneTables.masterIndex(zo) == orasCount, "and names entry " + orasCount + " as the master table");
 
 		for (GameType g : UNMEASURED) {
 			Sessions.bare(ws, dump, g);
@@ -384,7 +383,7 @@ public class GameProfileTest {
 			}
 			message = null;
 			try {
-				ZoneTables.areaCount(zo);
+				ZoneTables.areaIds(zo);
 			} catch (IOException ex) {
 				message = ex.getMessage();
 			}
@@ -605,7 +604,7 @@ public class GameProfileTest {
 	 * exactly one (F207). Five classes named GameType.ORAS for a count or an index of a feature only
 	 * ORAS has; nothing tied the pin to the gate.
 	 */
-	static void theOneGameWithAFeatureIsAskedByTheFeature() {
+	static void theOneGameWithAFeatureIsAskedByTheFeature() throws Exception {
 		System.out.println("--- the one game with a feature is asked for by the feature (F207)");
 		check(GameProfile.onlyGameWith(GameProfile.Feature.ZONE_APPEND) == GameProfile.of(GameType.ORAS)
 				&& GameProfile.onlyGameWith(GameProfile.Feature.AREA_FORK) == GameProfile.of(GameType.ORAS),
@@ -619,6 +618,27 @@ public class GameProfileTest {
 		}
 		check(why != null && why.contains(GameProfile.of(GameType.XY).displayName()),
 				"and a feature two games support has no one game to answer it - refused, naming them: " + why);
+		//nor has a feature no game supports (the 2026-10-14 shared sweep, GameProfile 449, dropped, SURVIVED: every feature
+		//today has a game, so the refusal waits for one added without - asked here with every profile made X/Y's, for
+		//one call, and put back whatever happens)
+		java.lang.reflect.Field allField = GameProfile.class.getDeclaredField("ALL");
+		allField.setAccessible(true);
+		GameProfile[] all = (GameProfile[]) allField.get(null);
+		GameProfile[] was = all.clone();
+		GameProfile xy = GameProfile.of(GameType.XY);
+		String none;
+		try {
+			java.util.Arrays.fill(all, xy);
+			none = "it answered " + GameProfile.onlyGameWith(GameProfile.Feature.ZONE_APPEND);
+		} catch (IllegalStateException refused) {
+			none = refused.getMessage();
+		} finally {
+			System.arraycopy(was, 0, all, 0, was.length);
+		}
+		check("no game supports ZONE_APPEND".equals(none) || ("no game supports " + GameProfile.Feature.ZONE_APPEND).equals(none),
+				"and a feature no game supports has none to answer it - refused, naming it: " + none);
+		check(GameProfile.onlyGameWith(GameProfile.Feature.ZONE_APPEND) == GameProfile.of(GameType.ORAS),
+				"control: the profiles are put back, and Omega Ruby / Alpha Sapphire answers again");
 	}
 
 	static void check(boolean ok, String what) {

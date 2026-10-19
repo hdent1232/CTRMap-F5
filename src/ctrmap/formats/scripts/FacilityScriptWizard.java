@@ -1,8 +1,6 @@
 package ctrmap.formats.scripts;
 
 import ctrmap.scripts.GfHash;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Emits Battle-facility script subroutines that call engine natives directly,
@@ -18,71 +16,39 @@ import java.util.List;
 public class FacilityScriptWizard {
 
 	/**
-	 * Adds {@code amount} Battle Points to the player (clamped by the engine to 9999).
+	 * Adds {@code amount} Battle Points to the player (clamped by the engine to 9999), given ONCE when
+	 * {@code onceFlag} is an event flag: retail's one-time guard (see {@link PawnEmitter}) around the
+	 * grant, so a second talk finds the flag set and grants nothing (F085). -1 grants on every talk, as
+	 * before. The flag is not chosen here: {@code ctrmap.ScriptFlags} says which a game's scripts
+	 * already name.
 	 *
 	 * @param measured the game the zone is from, already asked (NpcTemplates.measuredOn): the
 	 * native names and the BP frame are ORAS's
 	 */
-	public static int addGiveBpScript(NpcTemplates.Measured measured, GFLPawnScript script, int amount) {
+	public static int addGiveBpScript(NpcTemplates.Measured measured, GFLPawnScript script, int amount, int onceFlag) {
 		NpcTemplates.asked(measured);
 		script.decompressThis();
 		if (amount == 0) {
 			throw new IllegalArgumentException("BP amount must be non-zero.");
 		}
-		int getBP = findOrAddNative(script, GfHash.hashForName("PlayerGetBP"));
-		int setBP = findOrAddNative(script, GfHash.hashForName("PlayerSetBP"));
-
-		PawnInstruction last = script.instructions.get(script.instructions.size() - 1);
-		int ptr = last.pointer + 4 + (last.hasCompressedArgument ? 0 : last.argumentCount * 4);
-		List<PawnInstruction> body = new ArrayList<>();
-		body.add(makeIns(PawnInstruction.Commands.PROC, ptr, 0));
-		ptr += 4;
-		body.add(makeSysreq(ptr, getBP, 0));            // PRI = current BP
-		ptr += 12;
-		body.add(makeIns(PawnInstruction.Commands.CONST_ALT, ptr, amount)); // ALT = amount
-		ptr += 8;
-		body.add(makeIns(PawnInstruction.Commands.ADD, ptr, 0));            // PRI = BP + amount
-		ptr += 4;
-		body.add(makeIns(PawnInstruction.Commands.PUSH_PRI, ptr, 0));       // push new value
-		ptr += 4;
-		body.add(makeSysreq(ptr, setBP, 4));            // PlayerSetBP(new)
-		ptr += 12;
-		body.add(makeIns(PawnInstruction.Commands.ZERO_PRI, ptr, 0));
-		ptr += 4;
-		body.add(makeIns(PawnInstruction.Commands.RETN, ptr, 0));
-		return TalkerScriptWizard.installCase(measured, script, body);
-	}
-
-	/**
-	 * natives[] index for a name hash, appending a {0, hash} entry if absent. Package-private: it
-	 * writes the script and has no gate of its own, so only a template that was handed a
-	 * {@link NpcTemplates.Measured} may call it (F085).
-	 */
-	static int findOrAddNative(GFLPawnScript script, int hash) {
-		for (int i = 0; i < script.natives.size(); i++) {
-			if (script.natives.get(i).data[1] == hash) {
-				return i;
-			}
+		PawnEmitter e = new PawnEmitter(script);
+		e.ins(PawnInstruction.Commands.PROC, 0);
+		PawnInstruction once = onceFlag < 0 ? null : e.openOnce(script, onceFlag);
+		//THE NATIVES AFTER THE GUARD (2026-10-14): openOnce refuses a flag before it touches the script, and these were
+		//added first - so a grant refused for its flag left two natives in the script it refused to change
+		int getBP = PawnEmitter.findOrAddNative(script, GfHash.hashForName("PlayerGetBP"));
+		int setBP = PawnEmitter.findOrAddNative(script, GfHash.hashForName("PlayerSetBP"));
+		e.sysreq(getBP, 0);                                   // PRI = current BP
+		e.ins(PawnInstruction.Commands.CONST_ALT, amount);    // ALT = amount
+		e.ins(PawnInstruction.Commands.ADD, 0);               // PRI = BP + amount
+		e.ins(PawnInstruction.Commands.PUSH_PRI, 0);          // push new value
+		e.sysreq(setBP, 4);                                   // PlayerSetBP(new)
+		if (once != null) {
+			e.closeOnce(script, once, onceFlag);
 		}
-		script.natives.add(new PawnPrefixEntry(8, PawnPrefixEntry.Type.NATIVE, new int[]{0, hash}));
-		return script.natives.size() - 1;
+		e.ins(PawnInstruction.Commands.ZERO_PRI, 0);
+		e.ins(PawnInstruction.Commands.RETN, 0);
+		return TalkerScriptWizard.installCase(measured, script, e.body);
 	}
 
-	private static PawnInstruction makeIns(PawnInstruction.Commands cmd, int ptr, int arg) {
-		PawnInstruction ins = new PawnInstruction(ptr, cmd.ordinal(), "");
-		if (ins.argumentCells.length > 0) {
-			ins.argumentCells[0] = arg;
-		}
-		ins.updateDisassembly();
-		return ins;
-	}
-
-	/** SYSREQ_N(nativeIndex, argBytes) - a full-arg op with two cells. */
-	private static PawnInstruction makeSysreq(int ptr, int nativeIndex, int argBytes) {
-		PawnInstruction ins = new PawnInstruction(ptr, PawnInstruction.Commands.SYSREQ_N.ordinal(), "");
-		ins.argumentCells[0] = nativeIndex;
-		ins.argumentCells[1] = argBytes;
-		ins.updateDisassembly();
-		return ins;
-	}
 }

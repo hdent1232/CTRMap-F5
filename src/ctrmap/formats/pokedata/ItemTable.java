@@ -375,16 +375,24 @@ public final class ItemTable {
 		if (f == null) {
 			return null;
 		}
+		//ABSENT IS NULL, UNREADABLE IS SAID (census M.112): every failure here answered null, read as "no copy was
+		//ever taken", and the advice to save once could never retake a copy that is there
+		byte[] b;
 		try {
 			GARC g = new GARC(f, false);
 			if (id < 0 || id >= g.getEntryCount()) {
-				return null;
+				throw new IllegalStateException("it holds " + g.getEntryCount() + " item(s), and no item " + id);
 			}
-			byte[] b = g.getDecompressedEntry(id);
-			return b != null && b.length == ItemData.SIZE ? b : null;
-		} catch (RuntimeException ex) {
-			return null;
+			b = g.getDecompressedEntry(id);
+		} catch (RuntimeException unread) {
+			throw new IllegalStateException("The pre-edit copy of the item archive (" + f + ") cannot answer item " + id
+					+ ": " + ctrmap.util.Bytes.reason(unread), unread);
 		}
+		if (b == null || b.length != ItemData.SIZE) {
+			throw new IllegalStateException("The pre-edit copy of the item archive (" + f + ") holds item " + id + " as "
+					+ (b == null ? "nothing" : b.length + " byte(s)") + ", not a " + ItemData.SIZE + "-byte record");
+		}
+		return b;
 	}
 
 	/**

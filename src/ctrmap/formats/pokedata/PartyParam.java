@@ -275,6 +275,7 @@ public final class PartyParam {
 	}
 
 	/** The Set selector that writes this name, or null when nothing writes it. */
+	@ctrmap.util.ForSuites("SEAM: PartyParamTest asks which Set selector writes a name, to see every writable name has one")
 	public static Integer setSelectorFor(String name) {
 		for (Param p : SET.values()) {
 			if (p.name.equals(name)) {
@@ -285,11 +286,13 @@ public final class PartyParam {
 	}
 
 	/** All named Get selectors, in selector order. Read-only. */
+	@ctrmap.util.ForSuites("SEAM: PartyParamTest counts the named Get selectors against the measured table; the program asks one selector at a time")
 	public static Map<Integer, Param> getTable() {
 		return Collections.unmodifiableMap(GET);
 	}
 
 	/** All named Set selectors, in selector order. Read-only. */
+	@ctrmap.util.ForSuites("SEAM: PartyParamTest counts the named Set selectors against the measured table; the program asks one selector at a time")
 	public static Map<Integer, Param> setTable() {
 		return Collections.unmodifiableMap(SET);
 	}

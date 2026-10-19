@@ -44,7 +44,7 @@ public class ZoneAppender {
 	// NOTE: the legacy single-zone appendZone(int) was REMOVED (2026-08-30): it
 	// predates auto-forking and produced zones that silently SHARED their donor's
 	// map geometry (the user's zones 536-539 came from it). All appends go
-	// through appendZones(int, int) below, which forks every real zone at
+	// through appendZones below, which forks every real zone at
 	// creation - do not resurrect a creation path that skips GeometryForker.
 
 	/**
@@ -118,9 +118,10 @@ public class ZoneAppender {
 	}
 
 	/**
-	 * REFUSES, and says what a created zone would share. This is the two-argument
-	 * form and it exists to be refused: an append that cannot make its zones
-	 * independent must not happen because a caller did not think to ask.
+	 * Appends the zones, having been told the caller has shown the user what they
+	 * will share - or REFUSES, saying what a created zone would share, when it was
+	 * not told: an append that cannot make its zones independent must not happen
+	 * because a caller did not think to ask.
 	 *
 	 * <p>WHY A REFUSAL AND NOT A WARNING. A warning is a detector - it reports
 	 * what already went wrong and relies on somebody reading it. The zones this
@@ -128,26 +129,10 @@ public class ZoneAppender {
 	 * with nothing said, and the owner found it by opening a settings field by
 	 * chance. The only thing that closes that class is refusing at the point the
 	 * zone is MADE, so the answer has to be a decision somebody took rather than
-	 * a message somebody missed.
-	 *
-	 * <p>When {@link #sharedAfterAppend()} is empty - when every resource is made
-	 * private - this stops refusing on its own and becomes an ordinary call. The
-	 * refusal shrinks as the capability grows, which is the right way round.
-	 */
-	public static AppendResult appendZones(int newRealZones, int srcIndex) throws IOException {
-		java.util.List<ZoneResource> shared = sharedAfterAppend();
-		if (!shared.isEmpty()) {
-			throw new IOException(sharedWarning(srcIndex)
-				+ "\n\nCTRMap cannot give a new zone its own " + shared + " yet, so it will not"
-				+ " create one\nquietly. Use the form that takes an explicit acknowledgement, after"
-				+ " showing the\nuser this sentence.");
-		}
-		return appendZones(newRealZones, srcIndex, true);
-	}
-
-	/**
-	 * Appends the zones, having been told the caller has shown the user what they
-	 * will share.
+	 * a message somebody missed. When {@link #sharedAfterAppend()} is empty - when
+	 * every resource is made private - an unacknowledged append stops refusing on
+	 * its own: the refusal shrinks as the capability grows, which is the right way
+	 * round.
 	 *
 	 * <p>Appends {@code newRealZones} new zones to the current ORAS workspace, plus
 	 * enough spare slots to raise the total to M = the next multiple of 4, so it

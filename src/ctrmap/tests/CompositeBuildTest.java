@@ -98,7 +98,7 @@ public class CompositeBuildTest {
 	static int identity(String label, byte[][] reg) {
 		try {
 			TilePalette[][] g = grid(TilePalette.GRASS);
-			RegionFactory.BlankContent c = PaintedRegionBuilder.buildComposite(reg[0], reg[1], reg[2],
+			RegionFactory.BlankContent c = PaintedRegionBuilder.buildComposite(null, reg[0], reg[1], reg[2],
 					g, null, null, new boolean[DIM][DIM], TerrainLighting.daytime(), true);
 			if (!Arrays.equals(c.model, reg[0]) || !Arrays.equals(c.collision, reg[1]) || !Arrays.equals(c.tilemap, reg[2])) {
 				throw new IllegalStateException("bytes changed with nothing touched");
@@ -122,7 +122,7 @@ public class CompositeBuildTest {
 					touched[y][x] = true;
 				}
 			}
-			RegionFactory.BlankContent c = PaintedRegionBuilder.buildComposite(reg[0], reg[1], reg[2],
+			RegionFactory.BlankContent c = PaintedRegionBuilder.buildComposite(null, reg[0], reg[1], reg[2],
 					g, h, null, touched, TerrainLighting.daytime(), true);
 			modelGates(c.model, true);
 
@@ -197,7 +197,7 @@ public class CompositeBuildTest {
 				g[y][5] = TilePalette.PATH;
 				touched[y][5] = true;
 			}
-			RegionFactory.BlankContent c = PaintedRegionBuilder.buildComposite(reg[0], reg[1], reg[2],
+			RegionFactory.BlankContent c = PaintedRegionBuilder.buildComposite(null, reg[0], reg[1], reg[2],
 					g, h, null, touched, TerrainLighting.daytime(), true);
 			modelGates(c.model, true);
 			GfColl donor = new GfColl(reg[1]);
@@ -229,7 +229,7 @@ public class CompositeBuildTest {
 					t1[y][x] = true;
 				}
 			}
-			RegionFactory.BlankContent first = PaintedRegionBuilder.buildComposite(reg[0], reg[1], reg[2],
+			RegionFactory.BlankContent first = PaintedRegionBuilder.buildComposite(null, reg[0], reg[1], reg[2],
 					g, h, null, t1, TerrainLighting.daytime(), true);
 			modelGates(first.model, false);
 
@@ -244,7 +244,7 @@ public class CompositeBuildTest {
 					t2[y][x] = true;
 				}
 			}
-			RegionFactory.BlankContent second = PaintedRegionBuilder.buildComposite(reg2[0], reg2[1], reg2[2],
+			RegionFactory.BlankContent second = PaintedRegionBuilder.buildComposite(null, reg2[0], reg2[1], reg2[2],
 					g2, h2, null, t2, TerrainLighting.daytime(), true);
 			modelGates(second.model, false);
 			GfColl out = new GfColl(second.collision);
@@ -290,7 +290,7 @@ public class CompositeBuildTest {
 				touched[y][x] = true;
 			}
 		}
-		RegionFactory.BlankContent c = PaintedRegionBuilder.buildComposite(reg[0], reg[1], reg[2],
+		RegionFactory.BlankContent c = PaintedRegionBuilder.buildComposite(null, reg[0], reg[1], reg[2],
 				g, h, null, touched, TerrainLighting.daytime(), true);
 		modelGates(c.model, deep);
 

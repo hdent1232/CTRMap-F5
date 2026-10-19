@@ -11,7 +11,6 @@ import javax.swing.DefaultListModel;
 import javax.swing.JSpinner;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
-import javax.swing.event.ListSelectionEvent;
 
 /**
  * CM2D tile editor database accessor.
@@ -63,7 +62,7 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 		byte2.setName("2");
 		byte3.setName("3");
 		tileset = Workspace.getTileset();
-		tileList.addListSelectionListener((ListSelectionEvent e) -> {
+		ctrmap.util.Selections.onSettled(tileList, () -> {
 			if (suppressListEvents || tileList.getSelectedValue() == null) {
 				return;
 			}
@@ -148,9 +147,9 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 						JSpinner src = (JSpinner) e.getSource();
 						//NOTHING TO RECORD (F209): the zone's history reads the region's tiles around the
 						//gesture that changed them. This called a static tile history by hand.
-						region.rawTileData[Selector.selTileX % 40][Selector.selTileY % 40][src.getName().charAt(0) - '0'] = ((Integer) src.getValue()).byteValue();
-						region.modified = true;
-						region.updateImage();
+						byte[] tuple = region.getTileData(Selector.selTileX % 40, Selector.selTileY % 40).clone();
+						tuple[src.getName().charAt(0) - '0'] = ((Integer) src.getValue()).byteValue();
+						region.setTileData(Selector.selTileX % 40, Selector.selTileY % 40, tuple);   //marks and paints it (census L.39)
 						map.scaleImage(map.tilemapScale);
 						showTile(Selector.selTileX, Selector.selTileY, true);
 					}
@@ -177,8 +176,8 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 							}
 						}
 					}
-					//could have affected multiple regions, update them all
-					map.updateAll();
+					//each tile painted itself (census L.39): this repainted every region of the map behind a progress dialog
+					map.scaleImage(map.tilemapScale);
 				}
 				//THE REPAINT REQUEST THAT USED TO SIT HERE IS GONE, NOT REWIRED. It was the
 				//same bare inherited JComponent.firePropertyChange the prop editor had, and

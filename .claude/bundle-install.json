@@ -23,7 +23,8 @@
     "-B",
     "tools/guard/replant.py",
     "{key}"
-   ]
+   ],
+   "unknown_exit": 3
   },
   "not_covered": "CTRMap proves its Java tests with its own plant ledger, tools/guard/plants.json, driven and checked by src/ctrmap/tests/PlantLedgerTest.java; a second ledger over the same tests would be two records of one fact."
  },
@@ -53,13 +54,5 @@
  },
  "tools/require_build.py": {
   "not_installed": "CTRMap's require_build.py is the original the bundle's copy was adapted from; its test.ps1 and its Java suites read this one, with CTRMap's own roots."
- },
- "tools/whole_tree.py": {
-  "at": "tools/whole_tree.py",
-  "diverged": "F191 (2026-10-06 audit): the module walk leaves the program's own tests (PROOFS = 'tests') out of what a record must cover - counted, they made the mutation record read 'missing 385 of 418' when 232 of 265 production modules were unscored. The bundle has no PROOFS; offer it upstream, then take the bundle's copy."
- },
- "tests/test_bundle_gates.py": {
-  "at": "tests/test_bundle_gates.py",
-  "diverged": "F191 (2026-10-06 audit): carries the test of whole_tree's PROOFS (test_the_programs_proofs_are_not_modules_a_record_must_cover), which the bundle's copy cannot have until its whole_tree.py takes PROOFS; the two move together."
  }
 }

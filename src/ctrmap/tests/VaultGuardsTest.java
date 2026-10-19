@@ -76,7 +76,9 @@ public class VaultGuardsTest {
 			aVersionPairIsNeverOneBackup(scratch);
 			aDamagedBackupRestoresNothing(scratch);
 			theGameAsItShippedIsNeverTheLiveGame(scratch);
+			thePalettesDonorTexturesAreWholeOrRefused(scratch);
 			aRestoreRereadsTheOpenGame(scratch);
+			noKeyClimbsOutOfTheFolder(scratch);
 		} finally {
 			Scratch.deleteTree(scratch);
 		}
@@ -159,6 +161,69 @@ public class VaultGuardsTest {
 		check(Vault.verify(entry, true).isEmpty(), "and it verifies clean once put back");
 	}
 
+	/**
+	 * Census M.37: every key a backup holds names a file inside it, and inside the folder it is restored into. The
+	 * executable beside the dump was keyed "../code.bin": sealed one folder out of the backup's files, and restored
+	 * into the PARENT of whatever folder the user named.
+	 */
+	static void noKeyClimbsOutOfTheFolder(File scratch) throws IOException {
+		System.out.println("--- no backup key climbs out of the backup or the folder it is restored into (census M.37)");
+		check(Vault.escapes("some/folder/file") == null && Vault.escapes(Vault.BESIDE + "code.bin") == null,
+				"control: a path in the tree, and the executable's reserved name, are inside it");
+		String up = Vault.escapes("../outside.bin");
+		check(up != null && up.contains("climbs out") && Vault.escapes("a/../../x") != null && Vault.escapes("/etc/x") != null
+				&& Vault.escapes("C:/x") != null, "a key with \"..\", or an absolute one, is refused: " + up);
+		//its own vault: the suite's dump of this title is sealed already, and a sealed vault is never replaced
+		String vaultRoot = System.getProperty("ctrmap.vault.root");
+		System.setProperty("ctrmap.vault.root", new File(scratch, "vault-beside").getAbsolutePath());
+		try {
+			besideTheDump(scratch);
+		} finally {
+			System.setProperty("ctrmap.vault.root", vaultRoot);
+		}
+	}
+
+	static void besideTheDump(File scratch) throws IOException {
+		File dump = new File(new File(scratch, "beside"), "000400000011C400");
+		buildFakeDump(dump);
+		File beside = new File(dump.getParentFile(), "code.bin");
+		write(beside, "the executable beside the dump");
+		Vault.SealResult r = Vault.seal(dump, Vault.Scope.MODDABLE, null);
+		check(r.sealed && r.manifest.entries.containsKey(Vault.BESIDE + "code.bin"),
+				"the executable beside the dump is sealed under its in-tree name: " + (r.manifest == null ? r.problem
+				: r.manifest.entries.keySet()));
+		boolean noneClimbs = r.manifest != null;
+		for (String key : r.manifest == null ? java.util.Collections.<String>emptySet() : r.manifest.entries.keySet()) {
+			noneClimbs &= Vault.escapes(key) == null;
+		}
+		check(noneClimbs && !new File(r.entry, "code.bin").exists(),
+				"no key climbs out, and nothing was written beside the backup's files");
+		File target = new File(new File(scratch, "copy"), "000400000011C400");
+		buildFakeDump(target);
+		File parent = new File(target.getParentFile(), "code.bin");
+		java.util.List<String> said = Vault.restoreAll(r.entry, target, null);
+		check(new File(target, Vault.BESIDE + "code.bin").isFile() && !parent.exists(),
+				"a restore into another folder puts the executable inside it, never in its parent: " + said);
+		String refused = Vault.restoreOne(r.entry, "../outside.bin", target);
+		check(refused.contains("climbs out") && !parent.exists(),
+				"and a key that climbs out is refused, writing nothing: " + refused);
+		//and a backup whose manifest is damaged restores nothing and SAYS so - an empty answer is "every file
+		//landed" (the 2026-10-15 shared sweep, Vault 805, drop-report, SURVIVED: no suite restored from a damaged
+		//manifest). Dropped, a restore that put nothing back read as one that put everything back
+		java.io.File manifest = new java.io.File(r.entry, "manifest.txt");
+		byte[] sealedManifest = java.nio.file.Files.readAllBytes(manifest.toPath());
+		java.util.List<String> damaged;
+		try {
+			write(manifest, "f not-a-size 0 abc zone.bin\n");
+			damaged = Vault.restoreAll(r.entry, target, null);
+		} finally {
+			java.nio.file.Files.write(manifest.toPath(), sealedManifest);
+		}
+		check(damaged.size() == 1 && damaged.get(0).contains("is damaged") && damaged.get(0).contains("nothing was restored")
+				&& damaged.get(0).contains(r.entry.toString()),
+				"a backup whose manifest is damaged restores nothing and says so, naming where its files are: " + damaged);
+	}
+
 	static void restoresOneFileWithoutTouchingOthers(File dump) throws IOException {
 		System.out.println("--- restoring ONE file: the zone-536 case, without losing the other edits");
 		File entry = Vault.entryFor(dump);
@@ -203,8 +268,29 @@ public class VaultGuardsTest {
 		List<Vault.Drift> drift = Vault.verify(entry, false);
 		check(!drift.isEmpty(), "and verifying it complains rather than reporting all-clear"
 				+ firstOf(drift));
+		//census M.144: a manifest that is there and will not read was the same null as no manifest, and every caller
+		//said there was no backup at all, while its files sat sealed in the folder
+		String said = firstOf(drift);
+		check(said.contains("cut short") && said.contains(entry.getPath()) && !said.contains("there is no backup"),
+				"and says it is damaged, naming the folder its files are in - not that there is no backup: " + said);
+		write(man, text.replace("\r\nsealedAt=", "\r\nsealedAt=not-a-number-"));
+		String restored = Vault.restoreOne(entry, "code.bin", dump);
+		check(restored != null && restored.contains("is damaged") && restored.contains(entry.getPath())
+				&& !restored.contains("no finished backup"),
+				"a manifest with a number that will not parse is said as damaged too, by restore: " + restored);
 		writeRaw(man, good);
 		check(Vault.verify(entry, true).isEmpty(), "and it is fine again once whole");
+		//census M.147: restoring one archive asked the user to type its path; the files are offered now, from here
+		List<String> held = Vault.heldFiles(entry);
+		check(held.size() == 4 && held.contains("code.bin"), "the backup names the files it holds, for a restore to offer: " + held);
+		String main = new String(java.nio.file.Files.readAllBytes(new File("src/ctrmap/CtrmapMainframe.java").toPath()),
+				java.nio.charset.StandardCharsets.UTF_8);
+		int at = main.indexOf("private void restoreFromVaultAction() {");
+		int end = at < 0 ? -1 : main.indexOf("\n\t}\n", at);
+		String action = at >= 0 && end > at ? main.substring(at, end) : "";
+		check(action.contains("ctrmap.vault.Vault.heldFiles(entry)") && action.contains("JOptionPane.QUESTION_MESSAGE, choices, choices[0])")
+				&& !action.contains("JOptionPane.QUESTION_MESSAGE, null,"),
+				"and Restore one archive offers them to pick from, not a box to type a path in");
 	}
 
 	static void flowAsksAndNeverAssumesConsent(File scratch) throws IOException {
@@ -394,7 +480,7 @@ public class VaultGuardsTest {
 
 		String mf = new String(java.nio.file.Files.readAllBytes(new File("src/ctrmap/CtrmapMainframe.java").toPath()),
 				java.nio.charset.StandardCharsets.UTF_8);
-		String open = CollisionReadTest.body(SourceSeamTest.stripComments(mf), "public int onWorkspaceOpened(");
+		String open = CollisionReadTest.body(SourceSeamTest.stripComments(mf), "private int onWorkspaceOpened(");
 		check(open != null && open.contains("VaultUi.checkOnOpen("), "and the window checks it whenever a game opens");
 	}
 
@@ -449,6 +535,82 @@ public class VaultGuardsTest {
 		} finally {
 			ctrmap.Workspace.install(null);
 		}
+	}
+
+	/**
+	 * The building palette's donor textures read a pack whole or refuse it in words, and leave out one
+	 * with nothing past its header (the 2026-10-14 shared sweep, BuildingPaletteDialog 199, negate-if,
+	 * SURVIVED: every suite that asked for them had no untouched copy, so no pack was ever read). A pack
+	 * that is not a whole BCH raised BCHFile's error level and was taken as holding no textures, so the
+	 * building drew untextured without a word - the silence F211 removed for a pack that throws. Driven
+	 * over a hand-made area archive in the workspace's snapshot: area 0's world pack is the pack
+	 * writer's two textures and its prop pack is empty; area 1's two packs are exactly a header long;
+	 * area 2's world pack is longer than a header and is not a BCH.
+	 */
+	static void thePalettesDonorTexturesAreWholeOrRefused(File scratch) {
+		System.out.println("--- the palette's donor textures are read whole or refused in words; a header-long pack is left out");
+		File workspace = new File(scratch, "ws-donor");
+		workspace.mkdirs();
+		ctrmap.WorkspaceSession session = Sessions.bare(workspace, new File(scratch, "000400000011C406"),
+				ctrmap.gamedef.GameType.ORAS);
+		try {
+			session.scratch().mkdirs();   //an opened workspace has made it; a bare session has not
+			File archive = new File(session.originalSnapshotDir().getAbsolutePath()
+					+ session.profile().archivePath(ctrmap.gamedef.ArchiveType.AREA_DATA));
+			archive.getParentFile().mkdirs();
+			byte[] notABch = new byte[0x48];
+			java.util.Arrays.fill(notABch, (byte) 'X');
+			HandedGameTest.writeGarc(archive, area(BchSectionsTest.texturePack(), new byte[0]),
+					area(new byte[0x44], new byte[0x44]), area(notABch, new byte[0]),
+					area(BchSectionsTest.firstFormatUnknown(BchSectionsTest.texturePack()), new byte[0]));
+			File read = session.pristineArchive(ctrmap.gamedef.ArchiveType.AREA_DATA);
+			check(archive.equals(read), "CONTROL: the area archive the palette reads is the snapshot's: " + read);
+
+			//every answer is read, a refusal too: a check that a throw ends before it speaks proves nothing
+			String whole = donor(0);
+			check(whole.equals("[chip_grass_a, chip_sea_b]"),
+					"a world pack longer than its header is read whole, and an empty prop pack left out: " + whole);
+			String headerLong = donor(1);
+			check(headerLong.equals("[]"), "two packs exactly a header long hold no textures and are left out, not read: "
+					+ headerLong);
+			String notABchSaid = donor(2);
+			check(notABchSaid.startsWith("refused: its texture pack (file 11) could not be read"),
+					"a pack longer than its header that is not a BCH is refused in words, never taken as holding no"
+					+ " textures: " + notABchSaid);
+			//(the 2026-10-14 shared sweep, BuildingPaletteDialog 203, drop-throw, SURVIVED: no pack it read threw)
+			String thrown = donor(3);
+			check(thrown.startsWith("refused: its texture pack (file 11) could not be read: ")
+					&& thrown.contains("99 is not a TextureFormat"),
+					"and a pack whose read throws is refused naming why, never left out: " + thrown);
+		} catch (Exception threw) {
+			check(false, "the palette's donor textures threw instead of answering: " + threw);
+		} finally {
+			ctrmap.Workspace.install(null);
+		}
+	}
+
+	/** The names of an area's donor textures, or "refused: " and what the palette said. */
+	static String donor(int areaId) {
+		try {
+			List<String> names = new java.util.ArrayList<>();
+			for (ctrmap.formats.h3d.texturing.H3DTexture t : ctrmap.humaninterface.BuildingPaletteDialog.donorTextures(areaId)) {
+				names.add(t.textureName);
+			}
+			return names.toString();
+		} catch (Exception said) {
+			return "refused: " + said.getMessage();
+		}
+	}
+
+	/** An area container of 12 subfiles: this world pack (file 11) and prop pack (file 1), the rest empty. */
+	static byte[] area(byte[] world, byte[] props) {
+		byte[][] subs = new byte[12][];
+		for (int i = 0; i < subs.length; i++) {
+			subs[i] = new byte[0];
+		}
+		subs[11] = world;
+		subs[1] = props;
+		return HandedGameTest.container("AD", subs);
 	}
 
 	/**
@@ -507,7 +669,7 @@ public class VaultGuardsTest {
 			String mf = new String(java.nio.file.Files.readAllBytes(new File("src/ctrmap/CtrmapMainframe.java").toPath()),
 					java.nio.charset.StandardCharsets.UTF_8);
 			String action = CollisionReadTest.body(SourceSeamTest.stripComments(mf), "private void restoreFromVaultAction(");
-			check(action != null && action.contains("VaultUi.restoreOne(frame, entry, String.valueOf(rel).trim(), dump, Workspace.session())")
+			check(action != null && action.contains("VaultUi.restoreOne(frame, entry, byLabel.get(String.valueOf(rel)), dump, Workspace.session())")
 					&& action.contains("VaultUi.restoreEverything(frame, entry, dump, Workspace.session())"),
 					"and the window hands both restores the session open over that folder");
 		} finally {
@@ -525,13 +687,13 @@ public class VaultGuardsTest {
 		return d.isEmpty() ? "" : " [" + d.get(0) + "]";
 	}
 
+	/** The folder's manifest, as the program reads one; null when there is none or it is damaged. */
 	static VaultManifest readOrNull(File entry) {
-		for (VaultManifest m : Vault.list()) {
-			if (m.entryDir != null && m.entryDir.equals(entry)) {
-				return m;
-			}
+		try {
+			return VaultManifest.read(entry);
+		} catch (IOException damaged) {
+			return null;
 		}
-		return null;
 	}
 
 	static void buildFakeDump(File dump) throws IOException {

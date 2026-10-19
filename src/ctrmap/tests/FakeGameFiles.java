@@ -122,8 +122,23 @@ final class FakeGameFiles implements GameFiles {
 
 	// ------------------------------------------------------------ the contract
 
+	/** What staged() answers for one archive type, in place of the staging area (see {@link #stagesAt}). */
+	private final EnumMap<ArchiveType, java.util.function.IntFunction<File>> stagedOverride = new EnumMap<>(ArchiveType.class);
+
+	/**
+	 * Has staged() answer {@code where} for {@code type}: a suite asking what a class does handed no place to stage a
+	 * record (a function answering null), or a place that keeps nothing written to it.
+	 */
+	FakeGameFiles stagesAt(ArchiveType type, java.util.function.IntFunction<File> where) {
+		stagedOverride.put(type, where);
+		return this;
+	}
+
 	@Override
 	public File staged(ArchiveType type, int entry) {
+		if (stagedOverride.containsKey(type)) {
+			return stagedOverride.get(type).apply(entry);
+		}
 		if (profile.archivePath(type) == null) {
 			return null;
 		}

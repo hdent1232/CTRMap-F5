@@ -26,6 +26,7 @@ public class DumpCheckTest {
 			System.out.println("FAIL usage: DumpCheckTest <a real RomFS dump folder>");
 			System.exit(1);
 		}
+		anUnopenableArchiveIsNotDamage();   //needs no dump: it makes one of its own
 		if (!new File(args[0]).isDirectory()) {
 			Skip.suite("no complete RomFS dump at " + args[0]);
 			return;
@@ -102,6 +103,68 @@ public class DumpCheckTest {
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT (" + failures + ")");
 		if (failures > 0) {
 			System.exit(1);
+		}
+	}
+
+	/**
+	 * An archive that is there but cannot be opened is not called damage (census M.139). The check answered false
+	 * for an IOException exactly as for a wrong magic, and told the user to unpack the whole game again because the
+	 * emulator held a file. A dump of 16-byte archives is made, and one of them locked.
+	 */
+	static void anUnopenableArchiveIsNotDamage() throws Exception {
+		File fake = Scratch.dir("ctrmap_dumpcheck_locked");
+		ctrmap.gamedef.GameProfile oras = new ctrmap.gamedef.OrasProfile();
+		new File(fake, "a").mkdirs();
+		write(new File(fake + oras.archivePath(ctrmap.gamedef.ArchiveType.SOUND_BCSAR)), "sound");
+		File first = null;
+		File second = null;
+		byte[] little = {'C', 'R', 'A', 'G', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+		for (ctrmap.gamedef.ArchiveType t : ctrmap.WorkspaceSession.requiredArchives()) {
+			String rel = ctrmap.Workspace.getArchivePath(t, oras.type());
+			if (rel == null) {
+				continue;
+			}
+			File f = new File(fake + rel);
+			f.getParentFile().mkdirs();
+			Files.write(f.toPath(), little);
+			second = first != null && second == null ? f : second;
+			first = first == null ? f : first;
+		}
+		DumpCheck.Result whole = DumpCheck.check(fake);
+		check("control: a dump of whole little archives is VALID", whole.status == DumpCheck.Status.VALID, whole);
+		//a damaged one with nothing held says to unpack again and nothing of archives it could not open (the
+		//2026-10-15 shared sweep, DumpCheck 248, negate-if, SURVIVED: no suite had damage and a held archive apart)
+		write(second, "not an archive at all");
+		DumpCheck.Result damaged = DumpCheck.check(fake);
+		Files.write(second.toPath(), little);
+		check("a damaged archive with none held says to unpack again, and names nothing as unopened",
+				damaged.status == DumpCheck.Status.DAMAGED && damaged.detail != null && damaged.detail.contains("unpacking")
+				&& !damaged.detail.contains("could not be opened"), damaged);
+		try (java.nio.channels.FileChannel ch = java.nio.channels.FileChannel.open(first.toPath(),
+				java.nio.file.StandardOpenOption.READ, java.nio.file.StandardOpenOption.WRITE);
+				java.nio.channels.FileLock held = ch.lock()) {
+			boolean blocks;
+			try (java.io.RandomAccessFile probe = new java.io.RandomAccessFile(first, "r")) {
+				probe.readFully(new byte[4]);
+				blocks = false;
+			} catch (IOException refused) {
+				blocks = true;
+			}
+			if (!blocks) {
+				Skip.section("a lock does not stop a read on this system, so a held archive cannot be made here");
+				return;
+			}
+			DumpCheck.Result locked = DumpCheck.check(fake);
+			check("an archive that cannot be opened is said as that, not as an unfinished unpack",
+					locked.status != DumpCheck.Status.VALID && locked.detail != null
+					&& locked.detail.contains("could not be opened") && !locked.detail.contains("unpacking"), locked);
+			//and with damage as well, both are said: unpack again, and these could not be opened (DumpCheck 248)
+			write(second, "not an archive at all");
+			DumpCheck.Result both = DumpCheck.check(fake);
+			Files.write(second.toPath(), little);
+			check("a damaged archive and a held one are both said", both.status == DumpCheck.Status.DAMAGED
+					&& both.detail != null && both.detail.contains("unpacking") && both.detail.contains("could not be opened"),
+					both);
 		}
 	}
 

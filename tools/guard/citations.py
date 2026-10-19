@@ -72,8 +72,10 @@ import sys
 import tempfile
 
 LF = chr(10)
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console window for a captured child (F184)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+import bounded  # noqa: E402  - a deadline ends the child's whole tree
 ROOT = _tree_root.require(__file__)
 
 #: EVERY function here takes the tree it is judging. The first draft had `root` on the public
@@ -112,9 +114,10 @@ def _text_files(root=ROOT):
     the caller says so rather than printing a clean report over nothing.
     """
     try:
-        out = subprocess.check_output(
+        out = bounded.run(
             ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
-            cwd=root, stderr=subprocess.STDOUT, timeout=60)
+            cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60, check=True,
+            creationflags=NO_WINDOW).stdout
     except (OSError, subprocess.SubprocessError):
         return None
     names = []
@@ -347,7 +350,8 @@ def _scratch(tmp, cited, declared, on_disk, with_session_folder=True, marked=Tru
     root = os.path.join(tmp, "repo")
     os.makedirs(os.path.join(root, "tools", "guard"))
     os.makedirs(os.path.join(root, "docs"))
-    subprocess.check_output(["git", "init", "-q", root], stderr=subprocess.STDOUT, timeout=60)
+    bounded.run(["git", "init", "-q", root], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60,
+                check=True, creationflags=NO_WINDOW)
     with io.open(os.path.join(root, "docs", "note.md"), "w", encoding="utf-8") as handle:
         handle.write(
             LF.join("see `%s` for the evidence%s" % (c, ", outside the repository" if marked else "")
@@ -487,6 +491,12 @@ def selftest():
 
 
 def main(argv):
+    #a word this does not read refuses the run, before anything runs (cli_words, 2026-10-10)
+    import _cli
+    unread_words = _cli.refused(argv[1:], flags=("--selftest", "--root"), valued=("--root",), most=0)
+    if unread_words:
+        print(unread_words)
+        return 2
     if "--selftest" in argv:
         return selftest()
     #: --root EXISTS SO THIS FILE IS NOT ITS OWN ONLY WITNESS. Until 2026-09-26 the suite proved

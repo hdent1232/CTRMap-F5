@@ -61,7 +61,7 @@ public class GLPanel extends GLJPanel implements GLEventListener {
 		gl.glBegin(GL2.GL_TRIANGLES);
 
 		if (parent.coll != null) {
-			parent.coll.render(gl);
+			ctrmap.render.CollisionRenderer.render(gl, parent.coll);
 		}
 
 		gl.glEnd();

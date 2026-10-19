@@ -41,6 +41,7 @@ public class MasterTableTest {
 			repointingMovesOneIdInOneRow();
 			aRowIsReplacedWholeOrNotAtAll();
 			theGameIsReadByThePolicyAndWrittenToIt();
+			aTableTheGameCannotStageOrReadIsRefusedInWords();
 			noNewCodeIndexesTheRowsByHand(new File(args.length > 0 ? args[0] : "src"));
 			noCodeSpellsTheZoneArchivesTail(new File(args.length > 0 ? args[0] : "src"));
 		} finally {
@@ -233,6 +234,48 @@ public class MasterTableTest {
 		FakeGameFiles stale = HandedGameTest.zoneGame(7, 7, 9, 7).plant(ArchiveType.ZONE_DATA, 4, rows(9, 9, 9, 9, 9));
 		check(MasterTable.read(stale).sharing(ZoneResource.AREA, 0).equals(Arrays.asList(1, 3)),
 				"a stale extraction of the wrong size, never reported as edited, is read from the archive");
+	}
+
+	/**
+	 * A table the game cannot stage, or whose staged copy cannot be read, is refused in its own words.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (MasterTable 67, dropped and swallowed, and 74, dropped, SURVIVED):
+	 * nothing asked either. Dropped, a table that could not be staged reached {@code f.isFile()} on null and
+	 * crashed in no one's words; swallowed, the read answered no table at all; and a staged copy that could not
+	 * be read was skipped for the archive's - an edit read as though it had never been made.
+	 */
+	static void aTableTheGameCannotStageOrReadIsRefusedInWords() throws Exception {
+		System.out.println("--- a table the game cannot stage, or cannot read, is refused in its own words");
+		FakeGameFiles unstaged = HandedGameTest.zoneGame(7, 7, 9, 7);
+		//a FILE where the staged copies' folder belongs: the extraction cannot be written, so nothing is staged
+		Files.write(unstaged.stagedDir(ArchiveType.ZONE_DATA).toPath(), new byte[]{1});
+		String unstagedSaid = refusedWith(unstaged);
+		check(unstagedSaid.contains("could not be extracted"), "a table the game cannot stage is refused in words: "
+				+ unstagedSaid);
+		if (!System.getProperty("os.name", "").toLowerCase().contains("win")) {
+			Skip.section("a byte-range lock stops another handle's read only on Windows - the unreadable copy was NOT asked");
+			return;
+		}
+		FakeGameFiles locked = HandedGameTest.zoneGame(7, 7, 9, 7).plant(ArchiveType.ZONE_DATA, 4, rows(9, 9, 9, 9));
+		File copy = locked.staged(ArchiveType.ZONE_DATA, 4);
+		String said;
+		try (java.io.RandomAccessFile held = new java.io.RandomAccessFile(copy, "rw");
+				java.nio.channels.FileLock lock = held.getChannel().lock()) {
+			said = refusedWith(locked);
+		}
+		check(said.contains("could not be read"), "a staged copy that cannot be read is refused in words, never"
+				+ " passed over for the archive's: " + said);
+	}
+
+	/** What reading this game's table said: its refusal, or what it answered instead. */
+	static String refusedWith(FakeGameFiles game) {
+		try {
+			return "answered " + MasterTable.read(game);
+		} catch (IOException said) {
+			return said.getMessage();
+		} catch (RuntimeException crash) {
+			return "crashed: " + crash;
+		}
 	}
 
 	// ------------------------------------------------------------ 7. the class

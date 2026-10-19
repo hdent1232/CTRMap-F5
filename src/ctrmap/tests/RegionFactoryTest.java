@@ -110,9 +110,70 @@ public class RegionFactoryTest {
 			}
 		}
 		System.out.println("\nRegionFactory: tested=" + tested + "  ok=" + ok + "  failures=" + failures);
+		failures += everyExtraLayerIsBlanked(garc);
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT");
 		if (failures > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * A blanked region of 11 subfiles has both extra layers blanked - 7 and 8 void tilemaps, 9 and 10 empty collision -
+	 * and one of 9 has its one, 7 and 8; none keeps the layer it held.
+	 *
+	 * <p>Measured by the 2026-10-14 shared sweep (RegionFactory 116, negate-if, SURVIVED): nothing blanked a region
+	 * with extra layers and looked at them. Inverted, a region of 11 kept its second layer's old tiles and collision
+	 * under a blank canvas, and one of 9 or 10 was written a subfile 10 it does not have.
+	 */
+	static int everyExtraLayerIsBlanked(GARC garc) throws Exception {
+		System.out.println("--- a blanked region's extra layers are blanked, every one it has");
+		byte[] template = null;
+		for (int i = 0; i < garc.length && template == null; i++) {
+			byte[] model = subfile(garc.getDecompressedEntry(i), 1);
+			if (model != null && BchMapModel.isMapModel(model)) {
+				template = model;
+			}
+		}
+		if (template == null) {
+			System.out.println("FAIL extra layers: the archive holds no map model to blank");
+			return 1;
+		}
+		byte[] old = "the layer as it was".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+		byte[] voidTiles = RegionFactory.voidTilemap(), noCollision = RegionFactory.emptyCollision();
+		int fails = 0;
+		for (int len : new int[]{11, 9}) {
+			File f = new File(Scratch.dir("ctrmap_blank_layers"), String.valueOf(len));
+			ctrmap.formats.containers.GR gr = new ctrmap.formats.containers.GR(f, len, new ContainerWriteSafetyTest.Files2());
+			for (int s = 0; s < len; s++) {
+				gr.storeFile(s, s == 1 ? template : old);
+			}
+			String blanked;
+			try {
+				blanked = RegionFactory.blankOrThrow(gr, -1) ? "blanked" : "not blanked";
+			} catch (RuntimeException threw) {
+				blanked = "it threw " + threw;
+			}
+			StringBuilder wrong = new StringBuilder();
+			int[] tiles = len >= 11 ? new int[]{7, 8} : new int[]{7};
+			int[] coll = len >= 11 ? new int[]{9, 10} : new int[]{8};
+			for (int s : tiles) {
+				if (!java.util.Arrays.equals(gr.getFile(s), voidTiles)) {
+					wrong.append(" subfile ").append(s).append(" is not a void tilemap;");
+				}
+			}
+			for (int s : coll) {
+				if (!java.util.Arrays.equals(gr.getFile(s), noCollision)) {
+					wrong.append(" subfile ").append(s).append(" is not empty collision;");
+				}
+			}
+			if (!blanked.equals("blanked") || wrong.length() > 0) {
+				System.out.println("FAIL a blanked region of " + len + " subfiles has every extra layer blanked: " + blanked
+						+ wrong);
+				fails++;
+			} else {
+				System.out.println("  ok: a blanked region of " + len + " subfiles has every extra layer blanked");
+			}
+		}
+		return fails;
 	}
 }

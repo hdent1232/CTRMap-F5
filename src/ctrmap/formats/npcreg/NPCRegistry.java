@@ -150,8 +150,18 @@ public class NPCRegistry {
 	 * Adds {@code entry} under the lowest free UID from {@code preferredUid} up, after the entries
 	 * already there, and answers the UID. The registry editor's Add used the default UID 0, which
 	 * replaced the UID-0 dummy retail registries carry (F081).
+	 *
+	 * <p>THE CAP IS KEPT HERE (census M.57), the one door every entry comes in by: three callers each
+	 * checked {@link #MAX_ENTRIES} before calling, one of them against a literal 31, and a fourth would
+	 * have had to remember to.
+	 *
+	 * @throws IllegalStateException when the registry already holds {@link #MAX_ENTRIES}
 	 */
 	public int register(NPCRegistryEntry entry, int preferredUid) {
+		if (byUid.size() >= MAX_ENTRIES) {
+			throw new IllegalStateException("this area's NPC registry already holds its maximum of " + MAX_ENTRIES
+					+ " unique NPCs");
+		}
 		int uid = Math.max(0, preferredUid);
 		while (byUid.containsKey(uid)) {
 			uid++;

@@ -57,7 +57,7 @@ public class PrefabColourTest {
 		//find a same-named mesh to collide with, so one map is far too small a
 		//sample - the defect lands on well under 1% of stampings.
 		int[] targets = {153, 745, 1, 15, 3, 5, 7, 9, 11, 13};
-		List<BuildingCatalog.Entry> entries = BuildingCatalog.byKind(null);
+		List<BuildingCatalog.Entry> entries = BuildingCatalog.entries();
 
 		int stamped = 0, checked = 0, mismatches = 0, noDonor = 0;
 		for (int tgt : targets) {

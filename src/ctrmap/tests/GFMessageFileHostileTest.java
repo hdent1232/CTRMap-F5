@@ -50,7 +50,7 @@ public class GFMessageFileHostileTest {
 		StringBuilder big2 = new StringBuilder(big);
 		big2.append('Z'); //65534 chars + terminator = 65535 u16s, but the pad-to-4 bumps it to 65536
 		byte[] l2b = GFMessageFile.write(Arrays.asList(big2.toString()));
-		List<String> l2p = GFMessageFile.parse(l2b);
+		List<String> l2p = GFMessageFile.parse(l2b, false);
 		if (big2.toString().equals(l2p.get(0))) {
 			pass("L2 65534-char line");
 		} else {
@@ -65,7 +65,7 @@ public class GFMessageFileHostileTest {
 		List<String> overLines = Arrays.asList(over.toString());
 		try {
 			byte[] ob = GFMessageFile.write(overLines);
-			List<String> reparsed = GFMessageFile.parse(ob);
+			List<String> reparsed = GFMessageFile.parse(ob, false);
 			if (overLines.equals(reparsed)) {
 				pass("L3 65535-char line round trips");
 			} else {
@@ -106,7 +106,7 @@ public class GFMessageFileHostileTest {
 		//W. whitespace is written verbatim - pk3DS trims each line, which destroys the trailing
 		//spaces that genuinely occur in ORAS text files
 		byte[] w1 = GFMessageFile.write(Arrays.asList("　x "));
-		List<String> w1p = GFMessageFile.parse(w1);
+		List<String> w1p = GFMessageFile.parse(w1, false);
 		check("W1 whitespace at both line edges preserved verbatim", w1p.get(0).length() == 3);
 
 		//X. raw control chars that collide with codec keys are now rejected outright instead of
@@ -119,13 +119,14 @@ public class GFMessageFileHostileTest {
 		}
 		try {
 			byte[] x2 = GFMessageFile.write(Arrays.asList("a\020zzzb"));
-			List<String> x2p = GFMessageFile.parse(x2);
+			List<String> x2p = GFMessageFile.parse(x2, false);
 			System.out.println("INFO X2 embedded U+0010: reparses as \"" + escape(x2p.get(0)) + "\" (KEY_VARIABLE collision, same as pk3DS)");
 		} catch (RuntimeException ex) {
 			System.out.println("INFO X2 embedded U+0010: write() accepted it but parse() threw " + ex
 					+ " (KEY_VARIABLE collision, pk3DS also throws on its own output here)");
 		}
 
+		aNameFileThatCannotBeReadIsSaid();
 		System.out.println();
 		System.out.println("Passed: " + passed + ", Failed: " + failed);
 		System.exit(failed > 0 ? 1 : 0);
@@ -216,10 +217,30 @@ public class GFMessageFileHostileTest {
 
 	//---- helpers ----
 
+	/**
+	 * Census M.55: a text file of names answers its lines or says which file could not be read and why. Five
+	 * editors read theirs through private copies that answered no lines and said nothing for any failure.
+	 */
+	static void aNameFileThatCannotBeReadIsSaid() {
+		System.out.println("--- a text file of names answers its lines, or says which could not be read (census M.55)");
+		String[] lines = ctrmap.formats.text.GameTextLines.of(GFMessageFile.write(Arrays.asList("Bulbasaur", "Ivysaur")), 98);
+		check("control: a text file that reads answers its lines", Arrays.equals(lines, new String[]{"Bulbasaur", "Ivysaur"}));
+		List<String> unread = new ArrayList<>();
+		String[] none = ctrmap.formats.text.GameTextLines.orSaid(() -> {
+			throw new java.io.IOException("planted: the workspace file is locked");
+		}, 98, unread);
+		check("a file that cannot be read answers no lines and says which and why: " + unread,
+				none.length == 0 && unread.size() == 1 && unread.get(0).contains("text file 98")
+				&& unread.get(0).contains("planted: the workspace file is locked"));
+		unread.clear();
+		ctrmap.formats.text.GameTextLines.orSaid(() -> null, 7, unread);
+		check("and so does one the game does not hold: " + unread, unread.size() == 1 && unread.get(0).contains("text file 7"));
+	}
+
 	private static void roundTrip(String name, List<String> lines) {
 		try {
 			byte[] b1 = GFMessageFile.write(lines);
-			List<String> reparsed = GFMessageFile.parse(b1);
+			List<String> reparsed = GFMessageFile.parse(b1, false);
 			List<String> trimmed = new ArrayList<>();
 			for (String s : lines) {
 				trimmed.add(s.trim());

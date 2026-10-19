@@ -38,11 +38,11 @@ public class CameraDataFile {
 	 */
 	public CameraDataFile(AD ad) {
 		file = ad;
-		byte[] input = ad.getFile(3);
-		if (input == null) {
-			throw new IllegalStateException("the area holds no camera table (subfile 3 is empty): "
+		if (!ad.hasFile(3)) {
+			throw new IllegalStateException("the area holds no camera table (it has no subfile 3): "
 				+ name());
 		}
+		byte[] input = ad.getFile(3);
 		try {
 			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new ByteArrayInputStream(input));
 			numEntries = dis.readInt();

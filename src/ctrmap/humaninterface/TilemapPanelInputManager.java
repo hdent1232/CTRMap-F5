@@ -108,7 +108,6 @@ public class TilemapPanelInputManager implements MouseWheelListener, MouseMotion
 		//is why these are suppliers: the constructor of a tool puts its own
 		//form in the editor's pane, and a shutdown running after that would
 		//take it straight back out. ToolSelection keeps that order.
-		boolean switchCam = false;
 		switch (e.getActionCommand()) {
 			case ("edit"):
 				tools.switchTo(box::edit);

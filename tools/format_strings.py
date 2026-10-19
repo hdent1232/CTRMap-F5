@@ -38,6 +38,7 @@ if __name__ == "__main__":
     sys.dont_write_bytecode = True     # run from its folder, a tool leaves no bytecode there
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 
 LF = chr(10)
 
@@ -47,6 +48,10 @@ LF = chr(10)
 ADAPT = ("EXCLUDE", "GIT_TIMEOUT")
 EXCLUDE = ()
 GIT_TIMEOUT = 120
+
+#: The settings that ship OFF, at the value they ship at. A project turns them on; the bundle's
+#: own tests turn them off again for their run (`bundle_hooks.settings_off`).
+SHIPPED_OFF = {"EXCLUDE": ()}
 
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
@@ -204,9 +209,9 @@ def findings_in(rel, source):
 def files(where):
     """Every Python file git knows in `where`, or None when git cannot be asked."""
     try:
-        done = subprocess.run(["git", "ls-files", "-co", "--exclude-standard", "--", "*.py"],
-                              cwd=where, capture_output=True, text=True,
-                              creationflags=NO_WINDOW, timeout=GIT_TIMEOUT)
+        done = bounded.run(["git", "ls-files", "-co", "--exclude-standard", "--", "*.py"],
+                           cwd=where, capture_output=True, text=True,
+                           creationflags=NO_WINDOW, timeout=GIT_TIMEOUT)
     except (OSError, subprocess.TimeoutExpired):
         return None
     if done.returncode != 0:
@@ -244,6 +249,11 @@ def problems(where=None):
 
 
 def main(argv):
+    import cli_words      # a word this does not read refuses the run, before anything runs
+    why = cli_words.refused(argv[1:], most=1)
+    if why:
+        print(why)
+        return 2
     found = problems(argv[1] if len(argv) > 1 else None)
     if found:
         print("REFUSING: %d format(s) cannot print - and a refusal that throws while building "

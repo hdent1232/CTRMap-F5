@@ -110,6 +110,12 @@ def record(name, value, why=None, expect_change=False):
 
 
 def main(argv):
+    #a word this does not read refuses the run, before anything runs (cli_words, 2026-10-10)
+    import _cli
+    unread_words = _cli.refused(argv[1:], flags=("--list", "--expect-change", "--why"), rest=("--why",), most=2)
+    if unread_words:
+        print(unread_words)
+        return 2
     if "--list" in argv:
         for name, entry in sorted(load().items()):
             print("%-28s %-10s %s" % (name, entry.get("value"), entry.get("why") or ""))

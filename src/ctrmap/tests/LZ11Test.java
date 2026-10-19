@@ -62,6 +62,18 @@ public class LZ11Test {
 		failures += refused("a back-reference before the start", new byte[]{0x11, 0x10, 0, 0, (byte) 0x80, 0x20, 0x05},
 				"refers 6 byte(s) back");
 		failures += refused("a header with nothing after it", new byte[]{0x11, 5, 0, 0}, "ends after");
+		//MEASURED by the 2026-10-14 shared sweep (LZ11 29, dropped, SURVIVED): nothing shorter than a header had been
+		//handed in - dropped, no stream was a NullPointerException and 3 bytes of 0x11 read past their end
+		failures += refused("no stream at all", null, "Not an LZ11 stream: it needs a 4-byte header and is absent.");
+		failures += refused("a stream of 3 bytes", new byte[]{0x11, 0, 0},
+				"Not an LZ11 stream: it needs a 4-byte header and is 3 byte(s).");
+		//and the extended header's two (LZ11 40, dropped, SURVIVED the same day; 45 its sibling): 5 bytes cannot hold
+		//the 4-byte size, and a size past what an array can hold is said rather than read as a negative length
+		failures += refused("an extended header cut to 5 bytes", new byte[]{0x11, 0, 0, 0, 1},
+				"An LZ11 stream with an extended size header needs 8 header bytes; this is 5.");
+		failures += refused("an extended header declaring 4294967295 bytes",
+				new byte[]{0x11, 0, 0, 0, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF},
+				"An LZ11 stream declares 4294967295 bytes, more than this program can hold.");
 		//the extended header: a three-byte size of zero, then the size in four bytes
 		byte[] extended = {0x11, 0, 0, 0, 3, 0, 0, 0, 0x00, 'a', 'b', 'c'};
 		if (!Arrays.equals(LZ11.decompress(extended), new byte[]{'a', 'b', 'c'})) {

@@ -55,10 +55,30 @@ public class BuildingHarvester {
 	public static final int TERRAIN_TILES = 20; //components this wide are terrain, not assets
 
 	public static void main(String[] args) throws Exception {
+		int status = run(args);
+		if (status != 0) {
+			System.exit(status);
+		}
+	}
+
+	/**
+	 * The harvest, ANSWERING its exit status rather than ending the JVM. A suite that ran
+	 * {@code main} had its whole process ended by a refused argument list, before a single one
+	 * of its checks could say what was wrong - red with nothing to read (2026-10-10).
+	 */
+	public static int run(String[] args) throws Exception {
+		return run(args, System.out);
+	}
+
+	/**
+	 * The harvest, saying what it does to {@code said}: HANDED, so a suite reads what a run printed - whether it
+	 * says what it skipped - without taking over the process's own stream, which no suite may (SourceSeamTest).
+	 */
+	public static int run(String[] args, java.io.PrintStream said) throws Exception {
 		if (args.length < 2) {
-			System.out.println("Usage: java ctrmap.tools.BuildingHarvester <pristineRomfsDir> <outTsv> - the output is named"
+			said.println("Usage: java ctrmap.tools.BuildingHarvester <pristineRomfsDir> <outTsv> - the output is named"
 					+ " every time, so a run cannot rewrite a table the release ships without saying so");
-			System.exit(1);
+			return 1;
 		}
 		String romfs = args[0];
 		String out = args[1];   //named every time: a default here was a shipped resource (F133)
@@ -149,9 +169,9 @@ public class BuildingHarvester {
 				skipped.add("region " + r + " (" + ctrmap.util.Bytes.reason(ex) + ")");
 			}
 		}
-		System.out.println("sweep: " + regionsScanned + " regions, " + detected + " structures ("
+		said.println("sweep: " + regionsScanned + " regions, " + detected + " structures ("
 				+ terrain + " terrain, " + edge + " edge-straddling), " + bySig.size() + " unique");
-		System.out.println(skipped.isEmpty() ? "skipped nothing"
+		said.println(skipped.isEmpty() ? "skipped nothing"
 				: "SKIPPED " + skipped.size() + " - the catalog below was harvested without them: " + skipped);
 
 		//verify every candidate through the curated-catalog gate
@@ -161,8 +181,10 @@ public class BuildingHarvester {
 			java.util.Arrays.fill(row, TilePalette.GRASS);
 		}
 		RegionFactory.BlankContent base = PaintedRegionBuilder.build(grassDonor, grass, null, null, TerrainLighting.daytime(), false);
-		File tmpDir = new File(System.getProperty("java.io.tmpdir"), "ctrmap_harvest");
-		tmpDir.mkdirs();
+		//THIS RUN'S OWN FOLDER (census L.11): a fixed temp folder whose cuts were keyed by region index alone, never
+		//cleared - a run against a second dump cut every region already there from the FIRST dump's bytes, and the
+		//result is the catalogue that ships. Made fresh here, and removed when the run ends
+		File tmpDir = java.nio.file.Files.createTempDirectory("ctrmap_harvest").toFile();
 		//the region containers cut from are handed a session over the dump
 		//being harvested, with no archive open and nothing to pack: a container
 		//cannot be made without one, and this tool has no workspace to offer
@@ -170,10 +192,27 @@ public class BuildingHarvester {
 
 		List<String> rows = new ArrayList<>();
 		Map<String, Integer> nameSeq = new HashMap<>();
-		int verified = 0, dropped = 0;
+		//ONE ROW PER CUT: a row is keyed here by its signature, but what it places is its box, so two
+		//signatures sharing a box were two identical palette entries - and fifteen boxes the curated table
+		//already offers, wired with their doors, came back unwired. A box offered is not offered again.
+		java.util.Set<String> offered = new java.util.HashSet<>();
+		for (BuildingCatalog.Entry e : BuildingCatalog.entries()) {
+			if (!e.auto) {
+				offered.add(BuildingCatalog.boxKey(e.donorRegion, e.tx0, e.ty0, e.tx1, e.ty1));
+			}
+		}
+		int verified = 0, dropped = 0, sameBox = 0;
+		//THREW, APART FROM DROPPED (census M.142): one counter took both, and a regression in the cut or the
+		//stamp showed up as a smaller catalogue in the run that decides what ships
+		List<String> threw = new ArrayList<>();
 		long t0 = System.currentTimeMillis();
 		for (Map.Entry<Long, Cand> en : bySig.entrySet()) {
 			Cand c = en.getValue();
+			String box = BuildingCatalog.boxKey(c.region, c.comp.tx0, c.comp.ty0, c.comp.tx1, c.comp.ty1);
+			if (offered.contains(box)) {
+				sameBox++;
+				continue;
+			}
 			try {
 				File tmp = new File(tmpDir, "reg_" + c.region);
 				if (!tmp.exists()) {
@@ -205,6 +244,7 @@ public class BuildingHarvester {
 					continue;
 				}
 				verified++;
+				offered.add(box);
 				String cat = c.comp.category();
 				String material = c.comp.dominantMaterial();
 				//NAMED BY WHAT IT IS MADE OF TOO (F251): "<place> <kind>" and a counter said only where a cut
@@ -218,17 +258,19 @@ public class BuildingHarvester {
 						+ (c.loc == null ? "" : c.loc) + "\t" + c.count + "\t" + Long.toHexString(en.getKey())
 						+ "\t" + material);
 			} catch (Exception ex) {
-				dropped++;
+				threw.add("region " + c.region + ": " + ctrmap.util.Bytes.reason(ex));
 			}
-			if ((verified + dropped) % 500 == 0) {
-				System.out.println("verify: " + verified + " ok, " + dropped + " dropped, "
+			if ((verified + dropped + threw.size()) % 500 == 0) {
+				said.println("verify: " + verified + " ok, " + dropped + " dropped, "
 						+ ((System.currentTimeMillis() - t0) / 1000) + "s");
 			}
 		}
-		System.out.println("verified " + verified + " entries (" + dropped + " dropped) in "
-				+ ((System.currentTimeMillis() - t0) / 1000) + "s");
+		said.println("verified " + verified + " entries (" + dropped + " refused by the gate, " + threw.size()
+				+ " threw" + (threw.isEmpty() ? "" : " - first: " + threw.subList(0, Math.min(3, threw.size()))) + ") in "
+				+ ((System.currentTimeMillis() - t0) / 1000) + "s; " + sameBox
+				+ " not written because a curated or earlier row already offers their box");
 
-		try (PrintWriter w = new PrintWriter(out, "UTF-8")) {
+		try (PrintWriter w = TableWriter.open(out)) {   //LF on every machine: the index holds it LF
 			w.println("# AUTO-HARVESTED building/decor catalog - generated by ctrmap.tools.BuildingHarvester.");
 			w.println("# Metadata only (donor region + tile box); geometry cuts from the user's pristine dump.");
 			w.println("# Every row passed the cut->stamp->validate gate. Columns = curated TSV + location, retailCount, signature,"
@@ -237,7 +279,16 @@ public class BuildingHarvester {
 				w.println(row);
 			}
 		}
-		System.out.println("wrote " + rows.size() + " entries -> " + out);
+		said.println("wrote " + rows.size() + " entries -> " + out);
+		removeRunFolder(tmpDir);
+		return 0;
+	}
+
+	/** The run's own cut folder, gone - what it cannot remove is said, so the next run is not trusted to be clean by a lie. */
+	static void removeRunFolder(File dir) throws java.io.IOException {
+		if (!ctrmap.util.Bytes.deleteTree(dir)) {
+			throw new java.io.IOException("the harvest's cut folder could not be removed: " + dir);
+		}
 	}
 
 	// ---- detection ---------------------------------------------------------
@@ -330,6 +381,7 @@ public class BuildingHarvester {
 		}
 
 		/** This component's triangles per material name - what its geometry is made of. */
+		@ctrmap.util.ForSuites("SEAM: a suite reads what a harvested component is made of, triangles per material, to check the harvest kept a building's own geometry")
 		public Map<String, Integer> materialTriangles() {
 			return java.util.Collections.unmodifiableMap(matFaces);
 		}

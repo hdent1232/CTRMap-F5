@@ -500,7 +500,7 @@ public class BchTexturePack {
 		}
 		AD don = new AD(donFile, files);
 		byte[] donPack = don.getFile(11);
-		if (donPack == null || !isTexturePack(donPack)) {
+		if (!isTexturePack(donPack)) {
 			donPack = don.getFile(1);
 		}
 		Carry c = new Carry();
@@ -616,12 +616,6 @@ public class BchTexturePack {
 			byte[] donorPack, List<String> textureNames) {
 		assertNotShared(files, targetArea, editingZone);
 		return importTextures(targetPack, donorPack, textureNames);
-	}
-
-	public static byte[] importTexture(byte[] targetPack, byte[] donorPack, String textureName) {
-		List<String> one = new ArrayList<>();
-		one.add(textureName);
-		return importTextures(targetPack, donorPack, one);
 	}
 
 	/**

@@ -318,7 +318,7 @@ public class GeometryForker {
 		File fdDir = Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA);
 		File mmDir = Workspace.getExtractionDirectory(ArchiveType.MAP_MATRIX);
 		int nextRegion = gr.length;
-		int nextMatrix = mm.length;
+		int nextMatrix = nextFreeMatrix(Workspace.session(), mm);
 		//EVERY ZONE THE APPEND CREATES, PADDING INCLUDED. This ran to newRealZones,
 		//so the spares that round an append up to a multiple of four kept the DONOR's
 		//map - and editing a spare rewrote the city it was padded out of, and its
@@ -367,6 +367,23 @@ public class GeometryForker {
 		}
 	}
 
+
+	/**
+	 * THE NEXT FREE MAP-MATRIX SLOT, and the one refusal that goes with it (census H.11). A matrix
+	 * appended to the workspace sits at {@code mm.length} until a pack makes the archive longer, so
+	 * every allocator of that slot must first ask whether something already staged there. Four took
+	 * {@code mm.length} for themselves; three asked, and the append's own fork did not - so a map fork
+	 * left unpacked was overwritten by the next Add zone, and both zones then pointed at one matrix.
+	 * Every allocator asks here, so a fifth cannot be written without the question.
+	 */
+	public static int nextFreeMatrix(ctrmap.WorkspaceSession ws, GARC mm) throws IOException {
+		int next = mm.length;
+		if (ws != null && ws.isPendingArtifact(new File(ws.getExtractionDirectory(ArchiveType.MAP_MATRIX), String.valueOf(next)))) {
+			throw new IOException("A map append is already staged and not yet packed (matrix " + next
+					+ "). Pack the workspace first.");
+		}
+		return next;
+	}
 
 	/**
 	 * Gives appended zones their own copy of any resource they still SHARE, for
@@ -587,9 +604,11 @@ public class GeometryForker {
 			File fdDir = Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA);
 			File mmDir = Workspace.getExtractionDirectory(ArchiveType.MAP_MATRIX);
 			int nextRegion = gr.length;
-			int nextMatrix = mm.length;
-			if (Workspace.isPendingArtifact(new File(mmDir, String.valueOf(nextMatrix)))) {
-				r.refusedBecause = "a map append is already staged and not yet packed";
+			int nextMatrix;
+			try {
+				nextMatrix = nextFreeMatrix(Workspace.session(), mm);
+			} catch (IOException pending) {
+				r.refusedBecause = ctrmap.util.Bytes.reason(pending);
 				return r;
 			}
 			for (int z : r.shared) {
@@ -611,9 +630,11 @@ public class GeometryForker {
 					r.kept.add("zone " + z + " has been edited, so its copy keeps what is on it");
 					continue;
 				}
+				//INSIDE THE UNIT, A HALF-WRITTEN REGION THROWS (census H.59): the answering form said "kept" for a
+				//region whose write failed part-way and threw the reason away; the unit puts the half back
 				boolean allBlank = true;
 				for (int newRegion : plan.newRegions) {
-					allBlank &= ctrmap.formats.h3d.RegionFactory.blankRegionFiles(
+					allBlank &= ctrmap.formats.h3d.RegionFactory.blankOrThrow(
 						new ctrmap.formats.containers.GR(new File(fdDir, String.valueOf(newRegion)),
 							Workspace.session()), -1);
 				}
@@ -813,11 +834,7 @@ public class GeometryForker {
 		}
 		File fdDir = Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA);
 		File mmDir = Workspace.getExtractionDirectory(ArchiveType.MAP_MATRIX);
-		int newMatrix = mm.length;
-		File matrixOut = new File(mmDir, String.valueOf(newMatrix));
-		if (Workspace.isPendingArtifact(matrixOut)) {
-			throw new IOException("A geometry fork/append is already pending. Pack the workspace before forking again.");
-		}
+		int newMatrix = nextFreeMatrix(Workspace.session(), mm);
 		File zoneFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
 		if (zoneFile == null) {
 			throw new IOException("Could not extract zone " + zoneIndex + " from the workspace.");

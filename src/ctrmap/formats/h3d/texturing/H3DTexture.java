@@ -18,10 +18,11 @@ public class H3DTexture {
 
 		int texUnit0CommandsOffset = in.readInt();
 		int texUnit0CommandsWordCount = in.readInt();
-		int texUnit1CommandsOffset = in.readInt();
-		int texUnit1CommandsWordCount = in.readInt();
-		int texUnit2CommandsOffset = in.readInt();
-		int texUnit2CommandsWordCount = in.readInt();
+		//texture units 1 and 2: commands offset and word count, stepped over
+		in.readInt();
+		in.readInt();
+		in.readInt();
+		in.readInt();
 		in.readInt();
 		int textureNameOffset = in.readInt();
 		textureName = StringUtils.readString(textureNameOffset, data);
@@ -31,8 +32,11 @@ public class H3DTexture {
 
 		in.seek(textureCommands.getTexUnit0Address());
 		textureSize = textureCommands.getTexUnit0Size();
-		byte[] buffer = new byte[textureSize.width * textureSize.height * 4];
-		in.read(buffer);
+		//WHOLE OR REFUSED (census M.110): this read width*height*4 bytes whatever the format and dropped how many
+		//came, so a texture cut short decoded with a zero tail and was drawn as if it were whole. Exactly what the
+		//format stores, read whole - an EOFException that names where, rather than half a picture
+		byte[] buffer = new byte[TextureCodec.storedSize(textureSize.width, textureSize.height, textureCommands.getTexUnit0Format())];
+		in.readFully(buffer);
 		textureData = TextureCodec.decode(
 				buffer,
 				textureSize.width,

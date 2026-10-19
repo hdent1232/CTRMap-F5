@@ -123,7 +123,7 @@ public class GARC {
 					for (int bit = 0; bit < 32; bit++) {
 						if ((flags & (1 << bit)) > 0) {
 							int startOffset = Integer.reverseBytes(in.readInt());
-							int endOffset = Integer.reverseBytes(in.readInt());
+							in.readInt();   //the end offset: the length that follows is what is used
 							int length = Integer.reverseBytes(in.readInt());
 
 							long position = in.getFilePointer();
@@ -432,11 +432,9 @@ public class GARC {
 						+ getEntryStoredLength(id) + " bytes and staged as " + b.length + "; written in place it"
 						+ " would run into the next entry. Nothing was written.");
 			}
-			int off = getEntryFileOffset(id);
-			if (off < 0 || off + b.length > size) {
-				throw new IOException("entry " + id + " of " + file.getPath() + " claims to start at 0x"
-						+ Integer.toHexString(off) + ", which is not inside its " + size + " bytes.");
-			}
+			//inside the file by construction: parse records a cut for an entry the file cannot hold - past its end or
+			//at a negative offset - and requirePackable refused a cut archive above, so a check here could never be
+			//reached (the 2026-10-14 shared sweep, GARC 437)
 			writes.put(id, b);
 		}
 		//the copy is written the way a repack writes its result, through one RandomAccessFile
@@ -461,6 +459,16 @@ public class GARC {
 	}
 
 	/**
+	 * What a pack asks of an archive it does NOT write (PackScope): rewritten underneath this instance, its entry
+	 * table is read again and the warning recorded, as a repack would. The pack skips it because nothing in it is
+	 * edited, but the editor still reads it through this table - and that skip is how a rewrite underneath went
+	 * unsaid (measured 2026-10-09 by PackReportTest).
+	 */
+	public void refreshIfStale() {
+		rereadIfStale();
+	}
+
+	/**
 	 * Re-reads the entry table when the archive was rewritten underneath
 	 * this instance, and records the warning for whoever packed.
 	 */
@@ -473,7 +481,8 @@ public class GARC {
 					+ " (was " + parsedLength + "B, now " + file.length() + "B)."
 					+ " Its entry table was re-read before packing - something else is writing"
 					+ " to this archive.";
-			System.err.println("GARC: " + warning);
+			//ONE CHANNEL (2026-10-16): it went to stderr as well, a console nobody reads beside the pack report that
+			//shows this, and that second copy was the only one a measurement asked of (the assembly, GARC 484)
 			packWarnings.add(warning);
 			parse(file);
 		}

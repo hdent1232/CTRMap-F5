@@ -23,6 +23,7 @@ public final class GiverForm {
 	private final JSpinner count = new JSpinner(new javax.swing.SpinnerNumberModel(1, 1, 99, 1));
 
 	private final ModelPicker model;
+	private final OnceFlagRow once;
 
 	public GiverForm(ctrmap.formats.GameFiles game, NPCRegistry reg, List<CustomH3DPreview> livePreviews, List<String> itemNames) {
 		this.item = new IdChooser(itemNames, NpcTemplates.ITEM_ID_MAX, 1);
@@ -30,7 +31,13 @@ public final class GiverForm {
 		Forms.addLabeled(panel, "Item (type to search):", item);
 		Forms.addLabeled(panel, "Quantity:", count);
 		Forms.addLabeled(panel, "NPC model (type to search; preview below):", model);
-		panel.add(Forms.hint("<html>The NPC is placed at the centre of the view and gives the item<br>each time it is talked to (no one-time flag yet).</html>"));
+		panel.add(Forms.hint("<html>The NPC is placed at the centre of the view and gives the item<br>each time it is talked to, unless it gives once:</html>"));
+		this.once = new OnceFlagRow(game, panel);
+	}
+
+	/** The event flag the giver gives once by, or -1 for every talk (F085). */
+	public int onceFlag() {
+		return once.flag();
 	}
 
 	public int item() {

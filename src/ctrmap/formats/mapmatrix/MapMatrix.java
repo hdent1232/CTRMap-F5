@@ -223,6 +223,17 @@ public class MapMatrix {
 		return sawSomebody;
 	}
 	/**
+	 * The first region ZONE {@code zoneIndex} OWNS in this matrix - by its ownership grid, where the matrix
+	 * carries one - else the matrix's first filled cell; -1 when it names no region. The one byte-level answer
+	 * to "which region is this zone's" (census M.54): the first filled cell alone is a neighbour's on the
+	 * retail zones that share a matrix, and the atmosphere preview and the resizer's template took it.
+	 */
+	public static int ownRegionId(byte[] mmContainer, int zoneIndex) {
+		int[][] mine = regionsOwnedBy(mmContainer, zoneIndex);
+		return mine.length > 0 ? mine[0][0] : firstRegionId(mmContainer);
+	}
+
+	/**
 	 * The first FieldData region a map matrix uses, or -1.
 	 *
 	 * <p>This is what "the map of the loaded zone" means to the tools that work

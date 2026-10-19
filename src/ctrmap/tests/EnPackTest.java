@@ -47,7 +47,31 @@ public class EnPackTest {
 		byte[] tail = Arrays.copyOf(pack, pack.length + 1);
 		refused("a byte past the end sentinel", () -> EnPack.parse(tail), "end sentinel");
 		refused("a table longer than the file", () -> EnPack.parse(new byte[]{'E', 'N', 9, 0, 0, 0, 0, 0}),
-				"too short for its offset table");
+				"too short for its offset table (8 < 44)");
+		//MEASURED by the 2026-10-14 shared sweep (EnPack 41, dropped, SURVIVED): no file shorter than a header, and
+		//no file at all, had ever been handed in - dropped, nothing was a NullPointerException and 4 bytes were
+		//refused for a table they never claimed
+		refused("no file at all", () -> EnPack.parse(null), "EN pack too short (0 bytes).");
+		refused("a file of 4 bytes, shorter than any header", () -> EnPack.parse(new byte[]{'E', 'N', 0, 0}),
+				"EN pack too short (4 bytes).");
+		//MEASURED by the 2026-10-14 shared sweep (EnPack 58, dropped, SURVIVED): no pack whose first zone starts past
+		//the end of its table had been read - dropped, zone 0 of 3 bytes was read from 1 byte in, its first byte lost
+		byte[] gap = pack.clone();
+		putI32(gap, 4, i32(gap, 4) + 1);
+		refused("a first zone starting 1 byte past the table's end", () -> EnPack.parse(gap),
+				"EN pack first offset 0x15 != table end 0x14.");
+
+		System.out.println("--- a count out of range is refused in the pack's words (2026-10-14)");
+		//MEASURED by the 2026-10-14 shared sweep (EnPack 110, dropped, SURVIVED): no count out of range had been handed
+		//to the pack's own methods - with a refusal dropped, Java's collections refused in their words instead, and
+		//bytes() past 65535 zones would have written the count's low 16 bits
+		refused("a pack grown by -1 zones", () -> p.grownBy(-1), "a pack is grown by a count of zones, not by -1");
+		refused("a pack of 3 zones cut to 4", () -> p.truncatedTo(4), "keepCount 4 out of range (0..3)");
+		refused("a pack cut to -1 zones", () -> p.truncatedTo(-1), "keepCount -1 out of range (0..3)");
+		refused("zone 3 of a pack of 3 read", () -> p.blob(3), "zone 3 out of range (EN count 3)");
+		refused("zone -1 replaced", () -> p.withBlob(-1, new byte[0]), "zone -1 out of range (EN count 3)");
+		refused("a pack of 65536 zones written", () -> p.grownBy(65536 - 3).bytes(),
+				"an EN pack holds at most 65535 zones, not 65536");
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {

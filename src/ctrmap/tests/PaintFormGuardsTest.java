@@ -68,6 +68,9 @@ public class PaintFormGuardsTest {
 
 	/** The editor set the panels here flush: it records instead of saving. */
 	static final RecordingEditors EDITORS = new RecordingEditors();
+	/** The workspace history a painter keeps its Apply, ripple and forks in (F209c). */
+	static final ctrmap.humaninterface.SaveHistory OPS = new ctrmap.humaninterface.SaveHistory(
+			() -> java.util.Collections.<Object>emptyList());
 
 	/** The tool this suite holds: its own, so another suite may hold another. */
 	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
@@ -99,8 +102,18 @@ public class PaintFormGuardsTest {
 		overlayMarksRampsOnly();
 		pickingABuildingArmsTheNextClick();
 		aRefusedApplySaysSoAndPutsTheMapBack();
+		anApplyOverAZoneThatIsNotOpenChangesNothing();
+		aPreviewThatCannotBeRebuiltSaysSo();
+		thePreviewNoteSaysWhyAndClears();
+		aDonorAreaThatWillNotLoadIsNamed();
+		everyTileIsABrush();
+		aSignsFormMakesASignOnOkAndSceneryOnCancel();
 		seedLabelCountsBorrowedTiles(dump);
 		noMapViewMeansNoSceneToPutBack(dump);
+		activatedThePainterSeedsANewZoneAndKeepsItsOwn(dump);
+		makeWaterRippleStopsWhenTheAreaIsNotMadeItsOwn(dump);
+		aPreviewThatFailsSaysSoUnderApply(dump);
+		applyWarnsOfStillWaterOnlyWhereThereIsWater(dump);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -118,7 +131,7 @@ public class PaintFormGuardsTest {
 		System.out.println("--- the painter refuses to be built without the editors it flushes");
 		String said = "(nothing was thrown)";
 		try {
-			new PaintForm(new LoadedZone(), null, ZONES, TestWindow.mTileMapPanel(), history());
+			new PaintForm(new LoadedZone(), null, ZONES, TestWindow.mTileMapPanel(), history(), OPS, () -> { });
 		} catch (IllegalArgumentException refused) {
 			said = String.valueOf(refused.getMessage());
 		}
@@ -135,10 +148,10 @@ public class PaintFormGuardsTest {
 	static PaintForm document(UndoHistory history) throws Exception {
 		LoadedZone lz = new LoadedZone();
 		lz.open(ZONE, null);                      //zone ZONE's index and no zone object: the document reads the index
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		TestWindow.mZonePnl(pnl);
 		TestWindow.mTileMapPanel(null);
-		PaintForm form = new PaintForm(lz, EDITORS, ZONES, TestWindow.mTileMapPanel(), history);
+		PaintForm form = new PaintForm(lz, EDITORS, ZONES, TestWindow.mTileMapPanel(), history, OPS, () -> { });
 		set(form, "seededZone", ZONE);
 		TilePalette[][] grid = (TilePalette[][]) get(form, "grid");
 		for (TilePalette[] row : grid) {
@@ -248,7 +261,7 @@ public class PaintFormGuardsTest {
 		System.out.println("--- the painter refuses to be built without the zone's history");
 		String said = "(nothing was thrown)";
 		try {
-			new PaintForm(new LoadedZone(), EDITORS, ZONES, TestWindow.mTileMapPanel(), null);
+			new PaintForm(new LoadedZone(), EDITORS, ZONES, TestWindow.mTileMapPanel(), null, OPS, () -> { });
 		} catch (RuntimeException refused) {   //any throw is caught, so one that is not the refusal fails in words
 			said = refused.getClass().getSimpleName() + ": " + refused.getMessage();
 		}
@@ -402,6 +415,140 @@ public class PaintFormGuardsTest {
 	}
 
 	/**
+	 * Census H.50: Apply asks that the painted document is the OPEN zone's. It asked only whether a document was
+	 * seeded, so after a failed load - the zone closed at its index, the painter never told - it threw on the
+	 * missing header, or wrote the previous zone's paint over the region the matrix's first cell belongs to.
+	 */
+	static void anApplyOverAZoneThatIsNotOpenChangesNothing() throws Exception {
+		System.out.println("--- Apply over a zone that is not open changes nothing, and says so (census H.50)");
+		PaintForm form = document();              //zone ZONE's index and no zone object: what a failed load leaves
+		((boolean[][]) get(form, "touched"))[0][0] = true;
+		check(!form.paintsTheOpenZone(), "control: the document's zone is not the one open");
+		java.lang.reflect.Method apply = PaintForm.class.getDeclaredMethod("applyAction");
+		apply.setAccessible(true);
+		List<String> said = ctrmap.Ui.record();
+		try {
+			apply.invoke(form);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 1 && said.get(0).contains("Nothing was changed") && said.get(0).contains("not the one open"),
+				"Apply refuses in words, and never asks whether to apply: " + said);
+	}
+
+	/**
+	 * A placed sign's text form: OK makes it a sign with what was typed, Cancel keeps it scenery (the 2026-10-16
+	 * assembly, PaintForm 1348, negate-if, SURVIVED: no suite answered the form). Inverted, OK threw the text away and
+	 * Cancel made a sign of nothing.
+	 */
+	static void aSignsFormMakesASignOnOkAndSceneryOnCancel() {
+		System.out.println("--- a sign's text form: OK makes a sign, Cancel keeps it scenery");
+		BuildingCatalog.Entry e = new BuildingCatalog.Entry();
+		e.name = "town sign";
+		PaintForm.Prompts asks = new PaintForm.Prompts(null, null, () -> { });
+		ctrmap.MapPainter.SignText[] got = new ctrmap.MapPainter.SignText[2];
+		for (int k = 0; k < 2; k++) {
+			List<String> said = ctrmap.Ui.record(k == 0 ? javax.swing.JOptionPane.OK_OPTION : javax.swing.JOptionPane.CANCEL_OPTION);
+			try {
+				got[k] = asks.signText(new ctrmap.MapPainter.Placed(e, 3, 4));
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
+		}
+		check(got[0] != null && "".equals(got[0].text) && got[0].style == 0 && got[1] == null,
+				"OK on a sign's form makes it a sign with what was typed, Cancel keeps it scenery: OK gave "
+				+ (got[0] == null ? "scenery" : "a sign \"" + got[0].text + "\"") + ", Cancel "
+				+ (got[1] == null ? "scenery" : "a sign \"" + got[1].text + "\""));
+	}
+
+	/**
+	 * The painter offers every tile but VOID, in the order the palette declares them (census L.3). The brush list was
+	 * kept by hand beside the enum, so a tile added to the enum was silently missing from the painter.
+	 */
+	static void everyTileIsABrush() {
+		System.out.println("--- the painter offers every tile as a brush (census L.3)");
+		java.util.List<ctrmap.formats.tilemap.TilePalette> want = new java.util.ArrayList<>();
+		for (ctrmap.formats.tilemap.TilePalette t : ctrmap.formats.tilemap.TilePalette.values()) {
+			if (t != ctrmap.formats.tilemap.TilePalette.VOID) {
+				want.add(t);
+			}
+		}
+		java.util.List<ctrmap.formats.tilemap.TilePalette> got = java.util.Arrays.asList(ctrmap.formats.tilemap.TilePalette.brushes());
+		check(want.size() > 10 && got.equals(want), "every tile but VOID is a brush, in the palette's order: " + got.size()
+				+ " of " + want.size());
+	}
+
+	/**
+	 * Census M.130: the live preview's worker answers a failed rebuild as a problem the note under Apply shows, never
+	 * as nothing. It returned null on any exception, the last good preview stayed up looking current, and the first
+	 * report was an Apply that failed on the same exception.
+	 */
+	static void aPreviewThatCannotBeRebuiltSaysSo() throws Exception {
+		System.out.println("--- a preview that cannot be rebuilt says it shows earlier strokes (census M.130)");
+		String form = SourceSeamTest.stripComments(DialogSeamTest.read(new File("src/ctrmap/humaninterface/PaintForm.java")));
+		String regen = CollisionReadTest.body(form, "private void startRegen()");
+		check(regen != null && regen.contains("return new RegenResult(null, null, \"the 3D preview could not be rebuilt")
+				&& !regen.contains("return null;") && regen.contains("previewNote(res.problem)"),
+				"the preview's worker answers a failed rebuild as a problem, and the note under Apply shows it");
+		//census M.4: a region whose tilemap could not be read - getFile's null, a size other than 40x40, a file cut
+		//short - went into one catch (Exception) and left an all-grass canvas, without a word
+		String painter = SourceSeamTest.stripComments(DialogSeamTest.read(new File("src/ctrmap/MapPainter.java")));
+		String load = CollisionReadTest.body(painter, "public static void loadFromRegion(int region, TilePalette[][] grid)");
+		check(load != null && !load.contains("catch (") && load.contains("throw new IllegalStateException(\"region \"")
+				&& load.contains("tm.length < 4 + DIM * DIM * 4"),
+				"the painter's seed refuses a tilemap it cannot seed from, in words, catching nothing");
+		String seed = CollisionReadTest.body(form, "	void seed() {");
+		int loads = seed == null ? -1 : seed.indexOf("MapPainter.loadFromRegion(region, grid);");
+		int caught = seed == null ? -1 : seed.indexOf("terrain = \"Region \" + region + \"'s terrain could not be read (\"");
+		int shown = seed == null ? -1 : seed.indexOf("if (terrain != null) {");
+		check(loads > 0 && caught > loads && shown > caught,
+				"and the canvas says its terrain could not be read, with the reason (" + loads + ", " + caught + ", " + shown + ")");
+	}
+
+	/**
+	 * The preview's donor textures: every area loaded leaves no note; an area whose textures could not be loaded is
+	 * named in it, with why, and the others are still loaded (the 2026-10-15 shared sweep, PaintForm 1039, negate-if,
+	 * SURVIVED: the step lived in the preview's worker, which no suite can wait on - it is loadDonorTextures now).
+	 */
+	static void aDonorAreaThatWillNotLoadIsNamed() throws Exception {
+		System.out.println("--- a donor area whose textures will not load is named under Apply");
+		java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> into = new java.util.ArrayList<>();
+		java.util.List<Integer> asked = new java.util.ArrayList<>();
+		String none = PaintForm.loadDonorTextures(Arrays.asList(5, 7), into, area -> {
+			asked.add(area);
+			return java.util.Collections.<ctrmap.formats.h3d.texturing.H3DTexture>emptyList();
+		});
+		String one = PaintForm.loadDonorTextures(Arrays.asList(5, 7), into, area -> {
+			asked.add(area);
+			if (area == 7) {
+				throw new java.io.IOException("its texture pack is not there");
+			}
+			return java.util.Collections.<ctrmap.formats.h3d.texturing.H3DTexture>emptyList();
+		});
+		check(none == null && one != null && one.contains("area 7 (its texture pack is not there)") && !one.contains("area 5")
+				&& asked.equals(Arrays.asList(5, 7, 5, 7)), "every area loaded leaves no note; the one that would not load"
+				+ " is named with why, and every area was still asked: " + none + " / " + one + " / " + asked);
+	}
+
+	/**
+	 * The note under Apply says why the 3D preview is not what Apply would write, and clears again (the 2026-10-15
+	 * shared sweep, PaintForm 519, drop-report, SURVIVED: the worker that says it is read in its source above, and
+	 * nothing read the note). Asked of the note itself on a document - its caller is a SwingWorker's done().
+	 */
+	static void thePreviewNoteSaysWhyAndClears() throws Exception {
+		System.out.println("--- the note under Apply says why the preview differs, and clears");
+		PaintForm form = document();
+		java.lang.reflect.Method note = PaintForm.class.getDeclaredMethod("previewNote", String.class);
+		note.setAccessible(true);
+		JLabel status = (JLabel) get(form, "previewStatus");
+		note.invoke(form, "the 3D preview could not be rebuilt: no donor model");
+		String said = status.getText();
+		note.invoke(form, (Object) null);
+		check(said.contains("the 3D preview could not be rebuilt: no donor model") && " ".equals(status.getText()),
+				"a problem is said under Apply, and none clears it: \"" + said + "\", then \"" + status.getText() + "\"");
+	}
+
+	/**
 	 * An Apply that was refused tells the user why, promises the map is
 	 * untouched, and takes the painted preview back out of the 3D scene.
 	 *
@@ -456,14 +603,14 @@ public class PaintFormGuardsTest {
 	 * no collision under their centre; Littleroot's, one flat plane, has none.
 	 */
 	static void seedLabelCountsBorrowedTiles(File dump) throws Exception {
-		if (!new File(dump, "a/0/3/9").isFile()) {
+		if (!holdsRegions(dump)) {
 			Skip.section("no pristine dump at " + dump);
 			return;
 		}
 		PaintApplyGuardsTest.openWorkspace(dump);
 		PaintApplyGuardsTest.open(74);
 		TestWindow.mTileMapPanel(null);
-		PaintForm form = new PaintForm(PaintApplyGuardsTest.loaded, EDITORS, ZONES, TestWindow.mTileMapPanel(), history());
+		PaintForm form = new PaintForm(PaintApplyGuardsTest.loaded, EDITORS, ZONES, TestWindow.mTileMapPanel(), history(), OPS, () -> { });
 		Method seed = PaintForm.class.getDeclaredMethod("seed");
 		seed.setAccessible(true);
 		seed.invoke(form);
@@ -479,6 +626,11 @@ public class PaintFormGuardsTest {
 		check(label.contains("Painting zone 74"), "the label names the zone: " + label);
 		check(label.contains(borrowed + " tile(s) have no ground of their own"),
 				"and says how many tiles start on borrowed ground (" + borrowed + "): " + label);
+	}
+
+	/** Whether {@code dump} holds the region archive these checks open a zone's map from, named by the game's profile. */
+	static boolean holdsRegions(File dump) {
+		return new File(dump, Workspace.getArchivePath(ArchiveType.FIELD_DATA, ctrmap.gamedef.GameType.ORAS)).isFile();
 	}
 
 	static Object get(Object o, String name) throws Exception {
@@ -522,14 +674,14 @@ public class PaintFormGuardsTest {
 	 */
 	static void noMapViewMeansNoSceneToPutBack(File dump) throws Exception {
 		System.out.println("--- a painter with no map view puts nothing back, and still says the refusal");
-		if (!new File(dump, "a/0/3/9").isFile()) {
+		if (!holdsRegions(dump)) {
 			Skip.section("no pristine dump at " + dump);
 			return;
 		}
 		PaintApplyGuardsTest.openWorkspace(dump);
 		PaintApplyGuardsTest.open(74);
 		TestWindow.mTileMapPanel(null);
-		PaintForm form = new PaintForm(PaintApplyGuardsTest.loaded, EDITORS, ZONES, TestWindow.mTileMapPanel(), history());
+		PaintForm form = new PaintForm(PaintApplyGuardsTest.loaded, EDITORS, ZONES, TestWindow.mTileMapPanel(), history(), OPS, () -> { });
 		//the state a tool exit or a refused Apply finds after a live preview:
 		//a swapped-in model over the zone that is open
 		set(form, "seededZone", PaintApplyGuardsTest.loaded.index());
@@ -554,5 +706,200 @@ public class PaintFormGuardsTest {
 				"and still names what stopped it and promises the map is untouched: " + said);
 		check(Boolean.FALSE.equals(get(form, "previewInScene")),
 				"and the preview flag is clear, there being no scene that ever held one");
+	}
+
+	/**
+	 * Apply's question warns of still water only where water is painted on a zone whose water does not ripple (the
+	 * 2026-10-15 shared sweep, PaintForm 1206, negate-if, SURVIVED: no suite asked Apply's question). Inverted, a map
+	 * painted without water was warned about its still water, and one with water on a still zone was not. On zone 74,
+	 * activated, its canvas all grass with one tile touched, then one tile of water; the question is answered with
+	 * nothing, so nothing is applied.
+	 */
+	static void applyWarnsOfStillWaterOnlyWhereThereIsWater(File dump) throws Exception {
+		System.out.println("--- Apply warns of still water only where water is painted");
+		if (!holdsRegions(dump)) {
+			Skip.section("no pristine dump at " + dump);
+			return;
+		}
+		PaintApplyGuardsTest.openWorkspace(dump);
+		PaintApplyGuardsTest.open(74);
+		TestWindow.mTileMapPanel(null);
+		PaintForm form = new PaintForm(PaintApplyGuardsTest.loaded, EDITORS, ZONES, TestWindow.mTileMapPanel(), history(), OPS, () -> { });
+		Method apply = PaintForm.class.getDeclaredMethod("applyAction");
+		apply.setAccessible(true);
+		List<String> grassSaid;
+		List<String> waterSaid;
+		ctrmap.Ui.record();
+		try {
+			form.activate();
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		TilePalette[][] grid = (TilePalette[][]) get(form, "grid");
+		for (TilePalette[] row : grid) {
+			Arrays.fill(row, TilePalette.GRASS);
+		}
+		((boolean[][]) get(form, "touched"))[5][5] = true;
+		grassSaid = ctrmap.Ui.record();
+		try {
+			apply.invoke(form);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		grid[5][5] = TilePalette.WATER;
+		waterSaid = ctrmap.Ui.record();
+		try {
+			apply.invoke(form);
+		} finally {
+			ctrmap.Ui.stopRecording();
+			form.deactivate();
+		}
+		boolean ripples = ctrmap.MapPainter.zoneWaterScrolls(PaintApplyGuardsTest.loaded,
+				PaintApplyGuardsTest.loaded.open().header.areadataID);
+		boolean grassWarned = !grassSaid.isEmpty() && grassSaid.get(0).contains("painted water will be STILL");
+		boolean waterWarned = !waterSaid.isEmpty() && waterSaid.get(0).contains("painted water will be STILL");
+		check(grassSaid.size() == 1 && grassSaid.get(0).startsWith("Map Builder: Apply your edits to zone 74's map?")
+				&& !grassWarned && waterWarned == !ripples,
+				"Apply's question: no warning of still water over grass; over water, one exactly when zone 74's water "
+				+ (ripples ? "ripples (it does: none)" : "does not ripple (it does not: warned)") + " - " + grassWarned
+				+ ", " + waterWarned);
+	}
+
+	/**
+	 * A preview that could not be rebuilt says so under Apply, from the worker's own done() (the 2026-10-15 shared
+	 * sweep, PaintForm 1065, negate-if, SURVIVED: no suite ran the worker). Inverted, a current result's problem went
+	 * unsaid and a stale one's was shown. On zone 74, activated, its donor model made bytes no rebuild can read.
+	 */
+	static void aPreviewThatFailsSaysSoUnderApply(File dump) throws Exception {
+		System.out.println("--- a preview that could not be rebuilt says so under Apply, from the worker itself");
+		if (!holdsRegions(dump)) {
+			Skip.section("no pristine dump at " + dump);
+			return;
+		}
+		PaintApplyGuardsTest.openWorkspace(dump);
+		PaintApplyGuardsTest.open(74);
+		TestWindow.mTileMapPanel(null);
+		PaintForm form = new PaintForm(PaintApplyGuardsTest.loaded, EDITORS, ZONES, TestWindow.mTileMapPanel(), history(), OPS, () -> { });
+		ctrmap.Ui.record();
+		try {
+			form.activate();
+			check(get(form, "donorModel") != null, "control: activated on zone 74, the painter holds its donor model");
+			set(form, "donorModel", new byte[16]);
+			Method regen = PaintForm.class.getDeclaredMethod("startRegen");
+			regen.setAccessible(true);
+			javax.swing.SwingUtilities.invokeAndWait(() -> {
+				try {
+					regen.invoke(form);
+				} catch (ReflectiveOperationException ex) {
+					throw new IllegalStateException(ex);
+				}
+			});
+			long until = System.currentTimeMillis() + 60_000;
+			while (Boolean.TRUE.equals(get(form, "regenRunning")) && System.currentTimeMillis() < until) {
+				Thread.sleep(50);
+			}
+			javax.swing.SwingUtilities.invokeAndWait(() -> { });
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		String note = ((JLabel) get(form, "previewStatus")).getText();
+		form.deactivate();
+		check(note.contains("the 3D preview could not be rebuilt"), "the worker's failed rebuild, current, is said under"
+				+ " Apply: " + note);
+	}
+
+	/**
+	 * Make water ripple goes on only over an area the edit may change (the 2026-10-15 shared sweep, PaintForm 643,
+	 * negate-if, SURVIVED: no suite pressed it). Inverted, a fork declined fell into a null and was said as a failure,
+	 * and an area that needed none was left without its ripple. On zone 74, OK to the ripple and Cancel to a shared
+	 * area if one is asked about - each of the two answers zone 74 can give is held to its own outcome.
+	 */
+	static void makeWaterRippleStopsWhenTheAreaIsNotMadeItsOwn(File dump) throws Exception {
+		System.out.println("--- Make water ripple goes on only over an area the edit may change");
+		if (!holdsRegions(dump)) {
+			Skip.section("no pristine dump at " + dump);
+			return;
+		}
+		PaintApplyGuardsTest.openWorkspace(dump);
+		PaintApplyGuardsTest.open(74);
+		TestWindow.mTileMapPanel(null);
+		PaintForm form = new PaintForm(PaintApplyGuardsTest.loaded, EDITORS, ZONES, TestWindow.mTileMapPanel(), history(), OPS, () -> { });
+		ctrmap.Ui.record();
+		try {
+			form.activate();
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		java.lang.reflect.Method ripple = PaintForm.class.getDeclaredMethod("rippleAction");
+		ripple.setAccessible(true);
+		List<String> said = ctrmap.Ui.record(javax.swing.JOptionPane.OK_OPTION, "Cancel");
+		String threw = null;
+		try {
+			ripple.invoke(form);
+		} catch (java.lang.reflect.InvocationTargetException ex) {
+			threw = String.valueOf(ex.getCause());
+		} finally {
+			ctrmap.Ui.stopRecording();
+			form.deactivate();
+		}
+		boolean askedShared = said.size() > 1 && said.get(1).startsWith("Shared area:");
+		boolean declined = askedShared && said.size() == 2;
+		boolean rippled = !askedShared && said.size() == 2 && said.get(1).startsWith("Make water ripple: ")
+				&& (said.get(1).contains("Sea-scroll animation added") || said.get(1).contains("No map cells needed changes"));
+		check(threw == null && (declined || rippled), "zone 74's area " + (askedShared ? "is shared: Cancel there changes"
+				+ " nothing and says nothing more" : "is its own: the ripple is made, and said") + " - " + threw + ", " + said);
+	}
+
+	/**
+	 * Activated on a zone it has not seeded, the painter seeds it; activated again on the zone it holds, it keeps what
+	 * was painted (F247; the 2026-10-15 shared sweep, PaintForm 409, negate-if, SURVIVED: no suite activated the
+	 * painter). Inverted, a new zone was only checked and never seeded, and a re-activation seeded the zone again over
+	 * the painting. On zone 74, open in a scratch workspace over the dump.
+	 */
+	static void activatedThePainterSeedsANewZoneAndKeepsItsOwn(File dump) throws Exception {
+		System.out.println("--- activated, the painter seeds a zone it has not seeded and keeps the one it holds");
+		if (!holdsRegions(dump)) {
+			Skip.section("no pristine dump at " + dump);
+			return;
+		}
+		PaintApplyGuardsTest.openWorkspace(dump);
+		PaintApplyGuardsTest.open(74);
+		TestWindow.mTileMapPanel(null);
+		PaintForm form = new PaintForm(PaintApplyGuardsTest.loaded, EDITORS, ZONES, TestWindow.mTileMapPanel(), history(), OPS, () -> { });
+		List<String> said = ctrmap.Ui.record();
+		try {
+			form.activate();
+			check(Integer.valueOf(74).equals(get(form, "seededZone")),
+					"activated on zone 74, which it has not seeded, it seeds it: " + get(form, "seededZone") + ", " + said);
+			//what a re-activation over a changed map asks by (the 2026-10-15 shared sweep, PaintForm 471, negate-if,
+			//SURVIVED: read in its source only) - inverted, a painter with nothing painted asked as if it had painting
+			java.lang.reflect.Method painted = PaintForm.class.getDeclaredMethod("painted");
+			painted.setAccessible(true);
+			boolean before = (Boolean) painted.invoke(form);
+			form.gesturePress(5, 5, false);
+			boolean[][] touched = (boolean[][]) get(form, "touched");
+			check(touched[5][5], "control: a stroke painted tile (5,5)");
+			boolean after = (Boolean) painted.invoke(form);
+			check(!before && after, "freshly seeded it holds no painting, and after a stroke it does: " + before + ", " + after);
+			form.activate();
+			touched = (boolean[][]) get(form, "touched");
+			check(Integer.valueOf(74).equals(get(form, "seededZone")) && touched[5][5],
+					"activated again on the zone it holds, it keeps the painting: tile (5,5) "
+					+ (touched[5][5] ? "still painted" : "forgotten") + ", " + said);
+			//and says why only when it could not look (the 2026-10-15 shared sweep, PaintForm 501, negate-if,
+			//SURVIVED): inverted, a map it checked was said to be unchecked, and one it could not check went unsaid
+			String checked = ((JLabel) get(form, "zoneLabel")).getText();
+			set(form, "originalModel", null);
+			form.activate();
+			String unchecked = ((JLabel) get(form, "zoneLabel")).getText();
+			touched = (boolean[][]) get(form, "touched");
+			check(!checked.contains("Could not check") && touched[5][5] && unchecked.contains("Could not check whether"
+					+ " another editor changed this map (there was no map model to compare against when painting started),"
+					+ " so your painting is kept"), "over the map it checked it says nothing of checking; with nothing to compare against it"
+					+ " keeps the painting and says it could not check, and why: \"" + checked + "\", then \"" + unchecked + "\"");
+		} finally {
+			ctrmap.Ui.stopRecording();
+			form.deactivate();
+		}
 	}
 }

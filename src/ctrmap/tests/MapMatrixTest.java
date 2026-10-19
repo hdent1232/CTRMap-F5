@@ -108,6 +108,36 @@ public class MapMatrixTest {
 		}
 		check(hand == 0 && scanned > 100, "no production file but MapMatrix parses a matrix grid by hand (" + hand + " in "
 				+ scanned + " files)");
+		//census M.54: the atmosphere preview took the zone's region as the matrix's FIRST FILLED CELL, which on the 94
+		//retail zones sharing a matrix is a neighbour's. A zone's own region is asked of what knows it - the ownership
+		//grid, the header's position - and the first filled cell is only the fallback where those find none, in the
+		//two places that say so
+		java.util.Map<String, Integer> firstCell = new java.util.TreeMap<>();
+		for (File f : CollisionReadTest.javaFiles(new File("src/ctrmap"), new java.util.ArrayList<>())) {
+			if (f.getPath().contains(File.separator + "tests" + File.separator) || f.getName().equals("MapMatrix.java")) {
+				continue;
+			}
+			String text = SourceSeamTest.stripComments(new String(Files.readAllBytes(f.toPath()), java.nio.charset.StandardCharsets.UTF_8));
+			int n = text.split("firstRegionId\\(|\\.firstFilledCell\\(", -1).length - 1;
+			if (n > 0) {
+				firstCell.put(f.getName(), n);
+			}
+		}
+		String fallbacks = "{MapPainter.java=1}";
+		check(firstCell.toString().equals(fallbacks), "a zone's region is taken as the matrix's first filled cell only as"
+				+ " the fallback of the one that knows the zone by its position: " + firstCell + ", expected " + fallbacks);
+		String picker = SourceSeamTest.stripComments(new String(Files.readAllBytes(
+				new File("src/ctrmap/humaninterface/GfEnvPicker.java").toPath()), java.nio.charset.StandardCharsets.UTF_8));
+		String model = CollisionReadTest.body(picker, "private static byte[] currentZoneModel(");
+		check(model != null && model.contains("MapPainter.firstRegionCell(loaded)")
+				&& model.contains("notes.add(\"Your zone's map could not be read for the preview (\" + ctrmap.Ui.reason(unread)")
+				&& model.contains("getWorkspaceFile(ArchiveType.FIELD_DATA"),
+				"the atmosphere preview shows the zone's own region, read through the workspace, and says why when it cannot");
+		//census M.70: the picker inflated every zone container on the event thread for two numbers from each header
+		String pick = CollisionReadTest.body(picker, "public static byte[] pick(");
+		check(pick != null && pick.contains("MasterTable.detached(zoG.getDecompressedEntry(zoneCount), zoneCount)")
+				&& !java.util.regex.Pattern.compile("getDecompressedEntry\\(\\s*z\\s*\\)").matcher(pick).find(),
+				"the atmosphere picker lists the zones from the master table's one entry, not by opening each zone");
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		System.exit(fails == 0 ? 0 : 1);

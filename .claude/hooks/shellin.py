@@ -31,6 +31,7 @@ input could not be walked, and a caller that gets True must refuse rather than a
 """
 import importlib.util
 import os
+import re
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
@@ -110,6 +111,64 @@ _MOVER_VALUED = ("-path", "-literalpath", "-stackname")
 def absolute(path):
     return (os.path.isabs(path) or path.startswith(("/", chr(92)))
             or (len(path) > 2 and path[1] == ":" and path[2] in "/" + chr(92)))
+
+
+#: Words that run the NEXT word as the program - so a quoted word after only these (and VAR=value) is a program.
+_RUNNERS = ("env", "command", "nohup", "time", "exec", "sudo", "builtin")
+_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def arguments_blanked(text):
+    """`text` with the inside of every quoted ARGUMENT blanked to spaces, its length kept - so a pattern looking for a
+    command's shape finds none in a message, a search pattern or a note, and a span it matches reads back the same
+    characters from `text`.
+
+    MEASURED 2026-10-12, three guards in one day read quoted text as commands: guard_foreground took "start" in a
+    quoted ledger note, guard_push took `git push` inside a grep pattern after a `|`, and the bundle's suite guard
+    took single-quoted backticks for a command substitution. Each refused - none let anything through - but each
+    refused work that ran nothing.
+
+    LEFT WHOLE, never blanked into a guess, wherever the shells this reads (Git Bash and PowerShell) could take it
+    differently: a backtick anywhere (bash's substitution, PowerShell's escape), a backslash before a quote (bash's
+    escape, PowerShell's literal) and a quote that never closes. A double-quoted argument holding `$(` is left too:
+    both shells RUN what is inside it. A quoted word in program position - first in its command, or after only
+    VAR=value and the words that run the next one - is a program, and stays."""
+    if "`" in text or "\\'" in text or '\\"' in text:
+        return text
+    out = list(text)
+    at, start = 0, 0
+    while at < len(text):
+        c = text[at]
+        if c in ";|&(\n":
+            start = at + 1
+        elif c in "'\"":
+            end = text.find(c, at + 1)
+            if end < 0:
+                return text
+            before = text[start:at].split()
+            argument = any(not (_ASSIGNMENT.match(word) or word in _RUNNERS) for word in before)
+            if argument and (c == "'" or "$(" not in text[at + 1:end]):
+                out[at + 1:end] = " " * (end - at - 1)
+            at = end
+        at += 1
+    return "".join(out)
+
+
+def drive_folder(path):
+    """A folder spelled `/c/Users/<you>` - Git Bash's name for `C:/Users/<you>` - as the folder that EXISTS. Windows reads
+    `/c/x` as a folder named c at the root of the current drive; where that is not there and the drive's own folder
+    is, the drive's is the one meant, whichever shell spelled it. Anything else comes back as given.
+
+    MEASURED 2026-10-12: `cd "/c/Users/<you>/verification-bootstrap" && git push origin main`, typed in the Bash
+    tool, was refused for want of an approval at `C:/c/Users/...` - the push guard joined Git Bash's spelling of
+    a drive onto the call's own folder, so every push after a cd spelled that way was refused, the owner's
+    approved one included."""
+    if (os.name == "nt" and path and len(path) >= 2 and path[0] == "/" and path[1].isalpha()
+            and (len(path) == 2 or path[2] in "/" + chr(92)) and not os.path.exists(path)):
+        drive = path[1].upper() + ":/" + path[3:]
+        if os.path.exists(drive):
+            return drive
+    return path
 
 
 def _arrive(where, target):
@@ -243,7 +302,8 @@ def located(payload):
     `each_located` for what `where` holds. A guard whose answer depends on the folder asks this."""
     found, _ = scan(payload)
     try:
-        return [one for raw in found for one in each_located(raw)]
+        return [(command, drive_folder(where) if where else where)
+                for raw in found for command, where in each_located(raw)]
     except Exception:  # noqa: BLE001 - `unreadable` says why, and a caller refuses on it
         return [(raw, "") for raw in found]
 

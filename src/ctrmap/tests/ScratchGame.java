@@ -43,7 +43,9 @@ final class ScratchGame {
 		ArchiveType.MAP_MATRIX, ArchiveType.GAMETEXT,
 		ArchiveType.ZONE_DATA, ArchiveType.BUILDING_MODELS,
 		ArchiveType.NPC_REGISTRIES, ArchiveType.MOVE_MODELS,
-		ArchiveType.STORYTEXT
+		ArchiveType.STORYTEXT,
+		//read, never written: where the shared scripts send the player is part of which zones are reached (F225)
+		ArchiveType.SHARED_SCRIPTS
 	};
 
 	private ScratchGame() {
@@ -51,6 +53,16 @@ final class ScratchGame {
 
 	/** Copies the dump into scratch space and loads it as the live workspace. */
 	static File open(File dump) throws IOException {
+		return open(dump, new File[0]);
+	}
+
+	/**
+	 * {@link #open(File)}, taking an archive the dump lacks from the first of {@code whole} that has it - a
+	 * complete game folder beside a partial one. RomFS_original_garcs holds no STORYTEXT, so an append made
+	 * over it refuses for that before it reaches what a suite asks about (ForkGuardsTest's area-id budget,
+	 * 2026-10-09); the whole game supplies it, read and never written, and the copy is said.
+	 */
+	static File open(File dump, File... whole) throws IOException {
 		File root = Scratch.dir("ctrmap_scratch_game");
 		File game = new File(root, "game");
 		File ws = new File(root, "ws");
@@ -75,9 +87,17 @@ final class ScratchGame {
 		//that needs the missing archive refuses on its own - but skipping SILENTLY
 		//would leave a suite failing later with no hint of why, so it is printed.
 		java.util.List<String> absent = new java.util.ArrayList<>();
+		java.util.List<String> borrowed = new java.util.ArrayList<>();
 		for (ArchiveType t : NEEDED) {
 			String rel = Workspace.getArchivePath(t, GameType.ORAS);
 			File src = new File(dump.getAbsolutePath() + rel);
+			for (int i = 0; !src.isFile() && i < whole.length; i++) {
+				File other = new File(whole[i].getAbsolutePath() + rel);
+				if (other.isFile()) {
+					src = other;
+					borrowed.add(t + " from " + whole[i]);
+				}
+			}
 			if (!src.isFile()) {
 				absent.add(t + " (" + rel + ")");
 				continue;
@@ -89,6 +109,9 @@ final class ScratchGame {
 		if (!absent.isEmpty()) {
 			System.out.println("    (this dump has no " + absent + " - the scratch game goes"
 				+ " without, and anything needing it will refuse)");
+		}
+		if (!borrowed.isEmpty()) {
+			System.out.println("    (the dump has no " + borrowed + " - taken from the whole game, read only)");
 		}
 		WorkspaceSession session;
 		try {

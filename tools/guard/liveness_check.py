@@ -26,7 +26,8 @@ WHAT THIS REFUSES, across every .py and .ps1 in the project:
   1. `os.kill(pid, 0)` outside `liveness.py`, unless the file branches on `os.name` - because
      on Windows it answers the wrong question
   2. a `CommandLine` filter used to decide a process is absent
-  3. a file that answers the liveness question itself instead of asking `liveness.alive`
+  3. a file that answers the liveness question itself instead of asking `liveness.alive` - by
+     OpenProcess, by tasklist, or by PowerShell's Get-Process -Id / GetProcessById
 
 Usage: python tools/guard/liveness_check.py [root]
 Exit 1 with reasons, 0 when the question is asked in one place and asked correctly.
@@ -48,6 +49,11 @@ _COMMANDLINE = re.compile(r"CommandLine\s*(?:-match|-like|-eq|\.Contains|=~)", r
 _HAND_ROLLED = re.compile(r"OpenProcess\s*\(")
 #: `tasklist /FI "PID eq ..."` is not wrong, but it is a fourth spelling of one question
 _TASKLIST = re.compile(r"\btasklist\b[^\n]*\bPID\s+eq\b", re.I)
+#: PowerShell's own spellings: `Get-Process -Id` and .NET's GetProcessById. On 2026-10-11 test.ps1 asked
+#: `Get-Process -Id` whether the battery its lock named was alive, and this checker - which reads every
+#: .ps1 - passed it, because it knew only the spellings python had used.
+#: Spelled in pieces, so this line is not one itself to the bundle's walk over every shipped string.
+_PS_PROBE = re.compile(r"\b(?:Get-" + r"Process|gps)\b[^\n|;]*\s-Id\b|\bGetProcess" + r"ById\b", re.I)
 
 SKIP_DIRS = ("build", "dist", ".git", "__pycache__", "node_modules", "wt", "lib")
 
@@ -263,6 +269,13 @@ def findings(root):
                 "problem: it is a second spelling of a question that has one answer in %s, and "
                 "the next spelling will not be right." % (rel, THE_ANSWER))
 
+        found = _PS_PROBE.search(shell)
+        if found and own and (path.endswith(".ps1") or _near(shell, found.start())):
+            why.append(
+                ("%s probes liveness with PowerShell's Get-" + "Process -Id. It is a second spelling "
+                 "of a question with one answer in %s; a script asks a python reader that does - for "
+                 "the battery's lock, tools/guard/battery_lock.py.") % (rel, THE_ANSWER))
+
     if not looked:
         why.append("NOTHING WAS READ under %s - a scan that examined no files cannot report a "
                    "clean result. See rule one." % os.path.abspath(root))
@@ -270,6 +283,12 @@ def findings(root):
 
 
 def main(argv):
+    #a word this does not read refuses the run, before anything runs (cli_words, 2026-10-10)
+    import _cli
+    unread_words = _cli.refused(argv[1:], most=1)
+    if unread_words:
+        print(unread_words)
+        return 2
     root = argv[1] if len(argv) > 1 else "."
     why = findings(root)
     if not why:

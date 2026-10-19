@@ -10,7 +10,6 @@ import java.awt.Color;
 import java.awt.Dimension;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Scanner;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.DefaultListModel;
@@ -19,7 +18,6 @@ import javax.swing.SwingUtilities;
 import javax.swing.border.MatteBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
-import javax.swing.event.ListSelectionEvent;
 import javax.swing.text.AbstractDocument;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultCaret;
@@ -131,7 +129,7 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 		ptrs.setEditable(false);
 		disassemblyScrollPane.setViewportView(disassemblyArea);
 		prefixItemList.setModel(prefixEntryList);
-		prefixItemList.addListSelectionListener((ListSelectionEvent e) -> {
+		ctrmap.util.Selections.onSettled(prefixItemList, () -> {
 			if (loaded) {
 				savePrefixEntry();
 				showPrefixEntry(prefixItemList.getSelectedIndex());
@@ -337,7 +335,8 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 					String text = e.getDocument().getText(0, e.getDocument().getLength());
 					if (text.substring(off, off + len).equals("{")) {
 						//scan if sub or casetbl
-						if (off > 0 && text.charAt(off - 1) != '\n') {
+						boolean movedToItsOwnLine = off > 0 && text.charAt(off - 1) != '\n';
+						if (movedToItsOwnLine) {
 							SwingUtilities.invokeLater(() -> {
 								try {
 									e.getDocument().insertString(off, "\n", new SimpleAttributeSet());
@@ -346,10 +345,14 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 								}
 							});
 						}
+						//JUST AFTER THE BRACE, wherever it ends up (2026-10-15): this was off + 2, which counted the
+						//newline put before it - a brace typed at the start of a line has none, and its template was
+						//inserted past the end of the text, refused, and lost
+						final int afterBrace = off + 1 + (movedToItsOwnLine ? 1 : 0);
 						if (scanBackwardsFindUntil(text, off - 1, "sub_", "\t", true) != -1) {
 							SwingUtilities.invokeLater(() -> {
 								try {
-									e.getDocument().insertString(off + 2, "\n\tRETN(0)\n}", new SimpleAttributeSet());
+									e.getDocument().insertString(afterBrace, "\n\tRETN(0)\n}", new SimpleAttributeSet());
 								} catch (BadLocationException ex) {
 									Logger.getLogger(ScriptEditor.class.getName()).log(Level.SEVERE, null, ex);
 								}
@@ -362,7 +365,7 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 							if (scanBackwardsFindUntil(text, idx, "CASETBL", "\t", false) != -1) {
 								SwingUtilities.invokeLater(() -> {
 									try {
-										e.getDocument().insertString(off + 2, "\n\t\t* => 0x0\n\t}", new SimpleAttributeSet());
+										e.getDocument().insertString(afterBrace, "\n\t\t* => 0x0\n\t}", new SimpleAttributeSet());
 									} catch (BadLocationException ex) {
 										Logger.getLogger(ScriptEditor.class.getName()).log(Level.SEVERE, null, ex);
 									}
@@ -583,7 +586,6 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 	}
 
 	public String getPtrText(GFLPawnScript scr) {
-		int line = 2;
 		StringBuilder sb = new StringBuilder("\n\n");
 		for (PawnInstruction i : scr.instructions) {
 			sb.append(getFormattedStringShort(i.pointer));
@@ -642,18 +644,49 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 		return sb.toString();
 	}
 
-	public List<PawnInstruction> getDataInstructions(String text) {
-		Scanner scanner = new Scanner(text);
+	/**
+	 * The data words of {@code text}, one per line, each typed as four bytes in file order.
+	 *
+	 * @throws IllegalArgumentException naming the first line that is not a word, before anything is built: a
+	 * blank or mistyped line threw out of the Commit button's listener where nobody saw it, and a short one
+	 * silently became a different word (census H.36)
+	 */
+	public static List<PawnInstruction> getDataInstructions(String text) {
+		String[] lines = text.split("\r?\n", -1);
+		int last = lines.length;
+		while (last > 0 && lines[last - 1].trim().isEmpty()) {
+			last--;     //the text's own last line end, and nothing typed after it
+		}
 		List<PawnInstruction> ret = new ArrayList<>();
 		int ptr = 0;
-		while (scanner.hasNextLine()) {
-			PawnInstruction i = new PawnInstruction(ptr, Integer.reverseBytes(Integer.parseUnsignedInt(scanner.nextLine().replaceAll(" ", ""), 16)), "DATA ELEMENT");
+		for (int n = 0; n < last; n++) {
+			int word;
+			try {
+				word = typedWord(lines[n]);
+			} catch (IllegalArgumentException notAWord) {
+				throw new IllegalArgumentException("line " + (n + 1) + ": " + ctrmap.util.Bytes.reason(notAWord), notAWord);
+			}
+			PawnInstruction i = new PawnInstruction(ptr, Integer.reverseBytes(word), "DATA ELEMENT");
 			i.hasCompressedArgument = false;
 			i.argumentCount = 0;
 			ret.add(i);
 			ptr += 4;
 		}
 		return ret;
+	}
+
+	/**
+	 * A 32-bit word typed as four bytes in hex - "01 02 03 04", spaces anywhere - read in the order typed. The
+	 * one reader of a typed word in this editor: anything but exactly eight hex digits is refused, saying what
+	 * was typed (census H.36, H.37).
+	 */
+	public static int typedWord(String typed) {
+		String digits = typed == null ? "" : typed.replaceAll("\\s", "");
+		if (!digits.matches("[0-9A-Fa-f]{8}")) {
+			throw new IllegalArgumentException("\"" + (typed == null ? "" : typed.trim())
+					+ "\" is not a word - type four bytes in hex, like 01 02 03 04");
+		}
+		return (int) Long.parseLong(digits, 16);
 	}
 
 	public void updateDocument(boolean putCaretAtEnd, CaretMotion advanceCaret) throws BadLocationException {
@@ -794,11 +827,26 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 		}
 	}
 
-	public void savePrefixEntry() {
+	/**
+	 * Writes the two typed fields into the entry shown - both read before either is written, and a field that is
+	 * not a word is said and writes nothing. It wrote the first before reading the second, from a list listener
+	 * where the throw was invisible (census H.37). False when the entry was not saved.
+	 */
+	public boolean savePrefixEntry() {
 		if (currentEntry != null && currentIdx != -1) {
+			final int first;
+			final int second;
+			try {
+				first = typedWord(address.getText());
+				second = typedWord(name.getText());
+			} catch (IllegalArgumentException notAWord) {
+				ctrmap.Ui.error(this, "Prefix entry " + currentIdx + " was not saved: " + ctrmap.util.Bytes.reason(notAWord),
+						"Script editor");
+				return false;
+			}
 			if (currentEntry.type == PawnPrefixEntry.Type.PUBLIC) {
-				currentEntry.data[0] = Integer.parseUnsignedInt(address.getText().replaceAll(" ", ""), 16);
-				currentEntry.data[1] = Integer.parseUnsignedInt(name.getText().replaceAll(" ", ""), 16);
+				currentEntry.data[0] = first;
+				currentEntry.data[1] = second;
 				if (currentIdx == currentEntries.size()) {
 					script.mainEntryPointDummy.argumentCells[0] = currentEntry.data[0];
 					script.mainEntryPointDummy.chkAddJumpListener();
@@ -807,11 +855,12 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 					prefixEntryList.setElementAt(currentIdx + " - " + getFormattedStringLE(currentEntry.data[0]) + " " + getFormattedStringLE(currentEntry.data[1]), currentIdx);
 				}
 			} else {
-				currentEntry.data[0] = Integer.reverseBytes(Integer.parseUnsignedInt(address.getText().replaceAll(" ", ""), 16));
-				currentEntry.data[1] = Integer.reverseBytes(Integer.parseUnsignedInt(name.getText().replaceAll(" ", ""), 16));
+				currentEntry.data[0] = Integer.reverseBytes(first);
+				currentEntry.data[1] = Integer.reverseBytes(second);
 				prefixEntryList.setElementAt(currentIdx + " - " + getFormattedString(currentEntry.data[0]) + " " + getFormattedString(currentEntry.data[1]), currentIdx);
 			}
 		}
+		return true;
 	}
 
 	public static int getCountOfLineEndsInString(String str) {
@@ -1015,7 +1064,14 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 
     private void btnSaveActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnSaveActionPerformed
 		if (editData) {
-			script.data = getDataInstructions(disassemblyArea.getText());
+			final List<PawnInstruction> data;
+			try {
+				data = getDataInstructions(disassemblyArea.getText());
+			} catch (IllegalArgumentException notAWord) {
+				ctrmap.Ui.error(this, "Not committed - " + ctrmap.util.Bytes.reason(notAWord), "Script editor");
+				return;
+			}
+			script.data = data;
 			script.updateRaw();
 		} else {
 			PawnAssembly asm = assemble();
@@ -1080,16 +1136,28 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 				ptrs.setText(getDataPtr(script.data));
 			} else {
 				btnIsDataEdit.setText("Edit data");
+				//THE CODE'S GUTTER BACK WITH THE CODE (census M.12): only the switch TO data set it, so the
+				//data words' addresses stayed beside the code lines
+				if (script != null) {
+					ptrs.setText(getPtrText(script));
+				}
 			}
 		}
     }//GEN-LAST:event_btnIsDataEditActionPerformed
 
     private void btnSavePrefixEntryActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnSavePrefixEntryActionPerformed
-		savePrefixEntry();
-		showPrefixEntry(prefixItemList.getSelectedIndex());
+		//A REFUSED SAVE KEEPS WHAT WAS TYPED (2026-10-15): the answer was read by nobody, and the entry was shown again
+		//as stored - over the text the refusal had just named, leaving nothing to correct
+		if (savePrefixEntry()) {
+			showPrefixEntry(prefixItemList.getSelectedIndex());
+		}
     }//GEN-LAST:event_btnSavePrefixEntryActionPerformed
 
     private void btnNewPrefixEntryActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnNewPrefixEntryActionPerformed
+		//NOTHING TO ADD TO BEFORE A SCRIPT IS OPEN (census M.78): the list is the open script's, and this threw on it
+		if (currentEntries == null) {
+			return;
+		}
 		PawnPrefixEntry.Type type = getTypeForIdx(prefixCat.getSelectedIndex());
 		currentEntries.add(new PawnPrefixEntry(8, type, new int[2]));
 		setPrefixCategory(type);

@@ -104,8 +104,10 @@ class TheRecordLeavesASkippedSuiteOut(unittest.TestCase):
         class Done(object):
             returncode, stdout, stderr = 0, battery, ""
 
-        recorder.subprocess = types.SimpleNamespace(run=lambda *a, **k: Done(),
-                                                    TimeoutExpired=Exception)
+        #THE CALL THE RECORDER MAKES: it runs the battery through bounded.run. A stand-in for its
+        #subprocess intercepted nothing once the deadline moved, so this ran the REAL battery - whose
+        #work-order gate refused it at once - and read that (2026-10-10)
+        recorder.bounded = types.SimpleNamespace(run=lambda *a, **k: Done())
         fakes = {"commit_guard": types.SimpleNamespace(source_digest=lambda *a, **k: "x" * 64),
                  "magnitude": types.SimpleNamespace(SERIES=os.path.join(HERE, "nowhere.json"))}
         held = {name: sys.modules.get(name) for name in fakes}

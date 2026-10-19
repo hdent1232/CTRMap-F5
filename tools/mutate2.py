@@ -59,13 +59,42 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
 REPO = Path(_tree_root.require(__file__)).resolve()
 BASE = REPO.parent   # the folder holding the repository - anchored on it, never counted (F216)
-WT = BASE / "wt" / "_guardcheck"
+import bundle_hooks      # noqa: E402  - where the bundle's hooks are, found rather than spelled
+sys.path.insert(0, bundle_hooks.path(str(REPO)))
+import bundle_shell      # noqa: E402  - when a process began: a claim names its process, never a reusable pid alone
+#ONE WORKTREE PER RUN, so several runs can share a sweep (--claims below): each names its own by CTRMAP_SWEEP_WT
+WT = Path(os.environ["CTRMAP_SWEEP_WT"]).resolve() if os.environ.get("CTRMAP_SWEEP_WT") \
+    else BASE / "wt" / "_guardcheck"
 DUMP = BASE / "RomFS_original_garcs"
 #the value after --anyway is a sentence, not the mutant cap
 _RAW = sys.argv[1:]
-_SKIP = _RAW.index("--anyway") + 1 if "--anyway" in _RAW else -1
-_ARGS = [a for i, a in enumerate(_RAW) if not a.startswith("-") and i != _SKIP]
+#a word this does not read refuses the run, before anything runs (cli_words, 2026-10-10)
+import cli_words  # noqa: E402
+_VALUED = ("--anyway", "--claims", "--reuse")
+#every flag spelled out: a tuple built by `+` is one test_flags_read_are_accepted cannot read, so it called this UNKNOWN
+_UNREAD_WORDS = cli_words.refused(_RAW, flags=("--selftest", "--anyway", "--claims", "--reuse"), valued=_VALUED, most=1)
+if _UNREAD_WORDS:
+    print(_UNREAD_WORDS)
+    raise SystemExit(2)
+#THE SWEEP RUNS ON THE UNATTENDED DESKTOP, every suite it starts with it (2026-10-11: unattended suites
+#opened the editor's windows on the owner's screen, and one cost them a window of edits) - see hidden_desktop
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "guard"))
+import hidden_desktop  # noqa: E402
+_AGAIN = hidden_desktop.on_the_unattended_desktop(__file__, _RAW)
+if _AGAIN is not None:
+    raise SystemExit(_AGAIN)
+def bare_words(raw):
+    """The words no flag took: every flag's value is its own word, never the mutant cap - not only --anyway's."""
+    skip = {i + 1 for i, a in enumerate(raw) if a in _VALUED}
+    return [a for i, a in enumerate(raw) if not a.startswith("-") and i not in skip]
+
+
+_ARGS = bare_words(_RAW)
 CAP = int(_ARGS[0]) if _ARGS else 6
+#--claims <folder>: share the sweep with every run given the same folder; --reuse <log, results or folder>: take
+#the verdicts a run already recorded (both below, at "sharing one sweep")
+CLAIMS = next((_RAW[i + 1] for i, a in enumerate(_RAW) if a == "--claims"), None)
+REUSE_FROM = [_RAW[i + 1] for i, a in enumerate(_RAW) if a == "--reuse"]
 
 JDK = os.environ.get("CTRMAP_JDK")
 if not JDK:
@@ -146,6 +175,17 @@ CLUSTERS = {
     "talkerfix":    ["DispatchTrampolineTest", "TalkerWizardDryRunTest", "GiveBpScriptTest",
                      "GauntletScriptTest", "ZoneScriptAnalyzerTest", "NpcTemplatesTest",
                      "SignWrapperInjectTest", "MsgWrapperInjectTest"],
+}
+
+# Work that was never on a fix branch, scored like a merged one: every line the range ADDED, judged by every
+# suite that guards its file (suites_for derives them - a round names none by hand, which is the table that
+# drifted). The 2026-10-06 audit's fixes were committed on the working branch, so no merge of sf/<branch>
+# brings them in and the sweep scored none of them (F191). MEASURED 2026-10-10 by this file's own
+# mutants_for over `git diff a93ef21`: 2,017 mutants in 161 production files - the owner chose the whole
+# round over the 848 in game-data writers alone ("All of this round"). The tip is HEAD: the measurement
+# commit the sweep is run on.
+ROUNDS = {
+    "audit-2026-10": ("a93ef21", "HEAD"),
 }
 
 SUBST = {
@@ -249,6 +289,20 @@ def suite_args():
     return out
 
 
+def resolve_round(name, base_rev, tip_rev):
+    """(before sha, tip sha) of a round, or SystemExit naming the rev git could not resolve.
+
+    A ROUND THAT CANNOT BE FOUND IS NOT AN EMPTY ONE: skipping it would score the tree as though the round
+    had added nothing, which is the confident empty this file exists to refuse."""
+    before = git("rev-parse", "--verify", "--quiet", base_rev + "^{commit}").stdout.strip()
+    tip = git("rev-parse", "--verify", "--quiet", tip_rev + "^{commit}").stdout.strip()
+    if not before or not tip:
+        raise SystemExit("round %s names %s..%s, and git does not resolve %s - a round that cannot be read"
+                         " is not one with nothing in it" % (name, base_rev, tip_rev,
+                                                             base_rev if not before else tip_rev))
+    return before, tip
+
+
 def resolve_clusters():
     """(base sha, [(fqcn, args)]) per branch, from git and test.ps1."""
     known = suite_args()
@@ -266,6 +320,8 @@ def resolve_clusters():
                                  "a suite the battery does not run guards nothing" % (branch, s))
             picked.append(("ctrmap.tests." + s, known[s]))
         resolved[branch] = (base[:7], picked)
+    for name, (base_rev, tip_rev) in ROUNDS.items():
+        resolved[name] = (resolve_round(name, base_rev, tip_rev), [])
     # How many suites this table cannot see. Measured, not asserted: when this
     # check was first written as a refusal it named 48 of the 85 suites test.ps1
     # registers - more than half the battery, invisible to the sweep. That is
@@ -284,7 +340,10 @@ def resolve_clusters():
     return resolved
 
 THROW = re.compile(r"^\s*throw\s+new\s+\w")
-REPORT = re.compile(r"^\s*(JOptionPane\.show\w+|System\.out\.print\w*|\w*[Dd]ialog\w*\.\w+|"
+#A PRINT TO ANY STREAM IS A REPORT, not one to System.out alone (2026-10-15): the updater's and both harvesters' reports
+#were handed a PrintStream so a suite could read them, and `said.println(...)` matched nothing here - every one of
+#those lines dropped out of the measurement unseen, and SilentCatchTest stopped counting the same shape in a catch
+REPORT = re.compile(r"^\s*(JOptionPane\.show\w+|[A-Za-z_][\w.]*\.print(?:ln|f)?\(|\w*[Dd]ialog\w*\.\w+|"
                     r"\w*[Ss]tatus\w*\.setText|bad\.add|problems\.add|warn\w*\()")
 IF = re.compile(r"^(\s*)(\}\s*else\s+)?if\s*\((.+)\)\s*\{\s*$")
 RET_TRUE = re.compile(r"^(\s*)return\s+true\s*;\s*$")
@@ -1211,8 +1270,67 @@ def why_it_failed(out):
             if known in line:
                 return "unmutable", ("javac: %s - the statement is load-bearing for the "
                                      "compiler, so no mutant of this kind exists here" % known)
-    return "nocompile", ("the harness emitted something javac rejected: "
-                         + (errs[0][:120] if errs else "no diagnostic captured"))
+    if errs:
+        return "nocompile", "the harness emitted something javac rejected: " + errs[0][:120]
+    #NO JAVAC ERROR IS NOT A DIAGNOSIS (2026-10-14): "no diagnostic captured" was filed 9 times (8 serial, 1 shared)
+    #with the build's own words thrown away - name what it said, so the cause is a fact rather than a guess
+    said = [l.strip() for l in out.splitlines() if l.strip()]
+    return "nocompile", ("the build failed with no javac error; it said: "
+                         + (" | ".join(said[-3:])[:200] if said else "nothing at all"))
+
+
+#A BUILD REFUSED AT A STRUCTURE GATE IS THE BATTERY NOTICING (2026-10-14): build.ps1 runs the battery's structure
+#suites before it signs, and a mutant that breaks one is refused there - "BUILD REFUSED - <gate>", no javac error. It
+#was filed "nocompile: no diagnostic captured", unmeasured: reproduced on BchMapModel 732 negated, which moves the
+#marker DuplicateWorkTest finds that capability's one owner by. Which suite each gate is, build.ps1's own table says.
+BUILD_GATE = re.compile(r'@\{\s*n\s*=\s*"([^"]+)"\s*;\s*c\s*=\s*"ctrmap\.tests\.(\w+)"\s*\}')
+GATE_REFUSED = re.compile(r"BUILD REFUSED - (.+)")
+
+
+def build_gates(text):
+    """{gate name: suite} from a build.ps1's own gate table."""
+    return {name.strip(): suite for name, suite in BUILD_GATE.findall(text)}
+
+
+def refused_at_gate(out):
+    """The BUILD REFUSED match when a structure gate refused the mutant BY FAILING A CHECK, else None. A gate that
+    stopped without one - a crash under load, as DialogSeamTest did on 2026-10-14 - judged nothing; build.ps1 at
+    c869a0e still heads that BUILD REFUSED over an ok line that says "refused", so the shape is asked here, not
+    the header: a FAIL line after it."""
+    m = GATE_REFUSED.search(out)
+    if not m or not [l for l in out[m.end():].splitlines() if "FAIL" in l]:
+        return None
+    return m
+
+
+def gate_kill(out, gates):
+    """(suite, gate) when the build refused the mutant at a structure gate, else None. A gate the table does not name
+    is still the battery's build refusing it, and is credited to build.ps1."""
+    m = refused_at_gate(out)
+    if not m:
+        return None
+    gate = m.group(1).strip()
+    return gates.get(gate, "build.ps1"), gate
+
+
+def failed_build(out, gates):
+    """(verdict, detail, killer) for a mutant whose build did not succeed: killed by the gate's suite when the
+    battery's build refused it at a structure gate, else what javac's words - or the build's - make it."""
+    gated = gate_kill(out, gates)
+    if gated:
+        return "killed", gated[0] + ": the battery's build refused it at its gate - " + gated[1], gated[0]
+    verdict, detail = why_it_failed(out)
+    return verdict, detail, ""
+
+
+def built():
+    """(compiled, what the build said) for the mutant now on disk. A build that failed with no javac error and no gate
+    refusal has not told this sweep anything about the mutant - a file held open, a stamp read mid-write - so it is
+    asked ONCE more before any verdict; one that fails the same way twice is filed with what it said."""
+    ok, out = build()
+    if ok or [l for l in out.splitlines() if ": error:" in l] or refused_at_gate(out):
+        return ok, out
+    return build()
 
 
 # ---- the harness's own guard -------------------------------------------------
@@ -1265,6 +1383,10 @@ public class T {
 \t\t};
 \t\tr.run();
 \t\tthrow new IllegalStateException("after the inner class");
+\t}
+
+\tpublic void tell(java.io.PrintStream said) {
+\t\tsaid.println("told");
 \t}
 }
 """
@@ -1369,10 +1491,449 @@ def suites_for(path, first, line=None, kind=None):
     return order
 
 
+# ---- sharing one sweep among several runs, and taking back what a run already measured ---------------------
+# THE SWEEP RAN ALONE, and it was the slowest thing between a frozen tree and a release: measured 2026-10-14, 705
+# verdicts in 46.4 hours - 15 an hour, one JVM at a time on a machine of 20 cores - with about 1,450 mutants left,
+# about 4 days more. Several runs now share one sweep. Each has its own worktree (CTRMAP_SWEEP_WT) and claims a
+# file before measuring it (--claims <folder>, the same folder for all), so no two measure the same file. Then
+# one last run takes every recorded file back (--reuse) and writes the one baseline. A run that died after its
+# claim left its file unrecorded, and the last run measures that file itself. A file nothing recorded is never
+# taken as done.
+#
+# A RECORD IS TAKEN ONLY FOR THE TREE IT MEASURED. A log or results file names its frozen commit, and one of
+# another commit is refused outright. A file whose recorded (line, kind) sequence is not exactly what this tree
+# yields for it is measured again rather than guessed at, and said so: a record of a different file is not a
+# measurement of this one.
+
+LOG_SECTION = re.compile(r"^=== (\S+) \(merged from ")
+LOG_FILE = re.compile(r"^  (\S+\.java): \d+ mutable line\(s\), trying \d+")
+LOG_LINE = re.compile(r"^     L(\d+)\s+(\S+)\s+(killed|SURVIVED|hung|nocompile|unmutable|excluded)(?: (.*?))?"
+                      r"(?:   <-- NOTHING ASSERTS THIS LINE)?$")
+LOG_FROZEN = re.compile(r"^measuring ([0-9a-f]{7,40}) \(frozen")
+LOG_END = re.compile(r"^\d+ measurement\(s\) in ")
+
+
+def unit_expected(noted, picked):
+    """The (line, kind) sequence a file's measurement prints, in its order: the lines nothing was emitted for, then
+    each mutant tried."""
+    return [[n["i"] + 1, n["kind"]] for n in noted] + [[c["i"] + 1, c["kind"]] for c in picked]
+
+
+def unit_key(cid, path):
+    return "%s\t%s" % (cid, path)
+
+
+def read_log(text):
+    """{"frozen": sha, "units": {(cid, file name, nth of that name in the cluster): [(line, kind, verdict, detail)]}}
+    from a sweep's printed output - only the files whose measurement was printed to its END, which is the next file,
+    the next cluster, or the closing count. The file a run was killed inside is not in it."""
+    frozen, units, cid, open_unit, seen = None, {}, None, None, {}
+
+    def close(complete):
+        if open_unit is not None and complete:
+            units[open_unit[0]] = open_unit[1]
+
+    for raw in text.splitlines():
+        line = raw.rstrip("\r")
+        m = LOG_FROZEN.match(line)
+        if m:
+            frozen = m.group(1)
+            continue
+        m = LOG_SECTION.match(line)
+        if m:
+            close(True)
+            open_unit, cid = None, m.group(1)
+            continue
+        m = LOG_FILE.match(line)
+        if m and cid is not None:
+            close(True)
+            n = seen[(cid, m.group(1))] = seen.get((cid, m.group(1)), 0) + 1
+            open_unit = ((cid, m.group(1), n), [])
+            continue
+        if LOG_END.match(line):
+            close(True)
+            open_unit = None
+            continue
+        m = LOG_LINE.match(line)
+        if m and open_unit is not None:
+            open_unit[1].append((int(m.group(1)), m.group(2), m.group(3), m.group(4) or ""))
+    return {"frozen": frozen, "units": units}
+
+
+#: what a results file says of its kills when each was confirmed by the same suite failing a second time; a record
+#: that does not say it was written by a run that took one failing run as a kill
+KILLS_CONFIRMED = "each confirmed by a second run"
+#: where the suites live: a record taken before they changed may not know what they notice now
+SUITES = "src/ctrmap/tests"
+
+
+def measure_again(records, suites_moved, confirmed):
+    """(line, kind) of every reused verdict that is not a measurement of THIS tree: a SURVIVED or hung one when the
+    suites changed after it was taken - a newer suite may notice what the older ones did not - and a kill from a run
+    that did not confirm its kills. Measured 2026-10-14 in the shares that did not: SetupWizardTest credited with 3
+    kills of files it never runs, and OffscreenRenderTest with ItemTable 392's, which no test names. Every other
+    verdict still is one."""
+    return [(r["line"], r["kind"]) for r in records
+            if (suites_moved and r["verdict"] in ("SURVIVED", "hung"))
+            or (not confirmed and r["verdict"] == "killed")]
+
+
+def split_reuse(records, again, picked):
+    """(records taken, candidates measured again): every record but those `again` names, and the candidates of
+    exactly those - a file is measured again mutant by mutant, never whole. A verdict to measure again that this tree
+    offers no candidate for stops the run: dropped, it would leave the baseline one mutant short and say nothing."""
+    keys = set(again)
+    taken = [r for r in records if (r["line"], r["kind"]) not in keys]
+    redo = [c for c in picked if (c["i"] + 1, c["kind"]) in keys]
+    missing = keys - set((c["i"] + 1, c["kind"]) for c in redo)
+    if missing:
+        raise SystemExit("a record names %s to measure again, and this tree offers no candidate for it - the record "
+                         "is not of this tree's lines" % sorted(missing))
+    return taken, redo
+
+
+def plan_unit(reused, sharing, picked, noted):
+    """(plan, records taken, candidates, unmeasurable lines) for one file, from what take_split answered:
+    "skip" when a record answers it whole and runs share the sweep (the run that reuses the records takes it);
+    "take" when a record answers it whole and this run writes the baseline; "measure" otherwise - with every record
+    that still measures this tree taken, and only the rest measured."""
+    if reused is None:
+        return "measure", [], picked, noted
+    _source, taken, redo = reused
+    if not redo:
+        return ("skip" if sharing else "take"), taken, [], []
+    return "measure", taken, redo, []
+
+
+class Reuse(object):
+    """Every verdict this run may take instead of measuring: from printed sweep logs and from the results files the
+    runs sharing a sweep wrote.
+
+    A RECORD OF ANOTHER COMMIT IS TAKEN FILE BY FILE, for a file git says is byte-identical at both - the subject
+    MutationBaselineTest holds a baseline to is each measured file's own bytes, so a file that did not move is the
+    subject its record measured. A file that moved is measured again. A record naming a commit git cannot find is
+    refused whole: nothing can be compared with a tree nobody has.
+
+    THE BEST RECORD OF A FILE, NOT THE LAST ONE READ (2026-10-17). Several passes record one file, and each record read
+    replaced the one before, so the folder given last won - with the folders given newest first, the OLDEST: Ips and
+    ADPropRegistry held kill-confirmed records at faf456f and 315d48d, and c869a0e's unconfirmed ones were taken, every
+    kill measured again. The 315d48d pass paid that whole, 1,641 verdicts over ten hours. A record taken here is the
+    one that measures this tree best (rank), whatever order the folders were given in."""
+
+    def __init__(self, sources, frozen):
+        self.logs, self.records, self.taken, self.refused = [], {}, 0, []
+        self.frozen, self._nth, self._same, self._suites, self._when = frozen, {}, {}, {}, {}
+        self.last_measured, self.last_confirmed = None, False
+        for source in sources:
+            p = Path(source)
+            files = sorted(p.glob("results-*.json")) if p.is_dir() else [p]
+            if p.is_dir() and not files:
+                raise SystemExit("--reuse %s: a folder with no results-*.json in it - nothing a run recorded is there,"
+                                 " so nothing can be taken from it" % source)
+            for f in files:
+                if not f.is_file():
+                    raise SystemExit("--reuse %s: no such file - a record that cannot be read is not one with "
+                                     "nothing in it" % f)
+                text = f.read_text(encoding="utf-8", errors="replace")
+                if f.suffix == ".json":
+                    data = json.loads(text)
+                    measured = self.commit(data.get("frozen"), f)
+                    for key, unit in data.get("units", {}).items():
+                        held = self.records.get(key)
+                        if held is None or self.rank(measured, unit) > self.rank(held[2], held[1]):
+                            self.records[key] = (f.name, unit, measured)
+                else:
+                    log = read_log(text)
+                    self.logs.append((f.name, log["units"], self.commit(log["frozen"], f)))
+
+    def rank(self, measured, unit):
+        """How well a record answers this tree, the better one comparing greater: one measured at this very commit
+        first, then one whose kills a second run confirmed, then the newer measurement by its commit's time."""
+        return measured == self.frozen, unit.get("kills") == KILLS_CONFIRMED, self.when(measured)
+
+    def when(self, sha):
+        """The commit time of a measured commit, asked of git; one git cannot date stops the run - an undatable
+        record is not an old one."""
+        if sha not in self._when:
+            asked = git("show", "-s", "--format=%ct", sha)
+            stamp = asked.stdout.strip()
+            if asked.returncode != 0 or not stamp.isdigit():
+                raise SystemExit("git could not date %s (exit %s) - which of two records is newer cannot be told, and "
+                                 "an undated record is not an old one" % (sha[:7], asked.returncode))
+            self._when[sha] = int(stamp)
+        return self._when[sha]
+
+    def commit(self, said, source):
+        """The whole commit a record says it measured, or a refusal: a record naming no commit, or one git cannot
+        find, cannot be compared with this tree at all."""
+        if said and self.frozen.startswith(said):
+            return self.frozen
+        found = git("rev-parse", "--verify", "--quiet", "%s^{commit}" % said).stdout.strip() if said else ""
+        if not found:
+            raise SystemExit("--reuse %s measured %s, which git does not find - a record of a tree nobody can compare "
+                             "with this one is not a measurement of it" % (source, said or "no commit at all"))
+        return found
+
+    def unchanged(self, measured, path):
+        """Is this file byte-identical in the commit a record measured and the one this run measures? Asked of git,
+        and a question git could not answer stops the run rather than reading as either."""
+        if measured == self.frozen:
+            return True
+        key = (measured, path)
+        if key not in self._same:
+            asked = git("diff", "--quiet", measured, self.frozen, "--", path)
+            if asked.returncode not in (0, 1):
+                raise SystemExit("git could not say whether %s changed between %s and %s (exit %s) - a file nobody "
+                                 "could compare is not unchanged" % (path, measured[:7], self.frozen[:7],
+                                                                    asked.returncode))
+            self._same[key] = asked.returncode == 0
+        return self._same[key]
+
+    def take(self, cid, path, expected, whole):
+        """The result records for this file from a run that measured it, or None: measure it here."""
+        name = path.split("/")[-1]
+        nth = self._nth[(cid, name)] = self._nth.get((cid, name), 0) + 1
+        record = self.records.get(unit_key(cid, path))
+        if record is not None:
+            source, unit, measured = record
+            if not self.unchanged(measured, path):
+                self.refused.append("%s %s: %s measured it at %s, and it has changed since"
+                                    % (cid, path, source, measured[:7]))
+            elif any(r.get("verdict") == "nocompile" for r in unit.get("results", [])):
+                self.refused.append("%s %s: %s recorded a nocompile - this harness's own failure, not a measurement "
+                                    "of the file" % (cid, path, source))
+            elif unit.get("expected") == expected:
+                self.taken += 1
+                self.last_measured, self.last_confirmed = measured, unit.get("kills") == KILLS_CONFIRMED
+                return source, unit["results"]
+            else:
+                self.refused.append("%s %s: %s recorded %s, this tree has %s"
+                                    % (cid, path, source, unit.get("expected"), expected))
+        for source, units, measured in self.logs:
+            lines = units.get((cid, name, nth))
+            if lines is None:
+                continue
+            if not self.unchanged(measured, path):
+                self.refused.append("%s %s: %s measured it at %s, and it has changed since"
+                                    % (cid, path, source, measured[:7]))
+                continue
+            if any(v == "nocompile" for _l, _k, v, _d in lines):
+                self.refused.append("%s %s: %s printed a nocompile - this harness's own failure, not a measurement "
+                                    "of the file" % (cid, path, source))
+                continue
+            if [[l, k] for l, k, _v, _d in lines] != expected:
+                self.refused.append("%s %s: %s printed %s, this tree has %s"
+                                    % (cid, path, source, [[l, k] for l, k, _v, _d in lines], expected))
+                continue
+            self.taken += 1
+            out = []
+            for l, k, v, d in lines:
+                d = d.lstrip()        # the verdict's column padding, never part of what it said
+                r = dict(cluster=cid, file=name, path=path, line=l, kind=k, verdict=v, detail=d,
+                         code=whole[l - 1].strip()[:160])
+                if v == "killed":
+                    r["by"] = d.split(":")[0]
+                elif v in ("SURVIVED", "hung", "nocompile"):
+                    r["by"] = ""
+                out.append(r)
+            self.last_measured, self.last_confirmed = measured, False    # a printed log does not say
+            return source, out
+        return None
+
+    def suites_moved(self, measured):
+        """Did the suites change between the commit a record measured and the one this run measures? Asked of git,
+        and a question git could not answer stops the run rather than reading as either."""
+        if measured == self.frozen:
+            return False
+        if measured not in self._suites:
+            asked = git("diff", "--quiet", measured, self.frozen, "--", SUITES)
+            if asked.returncode not in (0, 1):
+                raise SystemExit("git could not say whether the suites changed between %s and %s (exit %s) - suites "
+                                 "nobody could compare are not unchanged" % (measured[:7], self.frozen[:7],
+                                                                             asked.returncode))
+            self._suites[measured] = asked.returncode == 1
+        return self._suites[measured]
+
+    def take_split(self, cid, path, expected, whole, picked):
+        """(source, records taken, candidates to measure again) for this file, or None: measure it all here.
+
+        A VERDICT IS TAKEN ONLY WHERE IT STILL MEASURES THIS TREE (2026-10-14). A byte-identical production file shows
+        nothing of the suites, and the guards written since a record was taken are in them: a SURVIVED or hung
+        verdict from before they changed says nothing about what they notice now, and a kill by an untrusted suite
+        never said anything (measure_again). Those mutants are measured again here; every other verdict is taken."""
+        got = self.take(cid, path, expected, whole)
+        if got is None:
+            return None
+        source, records = got
+        taken, redo = split_reuse(records, measure_again(records, self.suites_moved(self.last_measured),
+                                                         self.last_confirmed), picked)
+        return source, taken, redo
+
+
+def claims_folder(folder, frozen):
+    """The folder runs sharing this sweep claim files in, made for this frozen tree or refused: a claim taken for
+    another tree would leave a file of this one measured by nobody."""
+    os.makedirs(folder, exist_ok=True)
+    stamp = os.path.join(folder, "frozen")
+    # written whole under another name and LINKED into place: a link onto a name that exists is refused, so exactly
+    # one run's stamp lands, and no run can read a stamp another is still writing
+    mine = "%s.%d" % (stamp, os.getpid())
+    with io.open(mine, "w", encoding="utf-8") as handle:
+        handle.write(frozen)
+    try:
+        os.link(mine, stamp)
+    except FileExistsError:
+        pass
+    finally:
+        os.remove(mine)
+    with io.open(stamp, encoding="utf-8") as handle:
+        said = handle.read().strip()
+    if said != frozen:
+        raise SystemExit("--claims %s was made for %s, and this run measures %s - its claims would leave files of "
+                         "this tree measured by nobody" % (folder, said, frozen))
+    return folder
+
+
+def _claim_left_by_the_gone(target):
+    """Where the claim at `target` is moved aside when the run that took it is gone, or None while it may be running.
+    A claim that cannot be read, or names no pid, is held: unread is not absent. The name is the holder's own, so two
+    runs taking one dead claim over move it to ONE name, and the operating system lets exactly one of them."""
+    try:
+        with io.open(target, encoding="utf-8") as handle:
+            held = json.loads(handle.read())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(held, dict) or not held.get("pid"):
+        return None
+    if bundle_shell.alive(held.get("pid"), held.get("started_epoch")):
+        return None
+    return "%s.gone-%s-%s" % (target, held.get("pid"), held.get("started_epoch"))
+
+
+def claim(folder, cid, path):
+    """True: this run measures the file. False: another run sharing the sweep already does. One file made by the
+    operating system or refused by it as already there, so two runs can never both get True. Any other failure stops
+    the run: a claim that could not be ASKED is not one another run holds.
+
+    A CLAIM OF A RUN THAT IS GONE IS NOBODY'S. Measured 2026-10-17: three shares that stopped at their first mutant
+    left claims on PokePickers, Updater and BuildingHarvester, and seven runs sharing the pass skipped all three as
+    measured by another - the claim carried its holder's pid and start time and nothing read them. A claim whose
+    holder `bundle_shell.alive` calls gone is moved aside under a name of that holder, and the file is asked for
+    again; a holder it cannot tell about is ALIVE, and keeps its claim."""
+    name = "claim-" + hashlib.sha1(unit_key(cid, path).encode("utf-8")).hexdigest()[:20]
+    target = os.path.join(folder, name)
+    try:
+        fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        gone = _claim_left_by_the_gone(target)
+        if gone is None:
+            return False
+        try:
+            # LINKED, never renamed: a link onto a name that exists is refused everywhere, so of two runs that both
+            # read the dead claim, the second links the FIRST one's new claim onto the same name and is refused
+            os.link(target, gone)
+            os.remove(target)
+        except FileExistsError:
+            return False                       # another run took this dead claim over first
+        except FileNotFoundError:
+            pass                               # another run moved it aside a moment ago: ask as it does
+        try:
+            fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            return False
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps({"cluster": cid, "path": path, "worktree": str(WT), "pid": os.getpid(),
+                                 "started_epoch": bundle_shell.process_started_at(os.getpid())}))
+    return True
+
+
+def record_unit(target, frozen, recorded, cid, path, expected, unit_results):
+    """Add one measured file to this run's results file, rewritten whole and swapped into place, so a run killed at
+    any moment leaves every file it finished recorded and none half-recorded."""
+    recorded[unit_key(cid, path)] = {"expected": expected, "results": unit_results, "kills": KILLS_CONFIRMED}
+    part = target + ".part"
+    with io.open(part, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps({"frozen": frozen, "worktree": str(WT), "units": recorded}, indent=1))
+    os.replace(part, target)
+
+
+#: kills a suite did not repeat: (file, suite) for every first failure the same suite passed on the second run
+UNCONFIRMED = []
+
+
+def judge(path, ordered):
+    """(verdict, detail, killer) for the mutant now built: each suite in order until one notices it.
+
+    A KILL IS CONFIRMED BY THE SAME SUITE A SECOND TIME (2026-10-14). One failing run was taken as a kill, so a
+    suite that fails for its own reasons turned a line nothing asserts into a killed one - measured: SetupWizardTest
+    failed 1 run in 100 unmutated on a loaded machine, and was credited with killing Ips 48 and MapResizer 336, which
+    it never runs, and AbstractGamefreakContainer 287, which no input reaches. A suite that passes the same mutant on
+    its second run did not notice it: it is recorded in UNCONFIRMED and the next suite is asked. A second run that
+    never finishes confirms nothing either, and a hang is never a kill.
+    """
+    verdict, detail, by = "SURVIVED", "", ""
+    for cls, a in ordered:
+        name = cls.split(".")[-1]
+        r = run([JAVA, "-Xmx4g", "-cp", CP, cls] + a)
+        if r.returncode == HUNG_RC:
+            # A hang is still never a kill - but it must not stop the OTHER suites from trying. Measured:
+            # GARC.java:207 and :225 came back "hung" once ForkGuardsTest ran first for that file, though the suite
+            # behind it kills both. Remember the hang, keep going, and report it only if nothing else decides.
+            if verdict == "SURVIVED":
+                verdict, detail = "hung", name + ": never finished"
+            continue
+        if not r.flooded and r.returncode == 0:
+            continue
+        again = run([JAVA, "-Xmx4g", "-cp", CP, cls] + a)
+        if again.returncode == HUNG_RC or (not again.flooded and again.returncode == 0):
+            UNCONFIRMED.append((path, name))
+            if again.returncode == HUNG_RC and verdict == "SURVIVED":
+                verdict, detail = "hung", name + ": failed once, then never finished"
+            continue
+        by = name
+        if r.flooded:
+            # checked BEFORE the exit code, because killing a flood leaves a non-zero code that would read as an
+            # ordinary failure and hide what actually happened
+            detail = name + ": OUTPUT FLOOD, %d MB and still going" % (r.out_bytes // (1024 * 1024))
+        else:
+            tail = [l for l in (r.stdout or "").strip().splitlines() if l.strip()]
+            detail = name + ": " + (tail[-1][:100] if tail else "")
+            FIRST_TRY[1] += 1
+            if (cls, a) == ordered[0]:
+                FIRST_TRY[0] += 1
+        learn(path, by)
+        return "killed", detail, by
+    return verdict, detail, by
+
+
+def judges_of(suites):
+    """The suites that can judge a mutant, each asked with the probe edit in place. One that fails is asked AGAIN, and
+    only one failing twice is taken for a suite that asserts the repository's bytes rather than the program.
+
+    FLAKY IS NOT SOURCE-SENSITIVE (2026-10-16). Asked once, WorkspaceRepointTest failed the probe in 3 of the
+    assembly's 8 shares and passed it in the other 5, and in 8 of 8 runs four at a time - and in those 3 shares every
+    line only it kills was filed SURVIVED (SetupWizard 793 and 802 among them). A kill still needs the same suite to
+    fail twice (judge), so keeping a flaky suite as a judge credits it with nothing it did not do twice."""
+    out = []
+    for cls, a in suites:
+        r = run([JAVA, "-Xmx4g", "-cp", CP, cls] + a)
+        if r.returncode != 0:
+            r = run([JAVA, "-Xmx4g", "-cp", CP, cls] + a)
+            if r.returncode == 0:
+                print("  flaky on the probe: %s failed it once and passed it again - kept as a judge"
+                      % cls.split(".")[-1], flush=True)
+        if r.returncode == 0:
+            out.append((cls, a))
+        else:
+            print("  not a judge: %s fails on a source edit that changes no behaviour, twice"
+                  % cls.split(".")[-1], flush=True)
+    return out
+
+
 def selftest():
     import shutil
     import tempfile
-    global WT, run
+    global WT, run, build
     fails = [0]
 
     def check(ok, what):
@@ -1403,6 +1964,8 @@ def selftest():
         c = got.get(("drop-report", 10))
         check(c is not None and c["j"] + 1 == 11,
               "a report spanning two lines is deleted whole (10..%s)" % (c["j"] + 1 if c else "-"))
+        check(("drop-report", 49) in got,
+              "a report printed to a stream the method was handed is a drop-report mutant, as one to System.out is")
 
         # DEFECT 4b: the missing operator, and it must pick the return the
         # ENCLOSING method declares - not the nearest signature above the line.
@@ -1714,6 +2277,400 @@ def selftest():
 
     WT = saved_wt_runs
     shutil.rmtree(str(runs_dir), ignore_errors=True)
+
+    #A ROUND IS READ FROM GIT OR REFUSED (F191): a repository's first commit resolves, a made-up rev does not.
+    #ASKED OF A REPOSITORY BUILT HERE: the selftest promises no worktree, and test_mutation_selftest runs it
+    #from a copy of tools/ that is no git repository at all - git started in the missing worktree was
+    #NotADirectoryError, not a verdict (2026-10-10). Whether ROUNDS' own revs resolve is asked by the sweep,
+    #which resolves them right after freezing and refuses one it cannot, before a single mutant runs.
+    rounds_dir = Path(tempfile.mkdtemp(prefix="mutate2-rounds-"))
+    saved_wt_rounds, WT = WT, rounds_dir
+    try:
+        git("init", "-q")
+        for n in ("first", "second"):
+            git("-c", "user.name=selftest", "-c", "user.email=selftest@example.invalid",
+                "commit", "--allow-empty", "-q", "-m", n)
+        root = git("rev-list", "--max-parents=0", "HEAD").stdout.split()
+        try:
+            pair = resolve_round("probe", root[-1], "HEAD") if root else None
+        except SystemExit:
+            pair = None
+        check(pair is not None and len(pair[0]) == 40 and len(pair[1]) == 40 and pair[0] != pair[1],
+              "control: a round from a repository's first commit to HEAD resolves to two commits")
+        try:
+            resolve_round("probe", "no-such-rev-ctrmap", "HEAD")
+            refused = ""
+        except SystemExit as stop:
+            refused = str(stop)
+        check("no-such-rev-ctrmap" in refused and "nothing in it" in refused,
+              "a round git cannot resolve is refused, naming the rev - never scored as one that added nothing")
+    finally:
+        WT = saved_wt_rounds
+        shutil.rmtree(str(rounds_dir), ignore_errors=True)
+
+    #SHARING ONE SWEEP (2026-10-14): a file is claimed by exactly one run, a claims folder of another tree is refused,
+    #and a record is taken only for the file and the tree it measured - never a log's unfinished last file.
+    check(bare_words(["999", "--reuse", "a.out", "--claims", "c", "--anyway", "because"]) == ["999"],
+          "a flag's value is never read as the mutant cap: %s"
+          % bare_words(["999", "--reuse", "a.out", "--claims", "c", "--anyway", "because"]))
+    #ASKED OF A REPOSITORY BUILT HERE, as the rounds above are: a record of another commit is taken file by file,
+    #so git is asked - and the selftest promises no worktree
+    share = Path(tempfile.mkdtemp(prefix="mutate2-share-"))
+    saved_wt_share, WT = WT, share / "repo"
+    try:
+        (WT / "src/x").mkdir(parents=True)
+        (WT / "src/x/A.java").write_text("a\n", encoding="utf-8")
+        (WT / "src/x/B.java").write_text("b\n", encoding="utf-8")
+        ident = ("-c", "user.name=selftest", "-c", "user.email=selftest@example.invalid")
+        git("init", "-q")
+        git("add", "-A")
+        git(*(ident + ("commit", "-q", "-m", "first")))
+        first = git("rev-parse", "HEAD").stdout.strip()
+        (WT / "src/x/B.java").write_text("b, changed\n", encoding="utf-8")
+        git(*(ident + ("commit", "-q", "-a", "-m", "second")))
+        sha = git("rev-parse", "HEAD").stdout.strip()
+        folder = str(share / "claims")
+        claims_folder(folder, sha)
+        claims_folder(folder, sha)
+        firsts = [claim(folder, "audit", "src/a/A.java"), claim(folder, "audit", "src/a/A.java"),
+                  claim(folder, "audit", "src/a/B.java"), claim(folder, "c1", "src/a/A.java")]
+        check(firsts == [True, False, True, True],
+              "a file is claimed by the first run to ask and refused to the next; another file, or the same file "
+              "under another cluster, is a claim of its own: %s" % firsts)
+        # a claim of a run that is gone is taken over, once; a live holder's, or one that cannot be read, is kept
+        gone_run = subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE,
+                                    creationflags=NO_WINDOW)
+        gone_began = bundle_shell.process_started_at(gone_run.pid)
+        gone_run.stdin.close()
+        gone_run.wait()
+
+        def left(path, text):
+            name = "claim-" + hashlib.sha1(unit_key("audit", path).encode("utf-8")).hexdigest()[:20]
+            with io.open(os.path.join(folder, name), "w", encoding="utf-8") as handle:
+                handle.write(text)
+            return name
+
+        dead = left("src/a/C.java", json.dumps({"pid": gone_run.pid, "started_epoch": gone_began}))
+        mine = left("src/a/D.java", json.dumps({"pid": os.getpid(),
+                                                "started_epoch": bundle_shell.process_started_at(os.getpid())}))
+        left("src/a/E.java", "")
+        overs = [claim(folder, "audit", "src/a/C.java"), claim(folder, "audit", "src/a/C.java"),
+                 claim(folder, "audit", "src/a/D.java"), claim(folder, "audit", "src/a/E.java")]
+        aside = [n for n in os.listdir(folder) if n.startswith(dead + ".gone-")]
+        check(overs == [True, False, False, False] and len(aside) == 1 and mine,
+              "a claim whose run is gone is taken over once and moved aside under its holder's name; a live "
+              "holder's claim, and one that cannot be read, are kept: %s, moved aside %s" % (overs, aside))
+        try:
+            claims_folder(folder, "0" * 40)
+            other = ""
+        except SystemExit as stop:
+            other = str(stop)
+        check(("was made for " + sha) in other,
+              "a claims folder made for another tree is refused: " + (other or "it was taken"))
+
+        (share / "sweep.out").write_text("\n".join([
+            "measuring %s (frozen; the branch may move without affecting this run)" % sha[:7],
+            "=== audit (merged from c869a0e onto a93ef21)",
+            "  A.java: 2 mutable line(s), trying 2, 1 not mutable",
+            "     L3     drop-report   unmutable   the value is used",
+            "     L5     drop-throw    killed      ATest:   ok: refused",
+            "     L7     negate-if     SURVIVED       <-- NOTHING ASSERTS THIS LINE",
+            "  B.java: 1 mutable line(s), trying 1",
+            "     L2     flip-return   killed      BTest: FAILURES PRESENT (1)",
+            "  A.java: 1 mutable line(s), trying 1",
+            "     L9     negate-if     hung        CTest: never finished",
+            "  D.java: 1 mutable line(s), trying 1",
+            "     L4     drop-throw    killed      DTest: x"]) + "\n", encoding="utf-8")
+        whole = ["line %d" % n for n in range(1, 12)]
+        reuse = Reuse([str(share / "sweep.out")], sha)
+        a = reuse.take("audit", "src/x/A.java", [[3, "drop-report"], [5, "drop-throw"], [7, "negate-if"]], whole)
+        got = [(r["line"], r["verdict"], r.get("by"), r["detail"], r["code"]) for r in a[1]] if a else None
+        check(got == [(3, "unmutable", None, "the value is used", "line 3"),
+                      (5, "killed", "ATest", "ATest:   ok: refused", "line 5"),
+                      (7, "SURVIVED", "", "", "line 7")],
+              "control: a file a log printed to its end is taken, each verdict with its killer and its code: %s" % got)
+        b = reuse.take("audit", "src/x/B.java", [[2, "negate-if"]], whole)
+        check(b is None and any("B.java" in why for why in reuse.refused),
+              "a file whose recorded lines are not the ones this tree yields is measured again, and said so")
+        a2 = reuse.take("audit", "src/y/A.java", [[9, "negate-if"]], whole)
+        check(a2 is not None and [(r["line"], r["verdict"], r["by"]) for r in a2[1]] == [(9, "hung", "")],
+              "a second file of the same name in the cluster is matched by its place, not taken as the first")
+        d = reuse.take("audit", "src/x/D.java", [[4, "drop-throw"]], whole)
+        check(d is None, "the file a log was still measuring when it ended is never taken")
+
+        (share / "other.out").write_text("measuring 0000000 (frozen; x)\n", encoding="utf-8")
+        try:
+            Reuse([str(share / "other.out")], sha)
+            other = ""
+        except SystemExit as stop:
+            other = str(stop)
+        check("git does not find" in other,
+              "a log of a commit git cannot find is refused whole: " + (other or "it was taken"))
+
+        (share / "older.out").write_text("\n".join([
+            "measuring %s (frozen; the branch may move without affecting this run)" % first[:7],
+            "=== audit (merged from %s onto a93ef21)" % first[:7],
+            "  A.java: 1 mutable line(s), trying 1",
+            "     L1     drop-throw    killed      ATest: refused",
+            "  B.java: 1 mutable line(s), trying 1",
+            "     L1     drop-throw    killed      BTest: refused",
+            "1 measurement(s) in 1 min"]) + "\n", encoding="utf-8")
+        older = Reuse([str(share / "older.out")], sha)
+        kept = older.take("audit", "src/x/A.java", [[1, "drop-throw"]], whole)
+        moved = older.take("audit", "src/x/B.java", [[1, "drop-throw"]], whole)
+        check(kept is not None and [r["by"] for r in kept[1]] == ["ATest"],
+              "control: a file unchanged since an older commit's log is taken from it")
+        check(moved is None and any("B.java" in why and "changed since" in why for why in older.refused),
+              "a file changed since the commit a log measured is measured again, and said so: %s" % older.refused)
+        try:
+            Reuse([str(share / "older.out")], "1" * 40).take("audit", "src/x/A.java", [[1, "drop-throw"]], whole)
+            other = ""
+        except SystemExit as stop:
+            other = str(stop)
+        check("could not say" in other,
+              "a file git could not compare stops the run - never read as unchanged: " + (other or "it was taken"))
+
+        recorded = {}
+        mine = [dict(cluster="audit", file="A.java", path="src/x/A.java", line=5, kind="drop-throw",
+                     verdict="killed", detail="ATest: no", by="ATest", code="line 5")]
+        record_unit(os.path.join(folder, "results-w1.json"), sha, recorded, "audit", "src/x/A.java",
+                    [[5, "drop-throw"]], mine)
+        back = Reuse([folder], sha)
+        check(back.take("audit", "src/x/A.java", [[5, "drop-throw"]], whole) == ("results-w1.json", mine)
+              and back.take("audit", "src/x/A.java", [[6, "drop-throw"]], whole) is None,
+              "a share's recorded file is taken back whole, and only for the lines it measured")
+        (share / "earlier").mkdir()
+        record_unit(str(share / "earlier" / "results-w3.json"), first, {}, "audit", "src/x/B.java",
+                    [[1, "drop-throw"]], mine)
+        earlier = Reuse([str(share / "earlier")], sha)
+        check(earlier.take("audit", "src/x/B.java", [[1, "drop-throw"]], whole) is None
+              and any("changed since" in why for why in earlier.refused),
+              "a file changed since the commit a share measured is measured again, and said so: %s" % earlier.refused)
+        (share / "lost").mkdir()
+        with io.open(str(share / "lost" / "results-w2.json"), "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"frozen": "2" * 40, "units": {}}))
+        try:
+            Reuse([str(share / "lost")], sha)
+            other = ""
+        except SystemExit as stop:
+            other = str(stop)
+        check("git does not find" in other,
+              "a share recorded for a commit git cannot find is refused whole: " + (other or "it was taken"))
+        #A VERDICT IS TAKEN ONLY WHERE IT STILL MEASURES THIS TREE (2026-10-14): 82 SURVIVED verdicts recorded over
+        #c869a0e would have gone into the baseline whole although the guards written since kill them - the file's
+        #bytes did not move, its suites did
+        ledger = [dict(cluster="audit", file="A.java", path="src/x/A.java", line=n, kind=k, verdict=v, detail=d, by=b,
+                       code="line %d" % n)
+                  for n, k, v, d, b in ((3, "drop-report", "unmutable", "the value is used", None),
+                                        (5, "drop-throw", "killed", "ATest: no", "ATest"),
+                                        (7, "negate-if", "SURVIVED", "", ""),
+                                        (9, "negate-if", "killed", "SetupWizardTest: FAIL", "SetupWizardTest"))]
+        for r in ledger:
+            if r["by"] is None:
+                del r["by"]
+        expected = [[3, "drop-report"], [5, "drop-throw"], [7, "negate-if"], [9, "negate-if"]]
+        picked = [dict(i=n - 1, j=n - 1, kind=k, repl="") for n, k in ((5, "drop-throw"), (7, "negate-if"),
+                                                                       (9, "negate-if"))]
+        (share / "at-first").mkdir()
+        record_unit(str(share / "at-first" / "results-w4.json"), first, {}, "audit", "src/x/A.java", expected, ledger)
+        (WT / "src/ctrmap/tests").mkdir(parents=True)
+        (WT / "src/ctrmap/tests/ATest.java").write_text("a guard written after the sweep\n", encoding="utf-8")
+        git("add", "-A")
+        git(*(ident + ("commit", "-q", "-m", "third: a suite, and no production file")))
+        third = git("rev-parse", "HEAD").stdout.strip()
+        def lines_of(got):
+            return None if got is None else ([r["line"] for r in got[1]], [c["i"] + 1 for c in got[2]])
+        moved = Reuse([str(share / "at-first")], third).take_split("audit", "src/x/A.java", expected, whole, picked)
+        check(lines_of(moved) == ([3, 5, 9], [7]),
+              "after the suites changed, a SURVIVED verdict is measured again; the rest are taken: %s"
+              % (lines_of(moved),))
+        still = Reuse([str(share / "at-first")], sha).take_split("audit", "src/x/A.java", expected, whole, picked)
+        check(lines_of(still) == ([3, 5, 7, 9], []),
+              "control: with the suites as they were, every verdict of a run that confirmed its kills is taken: %s"
+              % (lines_of(still),))
+        (share / "unconfirmed").mkdir()
+        with io.open(str(share / "unconfirmed" / "results-w5.json"), "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"frozen": first, "units": {unit_key("audit", "src/x/A.java"):
+                                                                    {"expected": expected, "results": ledger}}}))
+        old = Reuse([str(share / "unconfirmed")], sha).take_split("audit", "src/x/A.java", expected, whole, picked)
+        check(lines_of(old) == ([3, 7], [5, 9]),
+              "a run that did not say its kills were confirmed has every kill measured again: %s" % (lines_of(old),))
+        printed = Reuse([str(share / "sweep.out")], sha).take_split(
+            "audit", "src/x/A.java", [[3, "drop-report"], [5, "drop-throw"], [7, "negate-if"]], whole,
+            [dict(i=4, j=4, kind="drop-throw", repl=""), dict(i=6, j=6, kind="negate-if", repl="")])
+        check(lines_of(printed) == ([3, 7], [5]),
+              "nor does a printed log say so - its kills are measured again too: %s" % (lines_of(printed),))
+        #THE BEST RECORD OF A FILE, NOT THE LAST ONE READ (2026-10-17): one file recorded twice - unconfirmed at the
+        #older commit, kills confirmed at the newer - is answered by the confirmed one, whichever folder comes last
+        (share / "confirmed-later").mkdir()
+        record_unit(str(share / "confirmed-later" / "results-w6.json"), sha, {}, "audit", "src/x/A.java", expected,
+                    ledger)
+        best = [lines_of(Reuse([str(share / a), str(share / b)], third).take_split("audit", "src/x/A.java", expected,
+                                                                                 whole, picked))
+                for a, b in (("confirmed-later", "unconfirmed"), ("unconfirmed", "confirmed-later"))]
+        check(best == [([3, 5, 9], [7])] * 2,
+              "of two records of one file the confirmed newer one is taken, whichever folder is given last - only the"
+              " survivor measured again after the suites changed: %s" % (best,))
+        try:
+            split_reuse(ledger, [(11, "negate-if")], picked)
+            other = ""
+        except SystemExit as stop:
+            other = str(stop)
+        check("offers no candidate" in other,
+              "a verdict to measure again with no candidate in this tree stops the run, never dropped: "
+              + (other or "it was dropped"))
+        try:
+            Reuse([str(share / "at-first")], "1" * 40).suites_moved(first)
+            other = ""
+        except SystemExit as stop:
+            other = str(stop)
+        check("suites nobody could compare" in other,
+              "suites git could not compare stop the run - never read as unchanged: " + (other or "they were"))
+        noted_lines = [dict(i=2, kind="drop-report", verdict="unmutable", why="the value is used")]
+        plans = [plan_unit(None, True, picked, noted_lines)[0], plan_unit(moved, True, picked, noted_lines)[:3:2],
+                 plan_unit(("s", ledger, []), True, picked, noted_lines)[0],
+                 plan_unit(("s", ledger, []), False, picked, noted_lines)[0]]
+        check(plans[0] == "measure" and plans[1] == ("measure", [moved[2][0]]) and plans[2] == "skip"
+              and plans[3] == "take",
+              "a file no record answers is measured; one with verdicts owed measures only those, sharing or not; one "
+              "answered whole is skipped by a share and taken by the run that writes the baseline: %s" % (plans,))
+    finally:
+        WT = saved_wt_share
+        shutil.rmtree(str(share), ignore_errors=True)
+
+    #A KILL IS CONFIRMED BY THE SAME SUITE A SECOND TIME (2026-10-14): a suite that failed once and passes the same
+    #mutant again did not notice it, and the next suite is asked; one that fails twice killed it
+    real_run, script = run, []
+
+    def scripted(cmd, timeout=900, keep=TAIL_BYTES):
+        code = script.pop(0)
+        return Ran(code, "FAILURES PRESENT (1)" if code else "ALL PASS", "", False, 0)
+
+    run = scripted
+    saved_unconfirmed = list(UNCONFIRMED)
+    try:
+        flaky_then_real = [("ctrmap.tests.FlakyTest", []), ("ctrmap.tests.RealTest", [])]
+        script[:] = [1, 0, 1, 1]
+        got = judge("src/t/T.java", flaky_then_real)
+        check(got[0] == "killed" and got[2] == "RealTest" and ("src/t/T.java", "FlakyTest") in UNCONFIRMED
+              and not script,
+              "a suite that fails once and passes the same mutant again is not its killer; the next, failing twice, "
+              "is: %s" % (got,))
+        script[:] = [1, 0, 0]
+        got = judge("src/t/T.java", flaky_then_real)
+        check(got[0] == "SURVIVED" and not script,
+              "control: and with no other suite failing, the mutant survives - one failing run is not a kill: %s"
+              % (got,))
+        script[:] = [1, HUNG_RC, 0]
+        got = judge("src/t/T.java", flaky_then_real)
+        check(got[0] == "hung" and not script,
+              "a second run that never finishes confirms nothing: the mutant is unmeasured, never killed: %s" % (got,))
+        #FLAKY IS NOT SOURCE-SENSITIVE (2026-10-16): a suite that fails the probe once and passes it again judges
+        script[:] = [1, 0, 1, 1, 0]
+        kept = [c.split(".")[-1] for c, _a in judges_of([("ctrmap.tests.FlakyTest", []), ("ctrmap.tests.BytesTest", []),
+                                                          ("ctrmap.tests.GoodTest", [])])]
+        check(kept == ["FlakyTest", "GoodTest"] and not script,
+              "a suite that fails the probe once and passes it again is kept as a judge; one failing it twice is not: %s"
+              % kept)
+    finally:
+        run = real_run
+        UNCONFIRMED[:] = saved_unconfirmed
+
+    #A BUILD THAT FAILED WITH NO JAVAC ERROR (2026-10-14): asked once more before any verdict, filed with what it
+    #said when it fails again, and a record of such a failure is never reused - it measured the harness, not the file
+    real_build, builds = build, []
+
+    def scripted_build():
+        return builds.pop(0)
+
+    build = scripted_build
+    try:
+        builds[:] = [(False, "Build OK\nTHE BUILD'S STAMP REFUSED: build/classes is not what build.ps1 produced"),
+                     (True, "Build OK")]
+        check(built() == (True, "Build OK") and not builds,
+              "a build that failed with no javac error is asked once more, and its second answer stands")
+        builds[:] = [(False, "X.java:3: error: ';' expected"), (True, "Build OK")]
+        check(built()[0] is False and len(builds) == 1,
+              "control: a build javac refused is not asked again - that answer is about the mutant")
+    finally:
+        build = real_build
+    #and the build itself carries the stamp's reason out with its answer (require_build), so there is one to name
+    real_brun, real_stamp = require_build.bounded.run, require_build.stamp_problem
+    require_build.bounded.run = lambda *a, **k: subprocess.CompletedProcess(a, 0, "Build OK\n", "")
+    try:
+        require_build.stamp_problem = lambda root: "src/ has changed since build.ps1 last ran - rebuild"
+        refused = require_build.build_with_battery_verbose(".")
+        require_build.stamp_problem = lambda root: None
+        held = require_build.build_with_battery_verbose(".")
+    finally:
+        require_build.bounded.run, require_build.stamp_problem = real_brun, real_stamp
+    check(refused[0] is False and "src/ has changed since build.ps1 last ran" in refused[1]
+          and held == (True, "Build OK\n"),
+          "a build whose stamp refused after 'Build OK' says why; control: one whose stamp holds adds nothing: %r / %r"
+          % (refused, held))
+    #A BUILD REFUSED AT A STRUCTURE GATE IS A KILL, by the gate's suite as build.ps1's own table names it
+    table = build_gates('$gates = @(\n  @{ n = "Structure: one implementation per capability"; c = "ctrmap.tests.DuplicateWorkTest" },\n'
+                        '  @{ n = "Structure: windows, dialogs and the seam";     c = "ctrmap.tests.DialogSeamTest" }\n)')
+    refused_at = gate_kill("BUILD REFUSED - Structure: one implementation per capability\n  FAIL: control: the marker",
+                           table)
+    check(table.get("Structure: windows, dialogs and the seam") == "DialogSeamTest"
+          and refused_at == ("DuplicateWorkTest", "Structure: one implementation per capability")
+          and gate_kill("X.java:3: error: ';' expected", table) is None,
+          "a build refused at a structure gate is a kill by that gate's suite; control: a javac error is not: %s"
+          % (refused_at,))
+    by_gate = failed_build("BUILD REFUSED - Structure: one implementation per capability\n  FAIL: the marker", table)
+    by_javac = failed_build("X.java:3: error: ';' expected", table)
+    check(by_gate[0] == "killed" and by_gate[2] == "DuplicateWorkTest" and by_javac[0] == "nocompile" and not by_javac[2],
+          "and that is the verdict a failed build is given - killed, its gate's suite its killer: %s / %s"
+          % (by_gate, by_javac))
+    #A GATE THAT STOPPED WITHOUT FAILING A CHECK JUDGED NOTHING (2026-10-14): DialogSeamTest exited non-zero under
+    #eight sweep JVMs having failed nothing, and build.ps1 at c869a0e still headed that BUILD REFUSED over an ok line
+    #that said "refused" - credited here, it is a kill by a suite that never saw the mutant
+    crashed_old = ("BUILD REFUSED - Structure: windows, dialogs and the seam\n"
+                   "    ok: and a blank reason is refused, the control left as it was\n"
+                   "  These are structural rules, checked here because checking them in the")
+    crashed_new = ("BUILD FAILED - Structure: windows, dialogs and the seam: its gate stopped (exit 1) without failing a"
+                   " check, so it judged nothing. Its last lines:\n  Exception in thread \"main\" java.lang.OutOfMemoryError")
+    check(gate_kill(crashed_old, table) is None and gate_kill(crashed_new, table) is None
+          and failed_build(crashed_old, table)[0] != "killed" and failed_build(crashed_new, table)[0] != "killed",
+          "a gate that stopped without failing a check is no kill, headed REFUSED or FAILED: %s / %s"
+          % (failed_build(crashed_old, table), failed_build(crashed_new, table)))
+    builds[:] = [(False, "BUILD REFUSED - Structure: one implementation per capability\n  FAIL: the marker"),
+                 (True, "Build OK")]
+    real_build2, build = build, scripted_build
+    try:
+        check(built()[0] is False and len(builds) == 1,
+              "and a gate's refusal is not asked again - a gate is the source's, not a moment's")
+        builds[:] = [(False, crashed_old), (True, "Build OK")]
+        check(built() == (True, "Build OK") and not builds,
+              "but a gate that judged nothing is asked once more, as any build that told the sweep nothing")
+    finally:
+        build = real_build2
+    said = why_it_failed("Build OK\nTHE BUILD'S STAMP REFUSED: src/ has changed since build.ps1 last ran")
+    check(said[0] == "nocompile" and "STAMP REFUSED: src/ has changed" in said[1],
+          "a nocompile with no javac error names what the build said: %s" % (said,))
+    clean = Path(tempfile.mkdtemp(prefix="mutate2-nocompile-"))
+    try:
+        (clean / "n.out").write_text("\n".join([
+            "measuring %s (frozen; x)" % ("c" * 7),
+            "=== audit (merged from x onto y)",
+            "  N.java: 1 mutable line(s), trying 1",
+            "     L4     negate-if     nocompile   the harness emitted something javac rejected: no diagnostic captured",
+            "1 measurement(s) in 1 min"]) + "\n", encoding="utf-8")
+        taken = Reuse([str(clean / "n.out")], "c" * 40)
+        check(taken.take("audit", "src/x/N.java", [[4, "negate-if"]], ["x"] * 5) is None
+              and any("nocompile" in why for why in taken.refused),
+              "a printed nocompile is never reused - the file is measured again, and said so")
+        (clean / "shares").mkdir()
+        record_unit(str(clean / "shares" / "results-w9.json"), "c" * 40, {}, "audit", "src/x/N.java",
+                    [[4, "negate-if"]], [dict(cluster="audit", file="N.java", path="src/x/N.java", line=4,
+                                              kind="negate-if", verdict="nocompile", detail="x", by="", code="x")])
+        shared = Reuse([str(clean / "shares")], "c" * 40)
+        check(shared.take("audit", "src/x/N.java", [[4, "negate-if"]], ["x"] * 5) is None
+              and any("nocompile" in why for why in shared.refused),
+              "and a nocompile a share recorded is never reused either")
+    finally:
+        shutil.rmtree(str(clean), ignore_errors=True)
     print("ALL PASS" if not fails[0] else "FAILURES PRESENT (%d)" % fails[0])
     return 1 if fails[0] else 0
 
@@ -1753,9 +2710,28 @@ WORK_ORDER_OVERRIDE = work_order.require_frozen("the mutation sweep", sys.argv)
 git("reset", "--hard", MAINLINE)
 FROZEN = git("rev-parse", "HEAD").stdout.strip()
 print("measuring %s (frozen; the branch may move without affecting this run)" % FROZEN[:7], flush=True)
+# asked before a single suite runs: a record of another tree, or a claims folder made for one, refuses here
+if len([a for a in _RAW if a == "--claims"]) > 1:
+    raise SystemExit("--claims given twice - a run shares one sweep, so it claims in one folder")
+REUSE = Reuse(REUSE_FROM, FROZEN)
+for _name, _units, _at in REUSE.logs:
+    print("reusing %s: %d file(s) printed to their end, %d verdict(s), measured at %s"
+          % (_name, len(_units), sum(len(v) for v in _units.values()), _at[:7]), flush=True)
+if REUSE.records:
+    print("reusing %d file(s) recorded by runs that shared a sweep" % len(REUSE.records), flush=True)
+if CLAIMS:
+    claims_folder(CLAIMS, FROZEN)
+    CLAIMED_TO = os.path.join(CLAIMS, "results-%s.json" % WT.name)
+    print("sharing this sweep through %s: measuring only the files this run claims, recording them in %s"
+          % (CLAIMS, CLAIMED_TO), flush=True)
+CLAIMED, OTHERS_CLAIMED = {}, [0]
 # resolved AFTER the reset, so the suites and arguments come from the tree
 # about to be measured, not whatever test.ps1 the worktree held before
 RESOLVED = resolve_clusters()
+#the build's structure gates, read from the build.ps1 of the tree measured: a mutant refused at one is a kill
+GATES = build_gates((WT / "build.ps1").read_text(encoding="utf-8", errors="replace"))
+print("the build's structure gates: %s" % (", ".join("%s (%s)" % kv for kv in sorted(GATES.items())) or "NONE READ"),
+      flush=True)
 print("clusters: " + ", ".join("%s@%s" % (b, base[0][:7]) for b, (base, _) in RESOLVED.items()), flush=True)
 print("excluded by hand (%d, ceiling %d):" % (len(EXCLUSIONS), EXCLUSION_CEILING), flush=True)
 for (_p, _l), (_t, _w) in sorted(EXCLUSIONS.items()):
@@ -1876,14 +2852,7 @@ def _judges():
         if not build():
             raise SystemExit("the source-sensitivity probe did not compile - that is this "
                              "script's defect, not the tree's")
-        out = []
-        for cls, a in ALL_SUITES:
-            r = run([JAVA, "-Xmx4g", "-cp", CP, cls] + a)
-            if r.returncode == 0:
-                out.append((cls, a))
-            else:
-                print("  not a judge: %s fails on a source edit that changes no behaviour"
-                      % cls.split(".")[-1], flush=True)
+        out = judges_of(ALL_SUITES)
     finally:
         write_src(probe, original)
         build()
@@ -1908,12 +2877,36 @@ for cid, (base, suites) in RESOLVED.items():
             continue
         step = max(1, len(cands) // CAP) if cands else 1
         picked = cands[::step][:CAP]
+        whole = read_src(path).splitlines()
+        expected = unit_expected(noted, picked)
+        # asked of EVERY file, in order, whichever run measures it: a log is matched to this tree by its position
+        reused = REUSE.take_split(cid, path, expected, whole, picked)
+        plan, taken, picked, noted = plan_unit(reused, bool(CLAIMS), picked, noted)
+        if plan == "skip":
+            continue                           # recorded already: the run that reuses the records takes it
+        if CLAIMS and not claim(CLAIMS, cid, path):
+            OTHERS_CLAIMED[0] += 1
+            continue                           # another run sharing the sweep measures it
         if len(cands) > CAP:
             SAMPLED_FILES.append(path)         # this run is a sample, not a record
         print("  %s: %d mutable line(s), trying %d%s"
               % (path.split("/")[-1], len(cands), len(picked),
                  (", %d not mutable" % len(noted)) if noted else ""), flush=True)
-        whole = read_src(path).splitlines()
+        first = len(results)
+        if reused is not None:
+            print("     (measured by an earlier run of this tree - %s%s)"
+                  % (reused[0], "; %d of its verdict(s) measured again here: taken before the suites changed, or a "
+                     "kill by a suite that fails for its own reasons" % len(picked) if plan == "measure" else ""),
+                  flush=True)
+            for r in taken:
+                mark = "   <-- NOTHING ASSERTS THIS LINE" if r["verdict"] == "SURVIVED" else ""
+                print("     L%-5d %-13s %-11s %s%s" % (r["line"], r["kind"], r["verdict"], r["detail"], mark),
+                      flush=True)
+                if r.get("by"):
+                    learn(path, r["by"])
+            results.extend(taken)
+        if plan == "take":
+            continue
         for n in noted:
             # recorded BEFORE anything is emitted, so "no valid mutation exists"
             # can never be confused with "the mutation did not compile"
@@ -1934,7 +2927,7 @@ for cid, (base, suites) in RESOLVED.items():
             _PENDING_RESTORE.append((path, original))
             write_src(path, "".join(src))
 
-            ok, buildout = build()
+            ok, buildout = built()
             if not ok:
                 # A NOCOMPILE IS THIS SCRIPT'S DEFECT, NOT THE CODE'S: the
                 # operator emitted something malformed - the line's extent was
@@ -1944,51 +2937,16 @@ for cid, (base, suites) in RESOLVED.items():
                 # calls a missing return or an uninitialised variable is a
                 # different thing - a line with no legal mutation of this kind -
                 # and is filed as unmutable, which is what it is.
-                verdict, detail = why_it_failed(buildout)
-                by = ""
+                # A BUILD REFUSED AT A STRUCTURE GATE, though, is the battery noticing: a kill (failed_build)
+                verdict, detail, by = failed_build(buildout, GATES)
+                if by:
+                    learn(path, by)
             else:
-                verdict, detail = "SURVIVED", ""
-                by = ""
                 # the branch's own suites first - they are the most specific and
                 # usually the killer, so a kill still costs one or two runs;
                 # only a true survivor pays for the whole union
                 ordered = suites + [x for x in FILE_SUITES.get(path, []) if x not in suites]
-                ordered = suites_for(path, ordered, i + 1, kind)
-                for cls, a in ordered:
-                    r = run([JAVA, "-Xmx4g", "-cp", CP, cls] + a)
-                    if r.returncode == HUNG_RC:
-                        # A hang is still never a kill - but it must not stop the
-                        # OTHER suites from trying. Measured: GARC.java:207 and :225
-                        # were recorded killed, and once suite ordering changed so
-                        # ForkGuardsTest ran first for that file, both came back
-                        # "hung" and so unmeasured. The mutants had not become
-                        # undetectable; a suite that hangs on them merely got in
-                        # front of the one that kills them. Remember the hang, keep
-                        # going, and report it only if nothing else decides.
-                        if verdict == "SURVIVED":
-                            verdict = "hung"
-                            detail = cls.split(".")[-1] + ": never finished"
-                        continue
-                    if r.flooded:
-                        # checked BEFORE the exit code, because killing a flood
-                        # leaves a non-zero code that would read as an ordinary
-                        # failure and hide what actually happened
-                        verdict = "killed"
-                        detail = (cls.split(".")[-1] + ": OUTPUT FLOOD, %d MB and still going"
-                                  % (r.out_bytes // (1024 * 1024)))
-                        by = cls.split(".")[-1]
-                        learn(path, by)
-                        break
-                    if r.returncode != 0:
-                        tail = [l for l in (r.stdout or "").strip().splitlines() if l.strip()]
-                        verdict = "killed"
-                        by = cls.split(".")[-1]
-                        detail = by + ": " + (tail[-1][:100] if tail else "")
-                        FIRST_TRY[1] += 1
-                        if (cls, a) == ordered[0]:
-                            FIRST_TRY[0] += 1
-                        learn(path, by)
-                        break
+                verdict, detail, by = judge(path, suites_for(path, ordered, i + 1, kind))
 
             mark = "   <-- NOTHING ASSERTS THIS LINE" if verdict == "SURVIVED" else ""
             print("     L%-5d %-13s %-11s %s%s" % (i + 1, kind, verdict, detail, mark), flush=True)
@@ -2001,9 +2959,32 @@ for cid, (base, suites) in RESOLVED.items():
             write_src(path, original)
             del _PENDING_RESTORE[:]            # paid; nothing is owed now
 
+        if CLAIMS:
+            record_unit(CLAIMED_TO, FROZEN, CLAIMED, cid, path, expected, results[first:])
+
     git("reset", "--hard", FROZEN)
 
 build()
+if REUSE.refused:
+    print("\n%d file(s) a record named were measured again here - what it recorded is not what this tree yields:"
+          % len(REUSE.refused))
+    for why in REUSE.refused:
+        print("   " + why)
+if UNCONFIRMED:
+    # a suite that fails a mutant once and passes it the next time is failing for its own reasons: named, so it is
+    # fixed rather than left to buy kills it never earned
+    print("\n%d kill(s) NOT CONFIRMED - the suite passed the same mutant on its second run:" % len(UNCONFIRMED))
+    for _path, _suite in UNCONFIRMED:
+        print("   %s by %s" % (_path, _suite))
+if CLAIMS:
+    # A SHARE OF A SWEEP IS NOT A SWEEP: no aggregate, no ratchet, no baseline from it - the run that reuses the
+    # claims folder writes the one baseline, from every share and the measuring it still owes
+    print("\nthis run measured %d file(s) of the sweep it shares, recorded in %s, in %d min; %d were taken from "
+          "earlier records and %d claimed by other runs. The baseline is written by the run that reuses %s."
+          % (len(CLAIMED), CLAIMED_TO, (time.time() - t0) / 60, REUSE.taken, OTHERS_CLAIMED[0], CLAIMS))
+    raise SystemExit(0)
+if REUSE.taken:
+    print("\n%d file(s) were measured by an earlier run of this tree and taken from its record" % REUSE.taken)
 with io.open(BASE / "wt/_state/mutation_semantic.json", "w", encoding="utf-8", newline="\n") as handle:
     handle.write(
         json.dumps(results, indent=1))

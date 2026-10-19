@@ -12,7 +12,6 @@ import java.awt.event.FocusEvent;
 import java.awt.event.FocusListener;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
-import java.util.ArrayList;
 
 /**
  * Listens to user input interfaces and forwards any interaction to CM3D.
@@ -26,8 +25,11 @@ public class CM3DInputManager implements MouseWheelListener, MouseMotionListener
 	private float originScaleY;
 	private float originRotateX;
 	private float originRotateY;
-	private float speed = 10f;
-	private final ArrayList<Integer> keycodes = new ArrayList<>();
+	//READ BY THE WALKER, WRITTEN ON THE EVENT THREAD (census L.6): a plain list and a plain float gave the walker no
+	//sight of a release - it could go on stepping after the key was up - and a remove racing a contains could
+	//throw out of it, ending movement without a word
+	private volatile float speed = 10f;
+	private final java.util.Set<Integer> keycodes = java.util.concurrent.ConcurrentHashMap.newKeySet();
 	private boolean navi = false;
 	
 	private H3DRenderingPanel m3DDebugPanel;
@@ -207,9 +209,7 @@ public class CM3DInputManager implements MouseWheelListener, MouseMotionListener
 
 	@Override
 	public void keyReleased(KeyEvent e) {
-		while (keycodes.contains(e.getKeyCode())) {
-			keycodes.remove((Integer) e.getKeyCode());
-		}
+		keycodes.remove(e.getKeyCode());   //a set holds a key once
 	}
 
 	@Override

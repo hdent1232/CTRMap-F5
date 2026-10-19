@@ -64,6 +64,18 @@ public class Selector {
 		map.firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
 	}
 	
+	/**
+	 * Forgets the whole cursor - the tile under the pointer and the picked one - for a map that replaces the
+	 * one they were measured on (census M.18). The loads called unfocus, which forgets only the pick, so the
+	 * hover named a tile of the old map under a pointer that had not moved: a Fill pressed then anchored at
+	 * a corner of the previous map, and every guard that asks {@code hilightTileX == -1} passed it.
+	 */
+	public static void clear(TileMapPanel map) {
+		hilightTileX = -1;
+		hilightTileY = -1;
+		unfocus(map);
+	}
+
 	public static void deselect(TileMapPanel map) {
 		hilightTileX = -1;
 		hilightTileY = -1;

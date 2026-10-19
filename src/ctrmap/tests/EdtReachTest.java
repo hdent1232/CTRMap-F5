@@ -1016,9 +1016,11 @@ public class EdtReachTest {
 	 * so each stays counted. HELD EQUAL to the count: it may only fall, and a fix that lowers the
 	 * count lowers this with it, so a new shared field cannot land in the room an old one left.
 	 * TIGHTENED 40 -> 39 on 2026-10-08, measured by this suite: RandomAccessBAIS.position, read by the
-	 * model-loading worker, is the cursor's own private index now (F228).
+	 * model-loading worker, is the cursor's own private index now (F228). TIGHTENED 39 -> 37 on 2026-10-09,
+	 * measured by this suite against the build before: Builder.currentAGFC and Builder.currentGARC, read by the
+	 * raw browser's Add file worker, are no longer read there - it packs the archive it was handed (F209c).
 	 */
-	static final int SHARED_CEILING = 39;
+	static final int SHARED_CEILING = 37;
 
 	static void noPlainFieldCrossesTheThread(List<Walk> walks) {
 		System.out.println("--- no plain field is written on one thread and read on another (F016)");
@@ -1164,7 +1166,9 @@ public class EdtReachTest {
 				}
 			}
 		}
-		check(shown == 5 && unasked.isEmpty(), "and every one of Ui's " + shown + " real dialogs asks it, on the line"
+		//8: message, confirm, option, input, the chooser - and form, formOption and show since 2026-10-15, when the
+		//sixteen raw form dialogs came through the seam
+		check(shown == 8 && unasked.isEmpty(), "and every one of Ui's " + shown + " real dialogs asks it, on the line"
 				+ " before" + (unasked.isEmpty() ? "" : " - not: " + unasked));
 
 		java.lang.reflect.Method ask = ctrmap.humaninterface.LoadingDialog.class.getDeclaredMethod("onTheEventThread", String.class);

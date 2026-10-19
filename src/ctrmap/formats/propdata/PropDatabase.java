@@ -203,6 +203,18 @@ public class PropDatabase {
 	}
 
 	/**
+	 * The area's prop pack is {@code pack} now: its names are what the pack holds, read from it rather than
+	 * added to - after a registration's import is taken back or put again (F209). A pack that cannot be read
+	 * says nothing, and the names are left as they were.
+	 */
+	public void areaPackIs(int area, byte[] pack) {
+		if (pack == null) {
+			return;
+		}
+		areaTextureNames.put(area, new LinkedHashSet<>(getTexturePackTextureNames(pack)));
+	}
+
+	/**
 	 * Keeps the in-memory name-set of an area consistent after textures were
 	 * imported into its pack (call after a successful BchTexturePack import
 	 * has been stored) - the database is built from the packed GARC, which
@@ -311,21 +323,19 @@ public class PropDatabase {
 	}
 
 	/**
-	 * Which of the model's required textures are NOT in the given available
-	 * set. Textures embedded in the model's own BCH satisfy themselves.
-	 * An empty result means the prop is safe to place texture-wise (missing
-	 * prop textures hardlock the game when the area loads).
+	 * The textures an area must hold for the model to be placed in it: every one its materials draw
+	 * with, less those embedded in the model's own BCH, which satisfy themselves (none in retail ORAS).
+	 * Placing a prop whose area lacks one hardlocks the game when the area loads, so this is what
+	 * {@link PropRegistration#register} imports against.
+	 *
+	 * <p>ONE ANSWER (F204): the suites asked a second copy of this - required less available, as a
+	 * list - while the registration worked its own out beside it, so the one the suites checked was
+	 * never the one that ran.
 	 */
-	public static List<String> getMissingTextureNames(byte[] modelBch, Set<String> availableTextureNames) {
-		List<String> missing = new ArrayList<>();
+	public static Set<String> requiredTextureNames(byte[] modelBch) {
 		Set<String> required = getMaterialTextureNames(modelBch);
-		required.removeAll(getTexturePackTextureNames(modelBch)); //self-contained textures, none in vanilla ORAS but cheap to honor
-		for (String name : required) {
-			if (availableTextureNames == null || !availableTextureNames.contains(name)) {
-				missing.add(name);
-			}
-		}
-		return missing;
+		required.removeAll(getTexturePackTextureNames(modelBch));
+		return required;
 	}
 
 	/**

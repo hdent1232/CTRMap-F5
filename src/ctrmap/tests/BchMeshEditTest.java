@@ -32,6 +32,20 @@ public class BchMeshEditTest {
 				+ " in an 8-bit buffer (" + m.meshCount + " mesh(es), " + g.vertexCount + " vertices, "
 				+ (tris == null ? "no" : tris.length) + " indices, " + m.idxBuffers.get(0)[2] + "-byte)");
 
+		System.out.println("--- a mesh whose triangles cannot be read is not editable, and says why (census M.6)");
+		//posOk asked about the positions alone while getTriangles answered null for an index buffer it could not
+		//locate, and the selection edits - guarded by posOk - dereferenced it
+		BchMapModel lost = new BchMapModel(dummy);
+		lost.idxBuffers.clear();
+		check(!lost.geometry().get(0).posOk, "a mesh whose index buffer is not located is not posOk, so every edit leaves it alone");
+		String said;
+		try {
+			said = "ANSWERED " + Arrays.toString(lost.getTriangles(0));
+		} catch (IllegalStateException refused) {
+			said = refused.getMessage();
+		}
+		check(said.contains("mesh 0's index buffer is not located"), "and its triangles are refused in words, not null: " + said);
+
 		System.out.println("--- a grown mesh is the old one with the new after it (F062)");
 		byte[] four = Arrays.copyOfRange(m.raw, g.vtxAbs, g.vtxAbs + 4 * g.stride);
 		BchMapModel grown = new BchMapModel(m.appendGeometry(0, four, new int[]{24, 25, 26, 24, 26, 27}));
@@ -112,7 +126,7 @@ public class BchMeshEditTest {
 		for (float[] v : p) {
 			v[1] += 5;
 		}
-		check(Arrays.equals(m.setVertexPositions(java.util.Collections.singletonMap(0, p)), m.setVertexPositions(0, p)),
+		check(Arrays.equals(m.setVertexPositions(java.util.Collections.singletonMap(0, p)), m.setVertexPositions(java.util.Collections.singletonMap(0, p))),
 				"positions written for several meshes at once are the one-mesh write when there is one");
 	}
 

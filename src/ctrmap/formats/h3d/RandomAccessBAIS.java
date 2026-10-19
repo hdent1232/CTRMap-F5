@@ -16,8 +16,8 @@ import java.io.IOException;
  * array at {@link #position()} through {@link LittleEndian} and moves it by what it took, so there is
  * no second count to forget. BchSectionsTest holds each case.
  *
- * <p>A read that runs past the end throws EOFException, as the stream's did; read() and read(byte[])
- * answer -1 there, as a stream's do, and do not move.
+ * <p>A read that runs past the end throws EOFException, as the stream's did; read() answers -1 there, as
+ * a stream's does, and does not move.
  */
 public class RandomAccessBAIS {
 
@@ -70,21 +70,9 @@ public class RandomAccessBAIS {
 		return position < data.length ? data[position++] & 0xFF : -1;
 	}
 
-	/**
-	 * As much of {@code b} as the data still holds, moving past it: the count read, or -1 at the end
-	 * of the data, where the position stays.
-	 */
-	public int read(byte[] b) throws IOException {
-		if (b.length == 0) {
-			return 0;
-		}
-		int n = Math.min(b.length, data.length - position);
-		if (n <= 0) {
-			return -1;
-		}
-		System.arraycopy(data, position, b, 0, n);
-		position += n;
-		return n;
+	/** All of {@code b}, moving past it; or EOFException naming where, not moving - never part of it (census M.110). */
+	public void readFully(byte[] b) throws IOException {
+		System.arraycopy(data, take(b.length), b, 0, b.length);
 	}
 
 	/** Moves forward {@code n} bytes, or to the end of the data if that comes first; answers how far it moved. */

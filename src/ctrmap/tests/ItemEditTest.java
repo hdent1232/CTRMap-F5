@@ -90,6 +90,9 @@ public class ItemEditTest {
 		deployShipsItOnlyWhenItWasEdited(tmp, src);
 		theEditorRefusesBeforeItBuildsAnything();
 		theSessionSavesOnlyWhatChanged(src, args[0]);
+		theCodeButtonReadsOnlyAFilePicked(tmp);
+		theSaveButtonSavesARecordThatReads();
+		anUndoToAnotherItemShowsThatItem();
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -461,10 +464,30 @@ public class ItemEditTest {
 				@Override
 				public void run() {
 				}
-			});
+			}, new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 			ctrmap.Ui.stopRecording();
 			check(said.size() == 1 && said.get(0).contains("workspace"),
 					"with no workspace loaded it says so and returns (" + said + ")");
+			//handed no history to keep its saves in (the 2026-10-14 shared sweep, ItemEditDialog 90, drop-throw,
+			//SURVIVED: every suite handed one)
+			String unhanded = "(nothing was thrown)";
+			said = ctrmap.Ui.record();
+			try {
+				ctrmap.humaninterface.ItemEditDialog.panel(null, () -> { }, null);
+			} catch (IllegalArgumentException refused) {
+				unhanded = refused.getMessage();
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
+			check("the item editor must be handed the history its saves are kept in".equals(unhanded),
+					"and handed no history to keep its saves in, it refuses in its own words: " + unhanded);
+			//which item a list row switches to (the 2026-10-14 shared sweep, ItemEditDialog 276, negate-if, SURVIVED)
+			String switched = ctrmap.humaninterface.ItemEditDialog.switchTarget(null, 3) + ", "
+					+ ctrmap.humaninterface.ItemEditDialog.switchTarget("5 - Super Potion", 3) + ", "
+					+ ctrmap.humaninterface.ItemEditDialog.switchTarget("3 - Potion", 3) + ", "
+					+ ctrmap.humaninterface.ItemEditDialog.switchTarget("(none)", 3);
+			check(switched.equals("-1, 5, -1, -1"), "a row selected switches to its item, and nothing, the item shown"
+					+ " or a row naming none switches nowhere: " + switched);
 
 			Sessions.bare(new File("no-workspace"), new File("no-game"), GameType.XY);
 			said = ctrmap.Ui.record();
@@ -472,7 +495,7 @@ public class ItemEditTest {
 				@Override
 				public void run() {
 				}
-			});
+			}, new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 			ctrmap.Ui.stopRecording();
 			check(said.size() == 1 && said.get(0).contains("VERIFIED"),
 					"and for a game whose item table was never measured it says THAT, rather than"
@@ -571,6 +594,149 @@ public class ItemEditTest {
 		check(refused && "Mega Ball".equals(ItemText.read(Workspace.session(), ItemText.Which.NAMES).get(ULTRA_BALL))
 				&& "Mega Ball".equals(s.name(ULTRA_BALL)),
 				"a refused record write is refused BEFORE the text is touched - the name is still Mega Ball");
+
+		//a re-read that fails after a save was put back is said, not left as lists that no longer match the files (the
+		//2026-10-15 shared sweep, ItemEditDialog 393, drop-throw, SURVIVED)
+		//a missing one is taken again from the archive, so the staged names file is made one that does not read
+		File names = new File(namesFile);
+		byte[] namesKept = Files.readAllBytes(names.toPath());
+		Files.write(names.toPath(), new byte[]{1, 2, 3});
+		String reread;
+		try {
+			ctrmap.humaninterface.ItemEditDialog.rereadOf(s).run();
+			reread = "(nothing was thrown)";
+		} catch (IllegalStateException said) {
+			reread = said.getMessage();
+		} finally {
+			Files.write(names.toPath(), namesKept);
+		}
+		check(reread.startsWith("the item editor could not re-read the items after a save was put back"),
+				"a re-read that fails after a save was put back says so: " + reread);
+		s.reread();
+	}
+
+	/**
+	 * The Load code.bin button reads the file picked and nothing else (the 2026-10-15 shared sweep, ItemEditDialog 336,
+	 * negate-if, SURVIVED: no suite pressed it). Inverted, a cancel was read as a file and blamed on one that is not the
+	 * executable, and a file picked was never read. Pressed on the editor built over the scratch game, the chooser
+	 * answered through the Ui seam; neither press reaches CodeBinFile.remember, so nothing is kept in the preferences.
+	 */
+	static void theCodeButtonReadsOnlyAFilePicked(File tmp) throws Exception {
+		System.out.println("--- Load code.bin reads the file picked, and a cancel reads nothing");
+		javax.swing.JComponent editor = ctrmap.humaninterface.ItemEditDialog.panel(null, () -> { },
+				new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
+		javax.swing.AbstractButton load = editor == null ? null : button(editor, "Load code.bin...");
+		check(load != null, "the editor opens on the scratch game with its Load code.bin button");
+		if (load == null) {
+			return;
+		}
+		List<String> said = ctrmap.Ui.record();
+		try {
+			load.doClick();
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.equals(Arrays.asList("Open file: Pick the decompressed code.bin")),
+				"a cancelled pick reads nothing and says nothing past the chooser: " + said);
+		File junk = new File(tmp, "not-code.bin");
+		Files.write(junk.toPath(), new byte[16]);
+		said = ctrmap.Ui.record(junk);
+		try {
+			load.doClick();
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 2
+				&& said.get(1).startsWith("Item icons: That file is not the executable this editor knows how to patch"),
+				"a file picked is read, and one that is not the executable is refused: " + said);
+		//Save code.ips with no code.bin read (the refused one above left none) refuses in words (the 2026-10-15 shared
+		//sweep, ItemEditDialog 543, negate-if, SURVIVED): the button is offered once one is read, so it is enabled here
+		//as if it were - inverted, the save went on over no executable and failed with what it threw
+		javax.swing.AbstractButton saveIps = button(editor, "Save code.ips...");
+		saveIps.setEnabled(true);
+		said = ctrmap.Ui.record();
+		try {
+			saveIps.doClick();
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.equals(Arrays.asList("Item icons: Load your decompressed code.bin first.")),
+				"Save code.ips with no code.bin read says to load one first: " + said);
+	}
+
+	/**
+	 * Save item on a record that reads saves it (the 2026-10-15 shared sweep, ItemEditDialog 399, negate-if, SURVIVED:
+	 * no suite pressed Save). Inverted, every save was refused as a record that could not be read. Pressed on the
+	 * editor built over the scratch game, item 1 as it opens.
+	 */
+	static void theSaveButtonSavesARecordThatReads() throws Exception {
+		System.out.println("--- Save item saves a record that reads");
+		javax.swing.JComponent editor = ctrmap.humaninterface.ItemEditDialog.panel(null, () -> { },
+				new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
+		javax.swing.AbstractButton save = editor == null ? null : button(editor, "Save item");
+		check(save != null, "control: the editor opens on the scratch game with its Save item button");
+		if (save == null) {
+			return;
+		}
+		List<String> said = ctrmap.Ui.record();
+		try {
+			save.doClick();
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 1 && said.get(0).startsWith("Item editor: Item 1 is staged in the workspace"),
+				"Save item on item 1 as it opened stages it, and says so: " + said);
+	}
+
+	/**
+	 * An Undo that puts back another item's state shows that item (the 2026-10-15 shared sweep, ItemEditDialog 457,
+	 * negate-if, SURVIVED: no suite put a state back on the editor). Inverted, item 2's record went into the item shown,
+	 * and the next save wrote it there. Put through the editor's own document, over the scratch game.
+	 */
+	@SuppressWarnings("unchecked")
+	static void anUndoToAnotherItemShowsThatItem() throws Exception {
+		System.out.println("--- an Undo that puts back another item's state shows that item");
+		javax.swing.JComponent editor = ctrmap.humaninterface.ItemEditDialog.panel(null, () -> { },
+				new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
+		List<ctrmap.humaninterface.UndoHistory.Document<?>> docs = editor == null
+				? java.util.Collections.<ctrmap.humaninterface.UndoHistory.Document<?>>emptyList()
+				: ctrmap.humaninterface.SaveHistory.documentsOf(editor);
+		check(docs.size() == 1, "control: the editor is one document, the item it shows (" + docs.size() + ")");
+		if (docs.size() != 1) {
+			return;
+		}
+		ctrmap.humaninterface.UndoHistory.Document<Object[]> doc = (ctrmap.humaninterface.UndoHistory.Document<Object[]>) docs.get(0);
+		check(Integer.valueOf(1).equals(doc.take()[0]), "control: it opens on item 1");
+		ItemEditSession items = ItemEditSession.open(Workspace.session());
+		byte[] two = items.record(2);
+		doc.put(new Object[]{2, two, items.name(2), items.description(2), null});
+		Object[] shown = doc.take();
+		check(Integer.valueOf(2).equals(shown[0]) && Arrays.equals(two, (byte[]) shown[1]) && items.name(2).equals(shown[2]),
+				"item 2's state put back shows item 2, its own record and name: item " + shown[0] + ", " + shown[2]);
+		//and the record a state holds is the one shown, not the stored one (the 2026-10-15 shared sweep, ItemEditDialog
+		//464, negate-if, SURVIVED): an Undo of an unsaved price edit put back the stored record's price
+		byte[] edited = two.clone();
+		fieldNamed("Price / 10").set(edited, 77);
+		doc.put(new Object[]{2, edited, items.name(2), items.description(2), null});
+		shown = doc.take();
+		check(Arrays.equals(edited, (byte[]) shown[1]), "a state holding an edited record shows that record: price "
+				+ new ItemData((byte[]) shown[1]).priceRaw() + " (77 put back, " + new ItemData(two).priceRaw() + " stored)");
+	}
+
+	/** The button in {@code c} captioned {@code caption}, or null. */
+	static javax.swing.AbstractButton button(java.awt.Container c, String caption) {
+		for (java.awt.Component k : c.getComponents()) {
+			if (k instanceof javax.swing.AbstractButton && caption.equals(((javax.swing.AbstractButton) k).getText())) {
+				return (javax.swing.AbstractButton) k;
+			}
+			if (k instanceof java.awt.Container) {
+				javax.swing.AbstractButton in = button((java.awt.Container) k, caption);
+				if (in != null) {
+					return in;
+				}
+			}
+		}
+		return null;
 	}
 
 	static RecordField fieldNamed(String name) {

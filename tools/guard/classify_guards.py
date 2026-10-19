@@ -72,6 +72,12 @@ def planted():
 
 
 def main(argv):
+    #a word this does not read refuses the run, before anything runs (cli_words, 2026-10-10)
+    import _cli
+    unread_words = _cli.refused(argv[1:], flags=("--all",), most=0)
+    if unread_words:
+        print(unread_words)
+        return 2
     names = registered()
     have_plant = planted()
     rows = []

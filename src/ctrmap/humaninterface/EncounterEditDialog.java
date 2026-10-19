@@ -4,7 +4,6 @@ import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.encounters.EncounterTable;
 import ctrmap.formats.garc.GARC;
-import ctrmap.formats.text.GFMessageFile;
 import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
@@ -30,6 +29,20 @@ import javax.swing.table.AbstractTableModel;
  * Pokemon.
  */
 public class EncounterEditDialog {
+
+	/**
+	 * Every zone of the game, labelled by LocationNames.zoneLabel, in zone order - what Copy from zone offers (census M.149). From
+	 * the master zone-header table, one entry, rather than opening every zone as the Zone Loader does.
+	 */
+	public static java.util.List<String> zoneChoices(ctrmap.formats.GameFiles game) throws java.io.IOException {
+		ctrmap.MasterTable master = ctrmap.MasterTable.read(game);
+		java.util.List<String> out = new java.util.ArrayList<>();
+		for (int z = 0; z < master.zones(); z++) {
+			out.add(ctrmap.formats.text.LocationNames.zoneLabel(game,
+					ctrmap.formats.zone.ZoneHeader.parentMapOf(master.row(z)), z));
+		}
+		return out;
+	}
 
 	/**
 	 * Reads one zone's wild encounters out of the EN pack.
@@ -68,7 +81,7 @@ public class EncounterEditDialog {
 	 * @return what to tell the user
 	 */
 	public static String saveEncounters(ctrmap.WorkspaceSession ws, int zoneIndex,
-			EncounterTable table) throws java.io.IOException {
+			EncounterTable table, SaveHistory saves) throws java.io.IOException {
 		GARC zo = ws == null ? null : ws.getArchive(ArchiveType.ZONE_DATA);
 		if (zo == null) {
 			throw new java.io.IOException("No workspace is loaded.");
@@ -83,8 +96,13 @@ public class EncounterEditDialog {
 		if (enFile == null) {
 			throw new java.io.IOException("The encounter pack could not be extracted.");
 		}
-		java.nio.file.Files.write(enFile.toPath(), newPack);
-		ws.addPersist(enFile);
+		//ONE KEPT CHANGE (F209c): written through the unit, so the pack is copied before it changes and the save
+		//can be taken back - it was a bare write nothing could put back
+		try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Save wild encounters of zone " + zoneIndex, ws)) {
+			ctrmap.WorkspaceUnit.write(enFile, newPack);
+			ws.addPersist(enFile);
+			saves.keep(unit.commitKeeping());
+		}
 		return (table.isEmpty() ? "Wild data removed for zone " : "Wild encounters saved for zone ")
 			+ zoneIndex + ".\nDeploy to emulator to apply (packs automatically).";
 	}
@@ -101,7 +119,10 @@ public class EncounterEditDialog {
 	 * @return the editor, or null when there is nothing to edit (it says why first)
 	 */
 	public static javax.swing.JComponent panel(java.awt.Component parent, LoadedZone loaded,
-			Runnable onClose) {
+			Runnable onClose, SaveHistory saves) {
+		if (saves == null) {
+			throw new IllegalArgumentException("the encounter editor must be handed the history its saves are kept in");
+		}
 		if (loaded == null) {
 			throw new IllegalArgumentException("EncounterEditDialog must be handed the LoadedZone");
 		}
@@ -130,28 +151,19 @@ public class EncounterEditDialog {
 			return null;
 		}
 		final int zoneIndex = loaded.index();
-		GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
-		//the zone count comes from the profile's MEASURED trailing-entry number,
-		//not from a "2" written into the arithmetic; the EN pack is the last
-		//entry of the archive on the games that have one
-		final int zoneCount;
-		final int enIndex;
+		//THROUGH THE SEAM, like the save (F204): this read was the dialog's own copy of
+		//readEncounters - with the zone count taken without the profile - so the read the
+		//suites drove was never the one the editor ran
+		final EncounterTable table;
 		try {
-			zoneCount = ctrmap.ZoneTables.zoneCount(zo);
-			enIndex = ctrmap.ZoneTables.encounterPackIndex(zo, Workspace.profile());
+			table = readEncounters(Workspace.session(), zoneIndex);
 		} catch (java.io.IOException ex) {
 			ctrmap.Ui.error(parent, ctrmap.Ui.reason(ex), "Wild encounters");
 			return null;
 		}
-
-		byte[] pack = loadPack(zo, enIndex, zoneCount);
-		if (pack == null) {
-			ctrmap.Ui.error(parent, "Could not read the encounter pack.", "Wild encounters");
-			return null;
-		}
-		String[] species = loadSpeciesNames();
-		EncounterTable start = EncounterTable.read(pack, zoneIndex);
-		final EncounterTable table = start != null ? start : new EncounterTable();
+		java.util.List<String> unread = new java.util.ArrayList<>();
+		String[] species = Workspace.textLines(Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.SPECIES_NAMES), unread);
+		ctrmap.Ui.saidUnread(parent, unread, "Wild encounters");
 
 		final SlotModel model = new SlotModel(table, species);
 		JTable jt = new JTable(model);
@@ -179,25 +191,7 @@ public class EncounterEditDialog {
 		buttons.add(cancel);
 		dlg.add(buttons, BorderLayout.SOUTH);
 
-		final byte[] packRef = pack;
-		copyFrom.addActionListener(e -> {
-			String s = (String) ctrmap.Ui.input(dlg, "Copy encounters from which zone number? (e.g. 23 = Route 101)", "Input", JOptionPane.QUESTION_MESSAGE, null, null);
-			if (s == null) {
-				return;
-			}
-			try {
-				int src = Integer.parseInt(s.trim());
-				EncounterTable other = EncounterTable.read(packRef, src);
-				if (other == null) {
-					ctrmap.Ui.message(dlg, "Zone " + src + " has no wild data.", "Copy", JOptionPane.INFORMATION_MESSAGE);
-					return;
-				}
-				copyInto(other, table);
-				model.fireTableDataChanged();
-			} catch (RuntimeException ex) {
-				ctrmap.Ui.error(dlg, "Could not copy: " + ctrmap.util.Bytes.reason(ex), "Copy");
-			}
-		});
+		copyFrom.addActionListener(e -> copyFrom(dlg, Workspace.session(), table, model::fireTableDataChanged));
 		clear.addActionListener(e -> {
 			for (EncounterTable.Slot[] bank : table.banks) {
 				for (EncounterTable.Slot sl : bank) {
@@ -216,7 +210,7 @@ public class EncounterEditDialog {
 				}
 				//through the seam, so what the dialog does and what a suite can drive are
 				//the same code rather than two copies that agree today
-				String said = saveEncounters(Workspace.session(), zoneIndex, table);
+				String said = saveEncounters(Workspace.session(), zoneIndex, table, saves);
 				onClose.run();
 				ctrmap.Ui.message(parent, said, "Wild encounters", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
@@ -226,6 +220,47 @@ public class EncounterEditDialog {
 		cancel.addActionListener(e -> onClose.run());
 
 		return dlg;
+	}
+
+	/**
+	 * Asks which zone's wild encounters to copy and copies them into {@code table}: whether it did. A cancel, a zone
+	 * with no wild data and a table that will not read copy nothing, the last two saying so. Out of the editor so a
+	 * suite reaches it (the 2026-10-14 shared sweep, EncounterEditDialog 207, negate-if, SURVIVED: no suite pressed Copy).
+	 *
+	 * <p>PICKED BY NAME, NOT TYPED AS A NUMBER (census M.149): the user had to know a route's zone id, and a
+	 * wrong-but-valid number copied another route's table into this zone.
+	 *
+	 * <p>AND SHOWN HERE (2026-10-16): the editor redrew its table when this answered true, in an if of its own - the
+	 * 2026-10-14 guard asked the answer, and that if was what survived (the assembly, EncounterEditDialog 195). The
+	 * redraw is {@code shown}, run once a copy has landed and not otherwise.
+	 */
+	public static boolean copyFrom(java.awt.Component dlg, ctrmap.WorkspaceSession ws, EncounterTable table, Runnable shown) {
+		java.util.List<String> zones;
+		try {
+			zones = zoneChoices(ws);
+		} catch (java.io.IOException noList) {
+			ctrmap.Ui.error(dlg, "The zone list could not be read: " + ctrmap.util.Bytes.reason(noList), "Copy");
+			return false;
+		}
+		Object picked = ctrmap.Ui.input(dlg, "Copy the wild encounters of which zone?", "Copy from zone",
+				JOptionPane.QUESTION_MESSAGE, zones.toArray(), null);
+		int src = picked == null ? -1 : zones.indexOf(picked.toString());
+		if (src < 0) {
+			return false;
+		}
+		try {
+			EncounterTable other = readEncounters(ws, src);
+			if (other.isEmpty()) {
+				ctrmap.Ui.message(dlg, "Zone " + src + " has no wild data.", "Copy", JOptionPane.INFORMATION_MESSAGE);
+				return false;
+			}
+			copyInto(other, table);
+			shown.run();
+			return true;
+		} catch (java.io.IOException | RuntimeException ex) {
+			ctrmap.Ui.error(dlg, "Could not copy: " + ctrmap.util.Bytes.reason(ex), "Copy");
+			return false;
+		}
 	}
 
 	private static void copyInto(EncounterTable from, EncounterTable to) {
@@ -256,18 +291,6 @@ public class EncounterEditDialog {
 			return zo.getDecompressedEntry(enIndex);
 		} catch (Exception ex) {
 			return null;
-		}
-	}
-
-	/** Species names from GameText (entry 98; index == national dex number). */
-	private static String[] loadSpeciesNames() {
-		try {
-			File f = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT,
-					Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.SPECIES_NAMES));
-			List<String> lines = GFMessageFile.getStrings(Files.readAllBytes(f.toPath()));
-			return lines.toArray(new String[0]);
-		} catch (Exception ex) {
-			return new String[0];
 		}
 	}
 

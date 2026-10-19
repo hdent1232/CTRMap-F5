@@ -227,6 +227,23 @@ public class CommitGuardTest {
 		check(r.code != 0, "is refused rather than read as an empty commit - every rule passed"
 				+ " an empty answer (exit " + r.code + ") " + oneLine(r.said));
 		check(r.said.contains("UNKNOWN"), "and says it is UNKNOWN: " + oneLine(r.said));
+		//AND WHEN HEAD ANSWERS AND A LATER QUESTION DOES NOT (2026-10-18). The gate-owed check asks git
+		//for HEAD first, and a broken GIT_DIR stops the commit there, so the case above never reached
+		//_git_out: its plant - a failed git read as an empty answer - stayed green on every drive. A
+		//corrupt index lets HEAD answer and fails the next question, which is the one _git_out guards.
+		File corrupt = File.createTempFile("ctrmap-corrupt-index", ".idx");
+		try {
+			Files.write(corrupt.toPath(), "not an index".getBytes(StandardCharsets.UTF_8));
+			java.util.Map<String, String> torn = new java.util.HashMap<>();
+			torn.put("GIT_INDEX_FILE", corrupt.getAbsolutePath());
+			Run later = run(guard, "Rename two files and move a third", new String[]{"src/ctrmap/A.java"},
+					null, "int id = 2;", torn);
+			check(later.code != 0 && later.said.contains("UNKNOWN"),
+					"and a git that answers HEAD and then cannot say what is staged is refused too, as UNKNOWN"
+					+ " (exit " + later.code + ") " + oneLine(later.said));
+		} finally {
+			Files.deleteIfExists(corrupt.toPath());
+		}
 		Run control = run(guard, "Rename two files and move a third",
 				new String[]{"src/ctrmap/A.java", "src/ctrmap/tests/ATest.java"}, null, "//moved",
 				null);
@@ -892,7 +909,9 @@ public class CommitGuardTest {
 		check(bare.code != 0, "vouching for what the commit did not open is refused (exit "
 			+ bare.code + ")");
 		
-		Run cited = run(guard, claim + "\n\nReviewed: 130/130 suites by"
+		//no count of suites in it: that is a claim of its own since census M.85, checked against the run record this
+		//scratch repository does not have - and this case asks the Reviewed: rule, nothing else
+		Run cited = run(guard, claim + "\n\nReviewed: every suite, by"
 			+ " tools/guard/commit_guard.py", new String[]{}, null);   //a path the scratch repo has
 		check(cited.code == 0, "and allowed once it cites a measurement that exists (exit "
 			+ cited.code + ") " + oneLine(cited.said));
@@ -1303,11 +1322,13 @@ public class CommitGuardTest {
 				throw new java.io.IOException("could not make " + tools);
 			}
 			Files.copy(guard.toPath(), new File(tools, "commit_guard.py").toPath());
-			//AND THE ONE DEFINITION OF ITS ROOT, which it imports from its own folder: a file can
-			//always reach its own folder, and reaching any other first needs the root (F216).
-			File root = new File(guard.getParentFile(), "_tree_root.py");
-			if (root.isFile()) {
-				Files.copy(root.toPath(), new File(tools, "_tree_root.py").toPath());
+			//AND THE LIBRARIES IT IMPORTS FROM ITS OWN FOLDER - the one definition of its root (F216),
+			//and _cli, the word refusal every tool asks first (2026-10-10): a file can always reach its
+			//own folder, and reaching any other first needs the root. Every `_` library there, not a
+			//list of the two it imports today.
+			File[] libraries = guard.getParentFile().listFiles((d, n) -> n.startsWith("_") && n.endsWith(".py"));
+			for (File library : libraries == null ? new File[0] : libraries) {
+				Files.copy(library.toPath(), new File(tools, library.getName()).toPath());
 			}
 			//THE GUARD'S SIBLINGS COME WITH IT. It asks the bundle's commit_gate.py for every rule
 			//the two share, and require_build.py for the tree's subject (F183, F186); a copy of
@@ -1323,6 +1344,10 @@ public class CommitGuardTest {
 				}
 			}
 			git(dir, "init", "-q");
+			//THE BYTES THE FIXTURE WROTE ARE THE BYTES STAGED. This machine's global autocrlf turned a
+			//CRLF fixture into LF in the index, so the CR-stripped digest the guard takes had nothing
+			//to strip, and a plant that digests the raw blob survived (2026-10-10) - on this machine only.
+			git(dir, "config", "core.autocrlf", "false");
 			java.util.List<String> removed = new java.util.ArrayList<>();
 			for (String rel : staged) {
 				File f = new File(dir, rel);
@@ -1371,6 +1396,7 @@ public class CommitGuardTest {
 					msg.getAbsolutePath());
 			pb.directory(dir);
 			pb.redirectErrorStream(true);
+			asItsOwn(pb);
 			if (env != null) {
 				pb.environment().putAll(env);
 			}
@@ -1382,12 +1408,22 @@ public class CommitGuardTest {
 		}
 	}
 
+	/**
+	 * The guard as it runs in a commit: with ITS OWN bytecode setting, not one this process
+	 * inherited. A session that exports PYTHONDONTWRITEBYTECODE made the guard's own
+	 * {@code sys.dont_write_bytecode} redundant, and a plant that removes it survived (2026-10-10).
+	 */
+	static void asItsOwn(ProcessBuilder pb) {
+		pb.environment().remove("PYTHONDONTWRITEBYTECODE");
+	}
+
 	/** What the guard itself says this tree digests to. */
 	static String subjectOf(File dir) throws Exception {
 		ProcessBuilder pb = new ProcessBuilder("python", "tools/guard/commit_guard.py",
 				"--subject");
 		pb.directory(dir);
 		pb.redirectErrorStream(true);
+		asItsOwn(pb);
 		Process p = pb.start();
 		String said = drain(p).trim();
 		if (p.waitFor() != 0 || said.length() != 64) {

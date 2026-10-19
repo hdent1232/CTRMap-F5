@@ -31,19 +31,38 @@ import java.util.List;
  * bytes, a separate implementation - works out which base zones no warp points
  * at, and requires the scanner's answer to be exactly that set with exactly
  * those record counts and tiers. Second the MEASURED TOTALS against the retail
- * ORAS dump (165 candidates, 2/46/117 by tier) and a digest of the whole list,
+ * ORAS dump (140 candidates, 2/46/92 by tier) and a digest of the whole list,
  * so a change that moves every entry the same way still fails.
  *
- * Usage: java ctrmap.tests.ZoneRepurposeScannerTest &lt;pristine-dump-root&gt;
+ * <p>A ZONE A SCRIPT SENDS THE PLAYER TO IS REACHED, like a warp's target (F225). The oracle treats
+ * {@link #SCRIPT_REACHED} as reached - the zones a retail script sends the player to that no warp
+ * points at, recorded here as a known answer rather than recomputed by the analyzer under test.
+ *
+ * Usage: java ctrmap.tests.ZoneRepurposeScannerTest &lt;pristine-dump-root&gt; &lt;whole game folder, for what the
+ * pristine one lacks&gt;
  */
 public class ZoneRepurposeScannerTest {
 
-	/** Measured on the retail ORAS dump; see the class doc for why they are literal. */
-	private static final int EXPECTED_TOTAL = 165;
+	/**
+	 * MEASURED 2026-10-09/10 against the retail dump: the base zones a script sends the player to through
+	 * {@code _MapChangeCore} and no warp points at - 17 named by zone scripts, and 432-439 named only by the
+	 * shared scripts (a/0/2/9). Checked independently of the analyzer: at all 95 retail call sites the x and
+	 * y the call passes land inside the named zone's map (scratch probe CheckMapChangeZone), where reading
+	 * the second argument as the zone fits 33 of 95.
+	 */
+	static final int[] SCRIPT_REACHED = {23, 54, 66, 68, 76, 98, 148, 154, 160, 161, 372, 373, 374, 375, 376, 377, 378,
+		432, 433, 434, 435, 436, 437, 438, 439};
+
+	/**
+	 * Measured on the retail ORAS dump; see the class doc for why they are literal. Re-measured 2026-10-10
+	 * when the scan began reading where scripts send the player (F225): 165 -> 140, every one of the 25 it
+	 * stopped offering a zone of {@link #SCRIPT_REACHED}, all from the in-use tier (117 -> 92).
+	 */
+	private static final int EXPECTED_TOTAL = 140;
 	private static final int EXPECTED_TIER0 = 2;
 	private static final int EXPECTED_TIER1 = 46;
-	private static final int EXPECTED_TIER2 = 117;
-	private static final String EXPECTED_DIGEST = "7592105f844100be934011bd1bdc3b483102dae4a2c811668c67a5022d889d9f";
+	private static final int EXPECTED_TIER2 = 92;
+	private static final String EXPECTED_DIGEST = "08df7106340e78e30629ccc64ddb03fe9cfdd388b4cf1ad00a879c2f4af7d8d8";
 
 	static int fails = 0;
 
@@ -53,13 +72,18 @@ public class ZoneRepurposeScannerTest {
 			Skip.suite("no dump at " + dump.getAbsolutePath());
 			return;
 		}
-		ScratchGame.open(dump);
+		//the pristine folder has no shared-script archive; the whole game lends it, read only
+		File whole = new File(args.length > 1 ? args[1] : "../RomFS/000400000011C400");
+		ScratchGame.open(dump, whole);
+		check(Workspace.getArchive(ArchiveType.SHARED_SCRIPTS) != null,
+				"control: the scratch game has the shared scripts, so the scan reads where they send the player");
 
 		check(ZoneRepurposeScanner.BASE_ZONES == 536,
 				"the base-zone ceiling is " + ZoneRepurposeScanner.BASE_ZONES
 				+ ", the index above which zones cannot run field scripts");
 
 		labelsSayWhichTier();
+		theReportCountsEachTier();
 
 		List<ZoneRepurposeScanner.Candidate> got = ZoneRepurposeScanner.scan();
 		shapeOfTheList(got);
@@ -82,6 +106,29 @@ public class ZoneRepurposeScannerTest {
 		check("in use (has content or incoming warps)".equals(label(2)), "tier 2 reads '" + label(2) + "'");
 		check("in use (has content or incoming warps)".equals(label(9)),
 				"an unexpected tier falls back to the in-use wording: '" + label(9) + "'");
+	}
+
+	/**
+	 * The list's summary counts each tier as its own: one safest and two likely-free zones are said as such.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (ZoneRepurposeScanner 64, negated, SURVIVED): no suite read the summary's
+	 * counts. Inverted, "SAFEST" counted every zone that is NOT safest and "likely-free" stayed 0 - the owner told
+	 * three zones were safe to overwrite where one was.
+	 */
+	private static void theReportCountsEachTier() {
+		ZoneRepurposeScanner.Scan scan = new ZoneRepurposeScanner.Scan();
+		int[] tiers = {0, 1, 1, 2};
+		for (int i = 0; i < tiers.length; i++) {
+			ZoneRepurposeScanner.Candidate c = new ZoneRepurposeScanner.Candidate();
+			c.index = 100 + i;
+			c.name = "zone " + (100 + i);
+			c.tier = tiers[i];
+			scan.candidates.add(c);
+		}
+		String said = ZoneRepurposeScanner.report(scan);
+		check(said.contains("1 SAFEST (placeholder/blank name, empty, no incoming warps),  2 likely-free."),
+				"one safest and two likely-free zones are counted as such in the list's summary: "
+				+ said.substring(said.indexOf("SAFEST") - 2, said.indexOf("likely-free.") + 12));
 	}
 
 	private static String label(int tier) {
@@ -160,6 +207,10 @@ public class ZoneRepurposeScannerTest {
 				}
 			}
 		}
+		for (int reached : SCRIPT_REACHED) {
+			check(!targeted[reached], "control: zone " + reached + ", recorded as reached by a script alone, has no warp into it");
+			targeted[reached] = true;
+		}
 
 		//the location-name table, read with the other text parser in this tree
 		File gtFile = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT,
@@ -174,7 +225,7 @@ public class ZoneRepurposeScannerTest {
 		}
 		check(got.size() == expectedIndices.size(),
 				"the scanner listed " + got.size() + " zones; an independent parse finds "
-				+ expectedIndices.size() + " base zones no warp points at");
+				+ expectedIndices.size() + " base zones no warp and no script reaches");
 
 		boolean[] listed = new boolean[base];
 		for (ZoneRepurposeScanner.Candidate c : got) {
@@ -192,8 +243,8 @@ public class ZoneRepurposeScannerTest {
 				wronglyOmitted++;
 			}
 		}
-		check(wronglyListed == 0, wronglyListed + " zone(s) were offered that a warp points at (or that do not parse)");
-		check(wronglyOmitted == 0, wronglyOmitted + " zone(s) that nothing warps to were left out");
+		check(wronglyListed == 0, wronglyListed + " zone(s) were offered that a warp or a script reaches (or that do not parse)");
+		check(wronglyOmitted == 0, wronglyOmitted + " zone(s) that no warp and no script reaches were left out");
 
 		int badCounts = 0, badTier = 0, badName = 0;
 		for (ZoneRepurposeScanner.Candidate c : got) {

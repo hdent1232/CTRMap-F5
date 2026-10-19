@@ -88,7 +88,16 @@ public class UpdateChecker {
 	 * offline machine reads the same - a query that could not look, reporting absent.
 	 */
 	public static Release latest() throws Exception {
-		String json = get(API);
+		return releaseIn(get(API));
+	}
+
+	/**
+	 * The release GitHub's answer {@code json} describes when it is newer than the running build, null when it is not,
+	 * and an exception when the answer names none. Apart from the fetch so a suite can hand it an answer: the
+	 * 2026-10-15 shared sweep (UpdateChecker 93, negate-if) SURVIVED, since no suite may go to GitHub, and inverted
+	 * it offered the build itself as an update and kept a newer one quiet.
+	 */
+	public static Release releaseIn(String json) throws java.io.IOException {
 		String tag = field(json, "tag_name");
 		if (tag == null) {
 			throw new java.io.IOException("GitHub's answer named no release (no tag_name in it)");

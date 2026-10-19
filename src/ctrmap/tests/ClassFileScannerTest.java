@@ -54,11 +54,8 @@ public class ClassFileScannerTest {
 
 	/** The window whose widgets half the program reaches into. */
 	private static final String MAINFRAME = "ctrmap/CtrmapMainframe";
-	/** What a grep for the mainframe looks like, as the other guards spell it. */
-	private static final Pattern SOURCE_MENTION = Pattern.compile("CtrmapMainframe\\s*\\.");
-	/** ...and the one line that names it without using it. */
+	/** The one line that names a class without using it. */
 	private static final Pattern IMPORT_LINE = Pattern.compile("^\\s*import\\b");
-	private static final Pattern STATIC_IMPORT = Pattern.compile("import\\s+static\\s+ctrmap\\.CtrmapMainframe\\s*\\.");
 	/** A romfs archive path, the shape SourceSeamTest keeps out of the program. */
 	private static final Pattern GARC_PATH = Pattern.compile("(^|/)a/\\d/\\d/\\d");
 
@@ -135,16 +132,44 @@ public class ClassFileScannerTest {
 	}
 
 	/**
+	 * The application class the most OTHER top-level classes reference, read from the bytecode - the subject of
+	 * the reader comparison. DERIVED, never named: it was the main window, and since F007 nothing reads the
+	 * window, so the comparison was between two zeros and a plant that emptied the scanner's answer survived it
+	 * (scanner-sees-less-than-a-grep, 2026-10-09).
+	 */
+	static String mostReadClass(List<ClassFileScanner.ClassFile> app) {
+		String best = null;
+		int most = -1;
+		for (ClassFileScanner.ClassFile cf : app) {
+			if (cf.name.indexOf('$') >= 0) {
+				continue;
+			}
+			Set<String> readers = new TreeSet<>(ClassFileScanner.readersOf(app, cf.name));
+			readers.remove(cf.name);
+			if (readers.size() > most) {
+				most = readers.size();
+				best = cf.name;
+			}
+		}
+		return best;
+	}
+
+	/**
 	 * The gap this scanner exists to close: a pattern over the sources can never
-	 * name more readers of the main window than the bytecode does, because a
-	 * static import leaves nothing to match on.
-	 *
-	 * <p>The gap is empty today - nothing reads the window at all - so the two
-	 * checks hold without having anything to prove. See the note in the body.
+	 * name more readers of a class than the bytecode does, because a static
+	 * import leaves nothing to match on. Asked of {@link #mostReadClass}, so it
+	 * always has readers to compare.
 	 */
 	static void bytecodeSeesMoreReadersThanAGrep(File src, List<ClassFileScanner.ClassFile> app) throws Exception {
-		Set<String> readers = new TreeSet<>(ClassFileScanner.readersOf(app, MAINFRAME));
-		readers.remove(MAINFRAME); //itself, and every listener that folded into it
+		final String subject = mostReadClass(app);
+		final String simple = subject.substring(subject.lastIndexOf('/') + 1);
+		final Pattern mention = Pattern.compile("\\b" + simple + "\\s*\\.");
+		final Pattern staticImport = Pattern.compile("import\\s+static\\s+" + subject.replace('/', '.').replace(".", "\\.")
+				+ "\\s*\\.");
+		Set<String> readers = new TreeSet<>(ClassFileScanner.readersOf(app, subject));
+		readers.remove(subject); //itself, and every listener that folded into it
+		check(readers.size() > 0, "control: the subject has readers to compare - " + subject + ", " + readers.size()
+				+ " (two zeros compare equal whatever the scanner does)");
 
 		Set<String> grepped = new TreeSet<>();
 		Set<String> staticImporters = new TreeSet<>();
@@ -154,15 +179,15 @@ public class ClassFileScannerTest {
 				continue; //the program, not its battery
 			}
 			String internal = internalName(src, f);
-			if (internal.equals(MAINFRAME)) {
+			if (internal.equals(subject)) {
 				continue;
 			}
 			String text = SourceSeamTest.stripComments(read(f));
-			if (STATIC_IMPORT.matcher(text).find()) {
+			if (staticImport.matcher(text).find()) {
 				staticImporters.add(internal);
 			}
 			for (String line : text.split("\n", -1)) {
-				if (!IMPORT_LINE.matcher(line).find() && SOURCE_MENTION.matcher(line).find()) {
+				if (!IMPORT_LINE.matcher(line).find() && mention.matcher(line).find()) {
 					grepped.add(internal);
 					break;
 				}
@@ -174,11 +199,11 @@ public class ClassFileScannerTest {
 		Set<String> byStaticImport = new TreeSet<>(gap);
 		byStaticImport.retainAll(staticImporters);
 
-		System.out.println("  readers of CtrmapMainframe: " + readers.size() + " in the bytecode, "
-				+ grepped.size() + " files a \"CtrmapMainframe.\" grep finds; " + staticImporters.size()
+		System.out.println("  readers of " + subject + ": " + readers.size() + " in the bytecode, "
+				+ grepped.size() + " files a \"" + simple + ".\" grep finds; " + staticImporters.size()
 				+ " sources static-import it");
 		System.out.println("  the grep misses " + gap.size() + ", of which " + byStaticImport.size()
-				+ " static-import the window: " + first(byStaticImport, 5));
+				+ " static-import it: " + first(byStaticImport, 5));
 		//RETARGETED, and the javadoc above with it. This used to assert a STRICT
 		//inequality: MORE readers in the bytecode than a grep could find. That was
 		//true and worth pinning when 45 classes read the window and 26 of them did

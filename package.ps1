@@ -1,7 +1,12 @@
 # Builds a releasable CTRMap-F5: a runnable jar, the zip users download, and the
 # SHA-256 the in-app updater verifies before it installs anything.
 #
-# Usage:  powershell -ExecutionPolicy Bypass -File package.ps1 [-Version 1.1.0]
+# Usage:  powershell -ExecutionPolicy Bypass -File package.ps1 [-Version 1.1.0 | -Version 1.0.3-nightly.1]
+#
+# TWO CHANNELS (2026-10-12): a core version, 1.1.0, is a release every copy's updater is offered; a nightly,
+# named after the last core release it is ahead of (1.0.3-nightly.1), goes out as a GitHub PRE-release that no
+# updater is offered, for whoever downloads it by hand. tools/release_channel.py decides which, and prints the
+# commands that publish it.
 #
 # Without -Version it packages whatever src\ctrmap\resources\version.properties
 # says. With -Version it rewrites that file first, so the number in the jar, the
@@ -25,11 +30,37 @@ param([string]$Version = "")
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
+. (Join-Path $root "native.ps1")   #every native command runs through Invoke-Native: its exit code is the verdict
+
+# ON THE UNATTENDED DESKTOP (2026-10-12): packaging runs the JDK's jar and jpackage, and builds before them.
+# It runs itself again on a second desktop of the same session (tools/guard/hidden_desktop.py), as build.ps1
+# and test.ps1 do, its parameters handed through; what it prints comes back here as it prints it.
+if ($env:CTRMAP_ON_UNATTENDED_DESKTOP -ne "1" -and $env:OS -eq "Windows_NT") {
+    $again = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $MyInvocation.MyCommand.Path)
+    foreach ($k in $PSBoundParameters.Keys) {
+        $v = $PSBoundParameters[$k]
+        if ($v -is [System.Management.Automation.SwitchParameter]) {
+            if ($v.IsPresent) { $again += "-$k" }
+        } else {
+            $again += @("-$k", "$v")
+        }
+    }
+    $hpy = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $hpy) {
+        Write-Host "REFUSING: no python on PATH to package a release on the unattended desktop - its windows would open on yours" -ForegroundColor Red
+        exit 1
+    }
+    Invoke-Native { & $hpy.Source -B (Join-Path $root "tools\guard\hidden_desktop.py") --stream -- powershell @again }
+    exit $LASTEXITCODE
+}
 
 $verFile = "src\ctrmap\resources\version.properties"
 if ($Version -ne "") {
-    if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw "Version must look like 1.2.3, got '$Version'" }
-    (Get-Content $verFile) -replace '^version=.*', "version=$Version" | Set-Content $verFile -Encoding ascii
+    if ($Version -notmatch '^\d+\.\d+\.\d+(-nightly\.\d+)?$') { throw "Version must look like 1.2.3 (core) or 1.2.3-nightly.4 (nightly), got '$Version'" }
+    # WRITTEN WITH LF, AS .gitattributes GIVES EVERY TEXT FILE (2026-10-12): Set-Content wrote CRLF, so the first
+    # nightly's packaging left the tracked version.properties checked out against it, and lf_checkout said so.
+    $verLines = (Get-Content $verFile) -replace '^version=.*', "version=$Version"
+    [System.IO.File]::WriteAllText((Join-Path $root $verFile), (($verLines -join "`n") + "`n"), [System.Text.Encoding]::ASCII)
 }
 $Version = ((Get-Content $verFile) | Where-Object { $_ -match '^version=' }) -replace '^version=', ''
 $Version = $Version.Trim()
@@ -37,6 +68,9 @@ if ($Version -eq "") { throw "No version in $verFile" }
 Write-Host "Packaging CTRMap-F5 $Version"
 
 & "$root\build.ps1"
+# A REFUSED BUILD IS NOT PACKAGED. build.ps1 refuses with `exit 1` (a structure gate, a running
+# battery), which ends that script and not this one, and nothing here read it.
+if ($LASTEXITCODE -ne 0) { throw "build.ps1 refused (exit $LASTEXITCODE) - nothing was packaged" }
 
 $jdk = $env:CTRMAP_JDK
 if (-not $jdk) {
@@ -87,10 +121,8 @@ if ($leftOver.Count -gt 0) {
     throw ("suite classes are still staged: " + ($leftOver | ForEach-Object { $_.Name }) -join ", ")
 }
 
-$ErrorActionPreference = "Continue"
-& "$jdk\bin\jar.exe" --create --file "$stage\CTRMap-F5.jar" --manifest $mf -C $shipDir .
+Invoke-Native { & "$jdk\bin\jar.exe" --create --file "$stage\CTRMap-F5.jar" --manifest $mf -C $shipDir . }
 $jarExit = $LASTEXITCODE
-$ErrorActionPreference = "Stop"
 if ($jarExit -ne 0) { throw "jar failed with exit code $jarExit" }
 Remove-Item -Recurse -Force $shipDir -ErrorAction SilentlyContinue
 
@@ -122,16 +154,19 @@ Copy-Item "$stage\lib\*" "$appIn\lib"
 #                   so the in-app update check silently never works
 #   jdk.unsupported without it GlueGen cannot reach sun.misc.Unsafe
 # Measured: the default (whole module graph) runtime is 134 MB; this set is 70 MB.
-$ErrorActionPreference = "Continue"
-& "$jdk\bin\jpackage.exe" --type app-image `
-    --name CTRMap-F5 --app-version $Version --vendor "CTRMap-F5" `
-    --description "Pokemon X/Y and Omega Ruby/Alpha Sapphire world editor" `
-    --input $appIn --main-jar CTRMap-F5.jar --main-class ctrmap.CtrmapMainframe `
-    --icon ctrmap.ico --java-options "-Xmx1024m" `
-    --add-modules java.base,java.desktop,java.logging,java.prefs,jdk.crypto.ec,jdk.unsupported `
-    --dest dist\app
+# jpackage takes NUMBERS ONLY for --app-version on Windows; a nightly's suffix stays in the jar's own
+# version.properties and in the zip's name, where the updater and the user read it.
+$appVersion = $Version -replace '-.*$', ''
+Invoke-Native {
+    & "$jdk\bin\jpackage.exe" --type app-image `
+        --name CTRMap-F5 --app-version $appVersion --vendor "CTRMap-F5" `
+        --description "Pokemon X/Y and Omega Ruby/Alpha Sapphire world editor" `
+        --input $appIn --main-jar CTRMap-F5.jar --main-class ctrmap.CtrmapMainframe `
+        --icon ctrmap.ico --java-options "-Xmx1024m" `
+        --add-modules java.base,java.desktop,java.logging,java.prefs,jdk.crypto.ec,jdk.unsupported `
+        --dest dist\app
+}
 $jpExit = $LASTEXITCODE
-$ErrorActionPreference = "Stop"
 if ($jpExit -ne 0) { throw "jpackage failed with exit code $jpExit" }
 
 Copy-Item README.md, LICENSE, QUICKSTART.md "dist\app\CTRMap-F5\"
@@ -151,12 +186,10 @@ Write-Host "  $zip   (needs Java; this is what the in-app updater installs)"
 Write-Host "  sha256 $hash"
 Write-Host ""
 Write-Host "Publish with:"
-# THE TAG IS NAMED IN THE PUSH. This said `git push --follow-tags`, which pushes
-# only ANNOTATED tags - and every tag this project has ever cut is lightweight.
-# Measured cutting 1.0.3: the tag was made, the documented command reported
-# success, master moved, and the tag was not on the remote at all. A command that
-# did not run looks exactly like a command that passed, and `gh release create`
-# would then have made its own tag from whatever the default branch pointed at.
-Write-Host "  git tag v$Version"
-Write-Host "  git push origin master v$Version"
-Write-Host "  gh release create v$Version $winZip $zip --title `"CTRMap-F5 $Version`" --notes-file NOTES.md"
+# ONE PLACE SAYS HOW A VERSION IS PUBLISHED: tools/release_channel.py, which names the tag in the push (a
+# `git push --follow-tags` left the 1.0.3 tag off the remote - every tag here is lightweight), puts both
+# builds on the release, and sends a nightly to the nightly branch as a PRE-release no updater is offered.
+$rpy = Get-Command python -ErrorAction SilentlyContinue
+if (-not $rpy) { throw "no python on PATH to say how $Version is published" }
+Invoke-Native { & $rpy.Source -B (Join-Path $root "tools\release_channel.py") $Version $winZip $zip }
+if ($LASTEXITCODE -ne 0) { throw "tools\release_channel.py refused $Version (exit $LASTEXITCODE)" }

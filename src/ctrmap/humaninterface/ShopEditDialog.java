@@ -41,7 +41,10 @@ public class ShopEditDialog {
 	 * @param onClose what to do when the user is finished with it; the host clears
 	 * @return the editor, or null when there is nothing to edit (it says why first)
 	 */
-	public static javax.swing.JComponent panel(java.awt.Component parent, Runnable onClose) {
+	public static javax.swing.JComponent panel(java.awt.Component parent, Runnable onClose, SaveHistory saves) {
+		if (saves == null) {
+			throw new IllegalArgumentException("the shop editor must be handed the history its saves are kept in");
+		}
 		//CODE_PATCHES, not "is it ORAS": the shop lists are found by absolute
 		//addresses in a particular game's executable, so what this needs is a
 		//game whose code.bin has been reverse engineered - which is a different
@@ -114,7 +117,7 @@ public class ShopEditDialog {
 		buttons.add(close);
 		dlg.add(buttons, BorderLayout.SOUTH);
 
-		save.addActionListener(e -> savePatch(dlg, fCodeFile, code, model.shops));
+		save.addActionListener(e -> savePatch(dlg, fCodeFile, code, model.shops, saves));
 		close.addActionListener(e -> onClose.run());
 
 		//no pack: a pane is sized by the tab it is in
@@ -126,7 +129,7 @@ public class ShopEditDialog {
 	 * lists. Public so a suite can press it headless - the chooser is answered through the Ui seam
 	 * (F152).
 	 */
-	public static void savePatch(java.awt.Component dlg, File codeFile, byte[] code, int[][] shops) {
+	public static void savePatch(java.awt.Component dlg, File codeFile, byte[] code, int[][] shops, SaveHistory saves) {
 		try {
 			byte[] patched = ShopData.write(code, shops);
 			//NO "nothing to save" (F152): every list put back to the game's own is still a change to
@@ -141,7 +144,12 @@ public class ShopEditDialog {
 			File out = fc.getSelectedFile();
 			//ONE WRITER FOR THE ONE code.ips (F152): the patches already in it are kept and only the
 			//table this editor owns is replaced - there is no question to close by mistake
-			String note = ctrmap.formats.codepatch.CodeIps.save(out, ips, ShopData.owned());
+			String note;
+			//ONE KEPT CHANGE (F209c): the code.ips is copied before it changes, and the save can be taken back
+			try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Save the shop lists", ctrmap.Workspace.session())) {
+				note = ctrmap.formats.codepatch.CodeIps.save(out, ips, ShopData.owned(), ctrmap.WorkspaceUnit::touching);
+				saves.keep(unit.commitKeeping());
+			}
 			ctrmap.Ui.message(dlg,
 					"Saved " + out.getName() + note + ".\n\n"
 					+ "Deploy it like the zone patch:\n"

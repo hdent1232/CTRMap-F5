@@ -35,9 +35,14 @@ if __name__ == "__main__":
     sys.dont_write_bytecode = True     # run from its folder, a tool leaves no bytecode there
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# A PLANT ON DISK IS ITS OWN TEST'S - `bundle_plant`, first, as in `dispatch.py`: a judgement read
+# off a planted sibling is a mutant's view, and this one is KEPT.
+import bundle_plant      # noqa: E402  - which copy runs: the index's while a plant holds the file
+PLANT_TROUBLE = bundle_plant.begin(__file__, __name__)
 import bundle_env        # noqa: E402  - the one spelling of the owner's way past
 import bundle_rules      # noqa: E402  - the one implementation of asking a rule
 import bundle_shell      # noqa: E402  - the call, found by shape
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 
 LF = chr(10)
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
@@ -52,10 +57,10 @@ ADAPT = ("STATE",)
 def tree_state(root):
     """A digest of HEAD, the status, and the size and time of every changed path - or None."""
     try:
-        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True,
-                              text=True, timeout=30, creationflags=NO_WINDOW).stdout.strip()
-        status = subprocess.run(["git", "status", "--porcelain", "-z"], cwd=root,
-                                capture_output=True, timeout=30, creationflags=NO_WINDOW).stdout
+        head = bounded.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True,
+                           text=True, timeout=30, creationflags=NO_WINDOW).stdout.strip()
+        status = bounded.run(["git", "status", "--porcelain", "-z"], cwd=root,
+                             capture_output=True, timeout=30, creationflags=NO_WINDOW).stdout
     except (OSError, subprocess.SubprocessError):
         return None
     digest = hashlib.sha256(head.encode("utf-8") + status)
@@ -152,10 +157,35 @@ def after_findings(root):
     return lines
 
 
-def verdict(payload, root):
-    """(exit code, message) the moment after one call."""
+def verdict(payload, root, delegate=True):
+    """(exit code, message) the moment after one call. `delegate` False: this process IS the
+    child asked about another checkout, and asks nothing further.
+
+    EVERY CHECKOUT THE CALL ACTED IN, each as itself. Measured 2026-10-06: a linked worktree in the
+    harness's worktrees folder is invisible to the main tree's `git status`, so a command's every
+    write in it was judged by nobody - this judged the main tree, whatever the call had touched.
+    """
     if not bundle_shell.is_tool_call(payload) or bundle_shell.reads_only(payload):
         return 0, ""
+    if delegate:
+        # A WORKTREE'S CHILD RUNS THIS JUDGE, so a judge under mutation here is not asked there
+        # either: the check below is this tree's, and it answers for every checkout.
+        if bundle_shell.judge_under_mutation(root, bundle_rules.LOCK):
+            return verdict(payload, root, delegate=False)
+        code, said = 0, []
+        for place in bundle_rules.checkouts(payload, root):
+            if place == root:
+                one = verdict(payload, root, delegate=False)
+            else:
+                one = bundle_rules.ask_checkout(__file__, place, payload)
+                if one[0] is None:
+                    one = (2, "NOT JUDGED: what this call changed in the worktree at %s could not "
+                              "be judged by that worktree's own rules (%s). It is unknown, not "
+                              "clean." % (place, one[1]))
+            if one[0]:
+                code = max(code, one[0])
+                said.append(one[1])
+        return code, (LF + LF).join(said)
     lines = []
     # THE JUDGE UNDER MUTATION IS ASKED NOTHING - neither a verdict nor a record of what this call
     # wrote. Recorded, a write would read as judged at the write and never be judged again.
@@ -173,12 +203,19 @@ def verdict(payload, root):
     return (2, LF.join(lines).rstrip()) if lines else (0, "")
 
 
-def main():
+def main(argv=None):
     """Every rule asked after a call - or, when that cannot be done, SAID (CTRMap F213): an
     unreadable payload and a project root that cannot be found each returned 0 with nothing said,
     which reads exactly as "asked, and nothing found"."""
+    argv = sys.argv[1:] if argv is None else argv
     raw = bundle_shell.payload_text()       # UTF-8, not the locale's code page
     problem = bundle_shell.payload_problem(raw)
+    # `--judge <checkout>`: another checkout, asked by its parent in a process of its own. A
+    # payload it cannot read is refused below like any other - said, never judged as clean.
+    place = bundle_rules.judge_mode(argv)
+    if place is not None and not problem:
+        sys.stdout.write(json.dumps(list(verdict(json.loads(raw), place, delegate=False))) + LF)
+        return 0
     root = bundle_rules.repo_root(__file__)
     if problem is None and root is None:
         problem = ("the hook payload read, but no project root (.git or CLAUDE.md) lies above %s,"
@@ -190,6 +227,9 @@ def main():
                                          "rule was asked after this call" % (problem, bypass)}) + LF)
             return 0
         sys.stderr.write(bundle_shell.unreadable_payload(__file__, problem, bypass))
+        return 2
+    if PLANT_TROUBLE:
+        sys.stderr.write(PLANT_TROUBLE + " - nothing was judged after this call" + LF)
         return 2
     code, said = verdict(json.loads(raw), root)
     if code:

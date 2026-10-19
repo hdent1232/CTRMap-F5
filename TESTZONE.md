@@ -1,218 +1,133 @@
-# TESTZONE.md — the built-in test world (walk it once, test everything)
+# TESTZONE.md — the in-game test world (walk it once, test everything)
 
-> **Built by hand from commit 19e93f3 (2026-08-30), and nothing in the tree can rebuild it (F138).**
-> Walking it tests what the editor produced at that commit, not the editor you are running: measured
-> 2026-10-08, 518 of the 642 commits came after it, 87 of them in the subsystems the symptom table
-> below isolates (`formats/tilemap`, `formats/h3d`, `formats/scripts`, the map painter). It also
-> exists in ONE dump - the owner's - because it was packed there, not built by a tool. To check a
-> change to those subsystems, build what the change touches with the current editor and walk that;
-> use this world for the parts nothing since has touched. A tool that rebuilds it through the
-> editor's own operations needs the owner's dump to be written and checked, and is owed.
+> **The test world is a build product (F138).** `testworld.ps1` builds it from the retail archives,
+> through the editor's own operations, into a folder of its own; that folder's `BUILT.txt` names the
+> commit and source tree that built it, every archive it changed, and every step's own account. It used to
+> be built by hand once and packed into one dump, so walking it tested that day's editor; now a world is
+> built by the code you are running, every battery builds one and reads it back (`TestWorldBuildTest`), and
+> two builds from the same code and sources are byte for byte the same.
 
-A complete test world is now packed into your game data. **Entering May's
-house in Littleroot Town (the very first house you'd enter in the game)
-warps you to the TEST HUB instead.** Both doors that led to her house — the
-front door outside AND the doorway inside your own house's map — are
-redirected, so you reach it within a minute of starting a playthrough.
+## Build it
 
-Everything the editor can build is in this world, and it is deliberately
-split across four zones so that **if something crashes or misbehaves, WHERE
-it happens tells us WHICH subsystem is broken** (table at the bottom).
+1. `powershell -ExecutionPolicy Bypass -File build.ps1` — the world names the commit this stamps.
+2. `powershell -ExecutionPolicy Bypass -File testworld.ps1 -Out <a new folder> -Image "<the decrypted
+   Omega Ruby .cci>"`
 
-> **THE PETALBURG GYM BUG — FIXED 2026-08-30.** Entering the hub announced
-> "Petalburg Gym" and dropped the player into half-loaded gym geometry, next
-> to the Norman/Wally story sequence. Cause: Route 102 and Petalburg City
-> SHARE one map matrix — they are two zones on one big map — and the Map
-> Builder painted (and placed its warps in) the matrix's FIRST cell, which
-> belongs to Petalburg, not to Route 102. **94 retail zones share a map this
-> way**, so this affected any of them. The painter now targets the zone's own
-> cell, derived from its world position, and the test world was rebuilt on
-> Route 102's actual cell.
->
-> **FULLY REBUILT 2026-08-30 (latest) — everything below was regenerated
-> through the editor's CURRENT pipeline**, including the vertex-colour fix
-> (painted tiles could render black), the ground-material fix, and material
-> import (brushes a map lacks — ice, stairs, cave — now borrow real retail
-> materials instead of falling back). If you deployed earlier today, deploy
-> again: the older build shows the pre-fix look.
->
-> **SEALED 2026-08-30 — read this before testing.** The test world is now
-> escape-proof: its zones are ringed with impassable rock, and the Mart/house
-> doors that used to lead into RETAIL interiors (whose exits drop you in the
-> real town they belong to) are removed. Previously, walking out of one of
-> those put you in Petalburg City mid-intro, which starts the Wally sequence
-> and dead-ends when you have no Pokémon.
->
-> **Also: enter the test world AFTER you have your starter.** Several tests
-> (above all the battle challenge) need a party, and the game's opening
-> sequence is fragile until then. The other door in Littleroot leads to your
-> own custom Mauville zone 536 — that one showed glitched geometry because
-> its map matrix was corrupt; it has been repaired, so it now loads Mauville.
+The sources are `RomFS_original_garcs`, then the cartridge image, then the live game folder. Every archive
+the world reads is taken from the first source holding the **retail** copy, by its SHA-256; the cartridge
+image supplies the story text the pristine copy lacks. `BUILT.txt` then says **CANONICAL**. Without the
+image the live game's story text is not retail and the build refuses, naming it — `-NotVanilla` builds
+anyway and the stamp says **NOT CANONICAL** and which archive was not retail. Report bugs against a
+canonical world.
 
-**REBUILT 2026-08-30 on the current pipeline.** The three outdoor zones
-were regenerated through the composite edit-in-place path — the exact code
-the Map Builder runs today: the stations were painted ONTO a pristine copy
-of Route 102's real map, so **everything outside the stations is genuine
-Route 102 scenery (trees, grass, ledges) that the editor KEPT — that's the
-feature, not a leftover.** Walk off the first map cell and you'll see pure
-Route 102; that's expected too (the painter edits one cell). Heights,
-buildings, door props and warps all live in the retail-height frame.
+Nothing is written to the game folder, the workspace or the cartridge image. The folder holds `romfs\`
+(only the 9 archives the world changes, at their RomFS paths) and `BUILT.txt`.
 
-The world uses four repurposed zone slots, all verified safe for a fresh
-playthrough (two unused placeholder zones + two empty, unreferenced Sea
-Mauville floors that nothing can reach before Surf/Dive):
+## Deploy it — and take it away again
 
-| Zone | Slot | What it tests |
-|---|---|---|
-| TEST HUB | 473 | painted terrain: every brush, heights, ramps, ledges, stairs, signs, a talking NPC |
-| BUILDINGS | 474 | building palette: Pokémon Center round trip, Mart/house, decor, texture carry |
-| WATER | 153 | painted water + the spliced sea-scroll animation, waterfall |
-| PC INTERIOR | 157 | the cloned private Pokémon Center room (entered from BUILDINGS) |
+The world is built over the **retail** game, so its archives carry none of your own edits: while it is
+installed, your own mod is not.
 
-To deploy: in CTRMap, File → Deploy to emulator (the game files are already packed;
-this pushes them to the emulator), then **fully close and restart the
-emulator**. To play: start/continue a save in Littleroot and walk into
-May's house.
+1. Close the emulator. Move your own mod aside: `%APPDATA%\Azahar\load\mods\000400000011C400` to
+   `%APPDATA%\Azahar\load\mods_disabled\000400000011C400`.
+2. Copy the world folder's `romfs` into `%APPDATA%\Azahar\load\mods\000400000011C400\` (so the files land
+   in `...\000400000011C400\romfs\a\...`). No `exefs` patch is needed: the world adds no zones.
+3. Start the emulator. To take the world away: delete that `000400000011C400` folder and move your own back.
 
-## The walkthrough (recommended order)
+Enter the world **after you have your starter** — the battle challenge needs a party, and the game's
+opening is fragile until then.
 
-### 0. Boot check
-The game must boot to the title screen and load your save. If it doesn't,
-stop here — that's a packing-level failure (see the table).
+## What it is
 
-### 1. Enter May's house → TEST HUB
-You should appear on a dirt plaza. The mat you arrived on returns you to
-Littleroot at any time (step on it to confirm the return trip works).
-Near the spawn: **two signs and two NPCs** — read/talk to all of them:
-- Sign 1 (plaza): confirms sign-script injection works.
-- Sign 2 (near the plateau): the plateau instructions.
-- The talker NPC: confirms talking-NPC injection works.
-- **The BATTLE CHALLENGE NPC** (right of the talker) — the single most
-  important new test. It runs battles against three custom-authored
-  trainers through the game's ordinary battle machinery (nothing shared
-  with the Battle Maison): Newbie Nick (Zigzagoon Lv3) → Rookie Rita
-  (Poochyena Lv5) → Boss Bruno (Wurmple Lv4 + Taillow Lv6). Expect: 3 BP
-  per win, the streak advances each win (talk again → next fighter),
-  +20 bonus BP after the third, a loss resets to Nick, and the streak
-  survives saving/reloading. Known possible quirk: the intro sprite or
-  class name could look odd (the custom trainers use spare class slots) —
-  report what you see either way.
+One zone and one room, the retail game's two placeholder slots (zones 473 and 474 — the only ones the
+editor will take without asking; see `MapPainter.interiorSlots`):
 
-### 2. Hub stations (each one is a single brush/feature)
-- **West — tall grass patch**: walk in it. Expect rustle + wild encounters
-  (Route 102's table, since the hub is cloned from Route 102).
-- **West — bike rail strip** (the two-tile-wide vertical line): should only
-  be passable on the bike, like a Cycling Road rail.
-- **West — deep sand** (below the grass): slow trudge + footprints.
-- **North — plateau**: walk UP via the yellow ramp tiles at its south-center.
-  You should climb smoothly, and the cliff edges elsewhere must block you.
-- **Ledge row** (south face of the plateau): jump DOWN over it toward the
-  plaza; you must not be able to climb up through it.
-- **Stairs strip** (east of the ramp): the stairs walking behavior.
-- **East column, top to bottom**: cave floor, indoor floor, boardwalk,
-  **ice** (should slide), sand. One step on each. These are the stations
-  whose materials do NOT exist on a route — they were imported from other
-  maps, so also check they LOOK like cave/indoor/boardwalk/ice/sand rather
-  than like grass or a wall.
-- **South edge doors**: the WEST door leads to BUILDINGS, the EAST door to
-  WATER.
+| Zone | What it tests |
+|---|---|
+| 473 — the world | a clone of Route 102 with its own map and its own area; one map cell repainted in place (the composite pipeline): every brush, heights, a ramp, ledges, stairs, water with the sea-scroll animation, a waterfall, a Pokemon Center, signs, decor, a talking NPC and the battle challenge |
+| 474 — the Center's room | the private interior its door was given (a clone of the retail Pokemon Center room), with a small path patch painted in place on its floor |
 
-### 3. West door → BUILDINGS zone
-Three buildings on the north side, decor scattered around, one sign.
-- **Pokémon Center (left)**: THE headline test. Walk through the door
-  (it should swing open) into your own private Center copy — heal, use the
-  PC if you like — then step on the exit mat: you must come back OUT onto
-  this zone at the Center's door. That's the full round trip.
-  - **NEW — edit-in-place check, inside the Center**: a small 3×2 dirt
-    patch was composite-painted onto the room's floor (center-ish of the
-    walkable area). Expect: the patch is visible and walkable, and the
-    REST of the room — counter, healing machine, walls, nurse — is
-    completely intact. This is the new "only touched tiles change"
-    pipeline running on real retail geometry.
-- **Mart (middle) and house (right)**: scenery only now. Their doors used to
-  lead into the retail interiors, whose exits drop you into the real town
-  they belong to (Petalburg, mid-intro) — that escape is removed. The
-  Pokémon Center is the door that works, and it round-trips.
-- **Decor**: sign post, two tree types, iron fence — all should render with
-  correct textures and block movement like their retail versions.
+**The way in:** both doors that lead into the rival's house in Littleroot — the town's front door, and the
+one in the player's own house map — now lead to the world. You arrive on a mat at its south side; stepping
+back onto the mat returns you to Littleroot.
 
-### 4. East door → WATER zone
-A big pool with three waterfall tiles on its south rim.
-- **The pool must RIPPLE and SCROLL** like a real sea route — this is the
-  spliced animation, the highest-priority test of all. Still water = the
-  splice plays dead; report that specifically.
-- **Surf** on it (if you have Surf on this save).
-- Try the **waterfall** tiles with the Waterfall HM if available.
-- IMPORTANT side-check: the splice edits AREA 9, which the retail
-  **Route 102** also uses. After testing, walk Route 102 (west of Oldale)
-  and confirm it still looks and animates normally.
+**The map** (tiles of the repainted cell, x east and y south): a path plaza ringed two tiles deep with rock,
+so nothing walks off onto the Route 102 scenery around it. Everything outside the ring is genuine Route 102,
+kept by the composite pipeline — that is the feature, not a leftover.
+
+- **West:** tall grass (wild Pokémon — Route 102's table), a bike rail two tiles wide, deep sand.
+- **North:** a plateau one level up — a ramp in the middle of its south edge, a ledge row either side of
+  the ramp, stairs on its east edge.
+- **East:** one column of the brushes a route has no material for — cave floor, indoor floor, boardwalk,
+  ice (five tiles, to slide on), sand. These materials are imported from other maps.
+- **South:** a pool with a three-tile waterfall on its south rim, the arrival mat below it, the Pokémon
+  Center to the west of the pool, an iron fence and a fir tree.
+- **The plaza:** two signs, the talking NPC and, beside it, the battle challenge.
+
+## The walkthrough
+
+### 0. Boot
+The game boots to the title screen and loads your save. If it does not, stop: that is packing (see the
+table).
+
+### 1. Enter the rival's house in Littleroot
+You arrive on the mat at the world's south side. Step off and back on: you return to Littleroot.
+
+### 2. The plaza
+- **Sign 1** says the world was built by the test world builder. **Sign 2** points at the plateau.
+- **The talking NPC** speaks two lines.
+- **The battle challenge** (beside it) battles three trainers authored for the world, through the game's
+  ordinary battle natives: Newbie Nick (Zigzagoon Lv3), Rookie Rita (Poochyena Lv5), Boss Bruno (Wurmple Lv4
+  and Taillow Lv6). Expect 3 BP a win; the streak advances each win (talk again for the next); 20 more BP
+  after the third; a loss starts the streak over; the streak survives saving and reloading.
+
+### 3. The stations
+- **Tall grass:** rustle and wild encounters.
+- **Bike rail:** passable only on the bike, like a Cycling Road rail.
+- **Deep sand:** slow, with footprints.
+- **Plateau:** walk up the ramp; the cliff edges block you; jump down the ledges (you cannot climb back up
+  through them); climb the stairs on its east edge.
+- **East column:** one step on each; ice slides. Check each LOOKS like cave, indoor floor, boardwalk, ice,
+  sand — not like grass or a wall.
+- **Pool:** it must ripple and scroll like a sea route. Surf on it if you can; try the waterfall.
+- **Fence and tree:** correct textures; they block movement.
+
+### 4. The Pokémon Center
+Walk through its door (it swings open) into your own private Center — heal, use the PC — then step on the
+exit mat: you come back out at the Center's door. Inside, a 3×2 path patch is painted on the floor near the
+middle of the room: it is visible and walkable, and the rest of the room — counter, machine, walls, nurse —
+is intact.
 
 ## If something goes wrong: symptom → culprit
 
-Report the ROW that matches, plus whether it froze (music keeps playing?)
-or hard-crashed. Each zone isolates a subsystem, so one broken thing does
-not invalidate the rest.
+Report the row that matches, plus whether it froze (music keeps playing?) or hard-crashed, and the commit
+line of the world's `BUILT.txt`.
 
 | Symptom | Culprit subsystem |
 |---|---|
-| Game won't boot / dies before the title screen | GARC packing itself (global) — restore the backup, everything else is moot |
-| May's door just enters her normal house | Deploy didn't take — re-deploy and fully restart the emulator |
-| Crash/freeze the moment you enter May's door | Warp redirect or hub zone header (zone cloning) |
-| Hub loads but terrain is invisible / black / full of holes | Composite map geometry (clipping / the model writer) |
-| Hub looks right but you walk through walls / get stuck | Composite collision merge |
-| A station floats above or sinks below the Route 102 ground around it | Composite height frame (collision-seeded heights) |
-| Route 102 scenery pokes THROUGH a station's painted floor | Composite clipping missed geometry — the exact defect the clip fix targets |
-| A hole/see-through gap at a station's edge where a Route 102 tree or ledge used to be | Wall regeneration at cut edges |
-| A specific station misbehaves (ice doesn't slide, ledge won't jump, rail lets you walk…) | That one tile's behavior bytes — name the station |
-| Tall grass rustles but no encounters | Encounter-table binding on the cloned zone |
+| Game won't boot / dies before the title screen | GARC packing (global) — take the world away; everything else is moot |
+| The rival's house is just the rival's house | The world is not deployed — check the mod folder, fully restart the emulator |
+| Crash or freeze entering the rival's door | The warp redirect, or the world's zone header (zone cloning) |
+| The world loads but terrain is invisible, black or full of holes | Composite map geometry (clipping / the model writer) |
+| You walk through walls, or get stuck | Composite collision merge |
+| A station floats above or sinks below the scenery beside it | Composite height frame |
+| Route 102 scenery pokes through a painted floor | Composite clipping missed geometry |
+| A gap at the plaza's edge where a Route 102 tree or ledge used to be | Wall regeneration at cut edges |
+| One station misbehaves (ice does not slide, a ledge will not jump, the rail lets you walk) | That tile's behaviour bytes — name the station |
+| Tall grass rustles but no encounters | The encounter editor's save - the build copies Route 102's table to the world, as "Copy from zone" does |
 | A sign does nothing when you press A | Sign script injection |
 | A sign shows garbled text | Story-text encoding |
-| The NPC freezes the game when talked to | Talker script cloning |
-| The NPC is invisible or silent | NPC entity placement |
-| Crash entering the BUILDINGS zone (hub was fine) | Building stamping / prop placement / texture carry |
-| Buildings load but textures are wrong or checkerboard | Cross-area texture carry |
-| PC door won't warp or crashes | Interior clone wiring |
-| PC interior exit leads somewhere wrong | Interior exit-warp retargeting |
-| Mart/house exit leads to a retail town | EXPECTED — not a bug (see walkthrough) |
-| Crash entering the WATER zone (hub was fine) | The animation splice — also check retail Route 102 immediately |
-| Water zone loads but the pool is still | Splice plays-but-inert — the append is valid but the engine ignores it |
-| Retail Route 102 broken | Area-9 splice or texture-carry side effect |
-| Challenge NPC: talking does nothing / freezes | Challenge script emission or the battle natives are unavailable in this zone |
-| Challenge battle starts but the opponent is empty/glitched | Custom trainer authoring (trdata/trpoke entries 51/52/61) |
-| Challenge battle: wrong sprite or blank class name in the intro | The spare class slots (2/9) — open Game Data → Edit trainer and try an ORAS-era class id instead |
-| Win but no BP appears | BP-award natives — report the BP counter before/after |
-| Streak doesn't advance, or resets on its own | The save variable 0x4020 may be engine-owned — report; it's user-changeable |
-| PC interior: the dirt patch is invisible | Composite visual path (clip + generated floor) |
-| PC interior: room damaged, holes, or missing furniture around the patch | Composite clipping regression — the exact thing it must never do |
-| PC interior: can't walk on the patch (or walk through the counter) | Composite collision merge |
-
-## Undo everything
-
-Every build step snapshotted your game data BEFORE touching it. The most
-recent snapshot (before the composite rebuild) is
-`testzone_backup\1788069475407\` — restore its five files to undo just the
-rebuild.
-
-**To undo the whole 2026-08-30 session** (challenge NPC + competitors +
-Center patch + rebuild): copy ALL files from
-`testzone_backup\1788068497503\` back into `RomFS\000400000011C400\` per
-the table below, then re-deploy.
-
-**To remove the whole test world**: copy the five files from
-`testzone_backup\1788046535845\` (the original pre-build snapshot) AND
-the three trainer/text files from `testzone_backup\1788068497503\`:
-
-| Backup file | Restores to |
-|---|---|
-| `3_ZONE_DATA` | `a\0\1\3` |
-| `9_FIELD_DATA` | `a\0\3\9` |
-| `0_MAP_MATRIX` | `a\0\4\0` |
-| `4_AREA_DATA` | `a\0\1\4` |
-| `1_STORYTEXT` | `a\0\8\1` |
-| `3_GAMETEXT` | `a\0\7\3` |
-| `6_TRAINER_DATA` | `a\0\3\6` |
-| `8_TRAINER_POKE` | `a\0\3\8` |
-
-…then re-deploy. (Or just ask me to do it.) No executable patch and no
-save-file changes are involved. The three repurposed trainer entries
-(51/52/61) were provably-unused blank filler in the retail game.
+| The talking NPC freezes the game | Talker script cloning |
+| An NPC is invisible or silent | NPC placement |
+| Crash or freeze near the Pokémon Center, the fence or the tree | Building stamping / prop placement / texture carry |
+| Textures wrong or checkerboard | Cross-area texture carry |
+| The Center's door will not warp, or crashes | Interior clone wiring |
+| The Center's exit leads somewhere else | Interior exit-warp retargeting |
+| The patch inside the Center is invisible | Composite visual path |
+| The room is damaged around the patch | Composite clipping regression — the thing it must never do |
+| The water is still | The sea-scroll animation in the world's own area |
+| Talking to the challenge does nothing, or freezes | Challenge script emission, or the battle natives unavailable here |
+| The battle starts but the opponent is empty or glitched | Trainer authoring (the three entries `BUILT.txt` names) |
+| Wrong sprite or a blank class name in the intro | The class the trainers took from Route 102's first trainer — open Game Data → Edit trainer and try another |
+| A win but no BP | The BP-award natives — report the counter before and after |
+| The streak does not advance, or resets on its own | The streak work variable `BUILT.txt` names may be the engine's — report it |

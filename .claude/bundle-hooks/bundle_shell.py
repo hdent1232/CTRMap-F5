@@ -57,7 +57,11 @@ import base64
 import os
 import re
 import shlex
+import shutil
+import subprocess
 import sys
+
+import bounded           # a deadline ends the child's whole tree - beside this file, as bundle_env is
 
 #: This folder, as a project path: `.claude/<the folder this file sits in>`.
 FOLDER = ".claude/" + os.path.basename(os.path.dirname(os.path.abspath(__file__)))
@@ -66,6 +70,23 @@ FOLDER = ".claude/" + os.path.basename(os.path.dirname(os.path.abspath(__file__)
 def policy(path):
     """`BLOCKED BY PROJECT POLICY (<this folder>/<that file>).` for the guard at `path`."""
     return "BLOCKED BY PROJECT POLICY (%s/%s)." % (FOLDER, os.path.basename(path))
+
+
+def relative(path, start):
+    """`path` relative to `start`, `/`-separated - and an ANSWER for a path no relative path
+    reaches: one on another drive, or a `start` of nothing.
+
+    `os.path.relpath` raises ValueError across Windows drives. Measured 2026-10-08: the shell
+    path readings read the `e:` in a command's `except Exception as e:` as drive E:, `rel_of`
+    asked relpath about it, and the command guard exited 3 - which the dispatcher counts as a
+    refusal - for an ordinary `python -c`. Every relpath in this folder goes through here, held by
+    a test that refuses a bare one. Such a path is OUTSIDE the tree, so the answer starts `..`,
+    the shape every caller already reads as outside; the absolute path after it keeps it unique.
+    """
+    try:
+        return os.path.relpath(path, start).replace(os.sep, "/")
+    except ValueError:
+        return "../" + os.path.abspath(path).replace(os.sep, "/")
 
 
 def judge_under_mutation(root, lock_name):
@@ -101,7 +122,7 @@ def lock_names(root, lock_name):
         return ""
     named = (lines[0] if lines else "").strip().replace(chr(92), "/")
     if os.path.isabs(named):
-        named = os.path.relpath(named, root).replace(os.sep, "/")
+        named = relative(named, root)
     # THE PLANT'S OWN TEST judges the planted code on purpose: its runner names the file in the
     # environment (`bundle_rules.PLANTED`, read here without importing the judge).
     import bundle_env
@@ -528,8 +549,11 @@ NEUTRAL = re.compile(
     r"|^\s*#",
     re.I)
 
-#: `VAR=value cmd` - the prefix is not the program.
-_ENV_PREFIX = re.compile(r"^\s*(?:[A-Za-z_][A-Za-z_0-9]*=\S*\s+)+")
+#: `VAR=value cmd` - the prefix is not the program. A QUOTED VALUE IS ONE VALUE, spaces and all (2026-10-12):
+#: read as `\S*`, `X='rm -rf src'` lost `X='rm` as a prefix and ran `-rf`, and `H='a b' python x.py` ran `b'` - so
+#: an assignment holding a sentence read as a command whose program was one of its words.
+_ENV_PREFIX = re.compile(r"^\s*(?:[A-Za-z_][A-Za-z_0-9]*=(?:'[^']*'|" + chr(34) + r"(?:[^" + chr(34) + r"\\]|\\.)*"
+                         + chr(34) + r"|[^\s'" + chr(34) + r"])*\s+)+")
 
 
 def program(command):
@@ -611,6 +635,117 @@ def program_of(word):
     """The program a word names: `C:\\Program Files\\Git\\cmd\\git.exe` is `git`."""
     name = re.split(r"[\\/]", word or "")[-1].lower()
     return name[:-4] if name.endswith(".exe") else name
+
+
+# ----------------------------------------------------------------------------- where a cd lands
+
+#: Which shell reads a tool's command, by the harness's tool name. Any other tool is UNKNOWN, and
+#: a path the two shells would read differently is then placed nowhere.
+SHELLS = {"bash": "bash", "powershell": "powershell"}
+
+#: Whether paths are read as Windows reads them. A module constant, so a test can ask the Windows
+#: question on any machine - a plant that cannot redden off Windows is refused everywhere else.
+WINDOWS = os.name == "nt"
+
+#: Git for Windows' shell reads a single-letter top folder as a drive: `/c/Users` is `C:\Users`.
+MSYS_DRIVE = re.compile(r"^/([A-Za-z])(?=/|$)")
+
+#: What `cygpath` answered, per path, for this process.
+_ASKED = {}
+
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+
+
+def shell_of(tool):
+    """'bash', 'powershell', or None when the tool's shell is not known."""
+    return SHELLS.get(str(tool or "").lower())
+
+
+def _cygpath():
+    """The `cygpath` Git for Windows ships: on the PATH, or beside `git` - None when neither."""
+    found = shutil.which("cygpath")
+    if found:
+        return found
+    git = shutil.which("git")
+    if git:
+        beside = os.path.join(os.path.dirname(os.path.dirname(git)), "usr", "bin", "cygpath.exe")
+        if os.path.isfile(beside):
+            return beside
+    return None
+
+
+def msys_path(path):
+    """Where Git for Windows' shell puts an absolute POSIX path, or None when that cannot be asked
+    - a drive folder by its rule, anything else by asking `cygpath`, the shell's own answer."""
+    drive = MSYS_DRIVE.match(path)
+    if drive:
+        return drive.group(1).upper() + ":" + (path[2:] or "/")
+    if path not in _ASKED:
+        tool, answer = _cygpath(), None
+        if tool:
+            try:
+                done = bounded.run([tool, "-w", path], capture_output=True, text=True,
+                                   timeout=10, creationflags=NO_WINDOW)
+                if done.returncode == 0 and done.stdout.strip():
+                    answer = done.stdout.strip()
+            except (OSError, subprocess.SubprocessError):
+                answer = None
+        _ASKED[path] = answer
+    return _ASKED[path]
+
+
+def powershell_path(path, where):
+    """Where PowerShell puts an absolute POSIX path - at the root of the drive it is working on, as
+    `Set-Location /c/Users` looks for `C:\\c\\Users` - or None when that drive cannot be told."""
+    drive = os.path.splitdrive(where)[0] if where else ""
+    return drive + path.replace("/", "\\") if drive else None
+
+
+def readings(word, where, shell=None):
+    """Every absolute path the shell running a command could read `word` as - one for a shell that
+    is named, each shell's for one nobody names on Windows - or [] when it cannot be told at all: a
+    variable, a glob, a relative path from an unknown place. An entry is None where that shell's
+    reading cannot be asked (no `cygpath` to ask, no drive to put it on).
+
+    A QUESTION THAT PLACES SOMETHING ELSEWHERE asks that every reading agree (`lands`); a question
+    that REFUSES a write into a tree asks whether any reading lands in it. Both read the same list.
+    """
+    if not word or any(char in word for char in "$`%*?"):
+        return []
+    path = os.path.expanduser(word) if word.startswith("~") else word
+    if WINDOWS and path.startswith("/") and not path.startswith("//"):
+        out = []
+        if shell in ("bash", None):
+            out.append(msys_path(path))
+        if shell in ("powershell", None):
+            out.append(powershell_path(path, where))
+        return [os.path.normpath(found) if found else None for found in out]
+    if not os.path.isabs(path):
+        if where is None:
+            return []
+        path = os.path.join(where, path)
+    return [os.path.normpath(path)]
+
+
+def lands(word, where, shell=None):
+    """The folder `cd <word>` from `where` lands in, READ THE WAY THE SHELL RUNNING IT READS A PATH
+    - or None when that cannot be told: a variable, a glob, a relative path from an unknown place, a
+    folder that is not there, or two shells that would put it in different places.
+
+    WINDOWS PYTHON READS A POSIX PATH AS ANOTHER PLACE. Measured 2026-10-07 on this machine:
+    Python reads `/tmp` as `C:\\tmp`, which is not there, while the Bash tool's shell puts it at
+    the user's temp folder (`cygpath -w /tmp`); and PowerShell reads `/c/Users` as `C:\\c\\Users`
+    and fails the `cd`, while that shell reads it as `C:\\Users`. So the suite guard held `cd /tmp
+    && python -m pytest` as a run it could not place, and the commit gate placed a PowerShell
+    `cd /c/<another repository>; git commit --no-verify` in that repository - the cd failed, the
+    commit ran HERE, and the gate called it another project's. One reading, asked of the shell.
+    """
+    found = readings(word, where, shell)
+    if not found or any(path is None or not os.path.isdir(path) for path in found):
+        return None
+    if len({os.path.normcase(os.path.realpath(path)) for path in found}) != 1:
+        return None
+    return found[0]
 
 def stages(held):
     """The programs of one command: a pipeline's stages, and every group `( )`/`{ }` a program
@@ -796,7 +931,10 @@ def runs(text_, _depth=0):
             while stage and stage[0][0] in KEYWORDS:
                 stage = stage[1:]
             rest, _moves = peeled(stage)
-            if not rest:
+            # A PLACE IS NOT A PROGRAM, peeled or not. `NEUTRAL` was asked of the whole command
+            # only, so `DT=1 cd /tmp && sleep 5m` peeled to a `cd` that ran as work - measured
+            # 2026-10-07 by DF Engine's older suite: the long wait after it was let through.
+            if not rest or NEUTRAL.match(" ".join(item[0] for item in rest)):
                 continue
             inner, trouble = handed(rest)
             if trouble:
@@ -864,7 +1002,22 @@ def workflows(payload):
 #: session is started in, a schedule a routine starts one on. A prompt alone is not a launch: an
 #: image generator takes one too.
 LAUNCH_KEYS = ("subagent_type", "description", "environment_id", "source_url", "cron_expression",
-               "run_once_at", "create_new_session_on_fire", "persistent_session_id")
+               "run_once_at", "create_new_session_on_fire", "persistent_session_id", "title",
+               "permission_mode", "append_system_prompt", "extra_allowed_tools", "outcome_branch",
+               "source_revision", "sparse_checkout_paths")
+
+#: Who a brief is HANDED to when it is not started fresh: another session, an agent already
+#: running, a routine fired now. A message to one of them is work for a model that is not this one.
+ADDRESSEE_KEYS = ("session_id", "to", "trigger_id")
+
+#: The words a brief handed to an addressee travels in.
+BRIEF_KEYS = ("message", "text", "prompt")
+
+#: A tool whose NAME says it starts a model working - one word of it, between underscores.
+_LAUNCHER_NAME = re.compile(r"(?:^|_)(?:session|agent|routine|trigger|task)s?(?:_|$)", re.I)
+
+#: A GitHub comment that summons the Claude app starts an agent on the repository.
+_SUMMONS = re.compile(r"(?<![\w.-])@claude\b", re.I)
 
 
 def _launch_shaped(node):
@@ -872,9 +1025,47 @@ def _launch_shaped(node):
     `description` only, so a session started in the cloud on a prompt, or a routine that starts
     one on a schedule - an agent working a brief on the same metered plan - was never counted,
     capped or asked for a structured result (measured 2026-10-06 against the session tools
-    offered here)."""
-    return (isinstance(node, dict) and isinstance(node.get("prompt"), str)
-            and any(key in node for key in LAUNCH_KEYS))
+    offered here).
+
+    AND A BRIEF HANDED ON IS A LAUNCH. Measured 2026-10-07 against the dispatcher with every guard
+    wired: a session started on a prompt and a title alone went through, and so does any message
+    that asks a running agent, another session or a fired routine to do the work - the session
+    tools' own description calls that "meta-orchestration: asking a sibling session to perform a
+    subtask". So is a GitHub comment that summons the Claude app, which starts an agent there."""
+    if not isinstance(node, dict):
+        return False
+    if isinstance(node.get("prompt"), str) and any(key in node for key in LAUNCH_KEYS):
+        return True
+    if any(key in node for key in ADDRESSEE_KEYS) and any(
+            isinstance(node.get(key), str) and node[key].strip() for key in BRIEF_KEYS):
+        return True
+    return ("owner" in node and "repo" in node
+            and any(isinstance(v, str) and _SUMMONS.search(v) for v in node.values()))
+
+
+#: The one tool that PROPOSES work the owner starts: the desktop app's task chip, which puts a card
+#: in front of the owner and starts nothing until the owner clicks it - and the exact input it takes.
+SUGGESTION = ("mcp__ccd_session__spawn_task", frozenset(("title", "prompt", "tldr")))
+
+
+def owner_starts(payload):
+    """Is this call a card only the OWNER can start - the app's task chip, exactly as it is?
+
+    THE CHIP IS THE OWNER'S YES ALREADY. Reported 2026-10-09 from a brand-new project: the app's
+    "suggest a task" chip was refused as a background editing agent - a prompt beside a title reads
+    as a session started on a brief - so a problem could not even be filed as a card. Nothing it
+    proposes runs until the owner clicks it.
+
+    BY THE TOOL, NEVER BY THE SHAPE. A shape - a `tldr` beside the prompt - would be the cheapest
+    way past every launch guard: a launcher that accepts an extra key would pass as a suggestion.
+    So it is this one tool, with exactly its own input and nothing more; any other key, or any
+    other tool, is read as the launch it may be."""
+    if not isinstance(payload, dict):
+        return False
+    given = payload.get("tool_input")
+    tool, keys = SUGGESTION
+    return (payload.get("tool_name") == tool and isinstance(given, dict)
+            and set(given) <= keys and isinstance(given.get("prompt"), str))
 
 
 def launches(payload):
@@ -899,15 +1090,328 @@ def launches(payload):
             for value in node:
                 walk(value, depth + 1)
 
+    if owner_starts(payload):
+        return []
     try:
         walk((payload or {}).get("tool_input"), 0)
     except AttributeError:
         return []
+    # THE NAME BESIDE THE SHAPE, NEVER INSTEAD. A session started on a prompt ALONE carries no key
+    # that says a model will work it - measured 2026-10-07, `create_session` with only `prompt`
+    # went through - and its tool's name is the one thing left that does.
+    given = payload.get("tool_input") if isinstance(payload, dict) else None
+    if (isinstance(given, dict) and given not in found
+            and _LAUNCHER_NAME.search(str(payload.get("tool_name") or ""))
+            and isinstance(given.get("prompt"), str) and given["prompt"].strip()):
+        found.append(given)
     return found
 
 
-def alive(pid):
-    """Whether `pid` is a live process, answering ALIVE whenever it cannot tell. THE ONE PROBE.
+def brief(launch):
+    """The words a launch hands its model, read from every key `_launch_shaped` finds a brief by.
+
+    ONE READER FOR THE BRIEF (2026-10-09) - and one implementation of it: this session and the
+    Desktop clone each wrote one the same day, and the merge kept both, the second shadowing the
+    first. `launches` counts a message handed to another session,
+    a running agent or a routine as a launch - `to`, `session_id` or `trigger_id` beside a
+    `message` or `text` - and every guard reading the brief asked `prompt` alone. So
+    `guard_agent_brief` refused every `SendMessage` whatever it carried (measured: a message
+    holding all three fields and the sentence, refused twice), and `guard_agent_edits` read an
+    empty brief and let a message telling a session to change files through as no edit at all.
+    A guard asks this, and a fourth reader cannot read a third set of keys."""
+    if not isinstance(launch, dict):
+        return ""
+    return "\n".join(launch[key] for key in BRIEF_KEYS
+                     if isinstance(launch.get(key), str) and launch[key].strip())
+
+
+#: The keys of a call that only hands words to a session already running: who, what, a label for this
+#: transcript, and whether to hear when it goes idle - and the three the harness adds to every such call as
+#: it records it (`type` "message", a `recipient` naming the same session, the words again as `content`),
+#: measured 2026-10-09 from the transcript after a hand-built payload without them passed every test and
+#: the real call was refused. A prompt, a model, a subagent type or an isolation starts or shapes a
+#: model, and a call carrying one is a launch.
+MESSAGE_ONLY = frozenset(("to", "message", "summary", "notify_when_idle", "type", "recipient", "content"))
+
+#: What the harness's own listing calls a SESSION of the owner's - on this machine, in the cloud, or reached
+#: by Remote Control. A subagent this session spawned is none of these: messaging it resumes it, a launch.
+SESSION_KINDS = ("interactive", "cloud", "Remote Control")
+
+#: One row of that listing: `  <name> [<ref>]  ·  <kind>  ·  ...`.
+_LISTED = re.compile("^[ \t]+(?P<name>\\S.*?) \\[(?P<ref>[0-9a-f]+)\\][ \t]+·[ \t]+"
+                     "(?P<kind>[^·\n]+?)[ \t]*(?:·|$)", re.M)
+
+
+def listed_sessions(rows):
+    """[(name, ref, kind)] from the LATEST peer listing the harness wrote in this transcript: the result of
+    a `ListAgents` call, and of no other tool. Text that only looks like a listing - a file shown by `cat`,
+    a message quoted back - lists nothing. Empty when there is no listing, which leaves every message a
+    launch: a session nobody listed is not known to be the owner's.
+
+    EVERY ROW, NOT ONE PER NAME. Two sessions may share a name, and the harness then asks for the ref. The
+    first cut returned a dict keyed by name, so the later row replaced the earlier: a listing holding
+    "Twin [60d91b]" and "Twin [35cfc3]" kept only the second, and a message to the first still
+    needed a code (the Bakugan session, 2026-10-09)."""
+    asked, latest = set(), None
+    for row in rows or ():
+        message = row.get("message") if isinstance(row, dict) else None
+        parts = message.get("content") if isinstance(message, dict) else None
+        for part in parts if isinstance(parts, list) else ():
+            if not isinstance(part, dict):
+                continue
+            if part.get("type") == "tool_use" and part.get("name") == "ListAgents":
+                asked.add(part.get("id"))
+            elif part.get("type") == "tool_result" and part.get("tool_use_id") in asked:
+                latest = part.get("content")
+    if isinstance(latest, list):
+        latest = "\n".join(str(p.get("text") or "") for p in latest if isinstance(p, dict))
+    return [(m.group("name"), m.group("ref"), m.group("kind").strip())
+            for m in _LISTED.finditer(latest if isinstance(latest, str) else "")]
+
+
+def message_recipient(payload):
+    """The name a call hands words to, when it ONLY hands words to a recipient by name - the shape
+    `message_to_session` asks of a SendMessage - or '' for any other call. ONE shape test: the guard that
+    tells a session to list its sessions before it asks the owner for a code asks this, not a copy."""
+    given = payload.get("tool_input") if isinstance(payload, dict) else None
+    if not isinstance(given, dict) or not set(given) <= MESSAGE_ONLY:
+        return ""
+    to, words = given.get("to"), given.get("message")
+    if not (isinstance(to, str) and to.strip() and isinstance(words, str)):
+        return ""
+    to = to.strip()
+    # the harness's own copies must say the same thing, or a listed name fronts for another recipient
+    if given.get("type", "message") != "message" or str(given.get("recipient", to)).strip() != to:
+        return ""
+    return to
+
+
+def replied_to_session(rows, to):
+    """Is `to` the address of a running SESSION that sent this one a message - as the harness delivered
+    it: a `queued_command` attachment whose origin is a peer named by its session (`fromSession`) and by
+    that address (`from`)?
+
+    THE HARNESS'S OWN WAY TO REPLY. SendMessage says: to reply to an incoming message, copy its `from`
+    attribute as `to`. That address is in no listing, so a reply read as a launch. Measured 2026-10-10 on
+    DF Engine: a reply to the session merging every open branch, sent the way the tool documents, was
+    refused for an owner's code, while the same words to the name the listing shows went through.
+
+    ONLY WHAT THE HARNESS WROTE. An attachment row is the harness's; the same text in this session's own
+    message or in a tool result is not a delivery. A subagent's hand-back names `senderTaskId`, and a
+    message to it resumes it - a launch - so a delivery naming one is never a session's."""
+    for row in rows or ():
+        if not isinstance(row, dict) or row.get("type") != "attachment":
+            continue
+        held = row.get("attachment")
+        if not isinstance(held, dict) or held.get("type") != "queued_command":
+            continue
+        origin = held.get("origin")
+        if (isinstance(origin, dict) and origin.get("kind") == "peer"
+                and isinstance(origin.get("fromSession"), str) and origin["fromSession"].strip()
+                and not origin.get("senderTaskId") and origin.get("from") == to):
+            return True
+    return False
+
+
+def message_to_session(payload, rows):
+    """True when this call ONLY hands words to a session of the owner's that the harness's latest listing
+    names, by its name or by its name and ref.
+
+    A MESSAGE TO A SESSION ALREADY RUNNING STARTS NO AGENT (the owner, 2026-10-09: "it defeats the point of
+    me telling you to stop making me a messenger if i have to send a message (code) for every message
+    anyway"). `launches` counts a brief handed on as a launch, which is right for a subagent resumed or a
+    routine fired, and it put a one-time code in front of every word one of the owner's sessions said to
+    another. The session spends its own turn either way; the guards that weigh a launch weigh this as none."""
+    given = payload.get("tool_input") if isinstance(payload, dict) else None
+    # THE SAME ACT THROUGH THE OTHER DOOR. The session tools message a session by its id, and that
+    # door was a launch whatever the session: measured 2026-10-09, every message this session sent
+    # one of the owner's running sessions asked the owner for a code, while the same words through
+    # `SendMessage` asked for none. A guard keyed to one tool's name is the class one level down.
+    if (isinstance(given, dict) and REMOTE_MESSAGE.search(str(payload.get("tool_name") or ""))
+            and set(given) <= REMOTE_MESSAGE_ONLY):
+        session = given.get("session_id")
+        return (isinstance(session, str) and session.startswith("session_")
+                and isinstance(given.get("message"), str)
+                and session_is_live(rows, session, payload.get("transcript_path")))
+    to = message_recipient(payload)
+    if not to:
+        return False
+    if replied_to_session(rows, to):
+        return True
+    listed = listed_sessions(rows)
+    for name, ref, kind in listed:
+        if to == "%s [%s]" % (name, ref):
+            return kind in SESSION_KINDS
+    # a bare name is enough only where the harness itself lets it be: one row carries it
+    same = [kind for name, _ref, kind in listed if name == to]
+    return len(same) == 1 and same[0] in SESSION_KINDS
+
+
+#: The session tools' own door to a running session - a message by its id - and the keys of a call
+#: that only hands it words: which session, what, and how soon. A Slack thread, an attachment or a
+#: role-addressed delivery is more than a message to a session the listing names.
+REMOTE_MESSAGE = re.compile(r"(?:^|__)send_message$")
+REMOTE_MESSAGE_ONLY = frozenset(("session_id", "message", "priority"))
+
+#: The tools whose results list sessions by id - the session tools' own listing, never a result an
+#: agent could shape, like a file it wrote and read back.
+SESSION_LISTING = re.compile(r"(?:^|_)(?:list_sessions|get_session)$")
+
+#: How the harness records a result too large for the transcript: the path it saved it to.
+SAVED_RESULT = re.compile(r"Full output saved to:\s*(\S+)")
+
+
+def result_text(content, transcript_path=None):
+    """A tool result's text - the harness's saved copy when it was too large to keep inline, read
+    only from beside this transcript, where no agent may write."""
+    import request_ledger
+    text = request_ledger.result_text(content)
+    saved = SAVED_RESULT.search(text)
+    if saved and transcript_path:
+        folder = os.path.splitext(os.path.abspath(transcript_path))[0]
+        path = os.path.abspath(saved.group(1))
+        if path.startswith(folder + os.sep):
+            try:
+                with open(path, encoding="utf-8", errors="replace") as handle:
+                    return handle.read().replace('\\"', '"')
+            except OSError:
+                return text
+    return text
+
+
+def listed_session(rows, session, transcript_path=None):
+    """What the LATEST session listing in this transcript says about `session` - its record, up to
+    the next session's - or None when no listing names it. One reader, for whether it is live
+    (`session_is_live`) and which repositories it works (`guard_agent_edits`)."""
+    import request_ledger
+    tools, found = {}, None
+    for row in rows or []:
+        for part in request_ledger.parts(row):
+            if part.get("type") == "tool_use":
+                tools[part.get("id")] = str(part.get("name") or "")
+            elif (part.get("type") == "tool_result"
+                  and SESSION_LISTING.search(tools.get(part.get("tool_use_id"), ""))):
+                text = result_text(part.get("content"), transcript_path)
+                at = re.search(r'"id"\s*:\s*"%s"' % re.escape(session), text)
+                if not at:
+                    continue
+                rest = text[at.end():]
+                ends = re.search(r'"id"\s*:\s*"session_', rest)
+                found = rest[:ends.start()] if ends else rest
+    return found
+
+
+def session_is_live(rows, session, transcript_path=None):
+    """Does the latest listing name `session` with a status, and one that is not archived? An
+    archived session is no running writer; a record with no status cannot be told live."""
+    record = listed_session(rows, session, transcript_path)
+    status = re.search(r'"session_status"\s*:\s*"([A-Z_]+)"', record or "")
+    return bool(status) and status.group(1) != "SESSION_STATUS_ARCHIVED"
+
+
+#: The program that starts a Claude session from a command, and the packages a runner fetches it as.
+_CLI = re.compile(r"^claude(?:-code)?$", re.I)
+_CLI_PACKAGE = re.compile(r"@anthropic-ai/claude-(?:code|agent-sdk)\b", re.I)
+_RUNNERS = frozenset(("npx", "bunx", "pnpx", "pnpm", "yarn", "npm", "bun", "deno"))
+
+
+def cli_sessions(payload):
+    """Every command in this call that runs the Claude CLI, as text - by the PROGRAM, through every
+    wrapper `runs` peels. Measured 2026-10-07: nothing read `claude -p "<brief>"` as a launch, and
+    it starts a whole session on the same plan; `claude config set` writes the owner's settings.
+    Either way the owner's, so every run of it but `--version` and `--help` is counted. What a
+    program does inside a script - the Agent SDK imported - no hook reads, and that is said here
+    rather than implied."""
+    out = []
+    for command in commands(payload):
+        for rest, _background in runs(command):
+            if not rest:
+                continue
+            words = [w for w, _typed in rest]
+            program = program_of(words[0])
+            said = " ".join(words)
+            if _CLI.match(program):
+                if all(w in ("--version", "-v", "--help", "-h") for w in words[1:]) and words[1:]:
+                    continue
+                out.append(said)
+            elif program in _RUNNERS and _CLI_PACKAGE.search(said):
+                out.append(said)
+    return out
+
+
+def alive(pid, started_epoch=None):
+    """Whether `pid` is a live process - and, given the `started_epoch` a lock recorded beside it, whether it is still
+    the process that wrote the lock. ALIVE whenever it cannot tell. THE ONE PROBE.
+
+    A PID IS A NUMBER THE OPERATING SYSTEM REUSES. Measured on DF Engine, 2026-09-08 to 09-22: four locks asked only
+    "is that pid alive?" when the question was "is that still the process that wrote this?" - one cleared a suite lock
+    held by a live run, two refused to start over recycled pids, one reported a dead page server as serving. Its
+    `tools/audit/identity.py` then refused this bundle's own sweep at install, 2026-10-09, over two such locks.
+    """
+    return present(pid) and same_process(pid, started_epoch)
+
+
+def process_started_at(pid):
+    """Epoch seconds at which the process holding `pid` began, or None if it cannot be asked - never a guess.
+
+    NONE IS THE ONLY FAILURE ANSWER: a process this account may not open is UNKNOWN, not somebody else's (DF Engine
+    read ACCESS_DENIED as "not ours" and called its own running sweep finished). No subprocess: `GetProcessTimes`
+    through ctypes on Windows, `/proc/<pid>/stat` on Linux; elsewhere None, so a reader falls back to presence alone.
+    """
+    import os
+    import time
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return None
+    if pid <= 0:
+        return None
+    if os.name == "nt":
+        try:
+            import ctypes
+            from ctypes import wintypes
+            handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+            if not handle:
+                return None
+            try:
+                created = wintypes.FILETIME()
+                rest = (wintypes.FILETIME(), wintypes.FILETIME(), wintypes.FILETIME())
+                if not ctypes.windll.kernel32.GetProcessTimes(
+                        handle, ctypes.byref(created), ctypes.byref(rest[0]),
+                        ctypes.byref(rest[1]), ctypes.byref(rest[2])):
+                    return None
+                ticks = (created.dwHighDateTime << 32) | created.dwLowDateTime
+                # FILETIME counts 100ns intervals from 1601-01-01; 11644473600 seconds to the epoch.
+                return ticks / 1e7 - 11644473600.0
+            finally:
+                ctypes.windll.kernel32.CloseHandle(handle)
+        except Exception:                                        # noqa: BLE001 - None is "cannot ask"
+            return None
+    try:
+        with open("/proc/%d/stat" % pid, encoding="utf-8") as handle:
+            fields = handle.read().rsplit(")", 1)[-1].split()
+        with open("/proc/uptime", encoding="utf-8") as handle:
+            uptime = float(handle.read().split()[0])
+        return time.time() - uptime + float(fields[19]) / os.sysconf("SC_CLK_TCK")
+    except (OSError, ValueError, IndexError, AttributeError):
+        return None
+
+
+def same_process(pid, started_epoch):
+    """Is `pid` still held by the process that recorded `started_epoch`? YES when either side is unknown - this decides
+    whether a lock is released, and the flattering error is the one that must not happen."""
+    began = process_started_at(pid)
+    if began is None or not started_epoch:
+        return True
+    try:
+        return abs(float(began) - float(started_epoch)) < 2.0
+    except (TypeError, ValueError):
+        return True
+
+
+def present(pid):
+    """Whether `pid` is a live process, answering ALIVE whenever it cannot tell. `alive` asks this and then whether it
+    is still the process a lock recorded.
 
     `os.kill(pid, 0)` IS NOT A PROBE ON WINDOWS. Python routes it through
     `OpenProcess(PROCESS_TERMINATE)` for every signal, so a process this account may not open for
@@ -927,7 +1431,19 @@ def alive(pid):
     if pid <= 0:
         return False
     if os.name != "nt":
-        return posix_alive(pid)
+        # THE POSIX ANSWER, inside the branch that asked the platform: `os.kill(pid, 0)` answers
+        # "no such process" for a pid that is gone, and anything else - a permission error above
+        # all, the answer for a live process another account owns - is not an absence. It was a
+        # function of its own so a test could ask it on any machine, and then anything could call
+        # it on Windows, where the same call reports live processes dead; the test patches
+        # `os.name` and asks `alive` instead.
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except OSError:
+            return True                      # permission, or anything else: not an absence
+        return True
     import ctypes
     kernel32 = ctypes.windll.kernel32
     handle = kernel32.OpenProcess(0x1000, False, pid)      # QUERY_LIMITED_INFORMATION
@@ -941,20 +1457,6 @@ def alive(pid):
     if not ok:
         return True                          # could not read the exit code: not an absence
     return code.value == 259                 # STILL_ACTIVE
-
-
-def posix_alive(pid):
-    """`alive`'s POSIX half, apart so it can be asked on any machine: `os.kill(pid, 0)` answers
-    "no such process" for a pid that is gone, and anything else - a permission error above all,
-    the answer for a live process another account owns - is not an absence."""
-    import os
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except OSError:
-        return True                          # permission, or anything else: not an absence
-    return True
 
 
 #: WHERE A PROJECT NAMES THE SCRIPTS THAT LEAVE DAMAGE WHEN KILLED MID-RUN - one path per line,

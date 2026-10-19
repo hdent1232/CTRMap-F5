@@ -3,12 +3,9 @@ package ctrmap.humaninterface;
 import ctrmap.Workspace;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.maison.MaisonSet;
-import ctrmap.formats.text.GFMessageFile;
 import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
-import java.io.File;
-import java.nio.file.Files;
 import java.util.List;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
@@ -45,6 +42,21 @@ public class MaisonEditDialog {
 	};
 
 	/**
+	 * The Save button's work for one pool: what changed in {@code rows}, written as one change and kept in
+	 * {@code saves}, the editor re-read through {@code reread} when it is taken back or put again (F209c).
+	 * Public so a suite can press it headless.
+	 */
+	public static <T> List<Integer> savePool(String name, ctrmap.WorkspaceSession ws, ctrmap.RecordPool pool, T[] rows,
+			java.util.function.Function<T, byte[]> write, Runnable reread, SaveHistory saves) throws java.io.IOException {
+		try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin(name, ws)) {
+			List<Integer> wrote = pool.save(rows, write);
+			ctrmap.WorkspaceUnit.inMemory(reread, reread);
+			saves.keep(unit.commitKeeping());
+			return wrote;
+		}
+	}
+
+	/**
 	 * The editor, as a panel for the Game Data tab.
 	 *
 	 * <p>It was a modal window. A feature lives in the part of the UI it belongs to,
@@ -58,7 +70,10 @@ public class MaisonEditDialog {
 	 * @return the editor, or null when there is nothing to edit (it says why first)
 	 */
 	public static javax.swing.JComponent panel(java.awt.Component parent, Runnable onClose,
-			java.util.function.BiConsumer<String, javax.swing.JComponent> showInGameData) {
+			java.util.function.BiConsumer<String, javax.swing.JComponent> showInGameData, SaveHistory saves) {
+		if (saves == null) {
+			throw new IllegalArgumentException("the facility editor must be handed the history its saves are kept in");
+		}
 		if (showInGameData == null) {
 			throw new IllegalArgumentException("the facility editor must be handed what shows an editor in the Game Data tab");
 		}
@@ -83,9 +98,11 @@ public class MaisonEditDialog {
 			ctrmap.Ui.error(parent, "This dump has no battle facility opponent data.", "Battle facility opponents");
 			return null;
 		}
-		String[] species = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.SPECIES_NAMES)),
-				items = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.ITEM_NAMES)),
-				moves = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.MOVE_NAMES));
+		java.util.List<String> unread = new java.util.ArrayList<>();
+		String[] species = Workspace.textLines(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.SPECIES_NAMES), unread),
+				items = Workspace.textLines(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.ITEM_NAMES), unread),
+				moves = Workspace.textLines(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.MOVE_NAMES), unread);
+		ctrmap.Ui.saidUnread(parent, unread, "Battle facility opponents");
 		final String[] natures = NATURES;
 
 		final JComboBox<String> poolBox = new JComboBox<>(POOL_NAMES);
@@ -167,15 +184,21 @@ public class MaisonEditDialog {
 		buttons.add(close);
 		dlg.add(buttons, BorderLayout.SOUTH);
 
-		classes.addActionListener(e -> showInGameData.accept(
-				"Facility class assignments", MaisonClassListDialog.panel(dlg, onClose)));
+		//ASKED LIKE THE OTHER DOORS AWAY (census M.126): the pool dropdown and Close ask about unsaved pool edits, and
+		//this replaced the editor - and the edits with it - without asking
+		classes.addActionListener(e -> {
+			if (model.dirty && !confirmDiscard(dlg)) {
+				return;
+			}
+			showInGameData.accept("Facility class assignments", MaisonClassListDialog.panel(dlg, onClose, saves));
+		});
 
 		save.addActionListener(e -> {
 			try {
 				if (jt.isEditing()) {
 					jt.getCellEditor().stopCellEditing();
 				}
-				model.save();
+				model.save(saves);
 				refreshUsed.run();
 				ctrmap.Ui.message(dlg, "Saved " + POOL_NAMES[model.poolIndex]
 						+ ".\nDeploy to emulator to apply.", "Battle facility opponents", JOptionPane.INFORMATION_MESSAGE);
@@ -190,22 +213,61 @@ public class MaisonEditDialog {
 			onClose.run();
 		});
 
-		return dlg;
+		//THE SETS EDITED IN MEMORY ARE A DOCUMENT (F209c): watched under the tab's Undo while this editor is shown
+		return SaveHistory.watching(dlg, () -> java.util.Collections.<UndoHistory.Document<?>>singletonList(sets(model)));
+	}
+
+	/**
+	 * The pool the editor shows, as its sets' records: one document per pool read - a pool read again is
+	 * another - and put back into that pool, read again first when another one is shown.
+	 */
+	private static UndoHistory.Document<byte[][]> sets(final SetModel model) {
+		final ctrmap.RecordPool pool = model.pool;
+		final int index = model.poolIndex;
+		return new UndoHistory.Document<byte[][]>() {
+			@Override
+			public Object subject() {
+				return pool;
+			}
+
+			@Override
+			public byte[][] take() {
+				byte[][] out = new byte[model.sets.length][];
+				for (int i = 0; i < out.length; i++) {
+					out[i] = model.sets[i] == null ? null : model.sets[i].write();
+				}
+				return out;
+			}
+
+			@Override
+			public void put(byte[][] state) {
+				if (model.pool != pool) {
+					model.loadPool(index);
+				}
+				MaisonSet[] back = new MaisonSet[state.length];
+				for (int i = 0; i < state.length; i++) {
+					back[i] = state[i] == null ? null : MaisonSet.read(state[i]);
+				}
+				model.sets = back;
+				model.dirty = true;
+				model.fireTableDataChanged();
+			}
+
+			@Override
+			public boolean same(byte[][] a, byte[][] b) {
+				return java.util.Arrays.deepEquals(a, b);
+			}
+
+			@Override
+			public String what() {
+				return "the sets of " + POOL_NAMES[index];
+			}
+		};
 	}
 
 	private static boolean confirmDiscard(java.awt.Component c) {
 		return ctrmap.Ui.confirm(c, "Discard unsaved changes to this pool?", "Battle facility opponents",
 				JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE) == JOptionPane.YES_OPTION;
-	}
-
-	private static String[] text(int entry) {
-		try {
-			File f = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT, entry);
-			List<String> lines = GFMessageFile.getStrings(Files.readAllBytes(f.toPath()));
-			return lines.toArray(new String[0]);
-		} catch (Exception ex) {
-			return new String[0];
-		}
 	}
 
 	static final String[] NATURES = {
@@ -277,13 +339,13 @@ public class MaisonEditDialog {
 			return free;
 		}
 
-		void save() throws Exception {
+		void save(SaveHistory saves) throws Exception {
 			//ONLY WHAT CHANGED, never a set that could not be read, as one unit (F102): this rewrote all
-			//999 through a truncating stream and marked every one edited for the next pack
-			try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Save " + POOL_NAMES[poolIndex], Workspace.session())) {
-				pool.save(sets, MaisonSet::write);
-				unit.commit();
-			}
+			//999 through a truncating stream and marked every one edited for the next pack - and kept, so it
+			//can be taken back (F209c)
+			final int shown = poolIndex;
+			savePool("Save " + POOL_NAMES[poolIndex], Workspace.session(), pool, sets, MaisonSet::write,
+					() -> loadPool(shown), saves);
 			dirty = false;
 		}
 

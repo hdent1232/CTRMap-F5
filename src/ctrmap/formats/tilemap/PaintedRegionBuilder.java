@@ -8,7 +8,7 @@ import ctrmap.formats.h3d.MapModelObjImporter;
 import ctrmap.formats.h3d.RegionFactory;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -21,13 +21,11 @@ import static ctrmap.formats.tilemap.PaintedFloorMesh.addChurnLayer;
 import static ctrmap.formats.tilemap.PaintedFloorMesh.addEdgeStrips;
 import static ctrmap.formats.tilemap.PaintedFloorMesh.addShoreBands;
 import static ctrmap.formats.tilemap.PaintedFloorMesh.backingWall;
-import static ctrmap.formats.tilemap.PaintedFloorMesh.cornerPost;
 import static ctrmap.formats.tilemap.PaintedFloorMesh.decodeVertex;
 import static ctrmap.formats.tilemap.PaintedFloorMesh.encodeVertex;
 import static ctrmap.formats.tilemap.PaintedFloorMesh.floorQuad;
 import static ctrmap.formats.tilemap.PaintedFloorMesh.isWet;
 import static ctrmap.formats.tilemap.PaintedFloorMesh.meshFromQuads;
-import static ctrmap.formats.tilemap.PaintedFloorMesh.rampApron;
 import static ctrmap.formats.tilemap.PaintedFloorMesh.rampSkirt;
 import static ctrmap.formats.tilemap.PaintedGeometry.CliffEdge;
 import static ctrmap.formats.tilemap.PaintedGeometry.DIM;
@@ -39,6 +37,7 @@ import static ctrmap.formats.tilemap.PaintedGeometry.TILE;
 import static ctrmap.formats.tilemap.PaintedGeometry.WATER_SINK;
 import static ctrmap.formats.tilemap.PaintedHeights.baseFloor;
 import static ctrmap.formats.tilemap.PaintedHeights.borrowedGroundTiles;
+import static ctrmap.formats.tilemap.PaintedHeights.floorBeside;
 import static ctrmap.formats.tilemap.PaintedHeights.floorYOf;
 import static ctrmap.formats.tilemap.PaintedHeights.isTouched;
 import static ctrmap.formats.tilemap.PaintedHeights.nearestGround;
@@ -77,21 +76,6 @@ import static ctrmap.formats.tilemap.PaintedTiles.buildTilemapComposite;
  */
 public class PaintedRegionBuilder {
 
-	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid, int[][] height, TerrainLighting light) {
-		return build(donorModel, grid, height, null, light);
-	}
-
-	/**
-	 * @param height per-tile elevation in levels (null = all flat at 0).
-	 * @param ramp per-tile ramp direction ({@link PaintedGeometry#NO_RAMP} = flat, else the way
-	 *             DOWN: 0 E, 1 W, 2 S, 3 N; null = no ramps); a ramp tile slopes
-	 *             from its level to that neighbour's floor, replacing the cliff
-	 *             so the player walks it. Stair brushes slope on their own.
-	 */
-	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid, int[][] height, int[][] ramp, TerrainLighting light) {
-		return build(donorModel, grid, height, ramp, light, true);
-	}
-
 	/**
 	 * A build with NO game handed: nothing is cut from any pristine snapshot,
 	 * so the cliff faces and the lava overlay keep whatever material the donor
@@ -120,6 +104,11 @@ public class PaintedRegionBuilder {
 	 *
 	 * @param files the game whose snapshot the catalogue cuts from; null means
 	 *              nothing is cut, as above
+	 * @param height per-tile elevation in levels (null = all flat at 0).
+	 * @param ramp per-tile ramp direction ({@link PaintedGeometry#NO_RAMP} = flat, else the way
+	 *             DOWN: 0 E, 1 W, 2 S, 3 N; null = no ramps); a ramp tile slopes
+	 *             from its level to that neighbour's floor, replacing the cliff
+	 *             so the player walks it. Stair brushes slope on their own.
 	 * @throws IllegalStateException when there was a snapshot to cut from and
 	 *              a catalogue import failed, with the reason; the caller that
 	 *              owns a window reports it
@@ -156,13 +145,9 @@ public class PaintedRegionBuilder {
 	 * @param donorTilemap   the region's current tilemap subfile (merged)
 	 * @param touched        which tiles the user actually edited; a null mask
 	 *                       degrades to the full from-scratch {@link #build}
+	 * @param files          the game the catalogue's materials are cut from, or null for none; see
+	 *                       {@link #build(GameFiles, byte[], TilePalette[][], int[][], int[][], TerrainLighting, boolean)}
 	 */
-	public static RegionFactory.BlankContent buildComposite(byte[] donorModel, byte[] donorCollision, byte[] donorTilemap,
-			TilePalette[][] grid, int[][] height, int[][] ramp, boolean[][] touched, TerrainLighting light, boolean edges) {
-		return buildComposite(null, donorModel, donorCollision, donorTilemap, grid, height, ramp, touched, light, edges);
-	}
-
-	/** The composite build cutting the catalogue's materials from the handed game; see {@link #build(GameFiles, byte[], TilePalette[][], int[][], int[][], TerrainLighting, boolean)}. */
 	public static RegionFactory.BlankContent buildComposite(GameFiles files, byte[] donorModel, byte[] donorCollision, byte[] donorTilemap,
 			TilePalette[][] grid, int[][] height, int[][] ramp, boolean[][] touched, TerrainLighting light, boolean edges) {
 		if (touched == null) {
@@ -189,6 +174,17 @@ public class PaintedRegionBuilder {
 			out.props = new byte[]{0, 0, 0, 0};
 			return out;
 		}
+		//A DONOR THAT CANNOT BE KEPT IS REFUSED, NOT REBUILT OVER (census H.64): painting over a region keeps every
+		//tile not painted, and a tilemap or collision that did not read was replaced whole - the touched mask, the
+		//whole point of painting over a region, dropped with nothing said
+		String unusable = PaintedTiles.whyNotADonorTilemap(donorTilemap);
+		if (unusable == null && !ctrmap.formats.gfcollision.GfColl.isColl(donorCollision)) {
+			unusable = "the region's collision (subfile 2) is not a collision";
+		}
+		if (unusable != null) {
+			throw new IllegalStateException("Nothing was painted over this region: " + unusable
+					+ ", so what you did not paint cannot be kept.");
+		}
 		float[][] baseY = sampleBaseY(donorCollision);
 		float[][] ground = nearestGround(baseY, walkableTiles(donorTilemap));
 		out.borrowedGround = borrowedGroundTiles(baseY, ground, touched);
@@ -202,14 +198,10 @@ public class PaintedRegionBuilder {
 	/**
 	 * The visual model alone, composite-aware - the live 3D preview's path
 	 * (collision is used only to place floors at the retail surface height,
-	 * the tilemap only to fill unsampled tiles from walkable ground).
+	 * the tilemap only to fill unsampled tiles from walkable ground). {@code files} is the game the
+	 * catalogue's materials are cut from, or null for none; see
+	 * {@link #build(GameFiles, byte[], TilePalette[][], int[][], int[][], TerrainLighting, boolean)}.
 	 */
-	public static byte[] buildModelOnly(byte[] donorModel, byte[] donorCollision, byte[] donorTilemap, TilePalette[][] grid,
-			int[][] height, int[][] ramp, boolean[][] touched, TerrainLighting light, boolean edges) {
-		return buildModelOnly(null, donorModel, donorCollision, donorTilemap, grid, height, ramp, touched, light, edges);
-	}
-
-	/** The model-only build cutting the catalogue's materials from the handed game; see {@link #build(GameFiles, byte[], TilePalette[][], int[][], int[][], TerrainLighting, boolean)}. */
 	public static byte[] buildModelOnly(GameFiles files, byte[] donorModel, byte[] donorCollision, byte[] donorTilemap, TilePalette[][] grid,
 			int[][] height, int[][] ramp, boolean[][] touched, TerrainLighting light, boolean edges) {
 		if (height == null) {
@@ -255,6 +247,9 @@ public class PaintedRegionBuilder {
 		//tile sweep, so a boundary becomes one continuous slope rather than a
 		//row of separate slabs
 		List<CliffEdge> cliffEdges = new ArrayList<>();
+		//the corners of every ramp tile painted here, by CliffEdge.key: a face that meets a ramp
+		//at one of them is backed even where the ground below it is untouched (F092)
+		Set<String> rampCorners = new HashSet<>();
 
 		//per-tile painted-floor Y: level*STEP from scratch, or the retail
 		//surface plus the level offset in composite mode (baseline-relative).
@@ -286,8 +281,17 @@ public class PaintedRegionBuilder {
 				int h = height[ty][tx];
 				int rd = rampDir(grid, height, ramp, tx, ty);
 				float myY = yTop[ty][tx];
+				//where a ramp's slope lands: the one foot its floor, the faces along its sides and its
+				//skirts all fall to - the skirt once laid itself to a second reckoning of it
+				float rampLo = rd >= 0 ? rampFoot(grid, yTop, baseY, touched, tx, ty, rd, myY) : myY - STEP;
+				if (rd >= 0) {
+					float cx0 = tx * TILE + ORIGIN, cz0 = ty * TILE + ORIGIN;
+					rampCorners.add(CliffEdge.key(cx0, cz0));
+					rampCorners.add(CliffEdge.key(cx0 + TILE, cz0));
+					rampCorners.add(CliffEdge.key(cx0, cz0 + TILE));
+					rampCorners.add(CliffEdge.key(cx0 + TILE, cz0 + TILE));
+				}
 				if (mi >= 0) {
-					float rampLo = rd >= 0 ? rampFoot(grid, yTop, baseY, touched, tx, ty, rd, myY) : myY - STEP;
 					//Sink the water. Painted flat, the river sat exactly level with
 				//its banks - a blue carpet laid in the lawn, with no channel
 				//and nothing to tell the eye it was lower than the grass. A
@@ -314,7 +318,9 @@ public class PaintedRegionBuilder {
 					}
 					float drop = myY - nY;
 					if (drop > 0.75f) {
-						CliffEdge ce = cliffEdge(tx, ty, dir, nY, myY);
+						//on a ramp the face's top follows the floor: level along its back,
+						//falling with it along its sides, never a step over its own foot
+						CliffEdge ce = cliffEdge(tx, ty, dir, nY, myY, rd, rampLo);
 						//A cliff face leans a whole tile out for a two-level
 						//drop. Where the ground it leans over is a ramp or a
 						//path, that is rock lying across the route: the corridor
@@ -334,12 +340,16 @@ public class PaintedRegionBuilder {
 						if (lx >= 0 && ly >= 0 && lx < DIM && ly < DIM) {
 							ce.tight = rampDir(grid, height, ramp, lx, ly) >= 0 || grid[ly][lx] == TilePalette.PATH
 									|| grid[ly][lx] == TilePalette.SAND;
-							//Below this face is retail ground the painter never
-							//touched. It already has its own geometry, so the
-							//visible strip is all that is wanted here - a
-							//backing wall would just be a tall slab standing
-							//inside the painted area with nothing to back.
-							ce.donorSide = touched != null && !touched[ly][lx];
+							//Below this face may be retail ground the painter never
+							//touched, and it is backed all the same. It was not, on
+							//the word that retail ground "backs itself": ground is a
+							//floor, and a floor stands behind no face. Every place
+							//the visible strip fails to close over such ground was
+							//then sky - the ramp's corner (F092), a wall changing
+							//depth, an inside corner of two-level walls whose face
+							//folds - each found, each excepted, until 2026-10-18,
+							//when PaintSealTest's two-depth corner terrain found the
+							//third. The premise is gone instead of a fourth exception.
 						}
 						cliffEdges.add(ce);
 					} else if (touched != null && !isTouched(touched, tx, ty, dir) && -drop > STEP * 0.55f) {
@@ -375,56 +385,35 @@ public class PaintedRegionBuilder {
 				//straight through the map - which is what appeared beside every
 				//new ramp corridor. Skirt the sides with that same triangle.
 				if (rd >= 0) {
-					float rampLo2 = myY - STEP;
-					Float dY2 = neighbourTopY(grid, yTop, baseY, touched, tx, ty, rd);
-					if (dY2 != null) {
-						rampLo2 = dY2;
-					}
-					//The skirt fills the triangle between a ramp's sloping floor
-					//and the flat ground beside it. It must be bounded BY that
-					//ground: pinning its top to the ramp's own height while the
-					//neighbour sits far below left a blade standing out in open
-					//air, which is what was scattered around every corridor.
-					//Clamp the top to whichever is lower, and skip entirely when
-					//the neighbour is below the slope anyway - there is nothing
-					//to fill there, the ordinary wall already covers it.
+					//The skirt fills between a ramp's sloping floor and the ground
+					//beside it, bounded BY that ground - its top on the floor beside -
+					//and is nothing where that ground is lower: the ordinary wall
+					//stands there. It was pinned to the
+					//ramp's top whatever stood beside it, because bounding it once let
+					//more sky through (348px to 2338px over four camera angles) where
+					//the wall below was missing; F092 put that wall back, and
+					//PaintSealTest now holds the bounded skirt to no sight line through
+					//from where anyone can stand. The lane of the same ramp beside it
+					//is bounded the same way, so two lanes whose feet differ are walled
+					//between their slopes and two that agree get nothing.
 					for (int side : (rd == 0 || rd == 1) ? new int[]{2, 3} : new int[]{0, 1}) {
-						int sx3 = tx + (side == 0 ? 1 : side == 1 ? -1 : 0);
-						int sy3 = ty + (side == 2 ? 1 : side == 3 ? -1 : 0);
-						if (sx3 >= 0 && sy3 >= 0 && sx3 < DIM && sy3 < DIM
-								&& height[sy3][sx3] == h
-								&& rampDir(grid, height, ramp, sx3, sy3) == rd) {
-							continue;   //the neighbouring lane of this same ramp
-						}
-						Float sY = neighbourTopY(grid, yTop, baseY, touched, tx, ty, side);
-						if (sY == null) {
+						float[] beside = floorBeside(grid, height, ramp, yTop, baseY, touched, tx, ty, side);
+						if (beside == null) {
 							continue;
 						}
-						//Bounding the top to the neighbour is geometrically the
-						//right thing, but it seals far less: measured over four
-						//camera angles it takes the sky visible through the map
-						//from 348px to 2338px, because where the neighbour is
-						//low the ordinary wall that should cover the rest is not
-						//actually there. Until that is fixed the taller skirt
-						//stays, and its cost is a few blades near corridors.
-						//PaintSealTest measures the seal and OUTSTANDING.md owns
-						//the missing wall (F092).
-						List<Quad> cl = quadsByMesh.computeIfAbsent(cliffMesh, k -> new ArrayList<>());
-						Quad sk = rampSkirt(tx, ty, side, rd, myY, rampLo2);
+						Quad sk = rampSkirt(tx, ty, side, rd, myY, rampLo, beside);
 						if (sk != null) {
-							cl.add(sk);
+							quadsByMesh.computeIfAbsent(cliffMesh, k -> new ArrayList<>()).add(sk);
 						}
-						//And the UNDERSIDE. The skirt fills the wedge between the
-						//ramp's sloping floor and the flat ground level with its
-						//top, which is only half the problem: below that floor
-						//there is nothing at all, so a ramp seen from the low
-						//side shows sky straight under the slope it is standing
-						//on. This apron hangs from the floor down past whatever
-						//is beside it.
-						Quad ap = rampApron(tx, ty, side, rd, myY, rampLo2);
-						if (ap != null) {
-							cl.add(ap);
-						}
+						//Nothing hangs UNDER the slope. An apron did, from the floor to
+						//half a step below its foot, for the sky once seen beneath a
+						//ramp from its low side. Wherever ground beside a ramp is lower
+						//than its top by more than 0.75, the wall test above stands an
+						//ordinary cliff from the ramp's floor down, and every ramp corner
+						//is backed - so the apron stood behind a wall that was already
+						//there. Measured 2026-10-18 before it was taken out: the same
+						//sight lines through, with it and without it, in all 20 builds
+						//of PaintSealTest's ten terrains, by every probe there.
 					}
 				}
 			}
@@ -440,51 +429,28 @@ public class PaintedRegionBuilder {
 		//shared reach, an overlapping collar) and still left slivers, one on
 		//each map edge. Patching the seam geometry chases the symptom; a solid
 		//wall behind it cannot have a seam at all.
+		//
+		//Unbacked: a face standing off the map, with no ground of this region below it, and a
+		//face rebuilt on an untouched higher neighbour's side, whose top is retail ground sampled
+		//at one point a backing slab could stand proud of - EXCEPT where either meets a ramp,
+		//whose corner nothing in the retail ground closes (F092). Every face over untouched LOW
+		//ground is backed (see where the wall test builds it).
 		List<Quad> backing = quadsByMesh.computeIfAbsent(cliffMesh, k -> new ArrayList<>());
 		for (CliffEdge e : cliffEdges) {
-			if (e.donorSide) {
+			if (e.donorSide && !rampCorners.contains(e.startKey()) && !rampCorners.contains(e.endKey())) {
 				continue;
 			}
 			backing.add(backingWall(e));
 		}
 
-		//A post at every corner where walls of DIFFERENT depth meet. Those
-		//corners belong to two separate strips, so neither strip's mitre closes
-		//the wedge between them, and the backing walls do not help either: each
-		//is a flat plane through its own tile edge, and the slot sits in the
-		//space outside both. It is a small notch - the last one measured three
-		//pixels across - but it is a hole in the map. A short column standing
-		//on the corner fills it from every direction at once, and like the rest
-		//of the backing it lives inside the visible cliff and is never seen.
-		Map<String, float[]> post = new LinkedHashMap<>();   // x, z, maxTop, minBot, levelKeys seen
-		Map<String, Set<String>> postLevels = new LinkedHashMap<>();
-		for (CliffEdge e : cliffEdges) {
-			for (int end = 0; end < 2; end++) {
-				String k = end == 0 ? e.startKey() : e.endKey();
-				float x = end == 0 ? e.ax : e.bx, z = end == 0 ? e.az : e.bz;
-				float[] p = post.get(k);
-				if (p == null) {
-					post.put(k, new float[]{x, z, e.yTop, e.yBot});
-				} else {
-					p[2] = Math.max(p[2], e.yTop);
-					p[3] = Math.min(p[3], e.yBot);
-				}
-				postLevels.computeIfAbsent(k, q -> new java.util.LinkedHashSet<>()).add(e.levelKey());
-			}
-		}
-		for (Map.Entry<String, float[]> en : post.entrySet()) {
-			if (postLevels.get(en.getKey()).size() < 2) {
-				continue;   //one depth only: the strip's own mitre already closes it
-			}
-			float[] p = en.getValue();
-			//four blades: both axes, and each facing both ways, because a
-			//single quad is one-sided and which side the slot opens on
-			//depends entirely on where the camera is
-			backing.add(cornerPost(p[0], p[1], p[2], p[3], true, 1f));
-			backing.add(cornerPost(p[0], p[1], p[2], p[3], true, -1f));
-			backing.add(cornerPost(p[0], p[1], p[2], p[3], false, 1f));
-			backing.add(cornerPost(p[0], p[1], p[2], p[3], false, -1f));
-		}
+		//No posts. Four blades stood on every corner where walls of different depth meet, for the
+		//slot between two strips' mitres that a backing wall ending at its own corner left open -
+		//measured once as 2 sight lines through the composite terrace. Backing walls now run past
+		//their corners and back every face over untouched ground, and on 2026-10-18 the posts were
+		//measured closing nothing: the same result, with them and without them, in every terrain
+		//PaintSealTest paints - the terrace, a ramp whose low corners meet two depths, a ledge at
+		//the foot of a cliff the painter leaves alone - while the post-less build lost 16
+		//triangles in each of the last two. They stood where nothing was open.
 
 		emitCliffStrips(cliffEdges, quadsByMesh, cliffMesh);
 

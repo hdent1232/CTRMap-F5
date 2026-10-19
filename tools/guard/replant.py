@@ -31,6 +31,7 @@ tool you invoke deliberately. PlantLedgerTest is the cheap half that runs in eve
 checks the ledger's shape, that every plant still matches its file exactly once, and that the two
 ratchets have not risen.
 """
+import ast
 import io
 import json
 import os
@@ -47,6 +48,7 @@ CR = chr(13)
 CRLF = CR + LF
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 ROOT = _tree_root.require(__file__)
 LEDGER = os.path.join(ROOT, "tools", "guard", "plants.json")
 #: THE PLATFORM'S SEPARATOR. A literal ";" is a classpath on Windows only; on Linux java read the
@@ -146,9 +148,9 @@ def build():
     shell = shutil.which("powershell") or shutil.which("pwsh")
     if not shell:
         return build_without_powershell()
-    done = subprocess.run([shell, "-NoProfile", "-ExecutionPolicy", "Bypass",
-                           "-File", os.path.join(ROOT, "build.ps1")],
-                          cwd=ROOT, capture_output=True, text=True, errors="replace", env=env, timeout=1800, creationflags=NO_WINDOW)
+    done = bounded.run([shell, "-NoProfile", "-ExecutionPolicy", "Bypass",
+                        "-File", os.path.join(ROOT, "build.ps1")],
+                       cwd=ROOT, capture_output=True, text=True, errors="replace", env=env, timeout=1800, creationflags=NO_WINDOW)
     out = (done.stdout or "") + (done.stderr or "")
     return ("Build OK" in out), out
 
@@ -164,9 +166,16 @@ def build_without_powershell():
     do, said: write the build stamp, whose writer (stamp.ps1) is PowerShell - so nothing here
     claims the tree was built by build.ps1.
     """
-    lock = os.path.join(ROOT, "build", ".battery-running")
-    if os.path.exists(lock) and not os.environ.get("CTRMAP_BUILD_ANYWAY"):
-        return False, "REFUSING to build: a battery is running out of build/classes (%s)" % lock
+    #whether a battery holds its lock is battery_lock's answer, the one build.ps1 and test.ps1 ask: this
+    #asked only whether the file was there, so a killed battery's lock blocked every plant build for good
+    if not os.environ.get("CTRMAP_BUILD_ANYWAY"):
+        try:
+            import battery_lock
+            held = battery_lock.holders(classes=True)
+        except Exception as cannotAsk:          # noqa: BLE001 - unknown is refused like a live run
+            held = ["UNKNOWN whether a battery is running (%s: %s)" % (type(cannotAsk).__name__, cannotAsk)]
+        if held:
+            return False, "REFUSING to build: a battery may be running out of build/classes - " + "; ".join(held)
     home = jdk()
     if not home:
         return False, "No JDK: set CTRMAP_JDK or JAVA_HOME, or put javac on PATH"
@@ -180,10 +189,10 @@ def build_without_powershell():
     listing = os.path.join(ROOT, "build", "sources.txt")
     with io.open(listing, "w", encoding="ascii", errors="replace") as handle:
         handle.write(LF.join('"%s"' % s for s in sorted(sources)))
-    done = subprocess.run([os.path.join(home, "bin", JAVAC_EXE), "--release", "8", "-encoding", "UTF-8",
-                           "-cp", os.pathsep.join(["lib/jogl-all.jar", "lib/gluegen-rt.jar"]),
-                           "-d", classes, "@" + listing],
-                          cwd=ROOT, capture_output=True, text=True, errors="replace", timeout=1800, creationflags=NO_WINDOW)
+    done = bounded.run([os.path.join(home, "bin", JAVAC_EXE), "--release", "8", "-encoding", "UTF-8",
+                        "-cp", os.pathsep.join(["lib/jogl-all.jar", "lib/gluegen-rt.jar"]),
+                        "-d", classes, "@" + listing],
+                       cwd=ROOT, capture_output=True, text=True, errors="replace", timeout=1800, creationflags=NO_WINDOW)
     out = (done.stdout or "") + (done.stderr or "")
     if done.returncode != 0:
         return False, out + LF + "javac failed with exit code %d" % done.returncode
@@ -218,7 +227,38 @@ def verdict(code, said):
     return code
 
 
-def run_suite(cls, args, java):
+#: Whether any plant in this run was built into build/classes - the full build. The fast path below never
+#: touches them, so a run that only took it leaves the classes as clean as it found them.
+BUILT_PLANTED = [False]
+
+
+def overlaid(path, java):
+    """The classpath with the planted file, compiled ALONE, in front of build/classes - or None when it
+    does not compile alone against them.
+
+    TWO FULL BUILDS A PLANT. Every Java plant rebuilt the whole tree with its defect in, and the run
+    rebuilt it again to leave nothing planted - measured 2026-10-11 at about 8 minutes a plant, and a
+    drive of 1,113 owed plants was days long. One file recompiled into its own folder ahead of the
+    classpath is the same program with that one defect in, and the classes on disk are never touched.
+    It answers only RED: what it cannot show red - a constant another class inlined, a suite that reads
+    build/classes as bytecode - is asked again of the full build, so the fast path can never prove a
+    plant the full build would not."""
+    javac = os.path.join(os.path.dirname(java), JAVAC_EXE)
+    out = tempfile.mkdtemp(prefix="replant_overlay_")
+    try:
+        done = bounded.run([javac, "--release", "8", "-encoding", "UTF-8", "-nowarn", "-proc:none", "-cp", LIBS,
+                            "-d", out, path], cwd=ROOT, capture_output=True, text=True, errors="replace",
+                           timeout=600, creationflags=NO_WINDOW)
+    except (OSError, subprocess.SubprocessError):
+        shutil.rmtree(out, ignore_errors=True)
+        return None
+    if done.returncode != 0:
+        shutil.rmtree(out, ignore_errors=True)
+        return None
+    return os.pathsep.join([out, LIBS])
+
+
+def run_suite(cls, args, java, classpath=None):
     """Exactly as test.ps1 runs it, flags included - and judged as it judges it (see verdict).
 
     This used to add -Djava.awt.headless=true, which the battery does not, and
@@ -227,20 +267,19 @@ def run_suite(cls, args, java):
     it then runs against a loaded map instead of an empty one. A guard proven
     under one set of flags and shipped under another is not proven."""
     """(exit code or None when it never finished, everything it said)."""
-    command = [java, "-Xmx4g", "-cp", LIBS, cls] + args
+    command = [java, "-Xmx4g", "-cp", classpath or LIBS, cls] + args
+    #ON THE UNATTENDED DESKTOP, never the owner's (2026-10-11: a suite's zone loading dialog opened in the
+    #middle of their screen, took the keyboard, and a window they were working in was lost with its edits).
+    #The same JVM and flags, drawing on a desktop nobody is looking at - see hidden_desktop.
+    import hidden_desktop
     try:
-        done = subprocess.run(command, cwd=ROOT, capture_output=True, text=True,
-                              errors="replace", timeout=SUITE_TIMEOUT, creationflags=NO_WINDOW)
-    except subprocess.TimeoutExpired as late:
-        out = late.stdout or ""
-        err = late.stderr or ""
-        if isinstance(out, bytes):
-            out = out.decode("utf-8", "replace")
-        if isinstance(err, bytes):
-            err = err.decode("utf-8", "replace")
-        return None, out + err
-    said = (done.stdout or "") + (done.stderr or "")
-    return verdict(done.returncode, said), said
+        code, said = hidden_desktop.run(command, cwd=ROOT, timeout=SUITE_TIMEOUT)
+    except OSError as nowhere:
+        #NOT ASKED, never asked on the owner's screen instead: no verdict, which is never scored a kill
+        return None, "the suite could not be started on the unattended desktop: %s" % nowhere
+    if code is None:
+        return None, said
+    return verdict(code, said), said
 
 
 def expand(args, pristine, gamedir):
@@ -264,8 +303,16 @@ def expand(args, pristine, gamedir):
             a = a.replace("${%s}" % name, os.path.join(pristine, *parts))
         if "${STEP}" in a:
             a = a.replace("${STEP}", battery_step())
-        out.append(a.replace("${CODE}", code_path()))
+        #A WINDOWS PATH IS THIS MACHINE'S PATH (2026-10-09): test.ps1 hands its suites "build\\classes" and the
+        #ledger copies test.ps1, so on Linux 30 of 1358 plants pointed their suite at a folder that is not there,
+        #it refused, and the plant could never redden - the owed drive read the first of them as a survivor
+        out.append(this_machines(a.replace("${CODE}", code_path())))
     return out
+
+
+def this_machines(arg):
+    """`arg` with this machine's path separator: a backslash is one only where the separator is."""
+    return arg.replace(chr(92), os.sep) if os.sep != chr(92) else arg
 
 
 def owed(book):
@@ -444,10 +491,59 @@ def missing_game_data(p, pristine, gamedir):
     return None
 
 
-def replant(p, java, pristine, gamedir):
+def unplanted_says(p, run):
+    """Whether the plant's suite says the plant's words with NOTHING planted - `run(suite, args)` answering
+    (exit, said) on the clean tree. A red the clean tree also shows proves nothing: the suite fails for
+    something else, and the words were going to be there anyway."""
+    _, said = run(p["suite"], p.get("args", []))
+    return p["must_say"] in (said or "")
+
+
+def against_the_clean_tree(plants, held, lost, built, run):
+    """Moves each red in `held` that proves nothing into `lost`, in place. A red is asked once more on the
+    tree just rebuilt clean - `run(suite, args)` answering (exit, said) - and one whose suite says its
+    words with nothing planted is not proven. When the clean rebuild failed (`built` false) no red is
+    proven: a run over that tree is not a run of the clean tree, so nothing could be asked."""
+    if not held:
+        return
+    if not built:
+        print("  NOT PROVEN: the clean rebuild failed, so no red could be checked against the clean tree")
+        lost.extend(held)
+        del held[:]
+        return
+    by_id = {p["id"]: p for p in plants}
+    #ONE CLEAN RUN PER SUITE AND ARGUMENTS: the clean tree is one tree, so every plant on a suite asks it
+    #the same question - and each asked it again, one full suite run per plant
+    seen = {}
+
+    def once(suite, args):
+        key = (suite, tuple(args))
+        if key not in seen:
+            seen[key] = run(suite, args)
+        return seen[key]
+    for pid in list(held):
+        if unplanted_says(by_id[pid], once):
+            print("  NOT PROVEN %s: %s says %r with nothing planted" % (pid, by_id[pid]["suite"],
+                                                                     by_id[pid]["must_say"]))
+            held.remove(pid)
+            lost.append(pid)
+
+
+def _calls(function, name):
+    """Whether `function`'s own source holds a call to `name` - read from its syntax tree, so a comment
+    or a string naming it does not count."""
+    import inspect
+    import textwrap
+    tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
+    return any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == name
+               for node in ast.walk(tree))
+
+
+def replant(p, java, pristine, gamedir, keep=None):
     """True when the guard noticed, False when it did not, None when it could not be asked
     (UNKNOWN: its suite reads game data this machine does not have). Restores the file whatever
-    happens."""
+    happens. With `keep`, the planted suite's whole output is written to keep/<id>.out - what a
+    plant's bill is read from."""
     path = os.path.join(ROOT, p["file"].replace("/", os.sep))
     raw, text, crlf = read(path)
     if text.count(p["find"]) != 1:
@@ -486,14 +582,31 @@ def replant(p, java, pristine, gamedir):
             print("     NOT PLANTED: %s" % refused)
             return False
         write(path, planted, crlf)
-        if not p.get("no_rebuild"):
-            built, out = build()
-            if not built:
-                print("     the planted tree does not compile, so nothing is proven here.")
-                print("     A plant must leave a tree that BUILDS - otherwise the suite never runs")
-                print("     and 'it failed' means only that javac did.")
-                return False
-        code, said = run_suite(p["suite"], expand(p.get("args", []), pristine, gamedir), java)
+        code, said = None, ""
+        fast = None
+        if not p.get("no_rebuild") and p["file"].endswith(".java"):
+            fast = overlaid(path, java)
+        if fast is not None:
+            try:
+                code, said = run_suite(p["suite"], expand(p.get("args", []), pristine, gamedir), java, fast)
+            finally:
+                shutil.rmtree(fast.split(os.pathsep)[0], ignore_errors=True)
+            if not (code not in (None, 0) and p["must_say"] in said):
+                print("     the fast path did not show it red; asking the full build")
+                fast = None
+        if fast is None:
+            if not p.get("no_rebuild"):
+                BUILT_PLANTED[0] = True
+                built, out = build()
+                if not built:
+                    print("     the planted tree does not compile, so nothing is proven here.")
+                    print("     A plant must leave a tree that BUILDS - otherwise the suite never runs")
+                    print("     and 'it failed' means only that javac did.")
+                    return False
+            code, said = run_suite(p["suite"], expand(p.get("args", []), pristine, gamedir), java)
+        if keep is not None:
+            with io.open(os.path.join(keep, p["id"] + ".out"), "w", encoding="utf-8", newline="") as kept:
+                kept.write("exit %s%s%s" % (code, LF, said))
         if code is None:
             print("     HUNG: %s never finished in %ds with the defect back." % (p["suite"], SUITE_TIMEOUT))
             print("     Never scored as a kill. A suite that hangs under a plant is telling you")
@@ -563,13 +676,19 @@ def without_a_cost(book):
     which is how a ceiling gets raised once and never looked at again.
     """
     return sorted(p.get("id", "<no id>") for p in book.get("plants", [])
-                  if not _NUMBER.search(_HASH.sub("", p.get("why", ""))))
+                  if not _NUMBER.search(_NOT_A_BILL.sub("", _HASH.sub("", p.get("why", "")))))
 
 
 #: A COMMIT HASH IS NOT A COST: "807bc8e" holds digits, so a why citing where its fix landed read as
 #: priced with no bill in it (2026-10-08, 2 entries). A 7-40 character hex token with a digit and a
 #: letter comes out before the number test; "0x38", "1234567" and "deadbeef" are not hashes here.
 _HASH = re.compile(r"\b(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b")
+
+#: NOR IS A DATE, A FINDING'S NAME OR A CENSUS LINE: "2026-10-09", "F209d" and "M.121" hold digits, so a why that
+#: said when, or which finding, read as priced with nothing paid in it - 254 of 1357 plants passed only that way
+#: (measured 2026-10-09: 102 counted costless, 356 with these out). They come out before the number test, as a
+#: hash does; "7 files", "0x38" and "SEVEN audits" stay bills.
+_NOT_A_BILL = re.compile(r"\b\d{4}-\d{2}-\d{2}\b|\bF\d{3}[a-z]?\b|\b[A-Z]\.\d+\b")
 
 
 #: The ledger's ratchets: (name printed, ceiling key).
@@ -681,6 +800,23 @@ def selftest():
             fails.append(what)
 
     book = ledger()
+    words = {"suite": "S", "args": [], "must_say": "FAIL: the guard"}
+    check(unplanted_says(words, lambda suite, args: (1, "FAIL: the guard\n"))
+          and not unplanted_says(words, lambda suite, args: (0, "ok: the guard\n")),
+          "a red the clean tree also shows is not proven: the unplanted suite's words are asked")
+    two = [{"id": "a", "suite": "A", "must_say": "FAIL: a"}, {"id": "b", "suite": "B", "must_say": "FAIL: b"}]
+    said = {"A": "FAIL: a\n", "B": "ok: b\n"}
+    held, lost = ["a", "b"], []
+    against_the_clean_tree(two, held, lost, True, lambda suite, args: (1, said[suite]))
+    check(held == ["b"] and lost == ["a"],
+          "a red whose suite says its words on the clean tree is moved to NOT PROVEN, and only that one"
+          " (held %r, lost %r)" % (held, lost))
+    held, lost = ["a", "b"], []
+    against_the_clean_tree(two, held, lost, False, lambda suite, args: (0, "ok\n"))
+    check(held == [] and lost == ["a", "b"],
+          "after a failed clean rebuild no red is proven (held %r, lost %r)" % (held, lost))
+    check(_calls(main, "against_the_clean_tree") and not _calls(main, "no_such_function_here"),
+          "main asks every red against the clean tree")
     check(battery_step().isdigit() and expand(["${STEP}"], "p", "g") == [battery_step()],
           "${STEP} expands to the step test.ps1 hands the corpus suites in a full run (%s)" % battery_step())
     check(isinstance(book.get("plants"), list) and book["plants"],
@@ -746,6 +882,11 @@ def selftest():
           "and one that records what it cost is not - 7 is a number")
     hashed = {"plants": [{"id": "h", "why": "the zone could be written back (807bc8e)"}]}
     check(without_a_cost(hashed) == ["h"], "and a commit hash is not a cost")
+    dated = {"plants": [{"id": "d", "why": "measured 2026-10-09 for F209d, census M.121"},
+                        {"id": "e", "why": "measured 2026-10-09: 7 files lost, header 0x38"}]}
+    check(without_a_cost(dated) == ["d"], "nor a date, a finding's name or a census line - and a bill beside one stays a bill")
+    check(expand(["build" + chr(92) + "classes"], "P", "G") == ["build" + os.sep + "classes"],
+          "a plant's Windows path is handed to its suite as this machine's path")
     for row in book.get("raised") or []:
         print("  RAISED: %s %s -> %s - %s" % (row.get("name"), row.get("from"), row.get("to"), row.get("reason")))
 
@@ -831,6 +972,46 @@ def selftest():
           "and the words inside another line are not the verdict")
     check(verdict(3, "ALL PASS" + LF) == 3 and verdict(None, "FAILURES PRESENT" + LF) is None,
           "a non-zero exit stands, and a run that never finished stays unfinished")
+
+    #THE GATE LEARNS THIS DRIVER'S "COULD NOT ASK" FROM THE DECLARATION, NOT FROM HERE. Without
+    #`_tests.ledger.unknown_exit` the bundle's commit gate read every exit 3 as a guard that stopped
+    #noticing (2026-10-07, 19 of them), and a declaration that drifts from UNKNOWN does it quietly.
+    try:
+        with io.open(os.path.join(ROOT, ".claude", "bundle-install.json"), encoding="utf-8") as h:
+            declared = ((json.load(h).get("_tests") or {}).get("ledger") or {}).get("unknown_exit")
+    except (OSError, ValueError, AttributeError) as bad:
+        declared = "unreadable (%s)" % bad
+    check(declared == UNKNOWN and not isinstance(declared, bool) and UNKNOWN > 1,
+          "the commit gate is told the could-not-ask code: _tests.ledger.unknown_exit is %r, UNKNOWN is %d"
+          % (declared, UNKNOWN))
+
+    #A FLAG IT DOES NOT KNOW DRIVES NOTHING (2026-10-09: --help drove all 1,363 plants)
+    check(all(refused_flags(["replant.py"] + given) for given in
+              (["--help"], ["-h"], ["--owd"], ["an-id", "--all"], ["--magnitude", "a reason"])),
+          "an unknown flag, and --magnitude without --owed, are refused")
+    check(not any(refused_flags(["replant.py"] + given) for given in
+                  ([], ["an-id"], ["--owed"], ["--owed", "--magnitude", "fell", "-3", "--for", "x"],
+                   ["--raise", "owed_ceiling", "the", "--why"], ["--selftest"], ["--compiles"], ["--tighten"])),
+          "and every flag main reads, ids, and the words of a reason after --raise or --magnitude, are not")
+    #--keep takes a folder that does not exist yet: none, or one already there, is refused (2026-10-10)
+    fresh = os.path.join(tempfile.gettempdir(), "ctrmap-replant-keep-%d-none" % os.getpid())
+    check(refused_flags(["replant.py", "--keep"]) and refused_flags(["replant.py", "--keep", ROOT])
+          and not refused_flags(["replant.py", "--no-cost", "--keep", fresh])
+          and not refused_flags(["replant.py", "an-id", "--keep", fresh]),
+          "--keep without a fresh folder is refused; with one, beside --no-cost or an id, it is not")
+    #asked of main itself, by its words: an exit of 2 alone is also what a machine with no JDK answers
+    import contextlib
+    driven, heard = [], io.StringIO()
+    kept = {name: globals()[name] for name in ("replant", "build")}
+    globals()["replant"] = lambda *given: driven.append(given)
+    globals()["build"] = lambda *given: (True, "")
+    try:
+        with contextlib.redirect_stdout(heard):
+            code = main(["replant.py", "--help"])
+    finally:
+        globals().update(kept)
+    check(code == 2 and not driven and "--help is not a flag this reads" in heard.getvalue(),
+          "main refuses --help before it chooses a plant: exit %r, %d driven" % (code, len(driven)))
 
     print("ALL PASS" if not fails else "FAILURES PRESENT (%d)" % len(fails))
     return 0 if not fails else 1
@@ -1028,7 +1209,45 @@ def compiles(book, java_home, workers=None):
     return 1 if broken else 0
 
 
+#: Every flag main() reads. The words after --raise and --magnitude are their reason, not flags.
+FLAGS = ("--selftest", "--compiles", "--tighten", "--raise", "--owed", "--magnitude", "--keep", "--no-cost")
+_REASON_AFTER = ("--raise", "--magnitude")
+#: Flags whose value is the next word - a folder, never a plant id.
+_VALUED = ("--keep",)
+
+
+def refused_flags(argv):
+    """Why `argv` must not be run, or None.
+
+    AN UNKNOWN FLAG DROVE THE WHOLE LEDGER. main() set every argument starting with '-' aside before
+    choosing plants, so a flag it did not know named no plant, and no plant named means every plant.
+    PAID FOR 2026-10-09: `replant.py --help`, run for its usage, drove all 1,363 plants over an
+    uncommitted tree - about 7.5 hours with the tree unwritable throughout - and the session that
+    started it was refused stopping it until the owner said so. A flag this does not know is refused
+    before anything is chosen - asked of the bundle's cli_words, the one implementation every tool's
+    words go through (2026-10-10) - and so is --magnitude without the --owed whose number it explains.
+    Any other word names a plant, and no word at all drives every plant.
+    """
+    import _cli
+    unread_words = _cli.refused(argv[1:], flags=FLAGS, valued=_VALUED, rest=_REASON_AFTER, most=None)
+    if unread_words:
+        return unread_words
+    if "--keep" in argv:
+        at = argv.index("--keep") + 1
+        if at >= len(argv) or argv[at].startswith("-") or os.path.exists(argv[at]):
+            return ("REFUSING: --keep takes a folder that does not exist yet, to write each plant's suite output"
+                    " into - nothing was driven, and no earlier output was written over.")
+    if "--magnitude" in argv and "--owed" not in argv:
+        return ("REFUSING: --magnitude explains a number --owed records; without --owed it names no plant,"
+                " which drives every plant. Nothing was driven.")
+    return None
+
+
 def main(argv):
+    refused = refused_flags(argv)
+    if refused:
+        print(refused)
+        return 2
     book = ledger()
     if "--selftest" in argv:
         return selftest()
@@ -1086,28 +1305,48 @@ def main(argv):
                              os.path.join(os.path.dirname(ROOT), "RomFS",
                                           "000400000011C400"))
 
-    wanted = [a for a in argv[1:] if not a.startswith("-")]
+    keep = argv[argv.index("--keep") + 1] if "--keep" in argv else None
+    wanted = [a for i, a in enumerate(argv) if i > 0 and not a.startswith("-")
+              and not (keep is not None and argv[i - 1] == "--keep")]
+    #THE UNPRICED, FROM THE RULE: the plants without_a_cost names - the same function the ceiling counts with,
+    #so the set driven to price them is the set the ratchet says is unpriced, never a list typed here
+    if "--no-cost" in argv:
+        unpriced = set(without_a_cost(book))
+        wanted = [w for w in wanted if w in unpriced] if wanted else sorted(unpriced)
     plants = [p for p in book["plants"] if not wanted or p["id"] in wanted]
     if wanted and len(plants) != len(wanted):
         print("no such plant: %s" % ", ".join(sorted(set(wanted) - set(p["id"] for p in plants))))
         return 2
+    if keep is not None:
+        os.makedirs(keep)
+        print("each plant's suite output is kept in %s, as <id>.out" % keep)
 
     print("replanting %d defect(s); each must make its guard go red" % len(plants))
     held, lost, unknown = [], [], []
     planted = False
+    built = False
     try:
         for p in plants:
-            verdict = replant(p, java, pristine, gamedir)
+            verdict = replant(p, java, pristine, gamedir, keep)
             #EVERY plant may have been built into the classes, an UNKNOWN one too - it is planted
             #and run now even with game data missing - so the tree is rebuilt whatever the verdicts
             planted = True
             (unknown if verdict is None else held if verdict else lost).append(p["id"])
     finally:
-        if planted:
+        if planted and BUILT_PLANTED[0]:
             print("rebuilding, so nobody is left with a planted tree")
             built, _ = build()
             print("  %s" % ("Build OK" if built else "THE REBUILD FAILED - check the tree by hand"))
+        elif planted:
+            #every plant took the fast path, which never wrote build/classes: they are as they were
+            built = True
 
+    #A RED THE CLEAN TREE ALSO SHOWS PROVES NOTHING (2026-10-08): each plant judged red is asked once
+    #more, on the tree just rebuilt clean, with nothing planted - one whose suite says its words anyway
+    #is not proven. Never asked over a tree whose clean rebuild failed: that run is not of the clean tree.
+    if planted:
+        against_the_clean_tree(plants, held, lost, built,
+                               lambda suite, args: run_suite(suite, expand(args, pristine, gamedir), java))
     print("")
     print("%d guard(s) still notice; %d do not; %d could not be asked here"
           % (len(held), len(lost), len(unknown)))

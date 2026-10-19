@@ -27,9 +27,17 @@ public final class ZoneIndependence {
 	 * Gives zone {@code zoneIndex} its own map and/or its own area, each only when it still shares
 	 * one, as ONE unit: a failure in the second puts the first back. Either part is null when it was
 	 * not asked for.
+	 *
+	 * @param session the open game, HANDED by the window that holds it: fetched from the global, a unit
+	 *        keyed to whichever session is current would snapshot the edit list of a game this is not writing
 	 */
-	public static ZoneIndependence make(int zoneIndex, boolean map, boolean area) throws java.io.IOException {
-		try (WorkspaceUnit unit = WorkspaceUnit.begin(TITLE, Workspace.session())) {
+	public static ZoneIndependence make(WorkspaceSession session, int zoneIndex, boolean map, boolean area)
+			throws java.io.IOException {
+		if (session == null) {
+			throw new IllegalArgumentException(TITLE + " must be handed the open game it writes; with none open"
+					+ " there is nothing to make independent");
+		}
+		try (WorkspaceUnit unit = WorkspaceUnit.begin(TITLE, session)) {
 			GeometryForker.ForkResult m = map ? GeometryForker.ensurePrivate(zoneIndex) : null;
 			AreaForker.ForkResult a = area ? AreaForker.forkIfShared(zoneIndex) : null;
 			unit.commit();

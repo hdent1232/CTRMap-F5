@@ -29,6 +29,18 @@ brief tells it to change something, when it would run BESIDE another writer:
 WHAT IS NOT. A survey - fan out to READ, bring the findings back to one writer - composes, and
 this guard leaves it alone. A single editing agent in the foreground is one writer at a time.
 
+A SESSION THAT WORKS ANOTHER REPOSITORY IS NOT A WRITER OF THIS ONE. A message handing work to an
+existing session (`bundle_shell.launches`) has no foreground to run in, and was refused here as a
+background writer whatever repository it worked: measured 2026-10-09, the owner's instruction to
+every open session - land your work on main - could reach none of them. The question this guard
+asks is whether two writers share files, and a session's repositories are on record in the
+session tools' own listing (`repositories_of`). One that works only OTHER repositories writes no
+file of this tree; one that has THIS repository checked out is a second writer of it - that is
+how this bundle's main came to hold two implementations of one fix - and so is one whose
+repositories are not on record: refused, unless the owner types the code the refusal carries
+(`owner_codes`) for that exact message. What it cannot see, said: a brief telling a session that
+works elsewhere to clone this repository and write it - deliberate concealment.
+
 The siblings are MEASURED, not guessed: at `PreToolUse` the harness has already written this
 call into the transcript under its `tool_use_id` (checked 2026-09-22 by a probe guard that
 looked for its own id and found it), so the message this launch belongs to can be read and its
@@ -40,6 +52,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 if __name__ == "__main__":
     sys.dont_write_bytecode = True     # run from its folder, a tool leaves no bytecode there
@@ -47,6 +60,8 @@ if __name__ == "__main__":
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bundle_env        # noqa: E402  - one PREFIX renames every override
 import bundle_shell      # noqa: E402  - the call, found by shape, at any depth
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
+import owner_codes       # noqa: E402  - the owner's typed yes for a message to a shared repository
 import request_ledger    # noqa: E402  - the one launch the ledger itself demands
 
 BYPASS = bundle_env.name("ALLOW_PARALLEL_EDIT")
@@ -72,8 +87,68 @@ def editing(launch):
     """Does this launch WRITE - its own workspace, or a brief telling it to change something?"""
     if str(launch.get("isolation") or "").lower() in EDITING_ISOLATION:
         return True
-    brief = launch.get("prompt") or ""
+    brief = bundle_shell.brief(launch)
     return bool(_IMPERATIVE.search(brief) or _WRITE_A_THING.search(brief))
+
+
+GIT_TIMEOUT = 20
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+
+
+def owner_repo(url):
+    """`owner/repo`, lower-case, from a repository URL in any of git's spellings; '' if none."""
+    parts = [p for p in re.split(r"[/:]", (url or "").strip()) if p]
+    if len(parts) < 2:
+        return ""
+    name = parts[-1][:-4] if parts[-1].endswith(".git") else parts[-1]
+    return ("%s/%s" % (parts[-2], name)).lower()
+
+
+def repository(root):
+    """`owner/repo` of the repository at `root`, from its origin; '' when git cannot say."""
+    try:
+        done = bounded.run(["git", "-C", root, "config", "--get", "remote.origin.url"],
+                           capture_output=True, text=True, timeout=GIT_TIMEOUT,
+                           creationflags=NO_WINDOW)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return owner_repo(done.stdout) if done.returncode == 0 else ""
+
+
+def repositories_of(rows, session, transcript_path=None):
+    """The `owner/repo`s the session `session` works, as the LATEST session listing in this
+    transcript recorded them (`bundle_shell.listed_session`, the one reader) - None when no
+    listing names it."""
+    body = bundle_shell.listed_session(rows, session, transcript_path)
+    listed = re.search(r'"sources"\s*:\s*\[([^\]]*)\]', body or "")
+    # A LISTING THAT NAMES NO REPOSITORY SAYS NOTHING ABOUT ONE: a session on the owner's machine
+    # is listed with none, whatever it has checked out. Read as an empty list, it was a session
+    # that writes nothing - and allowed.
+    found = sorted({owner_repo(url) for url in re.findall(
+        r'"url"\s*:\s*"([^"]+)"', listed.group(1))} - {""}) if listed else None
+    return found or None
+
+
+def shared(payload, launch):
+    """Why a message to an existing session would make it a second writer of THIS repository,
+    or '' when its repositories are on record and this is not one of them."""
+    session = next((launch.get(key) for key in bundle_shell.ADDRESSEE_KEYS
+                    if isinstance(launch.get(key), str) and launch[key].startswith("session_")),
+                   None)
+    if session is None:
+        return "it is handed to a writer that is not a session with a listing"
+    root = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    here = repository(root)
+    if not here:
+        return "which repository this is cannot be read from git"
+    held = repositories_of(request_ledger.read_rows(payload.get("transcript_path")), session,
+                           payload.get("transcript_path"))
+    if held is None:
+        return ("%s's repositories are not on record - no session listing in this transcript "
+                "names it; look it up first" % session)
+    if here in held:
+        return "%s has %s checked out too - a second writer of this repository" % (session, here)
+    return ""
 
 
 def siblings(transcript_path, tool_use_id):
@@ -119,7 +194,32 @@ def verdict(payload):
     # `guard_fanout` already lets exactly that through, and every launch guard must.
     if request_ledger.is_owed_review(payload):
         return False, None
+    # A SESSION ALREADY RUNNING IS A WRITER WHETHER OR NOT IT IS MESSAGED: telling it to change its own work
+    # adds no writer beside this one. A subagent resumed, or a session nobody listed, is still judged.
+    if bundle_shell.message_to_session(payload, request_ledger.read_rows(payload.get("transcript_path"))):
+        return False, None
     found = [launch for launch in bundle_shell.launches(payload) if editing(launch)]
+    started = []
+    for launch in found:
+        if not any(key in launch for key in bundle_shell.ADDRESSEE_KEYS):
+            started.append(launch)
+            continue
+        # WORK HANDED TO A WRITER THAT ALREADY EXISTS - it has no foreground to run in, and it is
+        # a second writer of THIS tree only when it works this repository (`shared`).
+        why = shared(payload, launch)
+        if not why:
+            continue
+        if owner_codes.given(payload, request_ledger.read_rows(payload.get("transcript_path"))):
+            continue
+        return True, (
+            bundle_shell.policy(__file__) + "\n"
+            "This hands work to another writer while %s. Two writers of one repository who "
+            "cannot see each other's files is how this bundle's main came to hold two "
+            "implementations of one fix.\n\n"
+            "The owner approves THIS message, once, by typing:\n\n    %s\n\n"
+            "Then send the identical call again. Or hand it only work in its own repositories, "
+            "and bring anything for this one back here.\n" % (why, owner_codes.issue("FANOUT")))
+    found = started
     if not found:
         return False, None
     tool_input = payload.get("tool_input") or {}

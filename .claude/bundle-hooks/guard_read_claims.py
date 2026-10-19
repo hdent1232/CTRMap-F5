@@ -121,8 +121,15 @@ def opened(entries):
 
 
 def _norm(path):
-    return path.replace(chr(92), "/").lstrip("./").lower() if not os.path.isabs(path) \
-        else path.replace(chr(92), "/").lower()
+    """A path as the haystack spells paths: forward slashes, lower case, no leading `./`.
+
+    A PREFIX, NEVER A CHARACTER SET. This was `.lstrip("./")`, which takes `../other/x.py` to
+    `other/x.py` - so a claim about a file OUTSIDE the tree counted as opened when any file
+    ending `other/x.py` had been read anywhere."""
+    path = path.replace(chr(92), "/").lower()
+    while path.startswith("./"):
+        path = path[2:]
+    return path
 
 
 def _count_lines(path):
@@ -150,7 +157,8 @@ def problems(text, haystack, root):
         if not os.path.isfile(full):
             out.append("%s is cited and is not a file here" % path)
             continue
-        if _norm(path) not in haystack and _norm(os.path.relpath(full, root or "")) not in haystack:
+        if not any(_norm(p) in haystack for p in (path, bundle_shell.relative(full, root or ""),
+                                                  os.path.abspath(full))):
             out.append("%s is cited and NO tool call this session opened it - a claim about what "
                        "you did not open is a measurement nobody took" % path)
             continue

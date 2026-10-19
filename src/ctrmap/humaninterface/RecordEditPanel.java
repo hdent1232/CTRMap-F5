@@ -9,7 +9,6 @@ import java.awt.Dimension;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,10 +33,11 @@ import javax.swing.SpinnerNumberModel;
  * says why in its tooltip, because a value worth showing is not always a value
  * worth letting somebody change.
  *
- * <p>Undo and redo are over the RECORD, not over the controls. A form of forty
- * fields where each widget remembers its own history is a form where undo does
- * something different depending on which box has focus; a stack of whole record
- * snapshots always means "put it back the way it was".
+ * <p>Undo and redo are not here. They were - a stack of whole record snapshots
+ * with buttons of its own - and the editor showing the form had a second Undo,
+ * for everything else it edits, that knew nothing of them (F209c). The editor
+ * watches the record, with the rest of what it shows, as one document of the
+ * history its tab keeps: still the whole record, put back the way it was.
  */
 public class RecordEditPanel extends JPanel {
 
@@ -66,9 +66,9 @@ public class RecordEditPanel extends JPanel {
 	private final RecordSchema schema;
 	private final Labels labels;
 	private final Map<RecordField, JComponent> controls = new LinkedHashMap<>();
-	private final List<byte[]> undo = new ArrayList<>();
-	private final List<byte[]> redo = new ArrayList<>();
 	private byte[] record;
+	/** Why no record is shown, blank while one is (census M.134). */
+	private final JLabel unread = new JLabel(" ");
 	private boolean loading;
 	private Listener listener;
 
@@ -101,6 +101,8 @@ public class RecordEditPanel extends JPanel {
 			body.add(l);
 		}
 		add(body, BorderLayout.NORTH);
+		unread.setForeground(Color.RED);
+		add(unread, BorderLayout.SOUTH);
 	}
 
 	public void setListener(Listener l) {
@@ -195,29 +197,46 @@ public class RecordEditPanel extends JPanel {
 	}
 
 	private void apply(RecordField f, int value) {
-		if (loading || !f.editable()) {
+		if (loading || record == null || !f.editable()) {
 			return;
 		}
 		if (f.get(record) == value) {
 			return;
 		}
-		undo.add(record.clone());
-		redo.clear();
 		f.set(record, value);
 		if (listener != null) {
 			listener.recordChanged(record());
 		}
 	}
 
-	/** Loads a record. Clears the history: undoing into a different item's bytes is nonsense. */
+	/**
+	 * Shows a record: a load, or one put back by the history - not an edit, and told to nobody.
+	 *
+	 * <p>REFUSED, NOT ZEROED (census M.134): a record missing or of the wrong size became a page of zeros that
+	 * looked like a whole item, and one change to it saved the zeros over the real one. {@link #showUnreadable}
+	 * is how a caller shows that there is nothing.
+	 */
 	public void setRecord(byte[] rec) {
 		if (rec == null || rec.length != schema.stride()) {
-			rec = new byte[schema.stride()];
+			throw new IllegalArgumentException("this record " + (rec == null ? "could not be read"
+					: "is " + rec.length + " bytes, not the " + schema.stride() + " its structure has") + ", so it is not shown as one");
 		}
 		record = rec.clone();
-		undo.clear();
-		redo.clear();
+		offer(true, " ");
 		showRecord();
+	}
+
+	/** Shows no record, saying why: no control is offered, and {@link #record} answers null (census M.134). */
+	public void showUnreadable(String why) {
+		record = null;
+		offer(false, why);
+	}
+
+	private void offer(boolean shown, String why) {
+		for (Map.Entry<RecordField, JComponent> e : controls.entrySet()) {
+			e.getValue().setEnabled(shown && e.getKey().editable());
+		}
+		unread.setText(why);
 	}
 
 	private void showRecord() {
@@ -244,39 +263,9 @@ public class RecordEditPanel extends JPanel {
 		}
 	}
 
+	/** The record as it stands, or null while none is shown ({@link #showUnreadable}). */
 	public byte[] record() {
-		return record.clone();
+		return record == null ? null : record.clone();
 	}
 
-	public boolean canUndo() {
-		return !undo.isEmpty();
-	}
-
-	public boolean canRedo() {
-		return !redo.isEmpty();
-	}
-
-	public void undo() {
-		if (undo.isEmpty()) {
-			return;
-		}
-		redo.add(record.clone());
-		record = undo.remove(undo.size() - 1);
-		showRecord();
-		if (listener != null) {
-			listener.recordChanged(record());
-		}
-	}
-
-	public void redo() {
-		if (redo.isEmpty()) {
-			return;
-		}
-		undo.add(record.clone());
-		record = redo.remove(redo.size() - 1);
-		showRecord();
-		if (listener != null) {
-			listener.recordChanged(record());
-		}
-	}
 }

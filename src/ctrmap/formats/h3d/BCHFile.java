@@ -1,6 +1,5 @@
 package ctrmap.formats.h3d;
 
-import com.jogamp.opengl.GL2;
 import ctrmap.formats.h3d.model.H3DModel;
 import ctrmap.formats.h3d.texturing.H3DMaterial;
 import ctrmap.formats.h3d.texturing.H3DTexture;
@@ -246,13 +245,11 @@ public class BCHFile {
 			}
 		} catch (IOException ex) {
 			errorlevel++;
+			//NOTHING, NEVER PART: what was read before the failure was kept, so a reader that does not ask
+			//errorlevel - 11 of 19 - took half a pack as the whole one. BchSectionsTest classifies every reader
+			models.clear();
+			textures.clear();
 			Logger.getLogger(BCHFile.class.getName()).log(Level.SEVERE, null, ex);
-		}
-	}
-
-	public void render(GL2 gl) {
-		for (int i = 0; i < models.size(); i++) {
-			models.get(i).render(gl);
 		}
 	}
 

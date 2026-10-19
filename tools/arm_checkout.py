@@ -40,6 +40,7 @@ import threading
 LF = chr(10)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 ROOT = _tree_root.require(__file__)
 HOOKS_DIR = ".githooks"
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -66,15 +67,15 @@ LONGEST_RUN = (INPUT_WAIT + GIT_CALLS * GIT_TIMEOUT + CLONES * CLONE_TIMEOUT
 def _git(root, args):
     """(exit code, stdout stripped) - (None, why) when git could not be run at all."""
     try:
-        done = subprocess.run(["git", "-C", root] + args, capture_output=True, text=True,
-                              timeout=GIT_TIMEOUT, creationflags=NO_WINDOW)
+        done = bounded.run(["git", "-C", root] + args, capture_output=True, text=True,
+                           timeout=GIT_TIMEOUT, creationflags=NO_WINDOW)
     except (OSError, subprocess.SubprocessError) as exc:
         return None, "%s: %s" % (type(exc).__name__, exc)
     return done.returncode, (done.stdout or "").strip()
 
 
 def unrunnable(root):
-    """[why] for every hook in the hooks folder git would skip - gate_stamps.unrunnable_hooks, the
+    """[why] for every hook in the hooks folder git would skip - bundle_rules.hook_problems, the
     one implementation the commit gate refuses by - after giving the executable bit back to any
     hook that lost it on disk, where the system has the bit.
 
@@ -83,20 +84,33 @@ def unrunnable(root):
     them ARMED because it read the hooks path and never asked whether git could run what it named.
     The bit on disk is restored here because session start is the act that makes a checkout
     usable; a mode in the INDEX is a commit's to fix and is said, never changed behind the user.
+
+    ASKED OF THE BUNDLE'S RULES, from the hooks folder this project installed them in: the bundle
+    moved this answer out of gate_stamps into bundle_rules, and an install of it left this tool
+    calling a function that was gone (measured 2026-10-09, three tests here in AttributeError).
     """
     try:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-        import gate_stamps
-    except ImportError as exc:
-        return ["whether git would run the hooks is UNKNOWN: tools/gate_stamps.py cannot be loaded"
-                " (%s)" % exc]
+        import bundle_hooks
+        rules = bundle_hooks.path(ROOT)
+        if rules not in sys.path:
+            sys.path.insert(0, rules)
+        import bundle_rules
+    except (ImportError, ValueError, OSError) as exc:
+        return ["whether git would run the hooks is UNKNOWN: the bundle's bundle_rules cannot be "
+                "loaded (%s)" % exc]
+    folder = os.path.join(root, HOOKS_DIR)
     if os.name != "nt":
-        folder = os.path.join(root, HOOKS_DIR)
         for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
             path = os.path.join(folder, name)
-            if name in gate_stamps.GIT_HOOKS and os.path.isfile(path) and not os.access(path, os.X_OK):
+            if name in bundle_rules.GIT_HOOKS and os.path.isfile(path) and not os.access(path, os.X_OK):
                 os.chmod(path, os.stat(path).st_mode | 0o111)
-    return gate_stamps.unrunnable_hooks(root)
+    said = []
+    for name, why in bundle_rules.hook_problems(folder):
+        rel = "%s/%s" % (HOOKS_DIR, name)
+        said.append("`%s` is %s%s" % (rel, why, " - `git update-index --chmod=+x -- %s` records it "
+                                      "executable" % rel if why.startswith("recorded") else ""))
+    return said
 
 
 def arm_hooks(root):
@@ -161,8 +175,8 @@ def clone_beside(root, repo, into):
     if remote is None:
         return False, "this checkout has no origin to find %s beside" % repo
     try:
-        done = subprocess.run(["git", "clone", "--quiet", remote, target], capture_output=True,
-                              text=True, timeout=CLONE_TIMEOUT, creationflags=NO_WINDOW)
+        done = bounded.run(["git", "clone", "--quiet", remote, target], capture_output=True,
+                           text=True, timeout=CLONE_TIMEOUT, creationflags=NO_WINDOW)
     except (OSError, subprocess.SubprocessError) as exc:
         return False, "git could not be run to fetch %s (%s)" % (repo, exc)
     if done.returncode != 0:
@@ -271,9 +285,9 @@ def _sync(tool, mode, memory):
     """(exit code, output lines) of the notes repository's OWN sync tool - never a second copy of
     its rules here - or (None, [why]) when it could not be run."""
     try:
-        done = subprocess.run([sys.executable, "-B", tool, mode, "--memory", memory],
-                              capture_output=True, text=True, timeout=SYNC_TIMEOUT,
-                              creationflags=NO_WINDOW)
+        done = bounded.run([sys.executable, "-B", tool, mode, "--memory", memory],
+                           capture_output=True, text=True, timeout=SYNC_TIMEOUT,
+                           creationflags=NO_WINDOW)
     except (OSError, subprocess.SubprocessError) as exc:
         return None, ["the notes' sync tool could not be run (%s)" % exc]
     said = ((done.stdout or "") + (done.stderr or "")).splitlines()
@@ -356,6 +370,12 @@ def _say(text):
 
 
 def main(argv):
+    #a word this does not read refuses the run, before anything runs (cli_words, 2026-10-10)
+    import cli_words
+    unread_words = cli_words.refused(argv[1:], flags=("--root", "--memory"), valued=("--root", "--memory"), most=0)
+    if unread_words:
+        print(unread_words)
+        return 2
     root = ROOT
     memory = None
     for flag in ("--root", "--memory"):

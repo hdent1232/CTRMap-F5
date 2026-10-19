@@ -52,6 +52,11 @@ LF = chr(10)
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 sys.path.insert(0, HERE)
+# A PLANT ON DISK IS ITS OWN TEST'S - `bundle_plant`. First, before any other sibling is imported:
+# a plant in this very file hands the call to the file's true copy, and a plant in a sibling puts
+# the sibling's true copy where every import finds it. A planted guard is loaded true in `ask`.
+import bundle_plant    # noqa: E402  - which copy runs: the index's while a plant holds the file
+PLANT_TROUBLE = bundle_plant.begin(__file__, __name__)
 import bundle_env      # noqa: E402  - one PREFIX renames every override
 import bundle_shell    # noqa: E402  - the command, found by shape, at any depth
 
@@ -103,14 +108,16 @@ def ask(path, raw):
     raised `ValueError` inside the dispatcher instead of being reported, which is the one branch
     whose whole job is to report.
     """
-    import importlib.util
     import io as _io
 
     name = os.path.splitext(os.path.basename(path))[0]
     try:
-        spec = importlib.util.spec_from_file_location("dtguard_" + name, path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        # THE GUARD AS IT TRULY IS - git's index's copy while a plant holds it, never the plant on
+        # disk; the lock is read on both sides of the read (`bundle_plant.true_text`).
+        module, code = bundle_plant.module("dtguard_" + name, path, bundle_plant.true_text(path))
+        exec(code, module.__dict__)
+    except bundle_plant.Planted as exc:
+        return CRASHED, ("%s has not been asked: %s." % (name, exc)), ""
     except BaseException as exc:                     # a guard that cannot load has not passed
         return CRASHED, ("%s could not be loaded (%s: %s). A guard that cannot run has not "
                          "passed - it has not been asked." % (name, type(exc).__name__, exc)), ""
@@ -260,6 +267,10 @@ def verdict(raw, found=None):
     blind = unreadable_refusal(payload) if isinstance(payload, dict) else None
     if blind:
         return 2, blind, ""
+    if PLANT_TROUBLE and not excused(raw, payload):
+        # A HOOK FILE THAT COULD NOT BE LOADED TRUE has not answered - the same hole as a guard
+        # that crashed, and the same way out for the call that could fix it.
+        return 2, PLANT_TROUBLE, ""
     heard = []
     for path in (guards() if found is None else found):
         code, err, out = ask(path, raw)
@@ -276,25 +287,31 @@ def verdict(raw, found=None):
             continue
         if code == 2:
             return 2, (err or out), ""
-        # A GUARD THAT COULD NOT ANSWER IS A HOLE - EXCEPT FOR THE CALL THAT COULD FIX IT.
-        #
-        # Refusing everything on a crashed guard locked this session out of every tool at once,
-        # with the only route to the broken file running through the broken file. A working
-        # guard's refusal (exit 2, above) still stands for repair calls too - this carve-out is
-        # only for a guard that could not answer at all.
-        if repairs(raw):
-            continue
-        # AND AT THE END OF A TURN, ONCE. Refusing a `Stop` sends the turn back to work, which is
-        # the right answer the first time - the work is to fix the guard. The second time the
-        # harness says so with `stop_hook_active`, and refusing again would spin forever over a
-        # file the turn may not be able to reach.
-        if (isinstance(payload, dict) and not bundle_shell.is_tool_call(payload)
-                and payload.get("stop_hook_active")):
+        if excused(raw, payload):
             continue
         return 2, ("%s exited %s, which is neither allow (0) nor refuse (2). A guard whose "
                    "answer cannot be read must not be counted as permission.%s%s"
                    % (os.path.basename(path), code, LF, (err + out).strip()[-800:])), ""
     return 0, "", json.dumps({"systemMessage": LF.join(heard)}) if heard else ""
+
+
+def excused(raw, payload):
+    """May this call go ahead past a guard that could not ANSWER?
+
+    A GUARD THAT COULD NOT ANSWER IS A HOLE - EXCEPT FOR THE CALL THAT COULD FIX IT. Refusing
+    everything on a crashed guard locked this session out of every tool at once, with the only
+    route to the broken file running through the broken file. A working guard's refusal (exit 2)
+    still stands for repair calls too - this carve-out is only for a guard that could not answer.
+
+    AND AT THE END OF A TURN, ONCE. Refusing a `Stop` sends the turn back to work, which is the
+    right answer the first time - the work is to fix the guard. The second time the harness says
+    so with `stop_hook_active`, and refusing again would spin forever over a file the turn may
+    not be able to reach.
+    """
+    if repairs(raw):
+        return True
+    return bool(isinstance(payload, dict) and not bundle_shell.is_tool_call(payload)
+                and payload.get("stop_hook_active"))
 
 
 def main():

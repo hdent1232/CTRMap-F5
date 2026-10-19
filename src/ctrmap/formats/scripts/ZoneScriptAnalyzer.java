@@ -62,6 +62,124 @@ public class ZoneScriptAnalyzer {
 	 */
 	public static final int SIGN_STYLE_NATIVE_HASH = 0x6393BE9A;
 
+	/**
+	 * Name hash of {@code _MapChangeCore}, the native a zone script sends the player to another zone
+	 * with (F225). Its FIRST argument is the destination zone: MEASURED 2026-10-09 over the 536 retail
+	 * zone scripts, it is called 57 times, each from a wrapper that passes its own five parameters through
+	 * in order, and at all 95 of those wrappers' call sites the second and fourth (x and y in tiles) land
+	 * inside the map of the zone the first names - read as the second, 33 of 95 would.
+	 */
+	public static final int MAP_CHANGE_CORE_NATIVE_HASH = 0x21D6FFB6;
+
+	/**
+	 * Is {@code hash} a map-change native other than {@code _MapChangeCore} - one the bundled native table
+	 * names with "MapChange" in it? Which of their arguments carries a zone is not measured, so a call to one
+	 * is a destination no reading names. MEASURED 2026-10-10: the table names seven; the retail zone scripts
+	 * declare only {@code _MapChangeCore}, and the shared scripts also declare the three secret-base ones.
+	 * Asked of the table rather than listed, so a native the table names tomorrow is asked too.
+	 */
+	static boolean isOtherMapChange(int hash) {
+		String name = ctrmap.scripts.GfHash.nameForHash(hash);
+		return hash != MAP_CHANGE_CORE_NATIVE_HASH && name != null && name.contains("MapChange");
+	}
+
+	/** Where a zone script sends the player, and how many of its map changes name a zone no constant gives. */
+	public static final class MapChanges {
+		/** The destination zones the script names, one per call that names one. */
+		public final List<Integer> zones = new ArrayList<>();
+		/** Map changes whose destination is computed at run time, so no reading can name it. */
+		public int computed;
+	}
+
+	/**
+	 * {@link #mapChanges} of a zone container's script (subfile 2). A zone with no script bytes sends the
+	 * player nowhere; one whose script does not read is a refusal, never "nowhere".
+	 *
+	 * @throws IllegalStateException naming why, when the zone's script does not read
+	 */
+	public static MapChanges mapChangesOfZone(byte[] zone) {
+		return mapChangesOfScript(ctrmap.formats.containers.ContainerBytes.subfile(zone, 2));
+	}
+
+	/**
+	 * {@link #mapChanges} of a bare script's bytes - a zone's, or one of the shared scripts no zone owns.
+	 * No bytes send the player nowhere; bytes that do not read are a refusal, never "nowhere".
+	 *
+	 * @throws IllegalStateException naming why, when the script does not read
+	 */
+	public static MapChanges mapChangesOfScript(byte[] raw) {
+		if (raw == null || raw.length == 0) {
+			return new MapChanges();
+		}
+		GFLPawnScript s;
+		try {
+			s = new GFLPawnScript(raw);
+			s.decompressThis();
+		} catch (RuntimeException unread) {
+			throw new IllegalStateException("its script does not read (" + ctrmap.util.Bytes.reason(unread) + ")", unread);
+		}
+		return mapChanges(s);
+	}
+
+	/**
+	 * Every zone {@code script} sends the player to through {@code _MapChangeCore} (F225): a constant
+	 * pushed as the call's first argument, or - as retail always does - a parameter of the wrapper the
+	 * call sits in, followed to every CALL of that wrapper and the constant each passes. A destination
+	 * no constant gives is counted in {@link MapChanges#computed}, never read as no destination.
+	 */
+	public static MapChanges mapChanges(GFLPawnScript script) {
+		MapChanges out = new MapChanges();
+		List<PawnInstruction> ins = script.instructions;
+		for (int k = 1; k < ins.size(); k++) {
+			PawnInstruction a = ins.get(k);
+			if (a.getCommand() != OP_SYSREQ_N || a.argumentCells.length < 1 || a.argumentCells[0] < 0
+					|| a.argumentCells[0] >= script.natives.size() || script.natives.get(a.argumentCells[0]).data.length < 2) {
+				continue;
+			}
+			int hash = script.natives.get(a.argumentCells[0]).data[1];
+			if (hash != MAP_CHANGE_CORE_NATIVE_HASH) {
+				if (isOtherMapChange(hash)) {
+					out.computed++;
+				}
+				continue;
+			}
+			PawnInstruction first = ins.get(k - 1);
+			int cmd = first.getCommand();
+			if ((cmd == OP_PUSH_C || cmd == OP_PUSH_P_C) && first.argumentCells.length > 0) {
+				out.zones.add(first.argumentCells[0]);
+				continue;
+			}
+			if (cmd != PawnInstruction.Commands.PUSH_P_S.ordinal() || first.argumentCells.length == 0
+					|| first.argumentCells[0] < 12 || first.argumentCells[0] % 4 != 0) {
+				out.computed++;
+				continue;
+			}
+			//the wrapper's parameter: frame +12 is the first, pushed nearest the argument-byte push at a call site
+			int param = (first.argumentCells[0] - 12) / 4;
+			int proc = k;
+			while (proc >= 0 && ins.get(proc).getCommand() != OP_PROC) {
+				proc--;
+			}
+			PawnInstruction entry = proc < 0 ? null : ins.get(proc);
+			for (int c = 0; entry != null && c < ins.size(); c++) {
+				PawnInstruction call = ins.get(c);
+				if (call.getCommand() != OP_CALL || call.argumentCells.length == 0
+						|| script.lookupInstructionByPtr(call.pointer + call.argumentCells[0]) != entry) {
+					continue;
+				}
+				int at = c - 2 - param;
+				PawnInstruction push = at >= 0 ? ins.get(at) : null;
+				int pc = push == null ? -1 : push.getCommand();
+				if (push != null && (pc == OP_PUSH_C || pc == OP_PUSH_P_C) && push.argumentCells.length > 0) {
+					out.zones.add(push.argumentCells[0]);
+				} else {
+					out.computed++;
+				}
+			}
+		}
+		return out;
+	}
+
 	private static final int OP_LOAD_PRI = PawnInstruction.Commands.LOAD_PRI.ordinal();
 	private static final int OP_LOAD_P_PRI = PawnInstruction.Commands.LOAD_P_PRI.ordinal();
 	private static final int OP_PUSH_C = PawnInstruction.Commands.PUSH_C.ordinal();
@@ -277,6 +395,7 @@ public class ZoneScriptAnalyzer {
 	 * retail trampoline. Null when the case does not exist or its target is
 	 * not a trampoline that calls a subroutine.
 	 */
+	@ctrmap.util.ForSuites("ORACLE: resolves the subroutine a dispatch case runs through retail's trampoline; the script suites follow what the templates wrote with it")
 	public static PawnInstruction findCaseSubEntry(GFLPawnScript script, int caseKey) {
 		Dispatch d = findDispatch(script);
 		if (d == null) {

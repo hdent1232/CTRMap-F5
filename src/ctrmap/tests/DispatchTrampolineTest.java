@@ -116,10 +116,10 @@ public class DispatchTrampolineTest {
 			}
 			if (hasGive) {
 				run(2, z, raw, counts, bad, firstErrors, tags,
-						s -> NpcTemplates.addItemGiverScript(NpcScriptGateTest.ORAS, s, 4, 1));
+						s -> NpcTemplates.addItemGiverScript(NpcScriptGateTest.ORAS, s, 4, 1, -1));
 			}
 			run(3, z, raw, counts, bad, firstErrors, tags,
-					s -> FacilityScriptWizard.addGiveBpScript(NpcScriptGateTest.ORAS, s, 5));
+					s -> FacilityScriptWizard.addGiveBpScript(NpcScriptGateTest.ORAS, s, 5, -1));
 			if (z % GAUNTLET_STRIDE == 0) {
 				run(4, z, raw, counts, bad, firstErrors, tags, s -> {
 					GauntletScriptWizard.Config cfg = new GauntletScriptWizard.Config();

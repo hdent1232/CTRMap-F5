@@ -24,11 +24,12 @@ import static ctrmap.formats.tilemap.PaintedGeometry.GRP_GRASS;
 import static ctrmap.formats.tilemap.PaintedGeometry.ORIGIN;
 import static ctrmap.formats.tilemap.PaintedGeometry.Quad;
 import static ctrmap.formats.tilemap.PaintedGeometry.SHORE_PULL;
-import static ctrmap.formats.tilemap.PaintedGeometry.STEP;
 import static ctrmap.formats.tilemap.PaintedGeometry.ShoreEdge;
 import static ctrmap.formats.tilemap.PaintedGeometry.TILE;
 import static ctrmap.formats.tilemap.PaintedGeometry.WATER_SINK;
+import static ctrmap.formats.tilemap.PaintedGeometry.edgeCorners;
 import static ctrmap.formats.tilemap.PaintedGeometry.fixWindingTowards;
+import static ctrmap.formats.tilemap.PaintedGeometry.lowCorner;
 import static ctrmap.formats.tilemap.PaintedGeometry.roundOutline;
 import static ctrmap.formats.tilemap.PaintedHeights.cornerAO;
 import static ctrmap.formats.tilemap.PaintedMaterials.measureUvScale;
@@ -263,19 +264,19 @@ public final class PaintedFloorMesh {
 		final float BEHIND = 0.75f;
 		float ax = e.ax - ex + e.nx * BEHIND, az = e.az - ez + e.nz * BEHIND;
 		float bx = e.bx + ex + e.nx * BEHIND, bz = e.bz + ez + e.nz * BEHIND;
+		//its top is the face's at each end: along a ramp's side it falls with the ramp
 		Quad q = new Quad();
-		q.pos[0] = new float[]{ax, e.yTop, az};
-		q.pos[1] = new float[]{bx, e.yTop, bz};
+		q.pos[0] = new float[]{ax, e.yTopA, az};
+		q.pos[1] = new float[]{bx, e.yTopB, bz};
 		q.pos[2] = new float[]{ax, e.yBot - BURY, az};
 		q.pos[3] = new float[]{bx, e.yBot - BURY, bz};
 		//tile the rock down the face at the same rate as the visible cliff, so
 		//a glimpse of it through a seam does not read as a different material
 		float len = (float) Math.hypot(e.bx - e.ax, e.bz - e.az);
-		float vSpan = (e.yTop - e.yBot + BURY) / 56f;
 		q.uv[0] = new float[]{0f, 0.26f};
 		q.uv[1] = new float[]{len / 56f, 0.26f};
-		q.uv[2] = new float[]{0f, 0.26f + vSpan};
-		q.uv[3] = new float[]{len / 56f, 0.26f + vSpan};
+		q.uv[2] = new float[]{0f, 0.26f + (e.yTopA - e.yBot + BURY) / 56f};
+		q.uv[3] = new float[]{len / 56f, 0.26f + (e.yTopB - e.yBot + BURY) / 56f};
 		for (int c = 0; c < 4; c++) {
 			q.nrm[c] = new float[]{e.nx, 0f, e.nz};
 			q.ao[c] = c < 2 ? 0.82f : 0.62f;
@@ -285,122 +286,52 @@ public final class PaintedFloorMesh {
 	}
 
 	/**
-	 * One blade of the two-quad cross that plugs a corner where walls of
-	 * different depth meet. Four are emitted per corner - two axes, each faced
-	 * both ways - because a quad is one-sided and which side the slot opens on
-	 * depends entirely on where the camera stands.
+	 * The wall between a ramp's sloping floor and the ground beside it, where that ground stands
+	 * higher: bottom edge following the ramp down, top edge on the floor beside ({@code beside},
+	 * at this edge's two corners, from {@code PaintedHeights.floorBeside}). Beside flat ground
+	 * level with the top it is the old triangle, zero-height at the top of the slope and a full step
+	 * at the bottom; beside lower ground it is nothing - the ordinary wall stands there - and beside
+	 * another lane it fills only what lies between the two slopes. Beside ground higher than the
+	 * ramp's top it reaches that ground, behind the cliff the higher tile stands over the ramp.
+	 * Null where nothing stands higher.
+	 *
+	 * <p>It FACES THE RAMP: the one place this wall is seen from is the ramp's own floor, looking
+	 * across at the ground it is cut into. It was wound to face away, so on each painted ramp the
+	 * corridor wall whose winding took was culled from the ramp (see
+	 * {@code PaintedGeometry.fixWindingTowards}).
 	 */
-	static Quad cornerPost(float x, float z, float yTop, float yBot,
-			boolean alongX, float face) {
-		final float HALF = 5f, BURY = 5f;
-		float dx = alongX ? HALF : 0f, dz = alongX ? 0f : HALF;
-		Quad q = new Quad();
-		q.pos[0] = new float[]{x - dx, yTop, z - dz};
-		q.pos[1] = new float[]{x + dx, yTop, z + dz};
-		q.pos[2] = new float[]{x - dx, yBot - BURY, z - dz};
-		q.pos[3] = new float[]{x + dx, yBot - BURY, z + dz};
-		float vSpan = (yTop - yBot + BURY) / 56f;
-		q.uv[0] = new float[]{0f, 0.26f};
-		q.uv[1] = new float[]{2f * HALF / 56f, 0.26f};
-		q.uv[2] = new float[]{0f, 0.26f + vSpan};
-		q.uv[3] = new float[]{2f * HALF / 56f, 0.26f + vSpan};
-		for (int c = 0; c < 4; c++) {
-			q.nrm[c] = new float[]{alongX ? 0f : 1f, 0f, alongX ? 1f : 0f};
-			q.ao[c] = c < 2 ? 0.80f : 0.60f;
-		}
-		fixWindingTowards(q, (alongX ? 0f : 1f) * face, 0f, (alongX ? 1f : 0f) * face);
-		return q;
-	}
-
-	/**
-	 * The triangular sliver between a ramp's sloping floor and the flat ground
-	 * beside it. Top edge level with that ground, bottom edge following the
-	 * ramp down, so it is zero-height at the top of the slope and a full step
-	 * at the bottom.
-	 */
-	static Quad rampSkirt(int tx, int ty, int side, int rd, float yHi, float yLo) {
+	static Quad rampSkirt(int tx, int ty, int side, int rd, float yHi, float yLo, float[] beside) {
 		float x0 = tx * TILE + ORIGIN, x1 = x0 + TILE;
 		float z0 = ty * TILE + ORIGIN, z1 = z0 + TILE;
-		//the two corners of this edge, as (xIndex, zIndex) in {0,1}
-		int[][] c = side == 0 ? new int[][]{{1, 0}, {1, 1}}
-				: side == 1 ? new int[][]{{0, 0}, {0, 1}}
-				: side == 2 ? new int[][]{{0, 1}, {1, 1}}
-				: new int[][]{{0, 0}, {1, 0}};
-		float[] cx = new float[2], cz = new float[2], cy = new float[2];
+		int[][] c = edgeCorners(side);
+		float[] cx = new float[2], cz = new float[2], cy = new float[2], top = new float[2];
+		boolean any = false;
 		for (int i = 0; i < 2; i++) {
 			cx[i] = c[i][0] == 0 ? x0 : x1;
 			cz[i] = c[i][1] == 0 ? z0 : z1;
-			//floorQuad drops exactly the two corners on the descent edge
-			boolean low = rd == 0 ? c[i][0] == 1 : rd == 1 ? c[i][0] == 0
-					: rd == 2 ? c[i][1] == 1 : c[i][1] == 0;
-			cy[i] = low ? yLo : yHi;
+			cy[i] = lowCorner(rd, c[i][0], c[i][1]) ? yLo : yHi;
+			top[i] = Math.max(cy[i], beside[i]);
+			any |= top[i] - cy[i] >= 0.01f;
 		}
-		if (Math.abs(cy[0] - cy[1]) < 0.01f) {
-			return null;   //flat along this edge: nothing to skirt
+		if (!any) {
+			return null;   //nothing beside stands above the slope: nothing to fill
 		}
 		Quad q = new Quad();
-		q.pos[0] = new float[]{cx[0], yHi, cz[0]};
-		q.pos[1] = new float[]{cx[1], yHi, cz[1]};
+		q.pos[0] = new float[]{cx[0], top[0], cz[0]};
+		q.pos[1] = new float[]{cx[1], top[1], cz[1]};
 		q.pos[2] = new float[]{cx[0], cy[0], cz[0]};
 		q.pos[3] = new float[]{cx[1], cy[1], cz[1]};
 		float len = (float) Math.hypot(cx[1] - cx[0], cz[1] - cz[0]);
-		float vSpan = Math.abs(cy[0] - cy[1]) / 56f;
 		q.uv[0] = new float[]{0f, 0.28f};
 		q.uv[1] = new float[]{len / 56f, 0.28f};
-		q.uv[2] = new float[]{0f, 0.28f + vSpan};
-		q.uv[3] = new float[]{len / 56f, 0.28f + vSpan};
-		float nx = side == 0 ? 1f : side == 1 ? -1f : 0f;
-		float nz = side == 2 ? 1f : side == 3 ? -1f : 0f;
+		q.uv[2] = new float[]{0f, 0.28f + (top[0] - cy[0]) / 56f};
+		q.uv[3] = new float[]{len / 56f, 0.28f + (top[1] - cy[1]) / 56f};
+		//inward: towards the ramp the wall is seen from
+		float nx = side == 0 ? -1f : side == 1 ? 1f : 0f;
+		float nz = side == 2 ? -1f : side == 3 ? 1f : 0f;
 		for (int i = 0; i < 4; i++) {
 			q.nrm[i] = new float[]{nx, 0f, nz};
 			q.ao[i] = i < 2 ? 0.85f : 0.65f;
-		}
-		fixWindingTowards(q, nx, 0f, nz);
-		return q;
-	}
-
-	/**
-	 * The wall hanging beneath a ramp's sloping floor on one of its side edges.
-	 *
-	 * <p>{@link #rampSkirt} closes the wedge ABOVE the slope, between it and
-	 * ground level with the ramp's top. This closes what is below it: a ramp
-	 * cut into a hillside has open air under its own floor, and from any low
-	 * angle that reads as sky beneath the path.
-	 */
-	static Quad rampApron(int tx, int ty, int side, int rd, float yHi, float yLo) {
-		float x0 = tx * TILE + ORIGIN, x1 = x0 + TILE;
-		float z0 = ty * TILE + ORIGIN, z1 = z0 + TILE;
-		int[][] c = side == 0 ? new int[][]{{1, 0}, {1, 1}}
-				: side == 1 ? new int[][]{{0, 0}, {0, 1}}
-				: side == 2 ? new int[][]{{0, 1}, {1, 1}}
-				: new int[][]{{0, 0}, {1, 0}};
-		float[] cx = new float[2], cz = new float[2], cy = new float[2];
-		for (int i = 0; i < 2; i++) {
-			cx[i] = c[i][0] == 0 ? x0 : x1;
-			cz[i] = c[i][1] == 0 ? z0 : z1;
-			boolean low = rd == 0 ? c[i][0] == 1 : rd == 1 ? c[i][0] == 0
-					: rd == 2 ? c[i][1] == 1 : c[i][1] == 0;
-			cy[i] = low ? yLo : yHi;
-		}
-		//hang well below: it is hidden by the ground beside it wherever that
-		//ground is higher, and it is the only thing there wherever it is not
-		//just under the slope, not two whole levels under it
-		float foot = Math.min(cy[0], cy[1]) - STEP * 0.5f;
-		Quad q = new Quad();
-		q.pos[0] = new float[]{cx[0], cy[0], cz[0]};
-		q.pos[1] = new float[]{cx[1], cy[1], cz[1]};
-		q.pos[2] = new float[]{cx[0], foot, cz[0]};
-		q.pos[3] = new float[]{cx[1], foot, cz[1]};
-		float len = (float) Math.hypot(cx[1] - cx[0], cz[1] - cz[0]);
-		q.uv[0] = new float[]{0f, 0.30f};
-		q.uv[1] = new float[]{len / 56f, 0.30f};
-		q.uv[2] = new float[]{0f, 0.30f + (Math.max(cy[0], cy[1]) - foot) / 56f};
-		q.uv[3] = new float[]{len / 56f, 0.30f + (Math.max(cy[0], cy[1]) - foot) / 56f};
-		float nx = side == 0 ? 1f : side == 1 ? -1f : 0f;
-		float nz = side == 2 ? 1f : side == 3 ? -1f : 0f;
-		for (int i = 0; i < 4; i++) {
-			q.nrm[i] = new float[]{nx, 0f, nz};
-			q.ao[i] = i < 2 ? 0.80f : 0.58f;
 		}
 		fixWindingTowards(q, nx, 0f, nz);
 		return q;
@@ -691,19 +622,9 @@ public final class PaintedFloorMesh {
 		float x0 = tx * TILE + ORIGIN, x1 = x0 + TILE;
 		float z0 = ty * TILE + ORIGIN, z1 = z0 + TILE;
 		// per-corner Y (TL,TR,BL,BR); the two corners on the descent edge drop to yLo
-		float[] cy = {yHi, yHi, yHi, yHi};
-		if (rd == 0) { // east low: TR,BR
-			cy[1] = yLo;
-			cy[3] = yLo;
-		} else if (rd == 1) { // west low: TL,BL
-			cy[0] = yLo;
-			cy[2] = yLo;
-		} else if (rd == 2) { // south low: BL,BR
-			cy[2] = yLo;
-			cy[3] = yLo;
-		} else if (rd == 3) { // north low: TL,TR
-			cy[0] = yLo;
-			cy[1] = yLo;
+		float[] cy = new float[4];
+		for (int c = 0; c < 4; c++) {
+			cy[c] = lowCorner(rd, c & 1, c >> 1) ? yLo : yHi;
 		}
 		Quad q = new Quad();
 		float[][] p = {{x0, cy[0], z0}, {x1, cy[1], z0}, {x0, cy[2], z1}, {x1, cy[3], z1}};

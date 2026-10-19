@@ -84,10 +84,21 @@ public final class PaintedGeometry {
 
 		float ax, az, bx, bz;   // the tile-boundary segment, in world units
 		float nx, nz;           // outward, away from the high ground
-		float yTop, yBot;
+		/**
+		 * The top of the fall at a and at b. Equal on every face but a ramp's side, whose top follows the
+		 * ramp's floor down: one height for the whole edge stood the face at the ramp's top all along its
+		 * side, a whole step over the ramp's own foot (2026-10-18). There is no single top to read - a
+		 * reader asks for the end it stands at ({@link #topAt}).
+		 */
+		float yTopA, yTopB;
+		float yBot;
 		/** The ground this face would lean over is walkable, so it must not. */
 		boolean tight;
-		/** The low side is untouched retail terrain, which backs itself. */
+		/**
+		 * No backing wall behind it: the face stands off the map, or is rebuilt on an untouched higher
+		 * neighbour's side with a retail top sampled at one point. NOT a face over untouched low ground -
+		 * a floor backs no face, and that premise left sky behind three kinds of junction (2026-10-18).
+		 */
 		boolean donorSide;
 
 		String startKey() {
@@ -102,10 +113,40 @@ public final class PaintedGeometry {
 			return Math.round(x * 4f) + ":" + Math.round(z * 4f);
 		}
 
-		/** Same step, so the strip can run continuously through it. */
-		String levelKey() {
-			return Math.round(yTop * 4f) + "/" + Math.round(yBot * 4f) + (tight ? "/t" : "");
+		/**
+		 * The top at the end whose key is {@code end}.
+		 *
+		 * @throws IllegalArgumentException for a key that is neither end of this edge
+		 */
+		float topAt(String end) {
+			if (end.equals(startKey())) {
+				return yTopA;
+			}
+			if (end.equals(endKey())) {
+				return yTopB;
+			}
+			throw new IllegalArgumentException("the point " + end + " is not an end of the edge " + startKey() + " - " + endKey());
 		}
+	}
+
+	/**
+	 * The two corners of a tile's edge on {@code side} (0 E, 1 W, 2 S, 3 N), each as
+	 * {xIndex, zIndex} in {0,1}, in the order every edge-hung quad walks them.
+	 */
+	static int[][] edgeCorners(int side) {
+		return side == 0 ? new int[][]{{1, 0}, {1, 1}}
+				: side == 1 ? new int[][]{{0, 0}, {0, 1}}
+				: side == 2 ? new int[][]{{0, 1}, {1, 1}}
+				: new int[][]{{0, 0}, {1, 0}};
+	}
+
+	/**
+	 * True when corner {xIndex, zIndex} of a ramp going down {@code rd} is on its descent edge -
+	 * one of the two corners its floor drops to the foot. The one statement of which corners fall:
+	 * the floor, the skirt and the ground a skirt is bounded by each read it here.
+	 */
+	static boolean lowCorner(int rd, int xi, int zi) {
+		return rd == 0 ? xi == 1 : rd == 1 ? xi == 0 : rd == 2 ? zi == 1 : rd == 3 && zi == 0;
 	}
 
 	/** Fraction of a mesh's surface area that faces up; a floor ~1, a wall ~0. */
@@ -118,17 +159,48 @@ public final class PaintedGeometry {
 	 * <p>Comparing only the horizontal part is right for a vertical wall and
 	 * wrong for a sloped one: a shallow face's normal is nearly all +Y, so a
 	 * horizontal comparison decides on noise.
+	 *
+	 * <p>THE FACE IS THE WHOLE QUAD'S, both of the triangles it is drawn as ({@link #faceNormal}).
+	 * It was read off the first triangle alone, and a ramp's side skirt is zero-height at the top
+	 * of its slope, so on the side whose first corner is the high one that triangle has no area:
+	 * the facing asked for was never applied, both skirts of a ramp kept the winding they were
+	 * built with, and one of the two corridor walls faced away from the ramp - culled from
+	 * anyone standing on it, sky straight through (measured 2026-10-18: 24 of 24 sight lines on
+	 * that side of every painted ramp, which a two-sided probe read as sealed). A quad with area
+	 * whose face is square to the direction asked has no side that faces it, and is refused.
 	 */
 	static void fixWindingTowards(Quad q, float wx, float wy, float wz) {
-		float[] a = q.pos[0], b = q.pos[2], c = q.pos[1];
-		float ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
-		float vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
-		float gx = uy * vz - uz * vy;
-		float gy = uz * vx - ux * vz;
-		float gz = ux * vy - uy * vx;
-		if (gx * wx + gy * wy + gz * wz < 0) {
+		float[] g = faceNormal(q);
+		float d = g[0] * wx + g[1] * wy + g[2] * wz;
+		float area = (float) Math.sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2]);
+		float want = (float) Math.sqrt(wx * wx + wy * wy + wz * wz);
+		if (area > 1e-4f && Math.abs(d) <= 1e-4f * area * want) {
+			throw new IllegalStateException(String.format("a quad at (%.1f, %.1f, %.1f) was asked to face (%.2f, %.2f, %.2f),"
+					+ " square to its own face (%.2f, %.2f, %.2f): neither of its sides faces that way",
+					q.pos[0][0], q.pos[0][1], q.pos[0][2], wx, wy, wz, g[0], g[1], g[2]));
+		}
+		if (d < 0) {
 			swapCorners12(q);
 		}
+	}
+
+	/**
+	 * The quad's face direction as drawn, area-weighted: the sum of the normals of the two
+	 * triangles it becomes - (0,2,1) and (1,2,3), the order {@code PaintedFloorMesh.meshFromQuads}
+	 * writes. A quad with one degenerate half still answers with its other half's face.
+	 */
+	static float[] faceNormal(Quad q) {
+		float[] g = new float[3];
+		int[][] halves = {{0, 2, 1}, {1, 2, 3}};
+		for (int[] t : halves) {
+			float[] a = q.pos[t[0]], b = q.pos[t[1]], c = q.pos[t[2]];
+			float ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+			float vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+			g[0] += uy * vz - uz * vy;
+			g[1] += uz * vx - ux * vz;
+			g[2] += ux * vy - uy * vx;
+		}
+		return g;
 	}
 
 	/**

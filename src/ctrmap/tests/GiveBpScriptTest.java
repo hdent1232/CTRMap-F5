@@ -57,7 +57,7 @@ public class GiveBpScriptTest {
 			tested++;
 			try {
 				List<Integer> before = ZoneScriptAnalyzer.listScriptIds(s);
-				int newId = FacilityScriptWizard.addGiveBpScript(NpcScriptGateTest.ORAS, s, AMOUNT);
+				int newId = FacilityScriptWizard.addGiveBpScript(NpcScriptGateTest.ORAS, s, AMOUNT, -1);
 				byte[] out = s.getScriptBytes();
 
 				// re-parse from bytes and verify structure
@@ -121,11 +121,72 @@ public class GiveBpScriptTest {
 				}
 			}
 		}
+		//A TEMPLATE REFUSES BEFORE IT CHANGES THE SCRIPT (the 2026-10-14 shared sweep, PawnEmitter 95, dropped, SURVIVED:
+		//every grant above is given on every talk, so no once-flag was ever judged - and the grant added its two BP
+		//natives to the script before the flag was). Asked of a zone that lacks them, so adding them would show.
+		byte[] bare = null;
+		for (int z = 0; z < zones && bare == null; z++) {
+			byte[] sub = subfile(zo.getDecompressedEntry(z), 2);
+			GFLPawnScript s = parsed(sub);
+			if (s != null && ZoneScriptAnalyzer.findDispatch(s) != null && !hasNative(s, getBPh) && !hasNative(s, setBPh)) {
+				bare = sub;
+			}
+		}
+		Object[][] refusals = {
+			{"a grant of 0 BP", 0, -1, "BP amount must be non-zero."},
+			{"a grant once by flag 0", AMOUNT, 0, "Event flag 0 does not fit a packed argument (1..32767)."},
+			{"a grant once by flag 32768", AMOUNT, 32768, "Event flag 32768 does not fit a packed argument (1..32767)."}};
+		for (Object[] r : refusals) {
+			GFLPawnScript s = parsed(bare);
+			if (s == null) {
+				failures++;
+				System.out.println("FAIL " + r[0] + " is refused: no zone with a dispatch and without the BP natives to ask it of");
+				continue;
+			}
+			byte[] was = s.getScriptBytes();
+			String said;
+			try {
+				said = "it added case " + FacilityScriptWizard.addGiveBpScript(NpcScriptGateTest.ORAS, s, (Integer) r[1], (Integer) r[2]);
+			} catch (IllegalArgumentException | IllegalStateException refused) {
+				said = refused.getMessage();
+			}
+			boolean kept = java.util.Arrays.equals(was, s.getScriptBytes());
+			if (!r[3].equals(said) || !kept) {
+				failures++;
+				System.out.println("FAIL " + r[0] + " is refused, the script left as it was: " + said + (kept ? "" : " (and the script was changed)"));
+			} else {
+				System.out.println("  ok: " + r[0] + " is refused, the script left as it was: " + said);
+			}
+		}
 		System.out.println("\nGiveBP emit: tested=" + tested + " (noDispatch " + noDispatch + ")  ok=" + ok + "  failures=" + failures);
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT");
 		if (failures > 0) {
 			System.exit(1);
 		}
+	}
+
+	/** A zone script parsed and decompressed, or null when there is none to parse. */
+	static GFLPawnScript parsed(byte[] sub) {
+		if (sub == null || sub.length < 8) {
+			return null;
+		}
+		try {
+			GFLPawnScript s = new GFLPawnScript(sub);
+			s.decompressThis();
+			return s;
+		} catch (RuntimeException unparsed) {
+			return null;
+		}
+	}
+
+	/** Does {@code s} already declare the native whose name hashes to {@code hash}? */
+	static boolean hasNative(GFLPawnScript s, int hash) {
+		for (int i = 0; i < s.natives.size(); i++) {
+			if (s.natives.get(i).data[1] == hash) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	static int idxOf(List<PawnInstruction> list, PawnInstruction target) {

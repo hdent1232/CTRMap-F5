@@ -178,31 +178,42 @@ public class ItemIconPatchTest {
 		System.out.println("--- stock bytes are verified before anything is written");
 		byte[] noAnchor = good.clone();
 		noAnchor[ItemIconTable.FILE_OFFSET - 4] ^= 0xFF;
-		check(!ItemIconTable.atMeasuredOffset(noAnchor) && refusesToRead(noAnchor),
-				"a file whose anchor does not read as recorded is refused rather than patched blind");
+		//EACH REFUSAL IN ITS OWN WORDS (the 2026-10-14 shared sweep, ShopData 109): asked only WHETHER the read
+		//refused, a refusal dropped was caught by the next check down - a file with no anchor called "a different
+		//build at 0xffffffff" - and nothing could tell the two apart
+		String said = readRefusal(noAnchor);
+		check(!(ItemIconTable.locate(noAnchor) == ItemIconTable.FILE_OFFSET)
+				&& said.startsWith("this file does not contain the ORAS item-icon table"),
+				"a file whose anchor does not read as recorded is refused rather than patched blind: " + said);
 
 		byte[] movedTable = good.clone();
 		//the neighbouring table is the fingerprint: change the word that makes
 		//it distinctive (the skipped 5) and the build is no longer the one these
 		//offsets were measured in
 		putI32(movedTable, ItemIconTable.NEXT_TABLE + 5 * 4, 5);
-		check(refusesToRead(movedTable),
-				"a file where the table AFTER the icons does not read as recorded is refused");
+		said = readRefusal(movedTable);
+		check(said.startsWith("the table after the item icons does not read as recorded (word 5 is 5"),
+				"a file where the table AFTER the icons does not read as recorded is refused: " + said);
 
 		byte[] shortFile = Arrays.copyOf(good, ItemIconTable.FILE_OFFSET + 8);
-		check(refusesToRead(shortFile), "a file too short to hold the table is refused");
+		said = readRefusal(shortFile);
+		check(said.equals("code.bin is too short to hold the icon table (" + shortFile.length + " bytes)"),
+				"a file too short to hold the table is refused: " + said);
 
 		byte[] wildValue = good.clone();
 		putI32(wildValue, ItemIconTable.FILE_OFFSET + 400 * 4, 999999);
-		check(refusesToRead(wildValue),
-				"a 'table' holding a value no icon index could be is refused - it is not the icon table");
+		said = readRefusal(wildValue);
+		check(said.startsWith("item 400 points at icon 999999"),
+				"a 'table' holding a value no icon index could be is refused - it is not the icon table: " + said);
 
 		//and the anchor must be the thing that finds it, not the constant alone
 		byte[] shifted = new byte[good.length + 64];
 		System.arraycopy(good, 0, shifted, 64, good.length);
-		check(refusesToRead(shifted),
+		said = readRefusal(shifted);
+		check(said.startsWith("the item-icon table is at 0x" + Integer.toHexString(ItemIconTable.FILE_OFFSET + 64))
+				&& said.contains("this is a different build"),
 				"a build where the anchor is found somewhere ELSE is refused, rather than patched"
-				+ " at the offset that used to be right");
+				+ " at the offset that used to be right: " + said);
 	}
 
 	static void theRealBuildMatchesWhatWasMeasured(byte[] code) {
@@ -274,12 +285,15 @@ public class ItemIconPatchTest {
 		}
 	}
 
-	static boolean refusesToRead(byte[] code) {
+	/** What reading the icon table out of {@code code} said: its refusal in words, or that it read. */
+	static String readRefusal(byte[] code) {
 		try {
 			ItemIconTable.read(code);
-			return false;
-		} catch (RuntimeException ex) {
-			return true;
+			return "it read the table";
+		} catch (IllegalArgumentException | IllegalStateException refused) {
+			return String.valueOf(refused.getMessage());
+		} catch (RuntimeException other) {
+			return "it failed some other way: " + other;
 		}
 	}
 

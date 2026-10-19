@@ -2,9 +2,14 @@ package ctrmap.tests;
 
 import ctrmap.humaninterface.OpenEditors;
 import ctrmap.humaninterface.ZoneEditors;
+import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * "Save what the editors are holding, and stop if one refuses" is one list, in
@@ -47,6 +52,8 @@ public class OpenEditorsTest {
 		anEmptyZoneSetIsRefused();
 		everyRecordFormIsAskedToCommit();
 		aRefusalToCommitStopsTheZoneBeingWritten();
+		everyEditorInTheWindowsChainReadsItsQuestion(new File(args.length > 0 ? args[0] : "src"));
+		whatTheChainAnswersIsSaid(new File(args.length > 0 ? args[0] : "src"));
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -107,6 +114,97 @@ public class OpenEditorsTest {
 		editors.saveAll(false);
 		check(heard.equals(Arrays.asList(true, false)),
 				"the flag reaches every editor as it was given - File > Save asks nobody: " + heard);
+	}
+
+	/**
+	 * Census H.1: every editor in the main window's chain is handed the question and answers it. The collision
+	 * editor's entry was {@code ask -> { store(); return true; }}: it wrote without asking and said yes whatever
+	 * happened, so No to every question of a zone switch still wrote the collisions - and a lambda in a list is
+	 * invisible to a scan of method declarations, which is where the "always true" refusal looked.
+	 */
+	static void everyEditorInTheWindowsChainReadsItsQuestion(File src) throws Exception {
+		System.out.println("--- every editor in the window's save chain is handed the question and answers it (census H.1)");
+		List<String> planted = ignoringTheQuestion("asList(ask -> a.store(ask), b::store, ask -> {\n\tc.store();\n\treturn true;\n})");
+		check(planted.size() == 1 && planted.get(0).contains("c.store()"),
+				"control: an entry that never reads its question is found, and one that forwards it is not: " + planted);
+		String main = new String(Files.readAllBytes(new File(src, "ctrmap/CtrmapMainframe.java").toPath()),
+				StandardCharsets.UTF_8);
+		int at = main.indexOf("private OpenEditors buildOpenEditors()");
+		int list = at < 0 ? -1 : main.indexOf("asList(", at);
+		check(list > 0, "control: the window builds its chain in buildOpenEditors");
+		if (list < 0) {
+			return;
+		}
+		List<String> entries = entries(main.substring(list));
+		check(entries.size() >= 8, "control: the chain's entries are read (" + entries.size() + ")");
+		List<String> wrong = ignoringTheQuestion(main.substring(list));
+		check(wrong.isEmpty(), "every entry reads the question it is handed: " + wrong);
+	}
+
+	/**
+	 * Census M.101, M.124: what the chain answers is said, and a wait that runs out is a failure. File > Save all
+	 * dropped the chain's answer, so Ctrl+S over a file that could not be written answered with nothing; and the
+	 * headless progress wait dropped its timeout's answer, so a worker that never finished read as finished.
+	 */
+	static void whatTheChainAnswersIsSaid(File src) throws Exception {
+		System.out.println("--- Save all says when not everything was saved, and a wait that runs out fails (census M.101, M.124)");
+		String main = new String(Files.readAllBytes(new File(src, "ctrmap/CtrmapMainframe.java").toPath()), StandardCharsets.UTF_8);
+		String save = CollisionReadTest.body(SourceSeamTest.stripComments(main), "private void saveAllAction()");
+		check(save != null && save.contains("saved = openEditors.saveAll(false)") && save.contains("if (!saved)")
+				&& save.contains("catch (RuntimeException"), "Save all reads the chain's answer, says a false, and says a throw");
+		//census L.13: the Quick start guide is looked for beside the installed program, not only in the working folder
+		String guide = CollisionReadTest.body(SourceSeamTest.stripComments(main), "private void quickStartAction()");
+		check(guide != null && guide.contains("Updater.besideTheProgram(\"QUICKSTART.md\""),
+				"the Quick start guide is looked for beside the installed program first");
+		String dialog = SourceSeamTest.stripComments(new String(Files.readAllBytes(
+				new File(src, "ctrmap/humaninterface/LoadingDialog.java").toPath()), StandardCharsets.UTF_8));
+		check(dialog.contains("if (!closed.await(") && !dialog.matches("(?s).*[;{}]\\s*closed\\.await\\(.*"),
+				"the headless progress wait reads its timeout's answer and never drops it");
+		//census L.55: a zone whose atmosphere could not be read showed as one with no fog, and nothing said so
+		String fog = CollisionReadTest.body(SourceSeamTest.stripComments(main), "private void refreshSceneFog()");
+		int caught = fog == null ? -1 : fog.indexOf("catch (Exception unread)");
+		String handler = caught < 0 ? "" : fog.substring(caught);
+		check(fog != null && fog.contains("m3DDebugPanel.setFog(") && caught > 0, "control: the fog refresh is found, with its catch");
+		check(handler.contains(".warning(") && handler.contains("Ui.reason(unread)"),
+				"a fog that could not be read is said, with its reason, not shown as no fog");
+	}
+
+	/** The entries of the {@code asList(...)} {@code text} starts with, split at its top-level commas. */
+	static List<String> entries(String text) {
+		List<String> out = new ArrayList<>();
+		int start = text.indexOf('(') + 1;
+		int depth = 0;
+		for (int i = start; i < text.length(); i++) {
+			char c = text.charAt(i);
+			if (c == '(' || c == '{' || c == '[') {
+				depth++;
+			} else if (c == ')' || c == '}' || c == ']') {
+				if (depth == 0) {
+					out.add(text.substring(start, i).trim());
+					return out;
+				}
+				depth--;
+			} else if (c == ',' && depth == 0) {
+				out.add(text.substring(start, i).trim());
+				start = i + 1;
+			}
+		}
+		return out;
+	}
+
+	/** The entries of that list that never read the question they are handed; a method reference forwards it. */
+	static List<String> ignoringTheQuestion(String text) {
+		List<String> out = new ArrayList<>();
+		for (String entry : entries(text)) {
+			if (entry.matches("[\\w.]+::\\w+")) {
+				continue;
+			}
+			Matcher lambda = Pattern.compile("^(\\w+)\\s*->(.*)$", Pattern.DOTALL).matcher(entry);
+			if (!lambda.find() || !Pattern.compile("\\b" + Pattern.quote(lambda.group(1)) + "\\b").matcher(lambda.group(2)).find()) {
+				out.add(entry.replaceAll("\\s+", " "));
+			}
+		}
+		return out;
 	}
 
 	// -------------------------------------------------------------- 4. the empty

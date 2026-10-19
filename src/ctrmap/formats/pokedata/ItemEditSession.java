@@ -124,6 +124,12 @@ public final class ItemEditSession {
 	 */
 	public EnumSet<Changed> save(int id, byte[] rec, String name, String desc) throws IOException {
 		EnumSet<Changed> changed = EnumSet.noneOf(Changed.class);
+		//AN ITEM WITH NO LINE OF ITS OWN IS REFUSED BEFORE ANYTHING IS WRITTEN (census M.111): the name and the
+		//description were skipped past the lists' end after the record was written
+		if (id < 0 || id >= names.size() || id >= descs.size()) {
+			throw new IOException("item " + id + " has no line in the item names (" + names.size() + ") or descriptions ("
+					+ descs.size() + "), so nothing was saved: its name and description could not be written with it");
+		}
 		if (!Arrays.equals(rec, table.raw(id))) {
 			table.writeRecord(id, rec);
 			changed.add(Changed.RECORD);

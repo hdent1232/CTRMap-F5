@@ -64,14 +64,20 @@ public class DressUpIndexTest {
 	};
 
 	public static void main(String[] args) throws Exception {
+		//asked of blobs made here, BEFORE the archive is looked for: a machine with no game still runs them
+		int refused = everyRefusalSaysItsOwnReason();
 		String root = args.length > 0 ? args[0] : "../RomFS/000400000011C400";
 		File archive = new File(root + "/a/0/8/8");
 		if (!archive.isFile()) {
+			if (refused > 0) {
+				System.out.println("FAILURES PRESENT (" + refused + ")");
+				System.exit(1);
+			}
 			Skip.suite("no player-parts archive at " + archive);
 			return;
 		}
 		GARC g = new GARC(archive, true);
-		int fails = 0;
+		int fails = refused;
 
 		DressUpArchive da = new DressUpArchive(g);
 		fails += check("two index sets found", da.sets().size() == 2);
@@ -482,6 +488,77 @@ public class DressUpIndexTest {
 			}
 		}
 		return out;
+	}
+
+	/**
+	 * Each way a blob is not an index container is refused in its own words, and isContainer answers exactly when
+	 * read would refuse.
+	 *
+	 * <p>Measured by the 2026-10-14 shared sweep (DressUpIndex 295, dropped, SURVIVED): read repeated two of
+	 * isContainer's checks after isContainer had passed, so its refusals of a table cut short and a table out of
+	 * order could never be reached, and a blob with the right magic was told it had the wrong one. One answer serves
+	 * both now.
+	 */
+	static int everyRefusalSaysItsOwnReason() {
+		int fails = 0;
+		byte[] empty = container('D', 'B', 8, 40, new int[]{40, 40, 40, 40, 40, 40, 40, 40, 40});
+		fails += check("control: a DB blob of 8 empty sections is a container, it said: " + reason(empty),
+				DressUpIndex.isContainer(empty) && !reason(empty).startsWith("refused"));
+		String[][] cases = {
+			{"too short", reason(new byte[15]), "refused: dress-up container too short"},
+			{"wrong magic", reason(container('X', 'Y', 8, 40, new int[]{40, 40, 40, 40, 40, 40, 40, 40, 40})),
+				"refused: not a dress-up index container: magic 'XY'"},
+			{"7 sections", reason(container('D', 'B', 7, 40, new int[]{40, 40, 40, 40, 40, 40, 40, 40})),
+				"refused: a dress-up index container holds 8 sections, and this one declares 7"},
+			{"a table cut short", reason(container('D', 'B', 8, 16, new int[]{40, 40, 40})),
+				"refused: dress-up container section table is cut short"},
+			{"a table out of order", reason(container('D', 'B', 8, 40, new int[]{40, 40, 39, 40, 40, 40, 40, 40, 40})),
+				"refused: dress-up container section table is not monotonic"},
+			{"sections ending short of the blob",
+				reason(container('D', 'B', 8, 41, new int[]{40, 40, 40, 40, 40, 40, 40, 40, 40})),
+				"refused: the dress-up container's sections end at 40, and the blob is 41 bytes"}};
+		for (String[] c : cases) {
+			fails += check(c[0] + " is refused in its own words: " + c[1], c[1].equals(c[2]));
+		}
+		return fails;
+	}
+
+	/** A blob of {@code length} bytes: magic, section count, then as much of {@code table} as fits. */
+	static byte[] container(char a, char b, int sections, int length, int[] table) {
+		byte[] c = new byte[length];
+		c[0] = (byte) a;
+		c[1] = (byte) b;
+		c[2] = (byte) sections;
+		for (int i = 0; i < table.length && 4 + 4 * i + 4 <= length; i++) {
+			for (int k = 0; k < 4; k++) {
+				c[4 + 4 * i + k] = (byte) (table[i] >>> (8 * k));
+			}
+		}
+		return c;
+	}
+
+	/** What read said of a blob: its refusal, or how far it got past the container check. */
+	static String reason(byte[] blob) {
+		//NEITHER CALL MAY TAKE THE SUITE DOWN: a check that crashes before it prints says nothing about what it
+		//watches for, and the rest of the suite never runs (a plant was NOT PROVEN that way, 2026-10-14)
+		boolean container;
+		try {
+			container = DressUpIndex.isContainer(blob);
+		} catch (RuntimeException other) {
+			return "isContainer failed: " + other;
+		}
+		try {
+			DressUpIndex.read(blob);
+			return "read it, isContainer " + container;
+		} catch (IllegalArgumentException refused) {
+			String said = String.valueOf(refused.getMessage());
+			boolean asContainer = !said.startsWith("dress-up container") && !said.startsWith("not a dress-up")
+					&& !said.startsWith("a dress-up index container") && !said.startsWith("the dress-up container's");
+			return asContainer == container ? (container ? "past the container check: " + said : "refused: " + said)
+					: "isContainer said " + container + " where read said: " + said;
+		} catch (RuntimeException other) {
+			return "it failed some other way: " + other;
+		}
 	}
 
 	private static boolean refuses(byte[] blob) {

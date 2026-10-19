@@ -94,104 +94,139 @@ public class PokePickers {
 	private static int pick(Component parent, int current, Kind kind, String title, GameFiles game) {
 		Window owner = parent == null ? null : SwingUtilities.getWindowAncestor(parent);
 		final JDialog dlg = new JDialog(owner, title, JDialog.ModalityType.APPLICATION_MODAL);
-		final int[] result = {-1};
-
-		final PokeData data = game == null ? PokeData.none() : PokeData.of(game);
-		int count = kind == Kind.SPECIES ? data.speciesCount()
-				: kind == Kind.MOVE ? data.moveCount() : data.itemCount();
-		final List<int[]> all = new ArrayList<>();   // {id}
-		final List<String> labels = new ArrayList<>();
-		for (int id = 0; id < count; id++) {
-			all.add(new int[]{id});
-			labels.add(id + "  " + nameOf(data, kind, id));
-		}
-
-		final DefaultListModel<String> lm = new DefaultListModel<>();
-		final List<Integer> visibleIds = new ArrayList<>();
-		final JList<String> list = new JList<>(lm);
-		list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-		final PreviewPanel preview = new PreviewPanel(kind, data);
-		final JTextField search = new JTextField();
-
-		Runnable rebuild = () -> {
-			String q = search.getText().trim().toLowerCase();
-			lm.clear();
-			visibleIds.clear();
-			for (int i = 0; i < all.size(); i++) {
-				int id = all.get(i)[0];
-				if (id == 0 && kind != Kind.ITEM) {
-					continue; // species/move 0 = none/dummy
-				}
-				if (q.isEmpty() || labels.get(i).toLowerCase().contains(q)) {
-					lm.addElement(labels.get(i));
-					visibleIds.add(id);
-				}
-			}
-		};
-		rebuild.run();
-		list.addListSelectionListener(e -> {
-			int vi = list.getSelectedIndex();
-			if (vi >= 0 && vi < visibleIds.size()) {
-				preview.set(visibleIds.get(vi));
-			}
-		});
-		search.getDocument().addDocumentListener(new DocumentListener() {
-			public void insertUpdate(DocumentEvent e) {
-				rebuild.run();
-			}
-
-			public void removeUpdate(DocumentEvent e) {
-				rebuild.run();
-			}
-
-			public void changedUpdate(DocumentEvent e) {
-				rebuild.run();
-			}
-		});
-		// select the current value
-		selectId(list, visibleIds, current);
-		if (list.getSelectedIndex() < 0 && !visibleIds.isEmpty()) {
-			list.setSelectedIndex(0);
-		}
-
-		JButton ok = new JButton("Choose");
-		JButton cancel = new JButton("Cancel");
-		Runnable choose = () -> {
-			int vi = list.getSelectedIndex();
-			if (vi >= 0 && vi < visibleIds.size()) {
-				result[0] = visibleIds.get(vi);
-			}
-			dlg.dispose();
-		};
-		ok.addActionListener(e -> choose.run());
-		cancel.addActionListener(e -> dlg.dispose());
-		list.addMouseListener(new java.awt.event.MouseAdapter() {
-			public void mouseClicked(java.awt.event.MouseEvent e) {
-				if (e.getClickCount() == 2) {
-					choose.run();
-				}
-			}
-		});
-
-		JPanel left = new JPanel(new BorderLayout(0, 4));
-		left.add(search, BorderLayout.NORTH);
-		JScrollPane sp = new JScrollPane(list);
-		sp.setPreferredSize(new Dimension(240, 320));
-		left.add(sp, BorderLayout.CENTER);
-
-		JPanel buttons = new JPanel();
-		buttons.add(ok);
-		buttons.add(cancel);
-
+		dlg.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);   //the title bar's X lets it go (census L.53)
+		Picker picker = new Picker(current, kind, game == null ? PokeData.none() : PokeData.of(game), dlg::dispose);
+		dlg.getRootPane().setDefaultButton(picker.ok);   //Enter is Choose
 		dlg.setLayout(new BorderLayout(8, 8));
 		((JPanel) dlg.getContentPane()).setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
-		dlg.add(left, BorderLayout.WEST);
-		dlg.add(preview, BorderLayout.CENTER);
-		dlg.add(buttons, BorderLayout.SOUTH);
+		dlg.add(picker.left, BorderLayout.WEST);
+		dlg.add(picker.preview, BorderLayout.CENTER);
+		dlg.add(picker.buttons, BorderLayout.SOUTH);
 		dlg.pack();
 		dlg.setLocationRelativeTo(parent);
 		dlg.setVisible(true);
-		return result[0];
+		return picker.result();
+	}
+
+	/**
+	 * A picker without its window: the search, the list, the preview, Choose and Cancel, and what was chosen. Apart
+	 * from the modal window {@link #pick} shows it in, so a suite can type, select and press (the 2026-10-15 shared
+	 * sweep, PokePickers 170, negate-if, SURVIVED: the window was the only way in, and no suite can answer one).
+	 */
+	public static final class Picker {
+
+		public final JTextField search = new JTextField();
+		public final JList<String> list;
+		public final JButton ok = new JButton("Choose");
+		public final JButton cancel = new JButton("Cancel");
+		final PreviewPanel preview;
+		final JPanel left;
+		final JPanel buttons;
+		private final int[] result = {-1};
+
+		/**
+		 * @param close what Choose and Cancel do once they are done - the window's dispose, or a suite's note
+		 */
+		public Picker(int current, Kind kind, PokeData data, Runnable close) {
+			int count = kind == Kind.SPECIES ? data.speciesCount()
+					: kind == Kind.MOVE ? data.moveCount() : data.itemCount();
+			final List<int[]> all = new ArrayList<>();   // {id}
+			final List<String> labels = new ArrayList<>();
+			for (int id = 0; id < count; id++) {
+				all.add(new int[]{id});
+				labels.add(id + "  " + nameOf(data, kind, id));
+			}
+
+			final DefaultListModel<String> lm = new DefaultListModel<>();
+			final List<Integer> visibleIds = new ArrayList<>();
+			list = new JList<>(lm);
+			list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+			preview = new PreviewPanel(kind, data);
+
+			Runnable rebuild = () -> {
+				//THE CHOICE SURVIVES THE SEARCH (census M.138): clearing the model dropped the selection and nothing
+				//chose again, so Choose after typing closed the picker exactly as Cancel does
+				int shown = list.getSelectedIndex();
+				int was = shown >= 0 && shown < visibleIds.size() ? visibleIds.get(shown) : current;
+				String q = search.getText().trim().toLowerCase();
+				lm.clear();
+				visibleIds.clear();
+				for (int i = 0; i < all.size(); i++) {
+					int id = all.get(i)[0];
+					if (id == 0 && kind != Kind.ITEM) {
+						continue; // species/move 0 = none/dummy
+					}
+					if (q.isEmpty() || labels.get(i).toLowerCase().contains(q)) {
+						lm.addElement(labels.get(i));
+						visibleIds.add(id);
+					}
+				}
+				selectId(list, visibleIds, was);
+				if (list.getSelectedIndex() < 0 && !visibleIds.isEmpty()) {
+					list.setSelectedIndex(0);
+				}
+			};
+			rebuild.run();
+			ctrmap.util.Selections.onSettled(list, () -> {
+				int vi = list.getSelectedIndex();
+				if (vi >= 0 && vi < visibleIds.size()) {
+					preview.set(visibleIds.get(vi));
+				}
+			});
+			search.getDocument().addDocumentListener(new DocumentListener() {
+				public void insertUpdate(DocumentEvent e) {
+					rebuild.run();
+				}
+
+				public void removeUpdate(DocumentEvent e) {
+					rebuild.run();
+				}
+
+				public void changedUpdate(DocumentEvent e) {
+					rebuild.run();
+				}
+			});
+			// select the current value
+			selectId(list, visibleIds, current);
+			if (list.getSelectedIndex() < 0 && !visibleIds.isEmpty()) {
+				list.setSelectedIndex(0);
+			}
+
+			Runnable choose = () -> {
+				int vi = list.getSelectedIndex();
+				if (vi < 0 || vi >= visibleIds.size()) {
+					return;   //nothing chosen is not a choice, and not a Cancel either - the button is not offered then
+				}
+				result[0] = visibleIds.get(vi);
+				close.run();
+			};
+			ok.setEnabled(list.getSelectedIndex() >= 0);
+			ctrmap.util.Selections.onSettled(list, () -> ok.setEnabled(list.getSelectedIndex() >= 0));
+			ok.addActionListener(e -> choose.run());
+			cancel.addActionListener(e -> close.run());
+			list.addMouseListener(new java.awt.event.MouseAdapter() {
+				public void mouseClicked(java.awt.event.MouseEvent e) {
+					if (e.getClickCount() == 2) {
+						choose.run();
+					}
+				}
+			});
+
+			left = new JPanel(new BorderLayout(0, 4));
+			left.add(search, BorderLayout.NORTH);
+			JScrollPane sp = new JScrollPane(list);
+			sp.setPreferredSize(new Dimension(240, 320));
+			left.add(sp, BorderLayout.CENTER);
+
+			buttons = new JPanel();
+			buttons.add(ok);
+			buttons.add(cancel);
+		}
+
+		/** The id chosen, or -1 when nothing was. */
+		public int result() {
+			return result[0];
+		}
 	}
 
 	private static void selectId(JList<String> list, List<Integer> ids, int id) {

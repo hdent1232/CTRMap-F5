@@ -452,9 +452,14 @@ public class BchMapModel {
 			int idxCount = 0;
 			int subCmdPtr = ptr(subPtr + 0x2C);
 			Integer es = idxElem.get(subCmdPtr + 0x10);
-			if (es != null) {
-				int numIdx = i32(subCmdPtr + 0x10 + 8);       // NUMVERTICES param
-				int idxAbs = rawDataAddr + (i32(subCmdPtr + 0x10) & 0x7FFFFFFF);
+			//THE TRIANGLES ARE PART OF "EDITABLE" (census M.6): posOk asked only about the positions, while
+			//getTriangles answered null for a mesh whose index buffer is not located - and Move, Duplicate,
+			//Delete and Copy as prefab, guarded by posOk alone, dereferenced it. Measured on the ORAS dump:
+			//0 of 14112 posOk meshes lack their triangles, so no retail mesh stops being editable
+			int numIdx = es == null ? -1 : i32(subCmdPtr + 0x10 + 8);       // NUMVERTICES param
+			int idxAbs = es == null ? -1 : rawDataAddr + (i32(subCmdPtr + 0x10) & 0x7FFFFFFF);
+			boolean trisOk = es != null && numIdx >= 0 && idxAbs >= 0 && (long) idxAbs + (long) numIdx * es <= raw.length;
+			if (trisOk) {
 				int maxIndex = 0;
 				for (int k = 0; k < numIdx; k++) {
 					int v = es == 1 ? (raw[idxAbs + k] & 0xFF) : u16(idxAbs + k * 2);
@@ -471,7 +476,7 @@ public class BchMapModel {
 
 			// decode confidence: a Float(3) position that fits the stride and whose
 			// first/last vertex read as finite, map-scale coordinates.
-			boolean posOk = posOffset >= 0 && posType == 3 && posElems >= 3
+			boolean posOk = trisOk && posOffset >= 0 && posType == 3 && posElems >= 3
 					&& stride >= posOffset + 12 && vertexCount > 0
 					&& coordSane(vtxAbs + posOffset, stride, 0) && coordSane(vtxAbs + posOffset, stride, vertexCount - 1);
 			out.add(new MeshGeom(mi, vtxAbs, stride, posOffset, posType, posElems, vertexCount, posOk));
@@ -518,18 +523,13 @@ public class BchMapModel {
 	}
 
 	/**
-	 * Returns a copy of the model with one mesh's vertex positions replaced. This
+	 * Returns a copy of the model with meshes' vertex positions replaced. This
 	 * is offset-PRESERVING (vertex count/format unchanged - only position bytes
 	 * change), so every offset, tree and relocation entry stays identical. Extra
-	 * positions beyond the mesh's vertex count are ignored; the mesh must have a
+	 * positions beyond a mesh's vertex count are ignored; the mesh must have a
 	 * decodable Float(3) position.
-	 */
-	public byte[] setVertexPositions(int meshIndex, float[][] positions) {
-		return setVertexPositions(java.util.Collections.singletonMap(meshIndex, positions));
-	}
-
-	/**
-	 * {@link #setVertexPositions(int, float[][])} for several meshes, written into ONE copy - the
+	 *
+	 * <p>Every mesh is written into ONE copy - the
 	 * edit is offset-preserving, so nothing moves and no re-parse is owed between meshes (F068: the
 	 * box move wrote one mesh, re-parsed the whole model, and went on to the next). A mesh index out
 	 * of range, or a mesh without decodable positions, is left as it is.
@@ -552,17 +552,148 @@ public class BchMapModel {
 				LittleEndian.putF32(out, base + 8, positions[v][2]);
 			}
 		}
+		refitBounds(out, positionsByMesh.keySet());
 		return out;
+	}
+
+	// ---- mesh bounds (F075) --------------------------------------------------------------------
+
+	/**
+	 * The data of the metadata value named {@code name} in a mesh header's dictionary (+0x34), as an
+	 * offset into this model, or -1 when the mesh has no dictionary or no such value.
+	 */
+	int meshMeta(int header, String name) {
+		int dict = ptr(header + 0x34);
+		if (dict == 0) {
+			return -1;
+		}
+		int values = ptr(dict), count = i32(dict + 4);
+		for (int k = 0; k < count; k++) {
+			int v = values + k * 12;
+			int at = ptr(v);
+			if (at > 0 && name.equals(StringUtils.cString(raw, at))) {
+				return ptr(v + 8);
+			}
+		}
+		return -1;
+	}
+
+	/**
+	 * Why mesh {@code mi}'s box is not true of it - a vertex outside its "OBBox", or a header centre that is
+	 * not that box's centre, the two facts every retail mesh holds (F075) - or null; null too for a mesh with
+	 * no box, or none to read. BchModelVerifier asks it of every mesh, and refitBounds of every mesh a write
+	 * moved.
+	 *
+	 * <p>WHAT THE FILE HOLDS, MEASURED 2026-10-09 over all 14,117 retail FieldData meshes: each mesh's
+	 * metadata dictionary names an "OBBox" - centre (3 floats), a 3x3 orientation stored row-major with the
+	 * box's AXES IN ITS COLUMNS, and the full size along each - and the header's centre (+0x20) IS that
+	 * centre, in all 14,112 whose positions decode, with every vertex inside the box in all 14,112. A
+	 * "$BBoxMinMax" stands beside it and is NOT the mesh's box (the mesh's in 3,363, the whole model's in
+	 * 1,090, neither in 9,145, absent from 519), so it is neither checked nor written. Whether the engine
+	 * culls by the box is the owner's in-game check; that every write keeps it true is this.
+	 */
+	String boundsProblem(int mi) {
+		List<MeshGeom> geom = geometry();
+		int obb = mi < geom.size() && geom.get(mi).posOk ? meshMeta(meshes.get(mi)[0], "OBBox") : -1;
+		if (obb < 0) {
+			return null;
+		}
+		float[] box = box(raw, obb);
+		double tol = 0.01 + 1e-4 * Math.max(box[12], Math.max(box[13], box[14]));
+		double worst = 0;
+		for (float[] p : getVertexPositions(mi)) {
+			for (int a = 0; a < 3; a++) {
+				double along = (p[0] - box[0]) * box[3 + a] + (p[1] - box[1]) * box[6 + a] + (p[2] - box[2]) * box[9 + a];
+				worst = Math.max(worst, Math.abs(along) - box[12 + a] / 2);
+			}
+		}
+		if (worst > tol) {
+			return "a vertex lies " + (float) worst + " outside its OBBox";
+		}
+		int h = meshes.get(mi)[0];
+		if (LittleEndian.f32(raw, h + 0x20) != box[0] || LittleEndian.f32(raw, h + 0x24) != box[1]
+				|| LittleEndian.f32(raw, h + 0x28) != box[2]) {
+			return "the header's centre is not its OBBox's centre";
+		}
+		return null;
+	}
+
+	/**
+	 * Where mesh {@code mi}'s bounds are written, as {header centre, OBBox data} offsets into this model -
+	 * 12 bytes at the first, 60 at the second - or null for a mesh with no box. A writer that moves
+	 * vertices changes these and no other bytes outside the raw data (F075).
+	 */
+	public int[] boundsAt(int mi) {
+		int obb = mi < meshes.size() ? meshMeta(meshes.get(mi)[0], "OBBox") : -1;
+		return obb < 0 ? null : new int[]{meshes.get(mi)[0] + 0x20, obb};
+	}
+
+	/** An OBBox's 15 floats: centre 0..2, the row-major orientation 3..11 (axis a is 3+a, 6+a, 9+a), size 12..14. */
+	private static float[] box(byte[] b, int at) {
+		float[] f = new float[15];
+		for (int k = 0; k < 15; k++) {
+			f[k] = LittleEndian.f32(b, at + 4 * k);
+		}
+		return f;
+	}
+
+	/**
+	 * After a write that moved vertices, each named mesh's OBBox and header centre are made true of them
+	 * again (F075): every writer here moved vertices and left both as they were, so a mesh moved, grown
+	 * or repainted could stand outside the box the file gave it. The axes the exporter chose are kept;
+	 * the extents along them and the centre between are measured from the new vertices, so the box holds
+	 * them as every retail box holds its mesh. A box that STILL holds its mesh is left as the file has
+	 * it - a write that puts the same positions back stays byte for byte - and a mesh with no box, or
+	 * with positions that do not decode, is left as it is.
+	 */
+	static void refitBounds(byte[] out, java.util.Collection<Integer> meshIndices) {
+		BchMapModel m = new BchMapModel(out);
+		List<MeshGeom> geom = m.geometry();
+		for (int mi : meshIndices) {
+			if (mi < 0 || mi >= m.meshes.size() || mi >= geom.size() || !geom.get(mi).posOk || m.boundsProblem(mi) == null) {
+				continue;
+			}
+			int[] at = m.boundsAt(mi);
+			int obb = at == null ? -1 : at[1];
+			float[][] pos = obb < 0 ? null : m.getVertexPositions(mi);
+			if (pos == null || pos.length == 0) {
+				continue;
+			}
+			float[] box = box(out, obb);
+			double[] lo = {Double.MAX_VALUE, Double.MAX_VALUE, Double.MAX_VALUE};
+			double[] hi = {-Double.MAX_VALUE, -Double.MAX_VALUE, -Double.MAX_VALUE};
+			for (float[] p : pos) {
+				for (int a = 0; a < 3; a++) {
+					double along = p[0] * box[3 + a] + p[1] * box[6 + a] + p[2] * box[9 + a];
+					lo[a] = Math.min(lo[a], along);
+					hi[a] = Math.max(hi[a], along);
+				}
+			}
+			float[] centre = new float[3];
+			for (int k = 0; k < 3; k++) {
+				double c = 0;
+				for (int a = 0; a < 3; a++) {
+					c += (lo[a] + hi[a]) / 2 * box[3 + 3 * k + a];
+				}
+				centre[k] = (float) c;
+			}
+			for (int k = 0; k < 3; k++) {
+				LittleEndian.putF32(out, obb + 4 * k, centre[k]);
+				LittleEndian.putF32(out, at[0] + 4 * k, centre[k]);
+				LittleEndian.putF32(out, obb + 48 + 4 * k, (float) (hi[k] - lo[k]));
+			}
+		}
 	}
 
 	/**
 	 * Reads a mesh's triangle list as vertex indices (3 per face, in draw
-	 * order), or null if the mesh's index buffer cannot be located. This is the
-	 * face data for OBJ export and for in-app mesh picking.
+	 * order). This is the face data for OBJ export and for in-app mesh picking.
+	 * Never null: a mesh whose index buffer cannot be read is refused in words, and
+	 * no {@link MeshGeom#posOk} mesh is one (census M.6).
 	 */
 	public int[] getTriangles(int meshIndex) {
 		if (meshIndex < 0 || meshIndex >= meshes.size()) {
-			return null;
+			throw new IllegalArgumentException("there is no mesh " + meshIndex + " - the model has " + meshes.size());
 		}
 		int subPtr = meshes.get(meshIndex)[3];
 		int subCmdPtr = ptr(subPtr + 0x2C);
@@ -575,12 +706,14 @@ public class BchMapModel {
 			}
 		}
 		if (elemSize < 0) {
-			return null;
+			throw new IllegalStateException("mesh " + meshIndex + "'s index buffer is not located, so its triangles"
+					+ " cannot be read");
 		}
 		int numIdx = i32(subCmdPtr + 0x18);
 		int idxAbs = rawDataAddr + (i32(idxCmdLoc) & 0x7FFFFFFF);
-		if (numIdx < 0 || idxAbs + numIdx * elemSize > raw.length) {
-			return null;
+		if (numIdx < 0 || idxAbs < 0 || (long) idxAbs + (long) numIdx * elemSize > raw.length) {
+			throw new IllegalStateException("mesh " + meshIndex + "'s index buffer (" + numIdx + " indices at 0x"
+					+ Integer.toHexString(idxAbs) + ") runs past the model, so its triangles cannot be read");
 		}
 		int[] out = new int[numIdx];
 		for (int k = 0; k < numIdx; k++) {
@@ -660,13 +793,16 @@ public class BchMapModel {
 	/**
 	 * Returns a copy of this model with every vertex position translated by
 	 * (dx,dy,dz). This is an offset-PRESERVING edit: only vertex-position bytes
-	 * in the raw-data section change, so every section length, pointer, patricia
+	 * in the raw-data section change, and each moved mesh's bounds (F075) - its
+	 * header centre and its OBBox - so every section length, pointer, patricia
 	 * tree and relocation entry stays byte-identical - the result is game-valid
 	 * by construction (the sibling of BchTexturePack's deterministic rebuild).
 	 * Meshes whose position is not Float(3) are left untouched.
 	 */
+	@ctrmap.util.ForSuites("CAPABILITY: moves every mesh of a map model, bounds included, offset-preserving - proven on retail by BchMapModelTest and ModelTransformTest; a tool that moves a whole region would offer it")
 	public byte[] translate(float dx, float dy, float dz) {
 		byte[] out = raw.clone();
+		List<Integer> moved = new ArrayList<>();
 		for (MeshGeom g : geometry()) {
 			if (!g.posOk) {
 				continue; // unrecognized vertex format - leave untouched, never corrupt
@@ -677,7 +813,9 @@ public class BchMapModel {
 				LittleEndian.putF32(out, base + 4, Float.intBitsToFloat(LittleEndian.i32(out, base + 4)) + dy);
 				LittleEndian.putF32(out, base + 8, Float.intBitsToFloat(LittleEndian.i32(out, base + 8)) + dz);
 			}
+			moved.add(g.meshIndex);
 		}
+		refitBounds(out, moved);
 		return out;
 	}
 
@@ -701,13 +839,8 @@ public class BchMapModel {
 	 * <p>This is the structural-write plumbing: it keeps offsets/sizes internally
 	 * consistent. Producing a semantically-valid <em>edit</em> (matching vertex
 	 * counts, attribute config and index buffer) is the layer built on top.
-	 */
-	public byte[] rebuildRawData(Map<Integer, byte[]> replacements) {
-		return rebuildRawData(replacements, null);
-	}
-
-	/**
-	 * Like {@link #rebuildRawData(Map)}, with optional OUTPUT-ORDER overrides:
+	 *
+	 * <p>With optional OUTPUT-ORDER overrides (null for none):
 	 * {@code sortKeyOverride} maps a buffer's command-word location to a
 	 * synthetic sort key (default key = originalOffset*2), letting a buffer be
 	 * relocated - e.g. an index buffer upgraded u8-&gt;u16 moves to the end of
@@ -825,10 +958,7 @@ public class BchMapModel {
 			throw new IllegalArgumentException("extra vertex bytes (" + extraVertexBytes.length
 					+ ") must be a multiple of the mesh stride (" + g.stride + ")");
 		}
-		int[] old = getTriangles(meshIndex);
-		if (old == null) {
-			throw new IllegalStateException("mesh " + meshIndex + " index buffer not located");
-		}
+		int[] old = getTriangles(meshIndex);   //refuses, naming the mesh, when its index buffer is not located
 		//THE MESH AS IT IS, AND THE EXTRA (F062): this was the whole of setMeshGeometry written out a
 		//second time - the buffer lookup, the width upgrade, the encoding and the relocation flip -
 		//so a fix to one stayed out of the other. Growing a mesh IS replacing it with more.
@@ -1004,6 +1134,7 @@ public class BchMapModel {
 				}
 			}
 		}
+		refitBounds(out, prepared.keySet());
 		return out;
 	}
 
@@ -1047,10 +1178,6 @@ public class BchMapModel {
 		if (!cond) {
 			problems.add(what);
 		}
-	}
-
-	private int u8(int o) {
-		return raw[o] & 0xFF;
 	}
 
 	private int u16(int o) {

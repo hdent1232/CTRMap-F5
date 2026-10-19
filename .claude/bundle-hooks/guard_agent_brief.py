@@ -57,7 +57,7 @@ def missing(brief):
 
 def verdict(payload):
     for launch in bundle_shell.launches(payload):
-        absent = missing(launch.get("prompt"))
+        absent = missing(bundle_shell.brief(launch))
         if absent:
             return True, (
                 bundle_shell.policy(__file__) + "\n"

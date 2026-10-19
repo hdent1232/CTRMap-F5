@@ -183,8 +183,77 @@ public class NpcEditFormGuardsTest {
 		check(zone.undo() && !form.reg.entries.containsKey(added), "and Undo takes it away");
 	}
 
+	/**
+	 * A story line an NPC wizard writes is an edit of the zone's history, joined with the NPC the same wizard
+	 * adds (F209): one Undo takes back both, and the text the form holds is read again from the file put back.
+	 * Needs no dump: the story file is made in a scratch game.
+	 */
+	static void aStoryLineWrittenIsOneEditWithTheNpc() throws Exception {
+		System.out.println("--- a story line the form writes is one edit with the NPC added beside it (F209)");
+		int[] npc = {0};
+		ctrmap.humaninterface.UndoHistory zone = UndoHistoryTest.overOneNumber(npc);
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, TestWindow.mTileMapPanel(), pane -> { }, zone);
+		ctrmap.WorkspaceSession ws = MapResizeTest.game("npcstory");
+		File story = new File(ws.getExtractionDirectory(ArchiveType.STORYTEXT), "7");
+		story.getParentFile().mkdirs();
+		Files.write(story.toPath(), GFMessageFile.write(Arrays.asList("already here")));
+		byte[] before = Files.readAllBytes(story.toPath());
+		GFMessageFile msg = new GFMessageFile(before);
+		msg.addLine("a new line");
+		setField(form, "storyFile", msg);
+		setField(form, "storyFileTextID", 7);
+		Method write = NPCEditForm.class.getDeclaredMethod("writeStoryFile", int.class, GFMessageFile.class);
+		write.setAccessible(true);
+		write.invoke(form, 7, msg);
+		npc[0] = 1;   //the NPC the same wizard added
+		byte[] after = Files.readAllBytes(story.toPath());
+		check(!Arrays.equals(before, after) && zone.settle() && "story text 7 and 1 more".equals(zone.undoName()),
+				"the story line written and the NPC added are one edit of the zone's history: " + zone.undoName());
+		check(ws.isPersisted(story), "and the story file is listed for the next pack by that same write (F209d)");
+		check(zone.undo() && Arrays.equals(before, Files.readAllBytes(story.toPath())) && npc[0] == 0 && field(form, "storyFile") == null,
+				"one Undo puts the story file back and takes the NPC away, and the text the form held is read again");
+		check(zone.redo() && Arrays.equals(after, Files.readAllBytes(story.toPath())) && npc[0] == 1, "and Redo writes the line again");
+		Workspace.reset();
+	}
+
+	/**
+	 * Dragging an NPC through tiles 0 and 1 keeps its sub-tile count a number (census L.5). It was a modulo by
+	 * (tile - 1) * 18 below the tile and tile * 18 above - by zero at tiles 1 and 0 - and went NaN. The closed form
+	 * that replaced it is measured here against the modulo wherever the modulo was defined.
+	 */
+	static void aDragThroughTheCornerKeepsItsCount() {
+		System.out.println("--- dragging an NPC through tiles 0 and 1 keeps its sub-tile count a number (census L.5)");
+		ZoneEntities.NPC npc = new ZoneEntities.NPC();
+		int nan = 0, steps = 0;
+		for (float v = 0f; v <= 72f; v += 0.75f, steps++) {
+			npc.setX(v);
+			npc.setZ(v);
+			nan += Float.isNaN(npc.floatMotionRemainder) ? 1 : 0;
+		}
+		for (float v = 72f; v >= 0f; v -= 0.75f, steps++) {
+			npc.setX(v);
+			npc.setZ(v);
+			nan += Float.isNaN(npc.floatMotionRemainder) ? 1 : 0;
+		}
+		check(steps > 100 && nan == 0, "a drag across tiles 0 to 4 and back never makes the count NaN (" + nan + " of " + steps + ")");
+		int compared = 0, differ = 0;
+		for (int tile = 2; tile < 60; tile++) {
+			for (float d = -8.9f; d < 8.9f; d += 0.7f) {
+				float val = tile * 18f + d;
+				float modulo = d < 0 ? 18f - (val % ((tile - 1) * 18f)) : val % (tile * 18f);
+				float closed = d < 0 ? tile * 18f - val : val - tile * 18f;
+				compared++;
+				differ += Math.abs(modulo - closed) > 1e-3f ? 1 : 0;
+			}
+		}
+		check(compared > 1000 && differ == 0, "and wherever the modulo was defined, the closed form is the same number ("
+				+ differ + " of " + compared + " differ)");
+	}
+
 	public static void main(String[] args) throws Exception {
+		aDragThroughTheCornerKeepsItsCount();
 		theNpcRegistryIsADocumentOfTheZonesHistory();
+		aStoryLineWrittenIsOneEditWithTheNpc();
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
 			Skip.section("no dump at " + dump + " - the form checks need zone 24");
@@ -196,6 +265,7 @@ public class NpcEditFormGuardsTest {
 			GARC gr = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(ArchiveType.FIELD_DATA, Workspace.game())));
 			removeKeepsModels(zo, gr);
 			saveRefusesUndefinedScript(zo);
+			aSlotTakenFromUnderTheFormIsNotWrittenOver(zo);
 			aRefusedZoneSaveDoesNotReShowTheScript(zo);
 			saveWithNothingSelected(zo);
 			dialogueNoteNamesUndefinedScript(zo);
@@ -204,22 +274,93 @@ public class NpcEditFormGuardsTest {
 			dragKeepsAltitudeOffTheMesh(zo);
 			misnumberedUidsAskFirst(zo);
 			missingRegistryEntryAsksFirst(zo);
+			aDiscardedRegistryNamesTheNpcsLeftWithout(zo);
 			softLockWarningReachesTheUser(zo);
 			addTemplateStopsAtTheCeiling(zo);
 			aScriptedAdditionLandsWholeOrNotAtAll(zo);
 			theAddWizardsActOnTheirFormsHeadless(zo);
+			aOneTimeGiverIsGuardedByAFlagNoScriptUses(zo);
+			theGiverWizardRefusedSavesNothing(zo);
+			everyAddWizardRefusedAfterItsFormSavesNothing(zo);
 			everyAddPathReShowsTheScriptList();
 			dialogueNoteTellsABrokenScriptFromAPlainOne(zo);
 			aFullRegistryRefusesTheModelAndSaysSo(zo);
 			viewportDrawsOnlyModelledNPCs(zo, gr);
 			onlyTheEditedNPCIsBoxed(zo);
 			theFrameOutlinesTheEditedNPC(zo, gr);
+			aClickInThe3DViewShowsTheNpcUnderIt(zo);
 		}
 		altitudeFromMesh();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * A click in the 3D view, the NPC tool up, shows the NPC under it, and a click on none leaves the one showing (the
+	 * 2026-10-16 assembly, NPCEditForm 2415, negate-if, SURVIVED: no suite clicked the 3D view for an NPC). Inverted, the
+	 * NPC under the click was never picked. Two NPCs as unit cubes in UtilsTest's headless projection - window x = 100 +
+	 * 50 * world x on a 200-pixel panel - NPC 0 at the origin under a click at (100,100), NPC 1 a tile (18 units) right,
+	 * off the panel; NPC 1 is the one showing.
+	 */
+	static void aClickInThe3DViewShowsTheNpcUnderIt(GARC zo) throws Exception {
+		System.out.println("--- a click in the 3D view shows the NPC under it, and a click on none the same one");
+		openZone(zo, ZONE);
+		ZoneEntities e = EditorBench.emptyEntities();
+		NPCRegistry reg = new NPCRegistry(temp(new byte[0]), Workspace.session());
+		java.lang.reflect.Field theUnsafe = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe");
+		theUnsafe.setAccessible(true);
+		Object unsafe = theUnsafe.get(null);
+		for (int i = 0; i < 2; i++) {
+			ZoneEntities.NPC npc = new ZoneEntities.NPC();
+			npc.uid = i;
+			npc.model = 100 + i;
+			npc.xTile = i;
+			e.npcs.add(npc);
+			NPCRegistry.NPCRegistryEntry entry = new NPCRegistry.NPCRegistryEntry();
+			entry.uid = npc.model;
+			entry.model = npc.model;
+			reg.register(entry, npc.model);
+			//a model is only ever read out of a BCH; the picking reads its box and its meshes, so one is made with no
+			//constructor run and those two filled in, as PropEditFormGuardsTest's click does
+			ctrmap.formats.h3d.model.H3DModel cube = (ctrmap.formats.h3d.model.H3DModel) unsafe.getClass()
+					.getMethod("allocateInstance", Class.class).invoke(unsafe, ctrmap.formats.h3d.model.H3DModel.class);
+			cube.boxVectors = new float[32][];
+			ctrmap.formats.h3d.model.OhanaMeshUtils.makeBox(cube.boxVectors, new ctrmap.formats.vectors.Vec3f(-1, -1, -1),
+					new ctrmap.formats.vectors.Vec3f(1, 1, 1));
+			ctrmap.formats.h3d.model.H3DModel.H3DMesh mesh = new ctrmap.formats.h3d.model.H3DModel.H3DMesh();
+			ctrmap.formats.h3d.model.H3DVertex v = new ctrmap.formats.h3d.model.H3DVertex();
+			v.position = new ctrmap.formats.vectors.Vec3f(0, 0, 0);
+			mesh.vertices.add(v);
+			cube.meshes = new ArrayList<>(java.util.Arrays.asList(mesh));
+			reg.models.put(npc.model, cube);
+		}
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, TestWindow.mTileMapPanel(),
+				pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		float[] mv = new float[]{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+		float[] proj = new float[]{0.5f, 0, 0, 0, 0, 0.5f, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1};
+		int[] view = new int[]{0, 0, 200, 200};
+		javax.swing.JPanel panel = new javax.swing.JPanel();
+		panel.setSize(200, 200);
+		String missed;
+		String hit;
+		try {
+			form.loadFromEntities(e, reg);
+			form.setNPC(1);
+			hold(headlessTool(form));
+			form.doSelectionLoop(new java.awt.event.MouseEvent(panel, java.awt.event.MouseEvent.MOUSE_CLICKED, 0L, 0, 20, 100,
+					1, false), panel, mv, proj, view, new ctrmap.formats.vectors.Vec3f(0, 0, 0));
+			missed = "NPC " + form.npcIndex;
+			form.doSelectionLoop(new java.awt.event.MouseEvent(panel, java.awt.event.MouseEvent.MOUSE_CLICKED, 0L, 0, 100, 100,
+					1, false), panel, mv, proj, view, new ctrmap.formats.vectors.Vec3f(0, 0, 0));
+			hit = "NPC " + form.npcIndex;
+		} finally {
+			TOOLS.drop();
+			form.disposePreviews();
+		}
+		check("NPC 1".equals(missed) && "NPC 0".equals(hit), "a click on no NPC leaves the one showing, and a click on NPC 0"
+				+ " shows NPC 0: " + missed + ", then " + hit);
 	}
 
 	/**
@@ -353,6 +494,10 @@ public class NpcEditFormGuardsTest {
 			check(!said.isEmpty(), "and says so again");
 		}
 
+		//SCRIPT 8 TALKS ON MESSAGE LINE 8, so the save checks that line (F211): a story file that holds it
+		//lets the check RUN and pass. With no story text it says the message was not checked - a warning
+		//this section is not about, and the one softLockWarningReachesTheUser asks for
+		withStoryFile(form, zo, zone.header.textID, "0", "1", "2", "3", "4", "5", "6", "7", "line 8, the talker's");
 		scr.setValue(8);
 		List<String> said = ctrmap.Ui.record();
 		boolean saved;
@@ -360,12 +505,44 @@ public class NpcEditFormGuardsTest {
 			saved = form.saveEntry();
 		} finally {
 			ctrmap.Ui.stopRecording();
+			Workspace.install(Workspace.session().withArchive(ArchiveType.STORYTEXT, null));
 		}
 		check(saved && e.npcs.get(0).script == 8 && form.npc == e.npcs.get(0) && e.modified, "a defined id saves");
 		check(said.isEmpty(), "with nothing to say");
 		scr.setValue(9);
 		form.setNPC(1);
 		check(e.npcs.get(0).script == 9 && entryBox.getSelectedIndex() == 1 && form.npc == e.npcs.get(1), "the dropdown saves a defined id and switches");
+	}
+
+	/**
+	 * A form whose NPC is no longer in the slot it shows refuses to write over the slot (F210; the 2026-10-14 shared
+	 * sweep, NPCEditForm 414, drop-throw, SURVIVED: no suite took the record out from under the form). CameraFormTest
+	 * asks the camera form's twin of this refusal.
+	 */
+	static void aSlotTakenFromUnderTheFormIsNotWrittenOver(GARC zo) throws Exception {
+		System.out.println("--- a form whose NPC is no longer in its slot refuses to write over the slot (F210)");
+		Zone zone = openZone(zo, ZONE);
+		ZoneEntities e = zone.entities;
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, TestWindow.mTileMapPanel(), pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		form.loadFromEntities(e, null);
+		check(form.npc == e.npcs.get(0), "control: the form opened on NPC 0");
+		ZoneEntities.NPC inSlot = ctrmap.humaninterface.FlatCopy.copy(e.npcs.get(0));
+		e.npcs.set(0, inSlot);   //the slot holds another record now than the one the form shows
+		e.modified = false;
+		((javax.swing.JFormattedTextField) field(form, "linkID")).setValue(inSlot.multiZoneLink1Type + 1);
+		String refused = "nothing";
+		List<String> said = ctrmap.Ui.record();
+		try {
+			form.saveEntry();
+		} catch (IllegalStateException threw) {
+			refused = threw.getMessage();
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(refused.startsWith("the NPC form is showing NPC 0 but holds a record that is not in that slot")
+				&& e.npcs.get(0) == inSlot && !e.modified,
+				"it refuses, naming the slot, and the slot keeps the record it holds: " + refused + " " + said + "; slot "
+				+ (e.npcs.get(0) == inSlot ? "kept" : "written over"));
 	}
 
 	/** A zone with no NPCs: Save has nothing to refuse and must not report a failure. */
@@ -391,6 +568,14 @@ public class NpcEditFormGuardsTest {
 		form.loadFromEntities(e, null);
 		JLabel note = (JLabel) field(form, "dlgStatus");
 		check(!note.getText().contains("not defined"), "NPC 0 on script 7: " + note.getText());
+		//what Add NPC / object says it can add, on a zone with a script dispatch and its NPCs and no story text open (the
+		//2026-10-15 shared sweep, NPCEditForm 682, negate-if, SURVIVED) - inverted, the reason went unsaid here, and a
+		//zone it cannot add to had its grey button's reason written over
+		javax.swing.JButton addTalker = (javax.swing.JButton) field(form, "btnAddTalker");
+		check(Workspace.getStoryTextGARC() == null && addTalker.isEnabled() && ("Add a trainer here; talking NPCs and signs"
+				+ " need the STORYTEXT archive, which was not found.").equals(addTalker.getToolTipText()),
+				"with no story text open, Add NPC / object says a trainer can be added and why nothing else can: "
+				+ addTalker.getToolTipText());
 		e.npcs.get(0).script = 999;
 		form.refresh();
 		check(note.getText().equals("Script 999 is not defined in this zone's script."), "NPC 0 on script 999: " + note.getText());
@@ -578,12 +763,7 @@ public class NpcEditFormGuardsTest {
 
 		//Yes, against a registry that is already at capacity: the answer is
 		//acted on (it gets past the No branch) and the refusal is the reason
-		for (int uid = 1000; uid < 1000 + NPCRegistry.MAX_ENTRIES; uid++) {
-			NPCRegistry.NPCRegistryEntry filler = new NPCRegistry.NPCRegistryEntry();
-			filler.uid = uid;
-			filler.model = uid;
-			reg.register(filler, uid);
-		}
+		fillToTheCap(reg);
 		said = ctrmap.Ui.record(JOptionPane.YES_OPTION);
 		try {
 			new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, TestWindow.mTileMapPanel(), pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0})).loadFromEntities(zone.entities, reg);
@@ -592,6 +772,42 @@ public class NpcEditFormGuardsTest {
 		}
 		check(said.size() == 2 && said.get(1).contains("maximum capacity"), "Yes on a full registry says why it could not: " + said);
 		check(reg.entries.size() == NPCRegistry.MAX_ENTRIES && !reg.modified, "and no entry was invented over the cap");
+	}
+
+	/**
+	 * A registry discarded under NPCs that name an entry it drops says which (F106; the 2026-10-15 shared sweep,
+	 * NPCEditForm 490, negate-if, SURVIVED: no suite discarded a registry under a zone's NPCs). Answered No to the
+	 * form's own question, as a user would.
+	 */
+	static void aDiscardedRegistryNamesTheNpcsLeftWithout(GARC zo) throws Exception {
+		System.out.println("--- a registry discarded under NPCs that name an entry it drops says which");
+		Zone zone = openZone(zo, ZONE);
+		ZoneEntities e = zone.entities;
+		NPCRegistry reg = new NPCRegistry(temp(new byte[0]), Workspace.session());
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, TestWindow.mTileMapPanel(), pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		List<String> said = ctrmap.Ui.record(JOptionPane.NO_OPTION);
+		try {
+			form.loadFromEntities(e, reg);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		//registered here rather than by the form's Yes, which maps the entry's model from a game this suite has not got
+		int uid = e.npcs.get(0).model;
+		reg.register(new NPCRegistry.NPCRegistryEntry(), uid);
+		check(reg.modified && reg.entries.containsKey(uid), "control: NPC 0's model, UID " + uid + ", is registered: " + said);
+		said = ctrmap.Ui.record(JOptionPane.NO_OPTION);
+		String answered;
+		try {
+			answered = String.valueOf(form.saveRegistry(true));
+		} catch (RuntimeException threw) {
+			answered = "threw " + threw;
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(answered.equals("true") && reg.entries.isEmpty() && said.size() == 2
+				&& said.get(1).startsWith("NPC registry: NPCs of this zone name registry UID(s) [" + uid + "]"),
+				"No puts the registry back, and names the NPCs of this zone left naming an entry it dropped: " + answered
+				+ ", " + said);
 	}
 
 	/**
@@ -623,7 +839,9 @@ public class NpcEditFormGuardsTest {
 		//guard silent exactly when it could not look. Now the user is told it was NOT checked
 		form.loadFromEntities(e, null);
 		((JSpinner) field(form, "scr")).setValue(8);
-		((JSpinner) field(form, "x")).setValue(((Integer) ((JSpinner) field(form, "x")).getValue()) + 1);
+		//the position fields are formatted text fields in the form's layout, not spinners
+		javax.swing.JFormattedTextField xField = (javax.swing.JFormattedTextField) field(form, "x");
+		xField.setValue(((Number) xField.getValue()).intValue() + 1);
 		said = ctrmap.Ui.record();
 		try {
 			saved = form.saveEntry();
@@ -633,6 +851,33 @@ public class NpcEditFormGuardsTest {
 		check(saved && said.size() == 1 && said.get(0).startsWith("NPC message not checked")
 				&& said.get(0).contains("story text archive is not open"),
 				"with no story text to read, the user is told the message was not checked, and why: " + said);
+
+		//and with the story text open but the zone's own file one that does not read as text, said by name (the
+		//2026-10-15 shared sweep, NPCEditForm 632, drop-throw, SURVIVED: the unread file fell through to a
+		//NullPointerException, and the warning named that). The ZoneData archive stands in as the story text, so the
+		//entry taken into the workspace is a zone's bytes.
+		Workspace.install(Workspace.session().withArchive(ArchiveType.STORYTEXT, zo));
+		Workspace.session().getExtractionDirectory(ArchiveType.STORYTEXT).mkdirs();
+		setField(form, "storyFile", null);
+		setField(form, "storyFileTextID", -1);
+		File story = Workspace.getWorkspaceFile(ArchiveType.STORYTEXT, zone.header.textID);
+		check(story != null && story.isFile(), "control: the zone's story-text file " + zone.header.textID
+				+ " is in the workspace, holding a zone's bytes (" + story + ")");
+		form.loadFromEntities(e, null);
+		((JSpinner) field(form, "scr")).setValue(8);
+		xField = (javax.swing.JFormattedTextField) field(form, "x");
+		xField.setValue(((Number) xField.getValue()).intValue() + 1);
+		said = ctrmap.Ui.record();
+		try {
+			saved = form.saveEntry();
+		} finally {
+			ctrmap.Ui.stopRecording();
+			Workspace.install(Workspace.session().withArchive(ArchiveType.STORYTEXT, null));
+		}
+		check(saved && said.size() == 1 && said.get(0).startsWith("NPC message not checked")
+				&& said.get(0).contains("story-text file " + zone.header.textID + " could not be read"),
+				"with the zone's own story-text file one that does not read as text, the user is told which file could"
+				+ " not be read: " + said);
 	}
 
 	/**
@@ -691,6 +936,36 @@ public class NpcEditFormGuardsTest {
 		check(said.size() == 2 && said.get(1).contains("255 props"), "a full prop list is refused against the prop count, not the NPC one: " + said);
 		check(e.furniture.size() == ZoneEntities.MAX_PER_KIND, "and nothing was added");
 		check(ran == null, "and the Sign arm stopped where it refused too: " + ran);
+
+		//census M.76: the capacity was asked once for the Add, and the trainer wizard then placed a double-battle
+		//partner too - at 254 NPCs the 256th went in, and the refusal came at the save
+		e.npcs.remove(e.npcs.size() - 1);
+		int oneShort = e.npcs.size();
+		said = ctrmap.Ui.record();
+		int placed;
+		try {
+			placed = form.addTrainer(zone, 5, 218, 2, 1, true, new java.awt.Point(3, 3));
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(oneShort == ZoneEntities.MAX_PER_KIND - 1 && placed == 0 && e.npcs.size() == oneShort
+				&& said.size() == 1 && said.get(0).contains("and this adds 2"),
+				"a trainer with a partner on a zone one short of the cap is refused whole, before either is placed: placed "
+				+ placed + ", " + e.npcs.size() + " NPCs, " + said);
+		//and the one door every NPC comes in by keeps the cap itself, so an Add that miscounts cannot pass it
+		ZoneEntities.NPC last = new ZoneEntities.NPC();
+		last.uid = 9000;
+		e.npcs.add(last);
+		java.lang.reflect.Method door = NPCEditForm.class.getDeclaredMethod("placeNpc", ZoneEntities.NPC.class);
+		door.setAccessible(true);
+		Throwable past = null;
+		try {
+			door.invoke(form, new ZoneEntities.NPC());
+		} catch (java.lang.reflect.InvocationTargetException refused) {
+			past = refused.getCause();
+		}
+		check(past instanceof IllegalStateException && e.npcs.size() == ZoneEntities.MAX_PER_KIND,
+				"placing an NPC on a full zone is refused by the door itself, and nothing is added: " + past);
 	}
 
 	/**
@@ -796,6 +1071,43 @@ public class NpcEditFormGuardsTest {
 		check(refused instanceof ZoneScriptEdit.Refused && refused.getMessage().contains("story text file is not loaded"),
 				"text with no story file to go into is refused in words: " + refused);
 		check(stored.isEmpty() && zone.s == before, "and nothing was stored or committed");
+
+		//5 and 6. a transplant that fails refuses the edit by its step (the 2026-10-14 shared sweep, ZoneScriptEdit 142,
+		//dropped, SURVIVED: every transplant here had a donor that holds the routine, so none ever failed). The donor
+		//handed over is a zone with no routine to transplant, and the injector refuses it.
+		GFLPawnScript bare = ctrmap.formats.scripts.PawnClosure.extractZoneScript(zo.getDecompressedEntry(target));
+		int signless = -1;
+		for (int z = 0; z < zo.length - 2 && signless < 0; z++) {
+			GFLPawnScript s = ctrmap.formats.scripts.PawnClosure.extractZoneScript(zo.getDecompressedEntry(z));
+			if (s != null && z != target && ZoneScriptAnalyzer.findDispatch(s) != null && ZoneScriptAnalyzer.findSignWrapper(s) == null) {
+				signless = z;
+			}
+		}
+		Object[][] transplants = {
+			{"message", target, "Could not inject the message routine:\nThe donor script has no message wrapper."},
+			{"sign", signless, "Could not transplant the sign routine:\nThe donor script has no sign display routine."}};
+		for (Object[] t : transplants) {
+			if ((Integer) t[1] < 0) {
+				check(false, "a retail zone with a dispatch and no " + t[0] + " routine to transplant one into");
+				continue;
+			}
+			Zone into = openZone(zo, (Integer) t[1]);
+			into.s.decompressThis();
+			GFLPawnScript was = into.s;
+			stored.clear();
+			refused = null;
+			try {
+				ZoneScriptEdit edit = new ZoneScriptEdit(into, "the talker script").withText(msg, TEXT, Arrays.asList("Hello there"));
+				edit = "message".equals(t[0]) ? edit.injectMsgWrapperFrom(bare) : edit.injectSignWrapperFrom(bare);
+				edit.apply(TalkerScriptWizard::cloneTalker, (id, m) -> stored.add(new int[]{id, m.getLineCount()}));
+			} catch (Throwable thrown) {
+				refused = thrown;
+			}
+			check(refused instanceof ZoneScriptEdit.Refused && t[2].equals(refused.getMessage()),
+					"a " + t[0] + " routine that cannot be transplanted refuses the edit by its step: " + refused);
+			check(stored.isEmpty() && msg.getLineCount() == 1 && into.s == was,
+					"and nothing was stored, added or committed (" + t[0] + ")");
+		}
 	}
 
 	/**
@@ -889,13 +1201,80 @@ public class NpcEditFormGuardsTest {
 			check(bp != null && d != null && d.cases.get(bp.script) != null,
 					"Give BP adds a dispatch case and places an NPC on it (script " + (bp == null ? "-" : bp.script) + ")");
 			bad.streakWorkHex = "4020";
-			ZoneEntities.NPC ch = form.addChallenge(zone, bad, pos);
+			//THE STREAK VARIABLE IS ASKED OF EVERY ZONE'S SCRIPT before it is used (F241), and with no ZoneData
+			//archive open the add refuses as UNKNOWN - so the session is handed the archive the zone came from.
+			//It stages only the zone this suite opened, so the others' scripts cannot be read, and the add SAYS
+			//so and asks rather than counting them as using nothing; the question is answered, and asked once.
+			GARC wasZones = Workspace.getArchive(ArchiveType.ZONE_DATA);
+			Workspace.install(Workspace.session().withArchive(ArchiveType.ZONE_DATA, zo));
+			ctrmap.Ui.stopRecording();
+			List<String> asked = ctrmap.Ui.record(JOptionPane.OK_OPTION);
+			ZoneEntities.NPC ch;
+			try {
+				ch = form.addChallenge(zone, bad, pos);
+			} finally {
+				ctrmap.Ui.stopRecording();
+				Workspace.install(Workspace.session().withArchive(ArchiveType.ZONE_DATA, wasZones));
+			}
+			//and asked as the question it is - no readable zone uses it - not as the one for a variable in use, which
+			//carries the same note about the unread zones (the 2026-10-15 shared sweep, NPCEditForm 1382, negate-if,
+			//SURVIVED: this check read only the note)
+			check(asked.size() == 1 && asked.get(0).contains("could not be read")
+					&& asked.get(0).contains("No zone script that could be read uses streak variable 0x4020"),
+					"a streak variable the unread zones might use is asked about once, naming them: " + asked);
 			d = ZoneScriptAnalyzer.findDispatch(zone.s);
 			check(ch != null && d != null && d.cases.get(ch.script) != null && ch != bp,
 					"a challenge with no text needs no story file: it adds its case and places its NPC (script "
 					+ (ch == null ? "-" : ch.script) + ")");
 			check(said.size() == before, "and none of that had anything to complain about: " + said.subList(before, said.size()));
 			check(e.npcs.size() == npcs + 4, "four records placed in all (" + (e.npcs.size() - npcs) + ")");
+			//the variable is in use now, by this zone's own challenge: asked for it again, the picker says so and offers
+			//a free one - taken when picked, nothing when the question is closed (the 2026-10-15 shared sweep, NPCEditForm
+			//1396, negate-if, SURVIVED: no suite answered the question for a variable in use). Inverted, the free one
+			//picked was refused and a closed question threw.
+			Workspace.install(Workspace.session().withArchive(ArchiveType.ZONE_DATA, zo));
+			java.lang.reflect.Method choose = NPCEditForm.class.getDeclaredMethod("chooseStreakVariable", Zone.class, int.class);
+			choose.setAccessible(true);
+			List<String> inUse = ctrmap.Ui.record(Integer.valueOf(0));
+			String offered;
+			String closed;
+			try {
+				offered = String.valueOf(choose.invoke(form, zone, 0x4020));
+				ctrmap.Ui.stopRecording();
+				ctrmap.Ui.record();
+				closed = String.valueOf(choose.invoke(form, zone, 0x4020));
+			} catch (java.lang.reflect.InvocationTargetException threw) {
+				offered = "threw " + threw.getCause();
+				closed = "-";
+			} finally {
+				ctrmap.Ui.stopRecording();
+				Workspace.install(Workspace.session().withArchive(ArchiveType.ZONE_DATA, wasZones));
+			}
+			check(!inUse.isEmpty() && inUse.get(0).contains("Streak variable 0x4020 is already used by zone(s)")
+					&& !offered.equals(String.valueOf(0x4020)) && offered.matches("\\d+") && "null".equals(closed),
+					"asked for a variable in use, it says so and its free one is taken when picked, nothing when closed: "
+					+ offered + ", " + closed + ", " + (inUse.isEmpty() ? "nothing asked" : inUse.get(0).split("\n")[0]));
+			//and the same zone opened from a file - in no slot of the table - is still asked of its own script, as edited
+			//(the 2026-10-16 assembly, NPCEditForm 1369, negate-if, SURVIVED: every zone a suite opened had a slot).
+			//Inverted, the challenge this zone holds went uncounted, the variable it uses offered as another zone's
+			LOADED.open(-1, zone);
+			Workspace.install(Workspace.session().withArchive(ArchiveType.ZONE_DATA, zo));
+			List<String> fromFile = ctrmap.Ui.record();
+			String fileOffered;
+			try {
+				fileOffered = String.valueOf(choose.invoke(form, zone, 0x4020));
+			} catch (java.lang.reflect.InvocationTargetException threw) {
+				fileOffered = "threw " + threw.getCause();
+			} finally {
+				ctrmap.Ui.stopRecording();
+				Workspace.install(Workspace.session().withArchive(ArchiveType.ZONE_DATA, wasZones));
+				LOADED.open(ZONE, zone);
+			}
+			check(!fromFile.isEmpty() && fromFile.get(0).contains("Streak variable 0x4020 is already used by zone(s)")
+					&& fromFile.get(0).contains("(this one included)") && !fromFile.get(0).contains("-1")
+					&& "null".equals(fileOffered),
+					"a zone opened from a file is asked of its own script, the variable its challenge uses said as its own: "
+					+ fileOffered + ", " + (fromFile.isEmpty() ? "nothing asked" : fromFile.get(0).split("\n")[0]));
 		} finally {
 			ctrmap.Ui.stopRecording();
 			//every form built above started a model preview's animator, a thread
@@ -904,8 +1283,166 @@ public class NpcEditFormGuardsTest {
 		}
 	}
 
+	/**
+	 * Give it once (F085), through the form, on zone 8 - which has a give-item routine, and whose own giver
+	 * uses flag 105. A flag a zone script uses is refused before anything is added; a free one is the guard
+	 * each new case opens with. Read off the game as it stands, so the session is handed its ZoneData archive.
+	 */
+	static void aOneTimeGiverIsGuardedByAFlagNoScriptUses(GARC zo) throws Exception {
+		System.out.println("--- a one-time giver is guarded by a flag no script uses (F085)");
+		Zone zone = openZone(zo, 8);
+		zone.s.decompressThis();
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, TestWindow.mTileMapPanel(), pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		form.loadFromEntities(zone.entities, null);
+		Point pos = new Point(12, 34);
+		GARC wasZones = Workspace.getArchive(ArchiveType.ZONE_DATA);
+		Workspace.install(Workspace.session().withArchive(ArchiveType.ZONE_DATA, zo));
+		List<String> told = ctrmap.Ui.record();
+		try {
+			int cases = ZoneScriptAnalyzer.findDispatch(zone.s).cases.size();
+			check(form.addGiver(zone, 5, 1, 218, pos, 105) == null && last(told).contains("already used by a zone script"),
+					"a one-time item giver on flag 105, zone 8's own giver's, is refused: " + last(told));
+			check(form.addGiveBp(zone, 20, 218, pos, 105) == null && last(told).contains("already used by a zone script"),
+					"and so is a one-time Give BP on it: " + last(told));
+			check(ZoneScriptAnalyzer.findDispatch(zone.s).cases.size() == cases, "and neither added a case to the script");
+			int free = ctrmap.ScriptFlags.of(Workspace.session()).suggestion();
+			//the form's own tick offers that flag (the 2026-10-15 shared sweep, OnceFlagRow 32, negate-if, SURVIVED:
+			//every suite handed the flag to the add, past the form)
+			List<ctrmap.humaninterface.CustomH3DPreview> previews = new ArrayList<>();
+			GiverForm giver = new GiverForm(Workspace.session(), null, previews, new ArrayList<String>());
+			for (ctrmap.humaninterface.CustomH3DPreview p : previews) {
+				p.stop();
+			}
+			javax.swing.AbstractButton tick = ItemEditTest.button(giver.panel, "Give it once, guarded by event flag:");
+			int unticked = giver.onceFlag();
+			if (tick != null) {
+				tick.doClick();
+			}
+			check(tick != null && unticked == -1 && giver.onceFlag() == free, "ticking the giver form's Give it once offers"
+					+ " flag " + free + ", the highest no zone script names: " + unticked + ", then " + giver.onceFlag());
+			ZoneEntities.NPC once = form.addGiver(zone, 5, 1, 218, pos, free);
+			ZoneEntities.NPC onceBp = form.addGiveBp(zone, 20, 218, pos, free - 1);
+			check(once != null && guardedBy(zone.s, once.script, free),
+					"on a free flag the item giver is added, its case opening with FlagGet of flag " + free + " ("
+					+ (once == null ? "not added: " + last(told) : "case " + once.script) + ")");
+			check(onceBp != null && guardedBy(zone.s, onceBp.script, free - 1),
+					"and the Give BP likewise, on flag " + (free - 1) + " (" + (onceBp == null ? "not added: " + last(told)
+					: "case " + onceBp.script) + ")");
+		} finally {
+			ctrmap.Ui.stopRecording();
+			Workspace.install(Workspace.session().withArchive(ArchiveType.ZONE_DATA, wasZones));
+			form.disposePreviews();
+		}
+	}
+
+	/**
+	 * The item-giver wizard, its form answered OK with no model chosen, is refused and saves nothing (the 2026-10-15
+	 * shared sweep, NPCEditForm 1134, negate-if, SURVIVED: the wizard's form was a raw dialog, so what ran after it was
+	 * out of every suite's reach - it goes through Ui.form now). Inverted, a refused giver still saved the zone's
+	 * script, and one placed did not. On zone 8, which has a give-item routine.
+	 */
+	static void theGiverWizardRefusedSavesNothing(GARC zo) throws Exception {
+		System.out.println("--- the item-giver wizard, refused after its form, saves nothing");
+		Zone zone = openZone(zo, 8);
+		zone.s.decompressThis();
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, TestWindow.mTileMapPanel(), pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		form.loadFromEntities(zone.entities, null);
+		GARC wasZones = Workspace.getArchive(ArchiveType.ZONE_DATA);
+		Workspace.install(Workspace.session().withArchive(ArchiveType.ZONE_DATA, zo));
+		int saves = SAVER.saves.size();
+		int npcs = zone.entities.npcs.size();
+		List<String> said = ctrmap.Ui.record(JOptionPane.OK_OPTION);
+		String ran;
+		try {
+			java.lang.reflect.Method wizard = NPCEditForm.class.getDeclaredMethod("addGiverTemplate", Zone.class);
+			wizard.setAccessible(true);
+			wizard.invoke(form, zone);
+			ran = "ran";
+		} catch (java.lang.reflect.InvocationTargetException threw) {
+			ran = "threw " + threw.getCause();
+		} finally {
+			ctrmap.Ui.stopRecording();
+			Workspace.install(Workspace.session().withArchive(ArchiveType.ZONE_DATA, wasZones));
+			form.disposePreviews();
+		}
+		check(ran.equals("ran") && said.contains("Add item giver: " + ctrmap.Ui.A_FORM)
+				&& last(said).contains("Select an overworld model first") && SAVER.saves.size() == saves
+				&& zone.entities.npcs.size() == npcs,
+				"the form is asked through the seam, OK with no model is refused in words, and nothing is added or saved: "
+				+ ran + ", " + said + ", " + (SAVER.saves.size() - saves) + " save(s)");
+	}
+
+	/**
+	 * EVERY Add NPC wizard, its form answered OK with the form as it opens, adds nothing and saves nothing - each ends
+	 * "if the add placed something, save", and a form as it opens names no model (the 2026-10-15 shared sweep,
+	 * NPCEditForm 1414, negate-if, SURVIVED: the Give BP wizard's last step, the item giver's twin). The wizards are
+	 * found by walking NPCEditForm's methods, not listed; one that asks something before its form is answered nothing
+	 * there and must stop as quietly. A control: at least the four that go straight to their form reach it.
+	 */
+	static void everyAddWizardRefusedAfterItsFormSavesNothing(GARC zo) throws Exception {
+		System.out.println("--- every Add NPC wizard, refused after its form, adds and saves nothing");
+		List<String> saved = new ArrayList<>();
+		List<String> threw = new ArrayList<>();
+		int formed = 0;
+		int wizards = 0;
+		for (java.lang.reflect.Method wizard : NPCEditForm.class.getDeclaredMethods()) {
+			if (!wizard.getName().matches("add[A-Za-z]*Template") || !Arrays.equals(wizard.getParameterTypes(),
+					new Class<?>[]{Zone.class})) {
+				continue;
+			}
+			wizards++;
+			Zone zone = openZone(zo, 8);
+			zone.s.decompressThis();
+			NPCEditForm form = new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, TestWindow.mTileMapPanel(), pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+			form.loadFromEntities(zone.entities, null);
+			GARC wasZones = Workspace.getArchive(ArchiveType.ZONE_DATA);
+			Workspace.install(Workspace.session().withArchive(ArchiveType.ZONE_DATA, zo));
+			int saves = SAVER.saves.size();
+			int records = zone.entities.npcs.size() + zone.entities.furniture.size();
+			List<String> said = ctrmap.Ui.record(JOptionPane.OK_OPTION);
+			try {
+				wizard.setAccessible(true);
+				wizard.invoke(form, zone);
+			} catch (java.lang.reflect.InvocationTargetException ex) {
+				threw.add(wizard.getName() + ": " + ex.getCause());
+			} finally {
+				ctrmap.Ui.stopRecording();
+				Workspace.install(Workspace.session().withArchive(ArchiveType.ZONE_DATA, wasZones));
+				form.disposePreviews();
+			}
+			for (String s : said) {
+				if (s.endsWith(": " + ctrmap.Ui.A_FORM)) {
+					formed++;
+					break;
+				}
+			}
+			if (SAVER.saves.size() != saves || zone.entities.npcs.size() + zone.entities.furniture.size() != records) {
+				saved.add(wizard.getName() + " (" + (SAVER.saves.size() - saves) + " save(s), "
+						+ (zone.entities.npcs.size() + zone.entities.furniture.size() - records) + " record(s)): " + last(said));
+			}
+		}
+		check(wizards >= 5 && formed >= 4, "control: " + wizards + " Add NPC wizards found, " + formed + " of them reached their form");
+		check(saved.isEmpty() && threw.isEmpty(), "each, refused after its form, adds nothing and saves nothing"
+				+ (saved.isEmpty() ? "" : " - not: " + saved) + (threw.isEmpty() ? "" : " - threw: " + threw));
+	}
+
 	static String last(List<String> said) {
 		return said.isEmpty() ? "(nothing said)" : said.get(said.size() - 1);
+	}
+
+	/** Does case {@code caseKey}'s subroutine open with retail's one-time guard on {@code flag} - PUSH flag; FlagGet? */
+	static boolean guardedBy(ctrmap.formats.scripts.GFLPawnScript s, int caseKey, int flag) {
+		ctrmap.formats.scripts.PawnInstruction entry = ZoneScriptAnalyzer.findCaseSubEntry(s, caseKey);
+		int at = entry == null ? -1 : s.instructions.indexOf(entry);
+		if (at < 0 || at + 2 >= s.instructions.size()) {
+			return false;
+		}
+		ctrmap.formats.scripts.PawnInstruction push = s.instructions.get(at + 1), call = s.instructions.get(at + 2);
+		int n = call.argumentCells.length > 0 ? call.argumentCells[0] : -1;
+		return push.getCommand() == ctrmap.formats.scripts.PawnInstruction.Commands.PUSH_P_C.ordinal()
+				&& push.argumentCells[0] == flag
+				&& call.getCommand() == ctrmap.formats.scripts.PawnInstruction.Commands.SYSREQ_N.ordinal()
+				&& n >= 0 && n < s.natives.size() && s.natives.get(n).data[1] == ctrmap.scripts.GfHash.hashForName("FlagGet");
 	}
 
 	/**
@@ -944,8 +1481,10 @@ public class NpcEditFormGuardsTest {
 		}
 		check(ownSlots, "and the drawn slots are the survivors' own, in order");
 		check(form.ownedModels().size() == reg.models.size(), "the owned buffers follow the registry");
-
-		check(form.modelledNPCs().length <= 2, "a count shorter than the NPC list draws only what it counts");
+		//"A COUNT SHORTER THAN THE NPC LIST" IS GONE WITH THE COUNT: ZoneEntities kept a stored NPCCount beside
+		//the list, and this asked that a shorter one drew only what it counted. afa1204 removed the field - the
+		//count is written from the list - and its setup line with it, leaving the check asking a state that can
+		//no longer be made (red on 2026-10-09 for that reason alone).
 	}
 
 	/**
@@ -1007,10 +1546,10 @@ public class NpcEditFormGuardsTest {
 	 * the red box stood around every NPC except the edited one.
 	 *
 	 * <p>No GL context exists here, and none is needed: the frame is drawn with
-	 * models that record what they were asked to draw instead of drawing it, so
-	 * the GL2 handed down is never touched. Every model in the registry is one
-	 * of them, so "which NPC was outlined" is answered by position - the same
-	 * world position updateH3D puts the model at.
+	 * a renderer that records what it was asked to draw instead of drawing it, so
+	 * the GL2 handed down is never touched. Every model in the registry is its
+	 * own, so "which NPC was outlined" is answered by position - the same world
+	 * position updateH3D puts the model at.
 	 */
 	static void theFrameOutlinesTheEditedNPC(GARC zo, GARC gr) throws Exception {
 		Zone zone = openZone(zo, ZONE);
@@ -1020,9 +1559,10 @@ public class NpcEditFormGuardsTest {
 		List<float[]> outlined = new ArrayList<>();
 		byte[] bch = mapModel(gr);
 		for (Integer uid : new ArrayList<>(reg.models.keySet())) {
-			reg.models.put(uid, recordingModel(bch, drawn, outlined));
+			reg.models.put(uid, parsedModel(bch));
 		}
 		NPCEditForm form = new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, TestWindow.mTileMapPanel(), pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		recordDrawing(form, drawn, outlined);
 		form.loadFromEntities(e, reg);
 		form.setNPC(5);
 		AbstractTool was = TOOLS.current();
@@ -1046,30 +1586,41 @@ public class NpcEditFormGuardsTest {
 	}
 
 	/**
-	 * A MoveModel that remembers what it was asked to draw. It is parsed from
-	 * real BCH bytes the way {@link ctrmap.formats.h3d.BCHFile} parses model 0,
-	 * because H3DModel has no constructor that does not parse one; the buffer is
-	 * taken from the BCHFile that already relocated it, which is why that field
-	 * is read reflectively rather than cloned again from the source bytes.
+	 * A MoveModel of its own, parsed from real BCH bytes the way
+	 * {@link ctrmap.formats.h3d.BCHFile} parses model 0, because H3DModel has no
+	 * constructor that does not parse one; the buffer is taken from the BCHFile
+	 * that already relocated it, which is why that field is read reflectively
+	 * rather than cloned again from the source bytes.
 	 */
-	static H3DModel recordingModel(byte[] bch, final List<float[]> drawn, final List<float[]> outlined) throws Exception {
+	static H3DModel parsedModel(byte[] bch) throws Exception {
 		BCHFile f = new BCHFile(bch);
 		Field bufField = BCHFile.class.getDeclaredField("buf");
 		bufField.setAccessible(true);
 		byte[] buf = (byte[]) bufField.get(f);
 		RandomAccessBAIS in = new RandomAccessBAIS(buf);
 		in.seek(f.contentHeader.modelsPointerTableOffset);
-		return new H3DModel(in, buf, f.header) {
+		return new H3DModel(in, buf, f.header);
+	}
+
+	/**
+	 * Hands the form a renderer that remembers where it was asked to draw and to
+	 * outline, instead of drawing - the form draws through the one it holds since
+	 * the drawing left the model classes (F214).
+	 */
+	static void recordDrawing(NPCEditForm form, final List<float[]> drawn, final List<float[]> outlined) throws Exception {
+		Field draw = NPCEditForm.class.getDeclaredField("draw");
+		draw.setAccessible(true);
+		draw.set(form, new ctrmap.render.ModelRenderer() {
 			@Override
-			public void render(GL2 gl) {
-				drawn.add(new float[]{worldLocX, worldLocZ});
+			public void render(GL2 gl, H3DModel m) {
+				drawn.add(new float[]{m.worldLocX, m.worldLocZ});
 			}
 
 			@Override
-			public void renderBox(GL2 gl) {
-				outlined.add(new float[]{worldLocX, worldLocZ});
+			public void renderBox(GL2 gl, H3DModel m) {
+				outlined.add(new float[]{m.worldLocX, m.worldLocZ});
 			}
-		};
+		});
 	}
 
 	/**
@@ -1204,13 +1755,7 @@ public class NpcEditFormGuardsTest {
 	static void aFullRegistryRefusesTheModelAndSaysSo(GARC zo) throws Exception {
 		final int GLOBAL_MODEL = 5; //not one of the fillers below, so it is not already registered
 		Zone zone = openZone(zo, ZONE);
-		NPCRegistry full = new NPCRegistry(temp(new byte[0]), Workspace.session());
-		for (int uid = 1000; uid < 1000 + NPCRegistry.MAX_ENTRIES; uid++) {
-			NPCRegistry.NPCRegistryEntry filler = new NPCRegistry.NPCRegistryEntry();
-			filler.uid = uid;
-			filler.model = uid;
-			full.register(filler, uid);
-		}
+		NPCRegistry full = fillToTheCap(new NPCRegistry(temp(new byte[0]), Workspace.session()));
 		NPCEditForm form = new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, TestWindow.mTileMapPanel(), pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
 		ctrmap.Ui.record(JOptionPane.NO_OPTION); //the form asks about the NPCs with no entry; not this test's business
 		try {
@@ -1296,6 +1841,22 @@ public class NpcEditFormGuardsTest {
 	}
 
 	/**
+	 * {@code reg} filled to the registry's cap, as a registry SAVED full stands: register() marks what it adds
+	 * as a change, and two sections asked "nothing was written over the cap" of a flag their own setup had set
+	 * (red on 2026-10-09 for that alone), so the flag is cleared here, once, for every section that needs one.
+	 */
+	static NPCRegistry fillToTheCap(NPCRegistry reg) {
+		for (int uid = 1000; reg.entries.size() < NPCRegistry.MAX_ENTRIES; uid++) {
+			NPCRegistry.NPCRegistryEntry filler = new NPCRegistry.NPCRegistryEntry();
+			filler.uid = uid;
+			filler.model = uid;
+			reg.register(filler, uid);
+		}
+		reg.modified = false;
+		return reg;
+	}
+
+	/**
 	 * Hands the form a story-text file without a STORYTEXT archive: the
 	 * pristine set has none, and the form's own cache is what the soft-lock
 	 * check reads once the archive is known to exist.
@@ -1338,7 +1899,7 @@ public class NpcEditFormGuardsTest {
 
 	/** Zone index as the editor holds it: a ZoneLoadingPanel with that zone open, in CtrmapMainframe.mZonePnl. */
 	static Zone openZone(GARC zo, int index) throws Exception {
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(LOADED, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(LOADED, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		Zone[] table = new Zone[index + 1];
 		table[index] = new Zone(new ZO(temp(zo.getDecompressedEntry(index)), Workspace.session()), Workspace.game());
 		java.util.Arrays.fill(table, 0, index, table[index]);   //a table has no holes (F208)

@@ -206,13 +206,8 @@ public class ExtrasPanel extends javax.swing.JPanel {
 			for (int i = 0; i < zones.length; i++) {
 				final ctrmap.formats.zone.ZoneHeader h = zones[i].header;
 				final boolean[] was = {h.enableRollerSkates, h.enableEscapeRope, h.enableFlyFrom, h.enableRunning, h.enableCycling};
-				WorkspaceUnit.onRollback(() -> {
-					h.enableRollerSkates = was[0];
-					h.enableEscapeRope = was[1];
-					h.enableFlyFrom = was[2];
-					h.enableRunning = was[3];
-					h.enableCycling = was[4];
-				});
+				final boolean[] set = {true, true, true, true, Workspace.profile().cyclingFlagSafe()};
+				WorkspaceUnit.inMemory(() -> failsafes(h, was), () -> failsafes(h, set));
 				zones[i].header.enableRollerSkates = true;
 				zones[i].header.enableEscapeRope = true;
 				zones[i].header.enableFlyFrom = true;
@@ -255,7 +250,7 @@ public class ExtrasPanel extends javax.swing.JPanel {
 			for (int i = 0; i < zones.length; i++) {
 				final ctrmap.formats.zone.ZoneHeader h = zones[i].header;
 				final boolean was = h.enable3D;
-				WorkspaceUnit.onRollback(() -> h.enable3D = was);
+				WorkspaceUnit.inMemory(() -> h.enable3D = was, () -> h.enable3D = true);
 				zones[i].header.enable3D = true;
 				storeZone(zones[i], i);
 			}
@@ -266,6 +261,15 @@ public class ExtrasPanel extends javax.swing.JPanel {
 					+ ctrmap.Ui.reason(failed), title);
 		}
     }//GEN-LAST:event_btn3dActionPerformed
+
+	/** Sets a header's five failsafe flags: roller skates, escape rope, fly from, running, cycling. */
+	private static void failsafes(ctrmap.formats.zone.ZoneHeader h, boolean[] v) {
+		h.enableRollerSkates = v[0];
+		h.enableEscapeRope = v[1];
+		h.enableFlyFrom = v[2];
+		h.enableRunning = v[3];
+		h.enableCycling = v[4];
+	}
 
 	/**
 	 * Writes everything that changed in one zone of a mass edit, asking
@@ -288,7 +292,7 @@ public class ExtrasPanel extends javax.swing.JPanel {
 		}
 	}
 
-	private static final String UNDO_SENTENCE = "Undo last mass edit, below this panel, puts it back.";
+	private static final String UNDO_SENTENCE = "Undo, below this panel, puts it back, and Redo puts it again.";
 
 	/**
 	 * Whether the open game is one the free-camera mod is offered on, saying why not when it is
@@ -304,52 +308,24 @@ public class ExtrasPanel extends javax.swing.JPanel {
 		return false;
 	}
 
-	/** The last mass edit, kept so it can be taken back; null when there is none. */
-	private WorkspaceUnit.Kept lastMassEdit;
-	private final javax.swing.JButton undoMassEdit = new javax.swing.JButton("Undo last mass edit");
+	/**
+	 * The mass edits made here, each kept so it can be taken back and put again (F100, F209): this panel's
+	 * own history, of the open workspace - another one opened starts it again. It had one button for the
+	 * last edit only, and no way to put it again.
+	 */
+	private final SaveHistory saves = new SaveHistory(() -> java.util.Collections.<Object>singletonList(Workspace.session()));
 
 	private void keep(WorkspaceUnit.Kept kept) {
-		lastMassEdit = kept;
-		undoMassEdit.setEnabled(true);
-		undoMassEdit.setToolTipText("Put back what \"" + kept.name() + "\" changed.");
+		saves.keep(kept);
 	}
 
 	/**
-	 * This panel with the way back under it - built here rather than in the generated layout,
-	 * which is the form designer's. Every mass edit above said "It cannot be undone from within
-	 * CTRMap" (F100); now the last one can, while nothing it wrote has changed since.
+	 * This panel with Undo and Redo under it - built here rather than in the generated layout, which is the
+	 * form designer's - and its history owning it, so Ctrl+Z in the Extras tab takes back a mass edit, not a
+	 * tile. Every mass edit above said "It cannot be undone from within CTRMap" (F100).
 	 */
 	public javax.swing.JComponent withUndo() {
-		javax.swing.JPanel box = new javax.swing.JPanel(new java.awt.BorderLayout());
-		box.add(this, java.awt.BorderLayout.CENTER);
-		javax.swing.JPanel bar = new javax.swing.JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT));
-		undoMassEdit.setEnabled(lastMassEdit != null);
-		if (undoMassEdit.getActionListeners().length == 0) {
-			undoMassEdit.addActionListener(e -> undoLastMassEdit());
-		}
-		bar.add(undoMassEdit);
-		box.add(bar, java.awt.BorderLayout.SOUTH);
-		return box;
-	}
-
-	/** Puts the last mass edit back, or says why it cannot. */
-	void undoLastMassEdit() {
-		if (lastMassEdit == null) {
-			return;
-		}
-		String title = "Undo " + lastMassEdit.name();
-		if (ctrmap.Ui.confirm(this, "Put back everything \"" + lastMassEdit.name() + "\" changed?", title,
-				JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE) != JOptionPane.OK_OPTION) {
-			return;
-		}
-		try {
-			lastMassEdit.revert();
-			lastMassEdit = null;
-			undoMassEdit.setEnabled(false);
-			ctrmap.Ui.message(this, "Put back.", title, JOptionPane.INFORMATION_MESSAGE);
-		} catch (IOException | RuntimeException failed) {
-			ctrmap.Ui.error(this, ctrmap.Ui.reason(failed), title);
-		}
+		return saves.around(this);
 	}
 
 	/**

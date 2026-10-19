@@ -1,6 +1,5 @@
 package ctrmap.formats.gfcollision;
 
-import com.jogamp.opengl.GL2;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.Triangle;
 import ctrmap.util.Bytes;
@@ -89,14 +88,31 @@ public class GRCollisionFile {
 	}
 
 	/**
+	 * Puts the triangles back to what the region's subfile 2 holds, unmodified - what No to "keep the changes?"
+	 * does (census H.1). A collision made from scratch has nothing stored to go back to: it stays as made, and
+	 * stays unsaved.
+	 *
+	 * @throws IllegalStateException when the stored collision can no longer be read, saying why
+	 */
+	public void revert() {
+		if (template == null) {
+			return;
+		}
+		GRCollisionFile stored = read(mapFile);
+		for (int i = 0; i < meshes.length; i++) {
+			meshes[i].tris.clear();
+			meshes[i].tris.addAll(stored.meshes[i].tris);
+		}
+		modified = false;
+	}
+
+	/**
 	 * The ground height under (x, y); NaN - unknown - for a collision that was not read, and where no
 	 * triangle lies under the point. That answered 0 (F246): ground at 0 and no ground at all read the
 	 * same, so a quad stood on it sat at 0 and an NPC placed over a hole dropped there.
 	 */
 	public float getHeightAtPoint(float x, float y) {
-		if (unreadable != null) {
-			return Float.NaN;
-		}
+		//an unreadable collision holds no triangle, so it falls through to NaN below with the rest
 		//every triangle sits in one bucket here, so checking them all checks each once
 		for (int i = 0; i < meshes.length; i++) {
 			for (int j = 0; j < meshes[i].tris.size(); j++) {
@@ -143,11 +159,5 @@ public class GRCollisionFile {
 			}
 		}
 		mapFile.storeFile(2, GfColl.build(tris, template));
-	}
-
-	public void render(GL2 gl) {
-		for (int i = 0; i < 16; i++) {
-			meshes[i].render(gl);
-		}
 	}
 }

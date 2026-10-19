@@ -81,6 +81,34 @@ public class PaintedGeometryTest {
 				+ before + ") turns it up (" + normalY(up) + ") and moves no attribute off its corner "
 				+ astray(down, up));
 
+		//A ramp's side skirt is zero-height at the top of its slope, so the first triangle it is drawn as can
+		//have no area at all. The facing was read off that triangle alone: asked to face either way it kept
+		//the winding it was built with, and one corridor wall of every painted ramp faced away from the ramp
+		//(2026-10-18). It turns by the quad's whole drawn face.
+		Object skirt = quad(new float[][]{{0, 18, 0}, {0, 18, 18}, {0, 18, 0}, {0, 0, 18}}, new float[]{0.85f, 0.85f, 0.65f, 0.65f});
+		Object east = copy(skirt), west = copy(skirt);
+		towards.invoke(null, east, 1f, 0f, 0f);
+		towards.invoke(null, west, -1f, 0f, 0f);
+		check(drawnX(skirt, true) == 0f && drawnX(east, false) > 0 && drawnX(west, false) < 0,
+				"a quad whose first triangle has no area (its first half drawn " + drawnX(skirt, true) + ") still turns to"
+				+ " face east (" + drawnX(east, false) + ") and west (" + drawnX(west, false) + ") as asked");
+		//and a face asked to point square to itself has no side that does: refused, never left as built
+		String square = null;
+		try {
+			towards.invoke(null, copy(skirt), 0f, 1f, 0f);
+		} catch (java.lang.reflect.InvocationTargetException refused) {
+			square = String.valueOf(refused.getCause().getMessage());
+		}
+		String none = "not refused";
+		try {
+			towards.invoke(null, quad(new float[][]{{5, 5, 5}, {5, 5, 5}, {5, 5, 5}, {5, 5, 5}}, new float[4]), 0f, 1f, 0f);
+		} catch (java.lang.reflect.InvocationTargetException refused) {
+			none = String.valueOf(refused.getCause().getMessage());
+		}
+		check(square != null && square.contains("neither of its sides faces that way") && "not refused".equals(none),
+				"a wall asked to face straight up is refused (" + square + "), and a quad with no area - which draws"
+				+ " nothing - is not (" + none + ")");
+
 		//the cliff gusset's back face is shaded like its front
 		float[] tl = {0, 36, 0}, tr = {6, 36, 3}, bl = {0, 0, 0}, br = {6, 0, 3};
 		Object front = gusset.invoke(null, tl, tr, bl, br, false);
@@ -90,6 +118,7 @@ public class PaintedGeometryTest {
 				"a cliff gusset's back face winds the other way and is shaded corner for corner like its front"
 				+ (off.isEmpty() ? "" : " - these corners are not: " + off));
 
+		aCornerIsBuiltFromTheHeightsAtIt();
 		checkRounding("the cliff's cap", PaintedGeometry.CLIFF_PULL, PaintedGeometry.TILE * 0.3f);
 		checkRounding("the shoreline's cap", shorePull(), PaintedGeometry.TILE * 0.34f);
 
@@ -200,6 +229,74 @@ public class PaintedGeometryTest {
 		float ux = b[0] - a[0], uz = b[2] - a[2];
 		float vx = c[0] - a[0], vz = c[2] - a[2];
 		return uz * vx - ux * vz;
+	}
+
+	/**
+	 * A corner is built from its walls' heights AT it (2026-10-18). A ramp's side face falls with the ramp, so one
+	 * edge has two tops, and every reader at a corner - the deepest drop the feet there stretch to, whether two walls
+	 * run on as one strip, the strip's own height there - asks for the top at that corner. Two walls meet at P, a
+	 * level one falling 18 and a sloping one 18 at P: whether the sloping one's far end stands at 54 or at 20, what
+	 * is built at P above its ground is the same. CONTROL: with the height at P itself changed, it is not. (On the
+	 * ground it differs by design: a stepped face lays a run per step of its deeper neighbour, so a far end three
+	 * steps high adds a collapsed run at P's foot - measured, flat at 0 and -2.)
+	 */
+	static void aCornerIsBuiltFromTheHeightsAtIt() throws Exception {
+		System.out.println("--- a corner is built from its walls' heights at it, not at their far ends");
+		Method edge = method(PaintedCliffMesh.class, "cliffEdge", int.class, int.class, int.class, float.class, float.class,
+				int.class, float.class);
+		Method emit = method(PaintedCliffMesh.class, "emitCliffStrips", List.class, java.util.Map.class, int.class);
+		for (boolean turn : new boolean[]{false, true}) {
+			String where = turn ? "where the walls turn" : "on a straight run";
+			List<String> far54 = profileAtP(edge, emit, 54f, 18f, turn), far20 = profileAtP(edge, emit, 20f, 18f, turn);
+			List<String> at27 = profileAtP(edge, emit, 54f, 27f, turn);
+			check(far54.size() > 2 && !far54.equals(at27), "control, " + where + ": what is built at P is read ("
+					+ far54.size() + " points on its profile), and it moves when the height AT P does: " + far54 + " / " + at27);
+			check(far54.equals(far20), where + ", a wall falling to 18 at P builds P alike whether its far end stands at 54"
+					+ " or 20: " + far54 + " / " + far20);
+		}
+	}
+
+	/**
+	 * The points built on P's profile - the ray out of P = (0, 18) along the walls' shared outward direction - by a
+	 * level wall falling 18 that ends at P and a ramp's west side running on from P to (0, 0), its top {@code atP}
+	 * at P and {@code farTop} at its far end; those above the ground the walls fall to (y over half a unit), each
+	 * rounded to a tenth. The level wall is tile (20,21)'s west edge, (0,36) -> P, straight on into the ramp's
+	 * side - or, {@code turn}, tile (19,21)'s north edge, (-18,18) -> P, an inside corner of the two: joined
+	 * strips round a turn and two open ends do not, so only there does whether they join show.
+	 */
+	static List<String> profileAtP(Method edge, Method emit, float farTop, float atP, boolean turn) throws Exception {
+		Object level = turn ? edge.invoke(null, 19, 21, 3, 0f, 18f, -1, 18f) : edge.invoke(null, 20, 21, 1, 0f, 18f, -1, 18f);
+		Object ramp = edge.invoke(null, 20, 20, 1, 0f, farTop, 2, atP);
+		//the shared outward direction: west on the straight run, north-west at the turn
+		float dx = -1f, dz = turn ? -1f : 0f, dl = (float) Math.hypot(dx, dz);
+		dx /= dl;
+		dz /= dl;
+		java.util.Map<Integer, List<Object>> out = new java.util.HashMap<>();
+		emit.invoke(null, new ArrayList<>(Arrays.asList(level, ramp)), out, 0);
+		java.util.TreeSet<String> at = new java.util.TreeSet<>();
+		for (Object q : out.getOrDefault(0, new ArrayList<>())) {
+			for (float[] p : (float[][]) pos.get(q)) {
+				float rx = p[0], rz = p[2] - 18f;
+				if (Math.abs(rx * dz - rz * dx) < 0.05f && rx * dx + rz * dz > -0.01f && p[1] > 0.5f) {
+					at.add(String.format("(%.1f,%.1f,%.1f)", p[0], p[1], p[2]));
+				}
+			}
+		}
+		return new ArrayList<>(at);
+	}
+
+	/**
+	 * The x of the quad's face as drawn: the normals of triangles (0,2,1) and (1,2,3) - the order
+	 * PaintedFloorMesh.meshFromQuads writes - summed, or the first one's alone.
+	 */
+	static float drawnX(Object q, boolean firstOnly) throws Exception {
+		float[][] p = (float[][]) pos.get(q);
+		float x = 0f;
+		for (int[] t : firstOnly ? new int[][]{{0, 2, 1}} : new int[][]{{0, 2, 1}, {1, 2, 3}}) {
+			float[] a = p[t[0]], b = p[t[1]], c = p[t[2]];
+			x += (b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]);
+		}
+		return x;
 	}
 
 	static Object quad(float[][] corners, float[] shade) throws Exception {

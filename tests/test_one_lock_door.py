@@ -87,28 +87,35 @@ class TheLockHasOneDoor(unittest.TestCase):
 class ALockTheDoorWroteIsJudgedByItsProcess(unittest.TestCase):
 
     def test_the_liveness_reader_takes_the_pid_from_the_doors_signature(self):
-        # BY ITS PATH: the bundle ships a guard of the same name, and whichever the process imported
-        # first answers `import guard_suite_running` - measured, the full suite handed this the
-        # bundle's, which has no `_live`
+        # THE BUNDLE'S READER, the one this project runs: its own copy of the suite guard, whose
+        # `_live` this asked, was removed on 2026-10-09 as a second copy of one rule (F167), and the
+        # lock it read is declared in the bundle's `bundle_runs.LOCKS` instead. Loaded BY ITS PATH
+        # with its LOCKS set here, so neither the import order nor the project's list decides it.
         import importlib.util
-        folder_ = os.path.join(HERE, ".claude", "hooks")
-        sys.path.insert(0, folder_)               # its own imports: hook_env, liveness
+        from unittest import mock
+        sys.path.insert(0, os.path.join(HERE, "tools"))
+        import bundle_hooks
+        hooks = bundle_hooks.path(HERE)
+        if hooks not in sys.path:
+            sys.path.insert(0, hooks)             # its own imports: bundle_shell, _tree_root
         spec = importlib.util.spec_from_file_location(
-            "ctrmap_guard_suite_running", os.path.join(folder_, "guard_suite_running.py"))
-        guard_suite_running = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(guard_suite_running)
+            "ctrmap_bundle_runs", os.path.join(hooks, "bundle_runs.py"))
+        bundle_runs = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bundle_runs)
         folder = tempfile.mkdtemp(prefix="ctrmap-lockdoor-")
         self.addCleanup(shutil.rmtree, folder, True)
         path = os.path.join(folder, LOCK_NAME)
-        # take_lock writes `rel`, then `<pid>-<16 hex>`; this process is alive, 999999 is not
-        with io.open(path, "w", encoding="utf-8") as handle:
-            handle.write("src/A.java\n%d-0123456789abcdef\n" % os.getpid())
-        self.assertTrue(guard_suite_running._live(path)[0], "a lock held by a live process read as dead")
-        with io.open(path, "w", encoding="utf-8") as handle:
-            handle.write("src/A.java\n999999-0123456789abcdef\n")
-        live, why = guard_suite_running._live(path)
-        self.assertFalse(live, "a FRESH lock whose process is gone was judged by its age, not its "
-                               "process: %s" % why)
+        with mock.patch.object(bundle_runs, "LOCKS", ((LOCK_NAME, "a mutation run"),)):
+            # take_lock writes `rel`, then `<pid>-<16 hex>`; this process is alive, 999999 is not
+            with io.open(path, "w", encoding="utf-8") as handle:
+                handle.write("src/A.java\n%d-0123456789abcdef\n" % os.getpid())
+            self.assertTrue(bundle_runs.lock_runs(folder),
+                            "a lock held by a live process read as nothing running")
+            with io.open(path, "w", encoding="utf-8") as handle:
+                handle.write("src/A.java\n999999-0123456789abcdef\n")
+            held = bundle_runs.lock_runs(folder)
+            self.assertEqual(held, [], "a FRESH lock whose process is gone was judged by its age, "
+                                       "not its process: %s" % held)
 
 
 if __name__ == "__main__":

@@ -58,7 +58,7 @@ public class PaintedRegionTest {
 	static int check(String label, TilePalette[][] g, int[][] hh, byte[] donor) {
 		final int[][] height = hh == null ? new int[DIM][DIM] : hh;
 		try {
-			RegionFactory.BlankContent c = PaintedRegionBuilder.build(donor, g, height, ctrmap.formats.tilemap.TerrainLighting.daytime());
+			RegionFactory.BlankContent c = PaintedRegionBuilder.build(null, donor, g, height, null, ctrmap.formats.tilemap.TerrainLighting.daytime(), true);
 
 			// model gates
 			BchMapModel m = new BchMapModel(c.model);
@@ -168,14 +168,12 @@ public class PaintedRegionTest {
 			//A flat build must contain no walls at all. If it did, the donor's
 			//own retail cliffs would be in the sample and the check below would
 			//be measuring the wrong geometry.
-			List<float[]> flat = walls(PaintedRegionBuilder.build(
-					donor, grid(TilePalette.GRASS), new int[DIM][DIM], L).model);
+			List<float[]> flat = walls(PaintedRegionBuilder.build(null, donor, grid(TilePalette.GRASS), new int[DIM][DIM], null, L, true).model);
 			if (!flat.isEmpty()) {
 				throw new IllegalStateException("a flat build already has " + flat.size()
 						+ " vertical triangles; the sample is not purely generated");
 			}
-			List<float[]> w = walls(PaintedRegionBuilder.build(
-					donor, grid(TilePalette.GRASS), plateau(), L).model);
+			List<float[]> w = walls(PaintedRegionBuilder.build(null, donor, grid(TilePalette.GRASS), plateau(), null, L, true).model);
 			if (w.size() < 50) {
 				throw new IllegalStateException("only " + w.size()
 						+ " cliff triangles generated; the plateau did not build");

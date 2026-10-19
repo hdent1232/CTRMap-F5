@@ -428,7 +428,7 @@ public class SetupWizard extends JDialog {
 			gameVerdict.setText(BLANK);
 			setProse(gameDetail, "");
 			useSuggestion.setVisible(false);
-			next.setEnabled(false);
+			Ui.offer(next, "Choose your game folder first");
 			return;
 		}
 		gameResult = DumpCheck.check(new File(path));
@@ -438,7 +438,7 @@ public class SetupWizard extends JDialog {
 				+ Ui.html(gameResult.headline) + "</html>");
 		setProse(gameDetail, gameResult.detail);
 		useSuggestion.setVisible(gameResult.suggestion != null);
-		next.setEnabled(ok);
+		Ui.offer(next, ok ? null : gameResult.headline);
 	}
 
 	private void revalidateWorkspace() {
@@ -446,20 +446,20 @@ public class SetupWizard extends JDialog {
 		if (path.isEmpty()) {
 			wsVerdict.setForeground(Color.GRAY);
 			wsVerdict.setText("Choose a folder.");
-			next.setEnabled(false);
+			Ui.offer(next, "Choose a folder for the workspace");
 			return;
 		}
 		File f = new File(path);
 		if (f.isFile()) {
 			wsVerdict.setForeground(new Color(160, 0, 0));
 			wsVerdict.setText("✗  That is a file. Choose a folder.");
-			next.setEnabled(false);
+			Ui.offer(next, "That is a file - choose a folder");
 			return;
 		}
 		if (gameResult != null && gameResult.usable() && isInside(f, new File(gameField.getText().trim()))) {
 			wsVerdict.setForeground(new Color(160, 0, 0));
 			wsVerdict.setText("✗  That is inside your game folder. Choose somewhere separate.");
-			next.setEnabled(false);
+			Ui.offer(next, "The workspace cannot be inside your game folder");
 			return;
 		}
 		wsVerdict.setForeground(new Color(0, 128, 0));
@@ -665,7 +665,7 @@ public class SetupWizard extends JDialog {
 	}
 
 	private void searchForDumps() {
-		findForMe.setEnabled(false);
+		Ui.offer(findForMe, "Looking for a dump...");
 		findForMe.setText("Looking...");
 		new SwingWorker<List<File>, Void>() {
 			@Override
@@ -709,7 +709,7 @@ public class SetupWizard extends JDialog {
 	}
 
 	private void setButtonsBusy(boolean busy) {
-		next.setEnabled(!busy);
+		Ui.offer(next, busy ? "Working - wait for this step to finish" : null);
 		back.setEnabled(!busy && step > STEP_WELCOME);
 		skip.setEnabled(!busy);
 		cancel.setEnabled(!busy);
@@ -802,7 +802,12 @@ public class SetupWizard extends JDialog {
 			if (r != JOptionPane.YES_OPTION) {
 				return false;
 			}
-			Workspace.discardSnapshot();
+			try {
+				Workspace.discardSnapshot();
+			} catch (java.io.IOException kept) {
+				Ui.error(parent, "Choose a different working folder: " + ctrmap.util.Bytes.reason(kept), "Backup not replaced");
+				return false;
+			}
 		}
 		return true;
 	}

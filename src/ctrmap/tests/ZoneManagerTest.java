@@ -71,7 +71,7 @@ public class ZoneManagerTest {
 		}
 		ScratchGame.open(dump);
 
-		int masterIndex = ctrmap.ZoneTables.masterIndex(Workspace.getArchive(ArchiveType.ZONE_DATA));
+		int masterIndex = ctrmap.ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA));
 		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, masterIndex);
 		byte[] master0 = readAll(masterFile);
 		int rows = master0.length / ZoneCloner.ZONE_HEADER_SIZE;
@@ -381,7 +381,7 @@ public class ZoneManagerTest {
 	}
 
 	private static void renameRefusals() throws IOException {
-		int master = ctrmap.ZoneTables.masterIndex(Workspace.getArchive(ArchiveType.ZONE_DATA));
+		int master = ctrmap.ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA));
 		try {
 			ZoneManager.renameZone(Workspace.session(), master, "x");
 			check(false, "renameZone refuses a zone index at the master table");

@@ -212,17 +212,18 @@ public class UtilsTest {
 	private static void floatOutOfATextField() {
 		JFormattedTextField tf = new JFormattedTextField();
 		tf.setText("3.25");
-		check(ctrmap.humaninterface.Forms.getFloatFromDocument(tf) == 3.25f, "a plain decimal is read");
+		check(Float.valueOf(3.25f).equals(ctrmap.humaninterface.Forms.typedFloat(tf)), "a plain decimal is read");
 		tf.setText("1,5");
-		check(ctrmap.humaninterface.Forms.getFloatFromDocument(tf) == 1.5f, "a comma is accepted as the decimal point");
+		check(Float.valueOf(1.5f).equals(ctrmap.humaninterface.Forms.typedFloat(tf)), "a comma is accepted as the decimal point");
 		tf.setText("-2.5");
-		check(ctrmap.humaninterface.Forms.getFloatFromDocument(tf) == -2.5f, "a negative is read");
-		tf.setText("");
-		check(ctrmap.humaninterface.Forms.getFloatFromDocument(tf) == 0f, "an empty field reads as zero");
-		tf.setText("-");
-		check(ctrmap.humaninterface.Forms.getFloatFromDocument(tf) == 0f, "a lone minus - what a field looks like mid-typing - is zero");
-		tf.setText("abc");
-		check(ctrmap.humaninterface.Forms.getFloatFromDocument(tf) == 0f, "text that is not a number is zero, not an exception");
+		check(Float.valueOf(-2.5f).equals(ctrmap.humaninterface.Forms.typedFloat(tf)), "a negative is read");
+		tf.setText("0");
+		check(Float.valueOf(0f).equals(ctrmap.humaninterface.Forms.typedFloat(tf)), "control: a typed 0 is 0");
+		//census M.10: each of these answered 0, and the collision editor wrote it into the vertex on every keystroke
+		for (String notANumber : new String[]{"", "-", "abc", "1e", "NaN", "Infinity", "-Infinity"}) {
+			tf.setText(notANumber);
+			check(ctrmap.humaninterface.Forms.typedFloat(tf) == null, "\"" + notANumber + "\" is not a number, not 0");
+		}
 	}
 
 	private static void iconsAndButtons() {
@@ -458,6 +459,25 @@ public class UtilsTest {
 		check(ctrmap.formats.tilemap.Tilemap.REGION_BYTES == ctrmap.util.Bytes.align(4 + 40 * 40 * 4, 0x80),
 				"a region's tilemap is its header and 40 x 40 four-byte tiles, padded to 0x80: "
 				+ ctrmap.formats.tilemap.Tilemap.REGION_BYTES);
+		//and align rounds up to its boundary, refusing in words one that is not positive (the 2026-10-15 shared sweep,
+		//Bytes 187, drop-throw, SURVIVED: every boundary a suite handed it was 0x80). Dropped, a boundary of 0 divided
+		//by zero and a negative one answered a number that is no alignment at all
+		StringBuilder aligned = new StringBuilder();
+		aligned.append(ctrmap.util.Bytes.align(0, 4)).append(',').append(ctrmap.util.Bytes.align(5, 4)).append(',')
+				.append(ctrmap.util.Bytes.align(8, 4));
+		for (int boundary : new int[]{0, -4}) {
+			String answer;
+			try {
+				answer = "answered " + ctrmap.util.Bytes.align(5, boundary);
+			} catch (IllegalArgumentException refused) {
+				answer = "refused: " + refused.getMessage();
+			} catch (RuntimeException other) {
+				answer = "threw " + other;
+			}
+			aligned.append(", ").append(boundary).append(' ').append(answer);
+		}
+		check(aligned.toString().equals("0,8,8, 0 refused: Cannot align to a boundary of 0., -4 refused: Cannot align to a"
+				+ " boundary of -4."), "align rounds up to its boundary and refuses one that is not positive: " + aligned);
 	}
 
 	/**

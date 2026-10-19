@@ -64,22 +64,14 @@ public class PackageCycleTest {
 	private static final int LARGEST_CYCLE = 7;
 
 	/**
-	 * The fourth way up, NOT closed by F214: format classes that draw themselves with OpenGL, or do
-	 * their matrix maths with its library, so a byte format cannot be loaded without JOGL on the
-	 * classpath. Measured 2026-10-08; the list may only shrink. Moving the drawing out means moving
-	 * the GL buffers each mesh keeps, which nothing in this environment can draw to check.
+	 * The fourth way up: format classes that draw themselves with OpenGL, or do their matrix maths with
+	 * its library, so a byte format cannot be loaded without JOGL on the classpath. Nine on 2026-10-08;
+	 * seven on 2026-10-10, when the model reader's matrices moved to its own Transform4 as JOGL went to
+	 * 2.6.0 (F077); NONE the same day, when the drawing moved to ctrmap.render (F214) - checked, not
+	 * assumed, by OffscreenRenderTest, whose frames came out pixel-identical to the ones drawn before the
+	 * move. A format class that names an OpenGL type is now a format class too many.
 	 */
-	private static final String[] DRAWING_FORMATS = {
-		"ctrmap/formats/CMVD",
-		"ctrmap/formats/Triangle",
-		"ctrmap/formats/gfcollision/GRCollisionFile",
-		"ctrmap/formats/gfcollision/GRCollisionMesh",
-		"ctrmap/formats/h3d/BCHFile",
-		"ctrmap/formats/h3d/model/BCHModelHeader",
-		"ctrmap/formats/h3d/model/H3DModel",
-		"ctrmap/formats/h3d/model/H3DSkeleton",
-		"ctrmap/formats/h3d/texturing/H3DMaterial",
-	};
+	private static final String[] DRAWING_FORMATS = {};
 
 	/**
 	 * The format classes in a class cycle with another format class, measured by this suite on

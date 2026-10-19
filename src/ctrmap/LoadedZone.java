@@ -134,6 +134,8 @@ public final class LoadedZone {
 	}
 
 	/** Opens slot {@code i} of the table; refuses a slot the table does not have. */
+	@ctrmap.util.ForSuites("SEAM: a suite opens a slot the table already holds; the application opens a zone"
+			+ " as it loads it, through open(int, Zone)")
 	public synchronized void open(int i) {
 		State s = state;
 		state = new State(s.table, s.at(i), i);

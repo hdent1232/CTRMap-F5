@@ -398,7 +398,7 @@ public class TriggerEditFormGuardsTest {
 	static Zone openZone(GARC zo, int index) throws Exception {
 		File f = Scratch.file("ctrmap_trigform");
 		Files.write(f.toPath(), zo.getDecompressedEntry(index));
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(LOADED, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(LOADED, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		Zone[] table = new Zone[index + 1];
 		table[index] = new Zone(new ZO(f, Workspace.session()), Workspace.game());
 		java.util.Arrays.fill(table, 0, index, table[index]);   //a table has no holes (F208)

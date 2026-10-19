@@ -17,7 +17,7 @@ THREE SHAPES ARE REFUSED, in every Python file in the tree:
     a SECOND WALK     a loop stepping a folder up with `dirname`, testing a name joined onto it,
                       and answering THE FOLDER - an anchor rule of its own - outside
                       `_tree_root.py`. A walk that answers a FILE it found is a search, not a root.
-    a DRIFTED COPY    a `_tree_root.py` whose bytes are not `tools/_tree_root.py`'s
+    a DRIFTED COPY    a `_tree_root.py` or `bounded.py` whose bytes are not the one in `tools/`
 
 A file's OWN folder - `dirname(abspath(__file__))` - is no climb: importing from it is how a file
 reaches `_tree_root` at all. The root's own parent - `dirname(ROOT)` with ROOT anchored - is no
@@ -39,10 +39,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import _tree_root        # noqa: E402  - the one definition this holds every copy to
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 
 #: The definition every copy must equal, byte for byte.
 CANONICAL = os.path.join(HERE, "_tree_root.py")
 COPY = "_tree_root.py"
+#: EVERY FILE A HOOK IMPORTS FROM ITS OWN FOLDER is one definition with copies, and each copy is held
+#: to the definition in this folder: `bounded.py` - the deadline that ends a child's whole tree
+#: (tools/timeouts.py) - drifting in the hooks folder is a second deadline rule, as `_tree_root.py`
+#: drifting is a second root.
+COPIES = (COPY, "bounded.py")
 
 #: ASKED AT THE WRITE of any Python file, tests included: a test that counts its way to the
 #: project is as wrong at another depth as a tool that does.
@@ -200,15 +206,15 @@ def walks(source):
     return found
 
 
-def _canonical():
-    with io.open(CANONICAL, encoding="utf-8", newline="") as handle:
+def _canonical(name=COPY):
+    with io.open(os.path.join(HERE, name), encoding="utf-8", newline="") as handle:
         return handle.read()
 
 
-def _canonical_rel():
-    """The definition's own project path - it is the one `_tree_root.py` not held to another."""
+def _canonical_rel(name=COPY):
+    """The definition's own project path - it is the one copy not held to another."""
     root = _tree_root.require(__file__)
-    return os.path.relpath(CANONICAL, root).replace(os.sep, "/")
+    return os.path.relpath(os.path.join(HERE, name), root).replace(os.sep, "/")
 
 
 def findings_in(rel, source):
@@ -217,12 +223,12 @@ def findings_in(rel, source):
     if not rel.endswith(".py"):
         return []
     name = rel.rsplit("/", 1)[-1]
-    if name == COPY:
-        if rel == _canonical_rel():
+    if name in COPIES:
+        if rel == _canonical_rel(name):
             return []
-        if source != _canonical():
-            return ["%s is not tools/%s byte for byte - the root has ONE definition, and a copy "
-                    "that drifts is a second" % (rel, COPY)]
+        if source != _canonical(name):
+            return ["%s is not tools/%s byte for byte - it has ONE definition, and a copy "
+                    "that drifts is a second" % (rel, name)]
         return []
     try:
         out = ["%d: a root counted in folders from __file__ - ask _tree_root.require(__file__)"
@@ -238,8 +244,8 @@ def python_files(root):
     """Every Python file in the tree - tracked, and untracked but not ignored - or None when git
     cannot answer: a tree nobody could list is not a clean one."""
     try:
-        done = subprocess.run(["git", "-C", root, "ls-files", "-co", "--exclude-standard", "-z"],
-                              capture_output=True, timeout=60, creationflags=NO_WINDOW)
+        done = bounded.run(["git", "-C", root, "ls-files", "-co", "--exclude-standard", "-z"],
+                           capture_output=True, timeout=60, creationflags=NO_WINDOW)
     except (OSError, subprocess.TimeoutExpired):
         return None
     if done.returncode != 0:
@@ -310,6 +316,11 @@ def controls():
 
 
 def main(argv):
+    import cli_words      # a word this does not read refuses the run, before anything runs
+    why = cli_words.refused(argv[1:], most=0)
+    if why:
+        print(why)
+        return 2
     broken = controls()
     if broken:
         sys.stdout.write("REFUSING: the checker is broken - %s%s" % (broken, LF))

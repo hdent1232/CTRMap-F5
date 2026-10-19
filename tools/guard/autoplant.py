@@ -42,6 +42,7 @@ import replant  # noqa: E402  - the ledger's own definitions: what a crash looks
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console window for a captured child (F184)
 
 import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = _tree_root.require(__file__)
 LEDGER = os.path.join(HERE, "plants.json")
@@ -84,7 +85,7 @@ def write_text(path, text, crlf):
 def compile_one(path, javac):
     """Compile one source into build/classes, the way build.ps1 would."""
     try:
-        done = subprocess.run(
+        done = bounded.run(
             [javac, "--release", "8", "-encoding", "UTF-8", "-nowarn",
              "-cp", LIBS, "-sourcepath", "src", "-d", os.path.join("build", "classes"),
              os.path.relpath(path, ROOT)],
@@ -103,18 +104,10 @@ def run_suite(cls, args, java):
     refuses at the progress dialog SUCCEEDS with a display, and the code after
     it then runs against a loaded map instead of an empty one. A guard proven
     under one set of flags and shipped under another is not proven."""
-    try:
-        done = subprocess.run(
-            [java, "-Xmx4g", "-cp", LIBS, cls] + args,
-            cwd=ROOT, capture_output=True, text=True, errors="replace",
-            timeout=SUITE_TIMEOUT, creationflags=NO_WINDOW)
-    except subprocess.TimeoutExpired:
-        return None, ""
-    said = (done.stdout or "") + (done.stderr or "")
-    #judged as the battery judges it - one definition, replant's (a suite that printed
-    #FAILURES PRESENT and exited 0 has failed)
-    from replant import verdict
-    return verdict(done.returncode, said), said
+    #ONE RUNNER, replant's: it was copied here, and when replant's began running suites on the unattended
+    #desktop (2026-10-11) this copy would have gone on opening them on the owner's screen
+    import replant
+    return replant.run_suite(cls, args, java)
 
 
 def registered(pristine, gamedir):
@@ -258,6 +251,12 @@ def try_one(src, find, repl, cls, args, java, javac):
 
 
 def main(argv):
+    #a word this does not read refuses the run, before anything runs (cli_words, 2026-10-10)
+    import _cli
+    unread_words = _cli.refused(argv[1:], prefixed=("--limit=", "--files=", "--tries=", "--after=", "--budget="), most=None)
+    if unread_words:
+        print(unread_words)
+        return 2
     with io.open(LEDGER, encoding="utf-8") as handle:
         book = json.load(handle)
     home = jdk()

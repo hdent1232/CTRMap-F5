@@ -546,7 +546,7 @@ final class EditorBench {
 		private static final long serialVersionUID = 1L;
 
 		BenchPaintForm() {
-			super(LOADED, EDITORS, ZONES, TestWindow.mTileMapPanel(), history);
+			super(LOADED, EDITORS, ZONES, TestWindow.mTileMapPanel(), history, PaintFormGuardsTest.OPS, () -> { });
 		}
 		final List<String> calls = new ArrayList<String>();
 

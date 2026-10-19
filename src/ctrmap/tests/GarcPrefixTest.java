@@ -3,6 +3,11 @@ package ctrmap.tests;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.garc.LZ11;
 import java.io.File;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -32,6 +37,9 @@ public class GarcPrefixTest {
 	public static void main(String[] args) throws Exception {
 		theSniffDecidesAsTheWholeReadDid();
 		theParseFindsWhatItFoundBefore();
+		aPackFromAFolderThatIsNotThereIsRefused();
+		anInPlacePackRefusesWhatItCannotWriteOver();
+		anEntryThatWritesAnotherLengthIsRefused();
 		openingAnArchiveReadsItsPrefixes();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		System.exit(fails == 0 ? 0 : 1);
@@ -80,7 +88,7 @@ public class GarcPrefixTest {
 				stored[0] = 0x11;
 				raws++;
 			}
-			boolean whole = LZ11.prefixDecodes(stored, 64);
+			boolean whole = LZ11.prefixDecodes(stored, 64, (stored).length);
 			boolean prefix = LZ11.prefixDecodes(Arrays.copyOf(stored, Math.min(64, stored.length)), 64, stored.length);
 			if (whole != prefix) {
 				differ.add(k + " (" + stored.length + " bytes)");
@@ -137,6 +145,154 @@ public class GarcPrefixTest {
 		GARC dc = new GARC(deep);
 		check(dc.readableEntries == 1 && dc.length == 2, "and one cut beyond the first 64 bytes of a long entry is a cut too: "
 				+ dc.readableEntries + " of " + dc.length);
+	}
+
+	/**
+	 * A pack whose staging folder is not there is refused, naming it - never written as the archive it already was.
+	 *
+	 * <p>Measured by the 2026-10-14 shared sweep (GARC 383, dropped, SURVIVED): no pack had ever been handed a folder
+	 * that is not there. Dropped, the pack went on to read its staged files out of nothing.
+	 */
+	static void aPackFromAFolderThatIsNotThereIsRefused() throws Exception {
+		System.out.println("--- a pack whose staging folder is not there is refused, naming it");
+		File dir = Scratch.dir("ctrmap_garcpack_gone");
+		File f = new File(dir, "a.garc");
+		HandedGameTest.writeGarc(f, "one".getBytes(StandardCharsets.US_ASCII), "two".getBytes(StandardCharsets.US_ASCII));
+		GARC g = new GARC(f);
+		File staged = new File(dir, "staged");
+		staged.mkdirs();
+		File out = new File(dir, "a.garc_new");
+		g.prepareRepack(staged, file -> true, null, out);
+		check(out.isFile(), "control: a pack from a staging folder that is there writes its archive");
+		out.delete();
+		File gone = new File(dir, "gone");
+		String said;
+		try {
+			g.prepareRepack(gone, file -> true, null, out);
+			said = out.isFile() ? "it wrote " + out.length() + " bytes" : "it wrote nothing and said nothing";
+		} catch (IOException refused) {
+			said = refused.getMessage();
+		} catch (RuntimeException other) {
+			said = "it failed some other way: " + other;
+		}
+		check(said.equals(gone + " is not there, so nothing staged in it can be packed into a.garc.") && !out.exists(),
+				"a pack from a staging folder that is not there is refused, naming it, and nothing is written: " + said);
+	}
+
+	/**
+	 * An in-place pack refuses, in its own words, every staged file it cannot write over its own entry: one naming no
+	 * entry, one past the archive's last, one over an entry stored compressed, and one of another length.
+	 *
+	 * <p>Measured by the 2026-10-14 shared sweep (GARC 422, dropped, SURVIVED): none of the in-place pack's refusals was
+	 * asked by its words, so a refusal dropped was answered by the next one down, or by an index error.
+	 */
+	static void anInPlacePackRefusesWhatItCannotWriteOver() throws Exception {
+		System.out.println("--- an in-place pack refuses, in its own words, what it cannot write over its own entry");
+		File dir = Scratch.dir("ctrmap_garc_inplace");
+		File f = new File(dir, "items.garc");
+		HandedGameTest.writeGarc(f, "abcd".getBytes(StandardCharsets.US_ASCII), "efgh".getBytes(StandardCharsets.US_ASCII),
+				LZ11.compress(text(3000, 3)));
+		GARC g = new GARC(f);
+		check(!g.isEntryCompressed(1) && g.isEntryCompressed(2), "control: entry 1 is stored plain and entry 2 compressed");
+		String wrote = inPlace(g, dir, "ok", "1", "WXYZ".getBytes(StandardCharsets.US_ASCII));
+		check(wrote.equals("it wrote [87, 88, 89, 90] over entry 1"),
+				"control: a staged entry of its own length is written over its own bytes: " + wrote);
+		String none = inPlace(g, dir, "none", "notes.txt", new byte[4]);
+		check(none.endsWith(" but names no entry of it."), "a staged file naming no entry is refused: " + none);
+		String past = inPlace(g, dir, "past", "3", new byte[4]);
+		check(past.startsWith("entry 3 is staged for ") && past.endsWith(", which holds 3; an archive written in place does"
+				+ " not grow."), "a staged entry past the archive's last is refused: " + past);
+		String packed = inPlace(g, dir, "packed", "2", new byte[4]);
+		check(packed.contains("is stored compressed, so writing its bytes in place would corrupt it"),
+				"a staged entry over one stored compressed is refused: " + packed);
+		String longer = inPlace(g, dir, "longer", "1", new byte[5]);
+		check(longer.contains("is stored as 4 bytes and staged as 5"),
+				"a staged entry of another length is refused: " + longer);
+	}
+
+	/** What an in-place pack of one staged file said: its refusal, or what it wrote over that entry. */
+	static String inPlace(GARC g, File dir, String name, String file, byte[] bytes) throws Exception {
+		File staged = new File(dir, "staged-" + name);
+		staged.mkdirs();
+		Files.write(new File(staged, file).toPath(), bytes);
+		File out = new File(dir, "items-" + name + ".garc");
+		try {
+			g.prepareInPlace(staged, edit -> true, out);
+		} catch (IOException refused) {
+			return out.exists() ? "it refused AND wrote " + out.length() + " bytes: " + refused.getMessage()
+					: refused.getMessage();
+		} catch (RuntimeException other) {
+			return "it failed some other way: " + other;
+		}
+		if (!out.isFile()) {
+			return "it wrote nothing and said nothing";
+		}
+		try {
+			return "it wrote " + Arrays.toString(new GARC(out).getDecompressedEntry(Integer.parseInt(file))) + " over entry "
+					+ file;
+		} catch (RuntimeException unreadable) {
+			return "it wrote a file that does not read back: " + unreadable;
+		}
+	}
+
+	/**
+	 * The archive writer refuses an entry that writes another number of bytes than its FATB record declares, naming it.
+	 *
+	 * <p>Measured by the 2026-10-14 shared sweep (GarcWriter 148, dropped, SURVIVED): both of the writer's callers hand
+	 * it entries that agree by construction, so nothing had ever asked. Dropped, an entry 1 byte short would leave
+	 * every entry after it 1 byte from where its record says it starts. Asked through reflection, as the writer is the
+	 * format package's own.
+	 */
+	static void anEntryThatWritesAnotherLengthIsRefused() throws Exception {
+		System.out.println("--- the archive writer refuses an entry that writes another length than it declares");
+		Class<?> writer = Class.forName("ctrmap.formats.garc.GarcWriter");
+		Class<?> entries = Class.forName("ctrmap.formats.garc.GarcWriter$Entries");
+		Class<?> template = Class.forName("ctrmap.formats.garc.GarcWriter$Template");
+		Method read = template.getDeclaredMethod("read", RandomAccessFile.class);
+		read.setAccessible(true);
+		Method write = writer.getDeclaredMethod("write", RandomAccessFile.class, template, entries, int.class);
+		write.setAccessible(true);
+		File dir = Scratch.dir("ctrmap_garcwriter");
+		File src = new File(dir, "a.garc");
+		HandedGameTest.writeGarc(src, "abcd".getBytes(StandardCharsets.US_ASCII));
+		Object t;
+		try (RandomAccessFile in = new RandomAccessFile(src, "r")) {
+			t = read.invoke(null, in);
+		}
+		String honest = writeOneEntry(write, t, entries, new File(dir, "honest.garc"), 4);
+		check(honest.equals("it wrote the archive"), "control: an entry that writes the 4 bytes it declares is written: "
+				+ honest);
+		String shortOne = writeOneEntry(write, t, entries, new File(dir, "short.garc"), 3);
+		check(shortOne.equals("entry 0 wrote 3 bytes, not the 4 its FATB record says"),
+				"an entry that writes 3 of the 4 bytes it declares is refused, naming it: " + shortOne);
+	}
+
+	/** What the writer said of 1 entry that declares 4 bytes and writes {@code writes}: its refusal, or that it wrote. */
+	static String writeOneEntry(Method write, Object template, Class<?> entries, File out, int writes) {
+		Object e = Proxy.newProxyInstance(entries.getClassLoader(), new Class<?>[]{entries}, (proxy, m, a) -> {
+			switch (m.getName()) {
+				case "count":
+				case "flags":
+					return 1;
+				case "length":
+					return 4;
+				case "fresh":
+					return true;
+				case "write":
+					((RandomAccessFile) a[1]).write(new byte[writes]);
+					return null;
+				default:
+					throw new UnsupportedOperationException(m.getName());
+			}
+		});
+		try (RandomAccessFile raf = new RandomAccessFile(out, "rw")) {
+			write.invoke(null, raf, template, e, 4);
+			return "it wrote the archive";
+		} catch (InvocationTargetException thrown) {
+			return String.valueOf(thrown.getCause().getMessage());
+		} catch (Exception other) {
+			return "it failed some other way: " + other;
+		}
 	}
 
 	/** This process's bytes read so far, or -1 when the system will not say. */

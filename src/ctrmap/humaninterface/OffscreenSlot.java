@@ -17,6 +17,7 @@ public final class OffscreenSlot {
 	private GLAutoDrawable current;
 
 	/** The drawable in use, or null before the first {@link #replace}. */
+	@ctrmap.util.ForSuites("SEAM: a suite asks which drawable the slot holds, to see a replace took and the old one was let go")
 	public GLAutoDrawable current() {
 		return current;
 	}

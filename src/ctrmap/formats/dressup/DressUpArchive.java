@@ -52,6 +52,7 @@ public class DressUpArchive {
 		}
 
 		/** Archive subfile of a part model, or -1 when the base is unknown. */
+		@ctrmap.util.ForSuites("CAPABILITY: the dress-up index, read against the retail wardrobe by DressUpIndexTest; a dress-up editor would offer it, and none exists yet")
 		public int modelSubfile(int partModel) {
 			if (modelBase < 0 || partModel < 0 || partModel >= index.parts.length) {
 				return -1;
@@ -60,6 +61,7 @@ public class DressUpArchive {
 		}
 
 		/** Archive subfile of a texture id, or -1 when the base is unknown. */
+		@ctrmap.util.ForSuites("CAPABILITY: the dress-up index, read against the retail wardrobe by DressUpIndexTest; a dress-up editor would offer it, and none exists yet")
 		public int textureSubfile(int textureId) {
 			if (textureBase < 0 || textureId < 0) {
 				return -1;
@@ -71,6 +73,7 @@ public class DressUpArchive {
 	private final List<Set> sets = new ArrayList<>();
 
 	/** Sets found, in archive order. Empty when the archive carries none. */
+	@ctrmap.util.ForSuites("CAPABILITY: the dress-up index, read against the retail wardrobe by DressUpIndexTest; a dress-up editor would offer it, and none exists yet")
 	public List<Set> sets() {
 		return sets;
 	}

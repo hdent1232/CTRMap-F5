@@ -42,6 +42,7 @@ public class GauntletScriptTest {
 		final int[] TRAINERS = {51, 52, 61};
 
 		boolean bigDone = false;
+		byte[] probe = null;
 		for (int z = 0; z < zones; z++) {
 			byte[] sub = subfile(zo.getDecompressedEntry(z), 2);
 			if (sub == null || sub.length < 8) {
@@ -59,6 +60,9 @@ public class GauntletScriptTest {
 				continue;
 			}
 			tested++;
+			if (probe == null) {
+				probe = sub;
+			}
 			try {
 				boolean hasMsg = ZoneScriptAnalyzer.findMsgWrapper(s) != null;
 				if (hasMsg) {
@@ -137,10 +141,66 @@ public class GauntletScriptTest {
 		}
 		System.out.println("\nGauntlet emit: tested=" + tested + " (noDispatch " + noDispatch
 				+ ", withMsgs " + withMsgs + ")  ok=" + ok + "  failures=" + failures);
+		failures += aChallengeItCannotEmitIsRefused(probe);
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT");
 		if (failures > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * A challenge the wizard cannot emit is refused in its own words, with the zone's script left as it was: no trainer,
+	 * more than 64, a trainer id outside the game's, and a streak variable outside the save range.
+	 *
+	 * <p>Measured by the 2026-10-14 shared sweep (GauntletScriptWizard 157, dropped and swallowed, SURVIVED): this suite
+	 * handed the wizard only challenges it can emit. Dropped, trainer 0 was pushed as a battle the game has no trainer
+	 * for; the 3 siblings, never measured, are asked with it.
+	 */
+	static int aChallengeItCannotEmitIsRefused(byte[] sub) throws Exception {
+		System.out.println("--- a challenge the wizard cannot emit is refused, the script left as it was");
+		if (sub == null) {
+			System.out.println("FAIL challenge refusals: no zone with a dispatch to ask them of");
+			return 1;
+		}
+		//the bound of the game NpcScriptGateTest.ORAS was measured on
+		int max = ctrmap.gamedef.GameProfile.of(ctrmap.gamedef.GameType.ORAS).trainerIdMax();
+		int[] sixtyFive = new int[65];
+		java.util.Arrays.fill(sixtyFive, 51);
+		Object[][] cases = {
+			{"no trainer", new int[0], GauntletScriptWizard.DEFAULT_STREAK_WORK, "The challenge needs at least one trainer."},
+			{"65 trainers", sixtyFive, GauntletScriptWizard.DEFAULT_STREAK_WORK, "At most 64 trainers per challenge NPC."},
+			{"trainer 0", new int[]{51, 0}, GauntletScriptWizard.DEFAULT_STREAK_WORK,
+				"Trainer id 0 out of range (1.." + max + ")."},
+			{"trainer " + (max + 1), new int[]{max + 1}, GauntletScriptWizard.DEFAULT_STREAK_WORK,
+				"Trainer id " + (max + 1) + " out of range (1.." + max + ")."},
+			{"streak variable 0x3FFF", new int[]{51}, 0x3FFF,
+				"The streak work variable must be in the save range 0x4000..0x4FFF."}};
+		int fails = 0;
+		for (Object[] c : cases) {
+			GFLPawnScript s = new GFLPawnScript(sub);
+			s.decompressThis();
+			byte[] before = s.getScriptBytes();
+			GauntletScriptWizard.Config cfg = new GauntletScriptWizard.Config();
+			cfg.trainerIds = (int[]) c[1];
+			cfg.streakWorkId = (Integer) c[2];
+			String said;
+			try {
+				said = "it emitted case " + GauntletScriptWizard.addChallengeScript(NpcScriptGateTest.ORAS, s, cfg);
+			} catch (IllegalArgumentException refused) {
+				said = refused.getMessage();
+			} catch (RuntimeException other) {
+				said = "it failed some other way: " + other;
+			}
+			boolean kept = java.util.Arrays.equals(before, s.getScriptBytes());
+			if (!said.equals(c[3]) || !kept) {
+				System.out.println("FAIL a challenge of " + c[0] + " is refused, the script left as it was: " + said
+						+ (kept ? "" : " (and the script was changed)"));
+				fails++;
+			} else {
+				System.out.println("  ok: a challenge of " + c[0] + " is refused, the script left as it was: " + said);
+			}
+		}
+		return fails;
 	}
 
 	/**

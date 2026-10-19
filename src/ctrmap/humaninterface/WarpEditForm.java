@@ -33,7 +33,7 @@ public class WarpEditForm extends javax.swing.JPanel {
 			return;
 		}
 		for (int i = 0; i < loadedZone.count(); i++) {
-			tgtZone.addItem(i + " - " + LocationNames.getLocName(ctrmap.Workspace.session(), loadedZone.at(i).header.parentMap));
+			tgtZone.addItem(LocationNames.zoneLabel(ctrmap.Workspace.session(), loadedZone.at(i).header.parentMap, i));
 		}
 		fillTransitionDropdown();
 		reloadEntries(e.warps.size() > 0 ? 0 : -1);
@@ -210,11 +210,47 @@ public class WarpEditForm extends javax.swing.JPanel {
 			return;
 		}
 		int removed = warpIndex;
-		e.warps.remove(warpIndex);
+		//WHAT IT BREAKS, read before it is done (census H.39): every later warp is renumbered, and a door in any
+		//zone that led to one of them leads one warp off from then on
+		java.util.List<String> breaks;
+		try {
+			ctrmap.WorkspaceSession ws = Workspace.session();
+			breaks = ctrmap.ZoneLinker.inboundAt(loadedZone.index(), removed,
+					ctrmap.ZoneTables.zoneCount(ws.getArchive(ctrmap.gamedef.ArchiveType.ZONE_DATA)),
+					ctrmap.ZoneLinker.warpsNow(ws, loadedZone.index(), e));
+		} catch (java.io.IOException | RuntimeException unread) {
+			breaks = java.util.Collections.singletonList("the zones' warps cannot be read (" + ctrmap.Ui.reason(unread)
+					+ "), so what removing it breaks is unknown");
+		}
+		if (!breaks.isEmpty()) {
+			if (ctrmap.Ui.confirm(this, removeQuestion(removed, breaks), "Remove warp", javax.swing.JOptionPane.OK_CANCEL_OPTION,
+					javax.swing.JOptionPane.WARNING_MESSAGE) != javax.swing.JOptionPane.OK_OPTION) {
+				return;
+			}
+		}
+		e.warps.remove(removed);
 		warp = null;
 		warpIndex = -1;
 		reloadEntries(Math.min(removed, e.warps.size() - 1));
 		e.modified = true;
+	}
+
+	/**
+	 * What Remove asks when doors lead to the warp removed or to one after it: the first twenty named, and how many
+	 * more. Out of removeEntry so a suite reads it (the 2026-10-15 shared sweep, WarpEditForm 231, negate-if, SURVIVED:
+	 * every door list a suite made was short).
+	 */
+	public static String removeQuestion(int removed, java.util.List<String> breaks) {
+		StringBuilder sb = new StringBuilder("Removing warp " + removed + " renumbers every warp after it, and these"
+				+ " doors lead to it or to one after it:\n");
+		for (int i = 0; i < Math.min(breaks.size(), 20); i++) {
+			sb.append("\n  ").append(breaks.get(i));
+		}
+		if (breaks.size() > 20) {
+			sb.append("\n  ... and ").append(breaks.size() - 20).append(" more");
+		}
+		sb.append("\n\nEach will lead one warp off, or past the last. Remove it anyway?");
+		return sb.toString();
 	}
 
 	public void setWarp(int index) {

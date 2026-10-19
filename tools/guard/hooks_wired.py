@@ -47,6 +47,10 @@ import re
 import subprocess
 import sys
 
+if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bounded  # noqa: E402  - a deadline ends the child's whole tree
+
 #: No console window for a captured child (F184) - this runs inside guard_all on every tool call.
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
@@ -334,6 +338,7 @@ def findings(root):
                 % (event, matcher))
 
     why.extend(_untracked(hooks_dir))
+    why.extend(copies_above(os.path.dirname(where)))
     #: the three adopted refusals, over every installed hook
     every = sorted(n for n in os.listdir(hooks_dir) if n.endswith(".py"))
     why.extend(hooks_that_run_on_import(hooks_dir, every))
@@ -359,6 +364,98 @@ def findings(root):
     return why
 
 
+def _hook_command(root):
+    """`tools/hook_command.py` of the repository at `root`, loaded by its PATH - two trees can each
+    hold a module of that name (tests/test_two_trees_one_process.py)."""
+    import importlib.util
+    path = os.path.join(root, "tools", "hook_command.py")
+    spec = importlib.util.spec_from_file_location("ctrmap_hook_command_for_wiring", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def copies_above(root, home=None, launcher=None):
+    """Every copy of this repository's rules or wiring in a folder ABOVE it (OUTSTANDING 2026-09-22).
+
+    A session STARTED in a folder above runs that folder's `.claude` - the harness reads project
+    settings from where a session starts - and every folder above loads its `CLAUDE.md`. On this
+    machine the folder above held a second, untracked copy of both: one edit to the repository's
+    guard_fanout left the live outer copy three bytes different and every command blocked
+    (2026-09-23); a session opened there ran that copy, was refused by F187, and once moved into the
+    repository was wedged on a hook path that named nothing (2026-10-09). `claude_dir` stops at the
+    first `.claude` holding guards, so the copy further up was invisible to everything here.
+
+    What a folder above may hold: a `CLAUDE.md` that is ONE import of this repository's, and
+    settings whose hooks are exactly this repository's with each hook path made relative to that
+    folder - the launcher, running the one copy here. No hooks folder of its own. The user's home is
+    skipped, ALWAYS - `~/.claude` is the harness's settings for every project, by design - and
+    `home` names one more folder to skip, for a scratch tree that stands in for one.
+    """
+    root = os.path.abspath(root)
+    skipped = {os.path.normcase(os.path.abspath(os.path.expanduser("~")))}
+    if home:
+        skipped.add(os.path.normcase(os.path.abspath(home)))
+    out, own = [], None
+    here = root
+    while True:
+        parent = os.path.dirname(here)
+        if parent == here:
+            return out
+        here = parent
+        if os.path.normcase(here) in skipped:
+            continue
+        rel_root = os.path.relpath(root, here).replace(os.sep, "/")
+        rules = os.path.join(here, "CLAUDE.md")
+        if os.path.exists(rules):
+            try:
+                with io.open(rules, encoding="utf-8") as handle:
+                    lines = [line.strip() for line in handle.read().splitlines() if line.strip()]
+            except (OSError, ValueError) as cannot:
+                lines = ["unreadable: %s" % cannot]
+            if lines != ["@%s/CLAUDE.md" % rel_root]:
+                out.append("%s is a SECOND COPY of the rules above this repository - a session "
+                           "loads every CLAUDE.md above it. Make it the one line @%s/CLAUDE.md"
+                           % (rules, rel_root))
+        hooks = os.path.join(here, ".claude", "hooks")
+        if os.path.isdir(hooks):
+            try:
+                names = [n for n in os.listdir(hooks) if n.endswith(".py")]
+            except OSError as cannot:
+                names = ["unreadable (%s)" % cannot]
+            if names:
+                out.append("%s holds %d hook file(s) - a SECOND COPY of the hooks, which a session "
+                           "started in %s runs instead of this repository's. Move it out"
+                           % (hooks, len(names), here))
+        settings = os.path.join(here, ".claude", "settings.json")
+        if not os.path.exists(settings):
+            continue
+        try:
+            launcher = launcher or _hook_command(root)
+            if own is None:
+                with io.open(os.path.join(root, ".claude", "settings.json"),
+                             encoding="utf-8") as handle:
+                    own = json.load(handle).get("hooks")
+            with io.open(settings, encoding="utf-8") as handle:
+                theirs = json.load(handle).get("hooks")
+        except (OSError, ValueError, AttributeError) as cannot:
+            out.append("%s cannot be compared with this repository's wiring (%s) - what a session "
+                       "started there runs is UNKNOWN" % (settings, cannot))
+            continue
+        mirror = json.loads(json.dumps(own))
+        for groups in (mirror or {}).values():
+            for group in groups:
+                for hook in group.get("hooks") or []:
+                    rel = launcher.hook_of(hook.get("command"))
+                    hook["command"] = (launcher.command("%s/%s" % (rel_root, rel)) if rel
+                                       else "<not the launcher>")
+        if theirs != mirror:
+            out.append("%s does not run exactly this repository's hooks through the launcher - a "
+                       "session started in %s is guarded by something else. Write it as this "
+                       "repository's settings with each hook path prefixed %s/"
+                       % (settings, here, rel_root))
+
+
 def _untracked(hooks_dir):
     """Every hook in HOOKS_DIR git does not track - the one edit that still leaves no trace (F187).
 
@@ -368,9 +465,9 @@ def _untracked(hooks_dir):
     leave no trace is a hook git never saw. A folder git cannot be asked about is UNKNOWN.
     """
     try:
-        done = subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "--", "."],
-                              cwd=hooks_dir, capture_output=True, text=True, timeout=60,
-                              creationflags=NO_WINDOW)
+        done = bounded.run(["git", "ls-files", "--others", "--exclude-standard", "--", "."],
+                           cwd=hooks_dir, capture_output=True, text=True, timeout=60,
+                           creationflags=NO_WINDOW)
     except (OSError, subprocess.TimeoutExpired) as cannotAsk:
         return ["cannot ask git which hooks in %s are tracked (%s) - whether one leaves no trace is "
                 "UNKNOWN, and unknown is not tracked" % (hooks_dir, cannotAsk)]
@@ -385,6 +482,12 @@ def _untracked(hooks_dir):
 
 
 def main(argv):
+    #a word this does not read refuses the run, before anything runs (cli_words, 2026-10-10)
+    import _cli
+    unread_words = _cli.refused(argv[1:], most=1)
+    if unread_words:
+        print(unread_words)
+        return 2
     root = argv[1] if len(argv) > 1 else "."
     why = findings(root)
     if not why:

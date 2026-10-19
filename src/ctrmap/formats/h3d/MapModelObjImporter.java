@@ -38,10 +38,6 @@ public class MapModelObjImporter {
 		public int faces;
 	}
 
-	public static byte[] apply(byte[] modelBytes, List<MapModelObj.ObjMesh> objMeshes, List<Outcome> outcomes) {
-		return apply(modelBytes, objMeshes, outcomes, null, -1);
-	}
-
 	/**
 	 * Applies the parsed meshes onto the model, returning the new BCH bytes and
 	 * filling {@code outcomes}. With a template donor (any map model + a mesh
@@ -70,17 +66,21 @@ public class MapModelObjImporter {
 					if (target < 0 && templateModel != null && templateMesh >= 0) {
 						//NEW MATERIAL: clone the template's render config under this
 						//group's material name, then land the group's geometry in it
+						//INTO A COPY, taken only once the group's geometry has landed (census H.22): the
+						//injection went straight into the running model, so a group reported "skipped"
+						//afterwards - injection not found, or geometry refused - kept its new material and
+						//mesh in the user's map. MapPrefab's injection was always written this way.
 						String matName = uniqueName(model, MapModelObj.sanitize(om.material));
-						current = BchModelAppender.append(current, templateModel, templateMesh, matName);
-						model = new BchMapModel(current);
-						target = model.meshWithMaterial(matName);
+						BchMapModel injected = new BchMapModel(
+								BchModelAppender.append(current, templateModel, templateMesh, matName));
+						target = injected.meshWithMaterial(matName);
 						if (target < 0) {
 							oc.action = "skipped: template injection did not land";
 							continue;
 						}
-						BchMapModel.MeshGeom g = model.geometry().get(target);
-						byte[] vtx = buildVertexBytes(model, g, om);
-						current = model.setMeshGeometry(target, vtx, om.triangles.clone());
+						BchMapModel.MeshGeom g = injected.geometry().get(target);
+						byte[] vtx = buildVertexBytes(injected, g, om);
+						current = injected.setMeshGeometry(target, vtx, om.triangles.clone());
 						oc.action = "new material " + matName + " (from template)";
 						applied++;
 						continue;

@@ -100,7 +100,7 @@ public class CompositeLeftoverTest {
 			}
 			RegionFactory.BlankContent bc;
 			try {
-				bc = PaintedRegionBuilder.buildComposite(model, coll, tm, grid, height, ramp,
+				bc = PaintedRegionBuilder.buildComposite(null, model, coll, tm, grid, height, ramp,
 						touched, TerrainLighting.daytime(), true);
 			} catch (RuntimeException ex) {
 				System.out.println("FAIL region " + region + " did not build: " + ex);

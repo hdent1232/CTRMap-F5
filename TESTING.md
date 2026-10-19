@@ -2,7 +2,7 @@
 
 Two halves, and they answer different questions.
 
-- **The offline battery** — 211 headless suites, run on your machine against a
+- **The offline battery** — 219 suites, run on the unattended desktop of your machine against a
   real dump, answering *"does the code still do what it says?"*. That is the
   first half of this file.
 - **The in-emulator checklist** — everything only the real game engine can
@@ -154,8 +154,10 @@ Five families, and they assert different kinds of thing:
      exceptions, all read from bytecode.
    - `PackageCycleTest` — no strongly connected component of production
      packages holds both a format package and one above it; the largest cycle
-     is the recorded size; the format classes that name an OpenGL type are
-     the recorded nine. Read from bytecode, the packages derived from the tree.
+     is the recorded size; no format class names an OpenGL type (nine did
+     until 2026-10-10, when the model reader's matrices left JOGL and the
+     drawing moved to `ctrmap.render`). Read from bytecode, the packages
+     derived from the tree.
    - `DialogSeamTest` rule six — a dialog opened without naming a window is
      parented to the one the application gave the seam.
 
@@ -206,14 +208,15 @@ as its last entry, and skips it (loudly) where there is no Python.
 
 # Part two — things only the emulator can answer
 
-> **START HERE: [TESTZONE.md](TESTZONE.md).** A ready-made test world is
-> packed into the owner's game data — entering May's house at the start of the
-> game warps you to a hub that exercises nearly every item on this list,
-> with a symptom→culprit table for anything that breaks. It was **built by hand
-> from commit 19e93f3** and nothing rebuilds it, so it checks that commit's
-> output: for a subsystem changed since, build with the current editor and walk
-> that (TESTZONE.md says which). Come back to this list for the features it
-> doesn't cover (shops, Maison, trainers, encounters editing, zone removal).
+> **START HERE: [TESTZONE.md](TESTZONE.md).** The in-game test world is a
+> build product: `testworld.ps1` builds it from the retail archives through the
+> editor's own operations, so it checks the editor you build it with, and its
+> BUILT.txt names that commit. Build it, deploy it as TESTZONE.md says (your own
+> mod is set aside while it is installed), and enter the rival's house at the
+> start of the game: the world exercises nearly every item on this list, with a
+> symptom→culprit table for anything that breaks. Come back to this list for the
+> features it doesn't cover (shops, Maison, trainer editing, encounter slots,
+> zone removal).
 
 ## Map Builder: edit-in-place + live 3D (NEW — the big behavior change)
 Two fundamentals changed after your New Mauville feedback:
@@ -248,6 +251,15 @@ updates LIVE inside the main map scene (~0.2s after each stroke):
 - [ ] Switching tools puts the real (unapplied) map back — nothing painted
   leaks into the scene unless you Apply.
 
+**3. Moved geometry carries its bounding box (F075, 2026-10-09).** Every map
+mesh names a box the engine may cull it by; every retail box holds its mesh,
+and an edit that moves vertices out of it now moves the box too. Whether the
+engine culls by it is an in-game question:
+- [ ] Move or grow a region's geometry well past where it was (Geo box move,
+  or resize a map), pack, and walk past it in game at grazing angles and
+  from far away. Expect: nothing of the moved part blinks out at the edge of
+  the screen.
+
 ## Shared-map zones (NEW — the Petalburg Gym bug)
 Some zones share one big map with their neighbours (Route 102 and Petalburg
 City are two zones on the same matrix; 94 retail zones are like this). The
@@ -259,20 +271,22 @@ It now paints the zone's own cell.
   Rustboro, Sootopolis...) and paint a few tiles. Expect: the edit appears
   in THAT zone in-game, and the location banner still names the zone you
   edited.
-- [ ] The test hub is the live check for this — see TESTZONE.md.
+- [ ] The test world is the live check for this: its zone is a clone of Route
+  102, a shared-map zone, and the cell you arrive in is the painted one (see
+  TESTZONE.md).
 
 ## Game-wide asset palette (NEW — the comprehensive catalog)
-"Buildings & decor" now holds **3,535 auto-harvested structures from every
+"Buildings & decor" now holds **3,520 auto-harvested structures from every
 map in the game** (plus the 48 curated, door-wired entries pinned first —
-3,583 in all):
+3,568 in all):
 houses, domes, fountains, lamps, stair blocks, bridges, trees, rocks —
-each one offered machine-verified to cut and stamp cleanly. Twelve harvested
-rows (11 in Rustboro City, 1 on Route 119) have a box that ends a tile before
-it starts; the palette refuses them and says so once, until the catalog is
-regenerated with the fixed harvester (F129). Narrow by type and by
-place ("Sootopolis City", "Rustboro City"...), or search.
-- [ ] After regenerating `oras_buildings_auto.tsv` from the dump, the palette
-  opens with no "skipped rows" warning.
+each one offered machine-verified to cut and stamp cleanly. The table was
+regenerated from the dump on 2026-10-09 by the fixed harvester (F129, F251):
+no box ends before it starts, every name says what the cut is made of, and no
+cut is offered twice - 16 that repeated a curated or earlier box are no longer
+written. Narrow by type and by place ("Sootopolis City", "Rustboro City"...),
+or search.
+- [ ] The palette opens with no "skipped rows" warning.
 - [ ] Open the palette in the Map Builder → filter to a town → previews
   render for harvested entries.
 - [ ] Place a harvested structure (e.g. a Sootopolis dome house) on a map,
@@ -493,6 +507,55 @@ Reassigning an existing effect to a different item is the whole trick.
   ordinary zones), move an NPC or prop, Apply/Deploy. Expect: the change
   shows inside every Center that uses that interior zone.
 
+## Scripted NPCs on an X / Y workspace (F085 — in the editor, no emulator)
+Every template that writes a zone script was measured on ORAS only, and now
+refuses on any other game rather than writing ORAS's shapes into it.
+- [ ] Open an X / Y workspace and paint a sign with the Map Builder; then try
+  NPC tool → Add → "Trainer". Expect: each says the template is not available
+  for X / Y, and nothing is added to the zone or its script.
+
+## Zones a script sends the player to (F225 — in the editor, no emulator)
+"Find reusable zones" and "Remove added zones" now read where scripts send the
+player - each zone's own script and the 85 shared scripts no zone owns - as
+they read warps. Measured on the retail dump: the scan offered 165 zones and
+now offers 140; the 25 it stopped offering are reached by a script and by no
+warp (17 by zone scripts, 432-439 by shared scripts alone).
+- [ ] Zone → Find reusable base zones... on a retail workspace. Expect 140 candidates,
+  473 and 474 first, and an uncounted list naming shared scripts 35, 46, 71
+  and 74 - map changes whose destination is computed at run time or is a
+  secret base - with "...and N more" if it is longer than five lines.
+- [ ] Zone → Remove added zones on a workspace with added zones. Expect the
+  warning to say "warps and script map changes" and to list those four shared
+  scripts as not checked.
+
+## JOGL 2.6.0 (F077 — in the editor, no emulator)
+lib/ moved from JOGL 2.3.2 with Windows natives only to 2.6.0 with natives for
+Windows, Linux (x64 and arm64) and macOS. Every jar matches JogAmp's published
+SHA-1, every retail bone matrix the model reader computes is bit-identical to
+2.3.2's (ModelTransformTest), and OpenGL starts here on Windows. What only the
+owner's machine can show:
+- [ ] Open the editor: the 3D map view, the collision view, the prop form's
+  model preview, the building palette preview and the atmosphere preview all
+  draw as before, and models and NPCs sit where they did.
+- [ ] If a Linux or macOS machine is to hand: unzip the portable build, run
+  `run.sh`, and the editor opens - drawing in 3D, or standing 2D-only with the
+  placeholder saying why, never crashing the JVM (2.3.2's Linux natives did,
+  on a modern Mesa).
+
+## Drawing moved out of the formats (F214 — in the editor, no emulator)
+The model and collision drawing moved from the format classes to
+`ctrmap.render`, and OffscreenRenderTest now draws seven frames offscreen and
+holds each to its recorded pixels. Moving it found one thing that draws
+differently on purpose: a map mesh with no texture used to be drawn with the
+previous mesh's texture still on (7 of the 19 meshes of area 9's first region),
+or with whatever texture OpenGL had left. It is drawn untextured now, in its
+vertex colours (white where its material gives it none).
+- [ ] Open a map in the 3D view. Expect: textured ground, buildings and props
+  look as before; a few small pieces (edges, trims, decals the game draws in
+  plain colour) may look plain or tinted where they used to show a stray
+  texture. Report any surface that was textured before and is plain now.
+- [ ] Collision view: select a triangle. Expect: it highlights as before.
+
 ## Zone removal (NEW — Zone → "Remove added zones (restore stock 536)...")
 Offline-proven: append-then-remove restores the pristine archive content
 byte-for-byte. The in-game check:
@@ -509,11 +572,12 @@ from the Battle Maison engine and its shared pools. NPC tool → Add →
 all 536 zones (dispatch, branches, switch table, natives); the trainer
 codec is byte-exact on all 949 retail trainers.
 
-**A ready-made challenge NPC is already IN the test hub** (see
-TESTZONE.md) with three pre-authored competitors — walk the hub first;
-the checklist below is for when you build your own:
+**The test world has a challenge NPC** (see TESTZONE.md) with three
+authored competitors — walk it first; the checklist below is for when you
+build your own:
 - [ ] **The core test**: author a team in an unused trainer entry
-  (blank-named ones — e.g. ids 51, 52, 61 — are provably dummy filler),
+  (one with a blank name that no NPC battles — 51, 52 and 61 in retail, the
+  ones the test world takes),
   add a challenge NPC with it, deploy, talk. Expect: a real trainer battle
   against your team starts.
 - [ ] Win: the streak advances (talk again → next trainer in the lineup)

@@ -106,11 +106,6 @@ public final class ItemIconTable {
 		return at + ANCHOR.length;
 	}
 
-	/** True when {@link #locate} found the table exactly where it was measured. */
-	public static boolean atMeasuredOffset(byte[] code) {
-		return locate(code) == FILE_OFFSET;
-	}
-
 	/**
 	 * Refuses a file that is not the build this table was measured in.
 	 *

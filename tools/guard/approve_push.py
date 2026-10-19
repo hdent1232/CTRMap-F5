@@ -70,6 +70,12 @@ def keep_out_of_commits(root):
 
 
 def main(argv):
+    #a word this does not read refuses the run, before anything runs (cli_words, 2026-10-10)
+    import _cli
+    unread_words = _cli.refused(argv[1:], flags=("--remote", "--ref", "--commit", "--repo", "--force"), valued=("--remote", "--ref", "--commit", "--repo"), most=None)
+    if unread_words:
+        print(unread_words)
+        return 2
     said = ""
     remote = "origin"
     ref = ""

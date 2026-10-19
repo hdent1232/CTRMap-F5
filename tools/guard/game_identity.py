@@ -103,6 +103,12 @@ def findings(root):
 
 
 def main(argv):
+    #a word this does not read refuses the run, before anything runs (cli_words, 2026-10-10)
+    import _cli
+    unread_words = _cli.refused(argv[1:], most=1)
+    if unread_words:
+        print(unread_words)
+        return 2
     root = argv[1] if len(argv) > 1 else "."
     why = findings(root)
     found = sites(root) if os.path.isdir(os.path.join(root, "src")) else []

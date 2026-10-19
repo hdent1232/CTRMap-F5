@@ -157,6 +157,7 @@ public class DataSafetyGuardsTest {
 		mapLoadFailuresSurface();
 		theRescaleLandsOnThePanelThatRebuiltTheImages();
 		builderAddFileFailureSurfaces(dump);
+		theBuildersWritesAreTakenBack();
 		zoneThatDidNotLoadSaysSo(dump);
 		locationNamesLoadThemselves(dump);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -185,6 +186,17 @@ public class DataSafetyGuardsTest {
 		Files.write(tmp.toPath(), longer);
 		//lastModified can be coarse; the length change alone must be enough
 		check(g.isStale(), "an archive rewritten underneath is detected as stale");
+
+		//and the pack that meets it re-reads the table and says so in the pack's report, naming the archive (the
+		//2026-10-16 assembly, GARC 484: the warning's only measured copy went to stderr, and nothing read the report's)
+		GARC.drainPackWarnings();
+		java.lang.reflect.Method reread = GARC.class.getDeclaredMethod("rereadIfStale");
+		reread.setAccessible(true);
+		reread.invoke(g);
+		java.util.List<String> warned = GARC.drainPackWarnings();
+		check(warned.size() == 1 && warned.get(0).startsWith(tmp.getPath() + " changed on disk since it was read")
+				&& !g.isStale(), "a pack that meets an archive rewritten underneath re-reads it and says so once, naming it: "
+				+ warned + (g.isStale() ? " - still stale" : ""));
 
 		//and a re-read clears it
 		GARC g2 = new GARC(tmp);
@@ -273,6 +285,21 @@ public class DataSafetyGuardsTest {
 	}
 
 	/**
+	 * Removes the selected warp, answering yes to what Remove asks first (census H.39): with no workspace the
+	 * zones' warps cannot be read, so it says what removing breaks is unknown, and asks.
+	 */
+	static void removeAnswered(WarpEditForm form) {
+		List<String> said = ctrmap.Ui.record(javax.swing.JOptionPane.OK_OPTION);
+		try {
+			form.removeEntry();
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.toString().contains("what removing it breaks is unknown"),
+				"Remove said first that what it breaks is unknown, and asked: " + said);
+	}
+
+	/**
 	 * The warp editor on real zones, without a window: what "New entry" adds,
 	 * what Save and Remove touch when two warps share a tile, and a target zone
 	 * past the end of the table. Every one of these reached the user silently.
@@ -289,7 +316,7 @@ public class DataSafetyGuardsTest {
 		LocationNames.load(Workspace.session(), temp(texts.getDecompressedEntry(LocationNames.gametextIndex(Workspace.session()))));
 		//three zones make a zone table; the editor is told zone 2 is open
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel zonePnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		ZoneLoadingPanel zonePnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		Zone[] table = new Zone[3];
 		for (int i = 0; i < table.length; i++) {
 			table[i] = new Zone(new ZO(temp(zo.getDecompressedEntry(i)), Workspace.session()), Workspace.game());
@@ -319,7 +346,7 @@ public class DataSafetyGuardsTest {
 		//Remove with the second twin selected
 		check(e.warps.indexOf(b) == 1, "a warp is found in its list by identity, not by value");
 		form.setWarp(1);
-		form.removeEntry();
+		removeAnswered(form);
 		check(e.warps.size() == 1 && e.warps.get(0) == a, "Remove deleted the selected warp, not its twin");
 
 		//Save with the second twin selected
@@ -358,7 +385,7 @@ public class DataSafetyGuardsTest {
 			fails++;
 		}
 		form.setWarp(2);
-		form.removeEntry();
+		removeAnswered(form);
 
 		//Save straight after a reload, with no entry selected. warpIndex is
 		//kept across loads, so a stale one from the previous zone would write
@@ -412,7 +439,7 @@ public class DataSafetyGuardsTest {
 		check(e.warps.size() == warpsBefore + 1,
 				"and adds a warp (" + warpsBefore + " -> " + e.warps.size() + ", count " + e.warps.size() + ")");
 		form.setWarp(e.warps.size() - 1);
-		form.removeEntry();
+		removeAnswered(form);
 		check(e.warps.size() == warpsBefore, "removed again, leaving the zone as it was");
 
 		a.w = 1;
@@ -477,6 +504,10 @@ public class DataSafetyGuardsTest {
 		Workspace.install(Sessions.bare(ws, Workspace.session().gameDir(), GameType.ORAS)
 				.withArchive(ArchiveType.ZONE_DATA, zo));
 		Workspace.session().prepareDirectories();
+		//THE NEW SESSION IS ANOTHER GAME to the names' cache, which is kept per game: handed only the zone archive,
+		//it has no GAMETEXT staged, so it is given the same retail entry the first session was - without it the
+		//dangling warp below threw while naming the zones it lists, and the suite was red at afa1204 (2026-10-09)
+		LocationNames.load(Workspace.session(), temp(texts.getDecompressedEntry(LocationNames.gametextIndex(Workspace.session()))));
 		//THE ROW LANDS (F013): the master table's row for zone 2 is blanked first, as an edit,
 		//so only the save writing the zone's header into it puts it back
 		ctrmap.MasterTable blanked = ctrmap.MasterTable.read(Workspace.session());
@@ -738,7 +769,7 @@ public class DataSafetyGuardsTest {
 		}
 		scratchGameOnce(dump);
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		TestWindow.mZonePnl(pnl);
 		TestWindow.mCamEditForm(new ctrmap.humaninterface.CameraEditForm(REDRAW, UndoHistoryTest.overOneNumber(new int[]{0})));
 		TestWindow.mTileMapPanel(new TileMapPanel(lz, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS, UndoHistoryTest.overOneNumber(new int[]{0})), null));
@@ -800,6 +831,36 @@ public class DataSafetyGuardsTest {
 					+ ", index " + lz.index() + ")");
 			check(!TestWindow.mNPCEditForm().loaded,
 					"nor are the editors left on the zone that was there before");
+
+			//and a zone opened from the list whose file another writer changed is read again, the table then holding
+			//the copy that is open (F234; the 2026-10-15 shared sweep, ZoneLoadingPanel 1357, negate-if, SURVIVED: no
+			//suite opened a zone from the list that loaded). Inverted, the table kept the copy read before the change.
+			File zoFile = temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(15));
+			Zone stale = new Zone(new ZO(zoFile, Workspace.session()), Workspace.game());
+			ZO elsewhere = new ZO(zoFile, Workspace.session());
+			byte[] retitled = elsewhere.getFile(0).clone();
+			MapResizeTest.putU16(retitled, 6, stale.header.textID + 1);   //the header's text id, as another writer would
+			elsewhere.storeFile(0, retitled);
+			check(stale.changedOnDisk().equals(java.util.Collections.singletonList("header")),
+					"control: the table's copy sees its header changed on disk: " + stale.changedOnDisk());
+			lz.table(new Zone[]{stale, stale});
+			setField(pnl, "loaded", false);
+			((JComboBox<?>) field(pnl, "zoneList")).setSelectedIndex(-1);
+			setField(pnl, "loaded", true);
+			List<String> asked = ctrmap.Ui.record();
+			try {
+				((JComboBox<?>) field(pnl, "zoneList")).setSelectedIndex(1);
+				javax.swing.SwingUtilities.invokeAndWait(() -> {
+				});
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
+			Zone opened = lz.open();
+			check(opened != null && opened != stale && opened.header.textID == stale.header.textID + 1,
+					"the zone opened is the one read again, with the other writer's header (" + (opened == null ? "none"
+					: opened == stale ? "the stale copy" : "text id " + opened.header.textID) + "; said " + asked + ")");
+			check(opened != null && lz.at(1) == opened, "and the table holds the copy that is open, not the one read"
+					+ " before (" + (lz.at(1) == stale ? "the stale copy" : lz.at(1) == opened ? "the open one" : "another") + ")");
 		} finally {
 			propPreview.stop();
 		}
@@ -955,6 +1016,77 @@ public class DataSafetyGuardsTest {
 		chunk.setValue((short) -1);
 		form.saveAll();
 		check(mm.ids.get(0, 0) == -1, "an empty cell (-1) is accepted");
+	}
+
+	/**
+	 * The raw browser's writes are kept (F209c): a container cleared, and a subfile replaced with a dummy, are each
+	 * taken back by the browser's Undo byte for byte and put again by Redo. Over a made region container in a bare
+	 * workspace, so it needs no dump.
+	 */
+	static void theBuildersWritesAreTakenBack() throws Exception {
+		System.out.println("--- the raw browser's Clear container and Dummy are taken back and put again (F209c)");
+		//THE PROCESS IS LEFT AS IT WAS FOUND, not reset: the sections after this one ask the game a section before
+		//it opened once (scratchGameOnce), and a reset here left them a workspace that was gone - measured
+		//2026-10-09, zoneThatDidNotLoadSaysSo read a null archive and the whole suite stopped there
+		ctrmap.WorkspaceSession before = Workspace.session();
+		String beforeWorkspace = Workspace.WORKSPACE_PATH;
+		String beforeGame = Workspace.GAMEDIR_PATH;
+		File root = Scratch.dir("ctrmap_builder_undo");
+		ctrmap.WorkspaceSession ws = Sessions.bare(new File(root, "ws"), new File(root, "game"), ctrmap.gamedef.GameType.ORAS);
+		ws.workspaceDir().mkdirs();
+		ws.prepareDirectories();
+		File region = new File(ws.getExtractionDirectory(ArchiveType.FIELD_DATA), "0");
+		region.getParentFile().mkdirs();
+		Files.write(region.toPath(), HandedGameTest.container("GR", "a tilemap".getBytes("US-ASCII"),
+				"a model".getBytes("US-ASCII"), "a collision".getBytes("US-ASCII")));
+		byte[] was = Files.readAllBytes(region.toPath());
+		ctrmap.humaninterface.builder.Builder builder = new ctrmap.humaninterface.builder.Builder((title, tool) -> { });
+		builder.loadContainer(new ctrmap.formats.containers.GR(region, ws));
+		java.lang.reflect.Method clear = builder.getClass()
+				.getDeclaredMethod("btnClearContainerActionPerformed", java.awt.event.ActionEvent.class);
+		java.lang.reflect.Method dummy = builder.getClass()
+				.getDeclaredMethod("btnFADummyActionPerformed", java.awt.event.ActionEvent.class);
+		clear.setAccessible(true);
+		dummy.setAccessible(true);
+		try {
+			ctrmap.Ui.record(javax.swing.JOptionPane.YES_OPTION);
+			clear.invoke(builder, (Object) null);
+			ctrmap.Ui.stopRecording();
+			byte[] cleared = Files.readAllBytes(region.toPath());
+			check(!Arrays.equals(was, cleared) && builder.history().canUndo(),
+					"control: Clear container rewrote the region, and the browser's history holds it");
+			builder.history().undo();
+			boolean back = Arrays.equals(was, Files.readAllBytes(region.toPath()));
+			builder.history().redo();
+			check(back && Arrays.equals(cleared, Files.readAllBytes(region.toPath())),
+					"its Undo puts the container back byte for byte, and Redo clears it again");
+			builder.history().undo();
+
+			javax.swing.JList<?> list = (javax.swing.JList<?>) MatrixEditFormGuardsTest.field(builder, "contFileList");
+			list.setSelectedIndex(1);
+			ctrmap.Ui.record(javax.swing.JOptionPane.YES_OPTION);
+			dummy.invoke(builder, (Object) null);
+			ctrmap.Ui.stopRecording();
+			byte[] dummied = Files.readAllBytes(region.toPath());
+			builder.history().undo();
+			check(!Arrays.equals(was, dummied) && Arrays.equals(was, Files.readAllBytes(region.toPath())),
+					"and a subfile replaced with a dummy is put back by Undo too");
+
+			Workspace.install(ws);
+			java.lang.reflect.Method template = builder.getClass().getDeclaredMethod("copyToTemp", String.class);
+			template.setAccessible(true);
+			File donor = (File) template.invoke(null, "DummyBCH3DModel.bch");
+			check(donor != null && donor.getName().endsWith(".bch") && donor.getParentFile().equals(ws.scratch())
+					&& Arrays.equals(ctrmap.resources.ResourceAccess.getByteArray("DummyBCH3DModel.bch"),
+							Files.readAllBytes(donor.toPath())),
+					"the converter's template model is a scratch file of the workspace, named .bch for a converter that"
+					+ " goes by the extension (F209d): " + donor);
+		} finally {
+			ctrmap.Ui.stopRecording();
+			Workspace.install(before);
+			Workspace.WORKSPACE_PATH = beforeWorkspace;
+			Workspace.GAMEDIR_PATH = beforeGame;
+		}
 	}
 
 	static void setField(Object o, String name, Object value) throws Exception {
@@ -1135,7 +1267,7 @@ public class DataSafetyGuardsTest {
 	 * uncovered, and cannot be reached without a display, is the drawing itself
 	 * and the {@code updateImage} rebuild of a populated region.
 	 */
-	static void theRescaleLandsOnThePanelThatRebuiltTheImages() {
+	static void theRescaleLandsOnThePanelThatRebuiltTheImages() throws Exception {
 		CountingMap subject = new CountingMap();
 		CountingMap windows = new CountingMap();
 		TileMapPanel was = TestWindow.mTileMapPanel();
@@ -1156,15 +1288,67 @@ public class DataSafetyGuardsTest {
 
 			//one region, on a panel the window is NOT the holder of
 			subject.tilemaps = new ctrmap.formats.tilemap.Tilemap[1][1];
-			subject.updateAll();
+			//THE REPORT COMES AFTER THE DIALOG CLOSES: done() closes the progress dialog - which is what lets
+			//updateAll return - and then says what failed, so the event thread is flushed before the recording
+			//stops (measured: without it the failure below was said after the recording ended, and read as nothing)
+			List<String> quiet = ctrmap.Ui.record();
+			try {
+				subject.updateAll();
+				javax.swing.SwingUtilities.invokeAndWait(() -> {
+				});
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
 			check(subject.renders == 1 && windows.renders == 0,
 					"updateAll rescales the panel whose images it just rebuilt, not the"
 					+ " window's: this panel " + subject.renders + ", the window's "
 					+ windows.renders);
 			check(subject.tilemapScale == 0.5d,
 					"and rescales it at the zoom it was already showing: " + subject.tilemapScale);
+			//and a refresh says it failed only when it did (the 2026-10-15 shared sweep, TileMapPanel 1235, negate-if,
+			//SURVIVED: nothing recorded what a refresh said). Inverted, one that worked said "not refreshed: null" and
+			//one whose tile rebuild threw said nothing, its old picture left up as current
+			check(quiet.isEmpty(), "a refresh that worked says nothing: " + quiet);
+			subject.tilemaps[0][0] = throwingTilemap();
+			List<String> said = ctrmap.Ui.record();
+			try {
+				subject.updateAll();
+				javax.swing.SwingUtilities.invokeAndWait(() -> {
+				});
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
+			check(said.size() == 1 && said.get(0).contains("was not refreshed")
+					&& said.get(0).contains("tile image 7 could not be rebuilt"),
+					"and one whose tile rebuild threw says the picture is not current, and why: " + said);
 		} finally {
 			TestWindow.mTileMapPanel(was);
+		}
+	}
+
+	/** A tile map whose rebuild throws, made without its constructor: updateImage is all a refresh asks of it. */
+	static ctrmap.formats.tilemap.Tilemap throwingTilemap() {
+		try {
+			Field theUnsafe = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe");
+			theUnsafe.setAccessible(true);
+			Object unsafe = theUnsafe.get(null);
+			return (ctrmap.formats.tilemap.Tilemap) unsafe.getClass().getMethod("allocateInstance", Class.class)
+					.invoke(unsafe, ThrowingTilemap.class);
+		} catch (ReflectiveOperationException unmade) {
+			throw new IllegalStateException("a throwing tile map could not be made: " + unmade, unmade);
+		}
+	}
+
+	/** See {@link #throwingTilemap}; its constructor is never run. */
+	static final class ThrowingTilemap extends ctrmap.formats.tilemap.Tilemap {
+
+		private ThrowingTilemap() {
+			super((ctrmap.formats.containers.GR) null);
+		}
+
+		@Override
+		public void updateImage() {
+			throw new IllegalStateException("tile image 7 could not be rebuilt");
 		}
 	}
 

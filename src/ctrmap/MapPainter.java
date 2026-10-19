@@ -43,9 +43,10 @@ public final class MapPainter {
 		/**
 		 * The zone's area made its own when the person agrees, for {@code why}: the fork's result, an
 		 * unforked one when the area was already the zone's own or the person chose to edit it shared,
-		 * or null when they cancelled - and then nothing was written.
+		 * or null when they cancelled - and then nothing was written. The area is the one the zone's file
+		 * names, read by whoever answers (F255).
 		 */
-		AreaForker.ForkResult ownArea(LoadedZone loaded, int zoneIndex, int area, String why);
+		AreaForker.ForkResult ownArea(LoadedZone loaded, int zoneIndex, String why);
 
 		/** How the doors of {@code enterable} placed buildings are wired; no answer is {@link DoorWiring#SKIP}. */
 		DoorWiring doorWiring(int enterable);
@@ -65,8 +66,12 @@ public final class MapPainter {
 		/** A free base-zone slot now holds a cloned interior: a decline recorded against it is about another zone. */
 		void slotTaken(int slot);
 
-		/** The Apply is packed: show the zone, and the report. Called on the pack's completion. */
-		void applied(int zoneIndex, String report);
+		/**
+		 * Everything the Apply builds is written: pack the workspace, then show the zone and the report. The
+		 * host's, because how a pack runs is the host's - the window packs behind its progress dialog, and a
+		 * build with no window (the test world, F138) packs where it stands.
+		 */
+		void pack(int zoneIndex, String report);
 	}
 
 	/** How the doors of placed buildings are wired. */
@@ -241,14 +246,11 @@ public final class MapPainter {
 	 * Apply shows: pieces and triangles, height span, collision added, tiles
 	 * blocked, the donor tiles kept as painted, and what rode along with the
 	 * cut - or was left behind.
+	 *
+	 * <p>{@code floorY} is the painted-floor frame (composite retail
+	 * heights) so buildings sit ON the ground, not at level*STEP absolute; null
+	 * for a from-scratch build.
 	 */
-	public static String stampPlaced(RegionFactory.BlankContent bc, java.util.List<Placed> placed,
-			int[][] height, java.util.Map<Integer, java.util.Set<String>> texNeeds) {
-		return stampPlaced(bc, placed, height, null, texNeeds);
-	}
-
-	/** As above; {@code floorY} is the painted-floor frame (composite retail
-	 *  heights) so buildings sit ON the ground, not at level*STEP absolute. */
 	public static String stampPlaced(RegionFactory.BlankContent bc, java.util.List<Placed> placed,
 			int[][] height, float[][] floorY, java.util.Map<Integer, java.util.Set<String>> texNeeds) {
 		StringBuilder note = new StringBuilder();
@@ -571,7 +573,7 @@ public final class MapPainter {
 			if (needsAreaWrite(loaded, zoneArea, placed, texNeeds)) {
 				//the pack at the end of this Apply carries a fork's new area too, so
 				//the result is only read for the id - no packIfForked here
-				AreaForker.ForkResult owned = host.ownArea(loaded, zoneIndex, zoneArea,
+				AreaForker.ForkResult owned = host.ownArea(loaded, zoneIndex,
 						"adding this map's brush textures and door props");
 				if (owned == null) {
 					throw new IllegalStateException("Apply cancelled - nothing was changed.");
@@ -681,7 +683,7 @@ public final class MapPainter {
 		final String report = "Painted map applied to zone " + zoneIndex + " (region(s) "
 				+ java.util.Arrays.toString(r.newRegions) + ").\nDeploy to emulator to walk on it."
 				+ extras;
-		Workspace.packWorkspace(() -> host.applied(zoneIndex, report));
+		host.pack(zoneIndex, report);
 		return report;
 	}
 
@@ -844,26 +846,28 @@ public final class MapPainter {
 		}
 	}
 
-	/** Seeds the grid from the region's existing tilemap tuples (reverse lookup). */
+	/**
+	 * Seeds the grid from the region's existing tilemap tuples (reverse lookup), or refuses in words.
+	 *
+	 * <p>REFUSED, NOT GRASS (census M.4): a tilemap that could not be read, was not 40x40, or was cut short
+	 * left the default all-grass grid without a word - every failure, the null getFile answered included,
+	 * went into one {@code catch (Exception)} - so the painter opened a damaged region as a field of grass.
+	 */
 	public static void loadFromRegion(int region, TilePalette[][] grid) {
-		try {
-			GR gr = new GR(new File(Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA), String.valueOf(region)), Workspace.session());
-			byte[] tm = gr.getFile(0);
-			if (tm == null || tm.length < 8) {
-				return;
+		//through the workspace, which extracts the region when it has not been: read from the extraction folder
+		//by name, a region nothing had extracted yet was no file, and the catch made that a field of grass
+		GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, region), Workspace.session());
+		byte[] tm = gr.getFile(0);
+		int w = tm.length < 4 ? -1 : tm[0] & 0xFF, h = tm.length < 4 ? -1 : tm[2] & 0xFF;
+		if (w != DIM || h != DIM || tm.length < 4 + DIM * DIM * 4) {
+			throw new IllegalStateException("region " + region + "'s tilemap is " + (w < 0 ? "too short to have a size"
+				: w + "x" + h + " in " + tm.length + " bytes") + ", not the " + DIM + "x" + DIM + " the painter seeds from");
+		}
+		for (int ty = 0; ty < DIM; ty++) {
+			for (int tx = 0; tx < DIM; tx++) {
+				int off = 4 + (ty * DIM + tx) * 4;
+				grid[ty][tx] = terrainOf(tm[off] & 0xFF, tm[off + 1] & 0xFF, tm[off + 2] & 0xFF, tm[off + 3] & 0xFF);
 			}
-			int w = tm[0] & 0xFF, h = tm[2] & 0xFF;
-			if (w != DIM || h != DIM) {
-				return;
-			}
-			for (int ty = 0; ty < DIM; ty++) {
-				for (int tx = 0; tx < DIM; tx++) {
-					int off = 4 + (ty * DIM + tx) * 4;
-					grid[ty][tx] = terrainOf(tm[off] & 0xFF, tm[off + 1] & 0xFF, tm[off + 2] & 0xFF, tm[off + 3] & 0xFF);
-				}
-			}
-		} catch (Exception ex) {
-			// leave the default all-grass grid
 		}
 	}
 
@@ -993,6 +997,31 @@ public final class MapPainter {
 	}
 
 	/**
+	 * The base-zone slots a private interior may be cloned into without anyone being asked, best first: the
+	 * repurpose scan's tier 0 only - an unnamed placeholder, empty, that no warp and no script reaches - and
+	 * not one this session has edited, nor {@code zoneIndex} itself. Base slots, because scripts need an
+	 * index below 536. The scanner reads the workspace's zones, unpacked edits included (F225).
+	 *
+	 * <p>NOT TIER 1. It took "likely free (verify)" too, and nobody verified: MEASURED 2026-10-10 on the
+	 * retail game, tier 0 is zones 473 and 474 and tier 1 is 46 zones that are empty and named - three
+	 * Littleroot Town zones (2-4, story variants the engine switches to without a warp), four of Shoal Cave,
+	 * the Secret Base, "Soaring in the sky", Sky Pillar and Cave of Origin among them. A third enterable
+	 * building painted onto a map would have had a Pokemon Center interior cloned over zone 2. Out of slots,
+	 * a door keeps its retail interior and the Apply note says why.
+	 */
+	public static java.util.List<Integer> interiorSlots(int zoneIndex) {
+		java.util.List<Integer> slots = new java.util.ArrayList<>();
+		File zoDir = Workspace.getExtractionDirectory(ArchiveType.ZONE_DATA);
+		java.util.List<String> edited = Workspace.persistPaths();
+		for (ctrmap.ZoneRepurposeScanner.Candidate c : ctrmap.ZoneRepurposeScanner.scan()) {
+			if (c.tier == 0 && c.index != zoneIndex && !edited.contains(new File(zoDir, String.valueOf(c.index)).getAbsolutePath())) {
+				slots.add(c.index);
+			}
+		}
+		return slots;
+	}
+
+	/**
 	 * Adds a retail-shaped door warp for every enterable placed building:
 	 * measured from all 167 retail doors - face 1, transition 3, 1x1, at
 	 * doorTile*18+9 world units, height = the door tile's terrain level,
@@ -1004,21 +1033,7 @@ public final class MapPainter {
 		if (cell == null) {
 			throw new IllegalStateException("could not resolve the zone's map cell for warp placement");
 		}
-		// free base-zone slots for private interior clones (scripts need index
-		// < 536). The scanner reads the workspace's zones now, unpacked edits
-		// included (F225); a slot EDITED this session is still not taken. It was
-		// "has an extracted file", which every zone has once the zone list loads,
-		// so no slot was ever free.
-		java.util.List<Integer> slots = new java.util.ArrayList<>();
-		if (cloneInteriors) {
-			File zoDir = Workspace.getExtractionDirectory(ArchiveType.ZONE_DATA);
-			java.util.List<String> edited = Workspace.persistPaths();
-			for (ctrmap.ZoneRepurposeScanner.Candidate c : ctrmap.ZoneRepurposeScanner.scan()) {
-				if (c.tier <= 1 && c.index != zoneIndex && !edited.contains(new File(zoDir, String.valueOf(c.index)).getAbsolutePath())) {
-					slots.add(c.index);
-				}
-			}
-		}
+		java.util.List<Integer> slots = cloneInteriors ? interiorSlots(zoneIndex) : new java.util.ArrayList<Integer>();
 		ctrmap.formats.containers.ZO zo = zoneContainer(loaded, zoneIndex);
 		ctrmap.formats.zone.ZoneEntities ent = new ctrmap.formats.zone.ZoneEntities(zo.getFile(1));
 

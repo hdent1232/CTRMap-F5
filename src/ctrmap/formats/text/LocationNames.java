@@ -99,6 +99,7 @@ public class LocationNames {
 	 * Keeps for the handed game the names in an already-extracted GAMETEXT entry - a copy a
 	 * suite made for itself, standing in for the game's own.
 	 */
+	@ctrmap.util.ForSuites("SEAM: a suite hands the names a GAMETEXT copy of its own holds, standing in for the game's")
 	public static void load(GameFiles game, File extracted) {
 		List<String> read = parse(extracted);
 		handed(game, "load").cache().forget(TABLE);
@@ -122,6 +123,15 @@ public class LocationNames {
 			return unknown(parentLoc);
 		}
 		return lines.get(parentLoc);
+	}
+
+	/**
+	 * What the user sees a zone called, wherever a zone is listed or picked: "Location - N". THE ONE LABEL
+	 * (census L.36): the Zone Loader wrote it three times, and the warp-target, matrix zone-ref and encounter
+	 * pickers wrote it the other way round, so one zone had two names in two dropdowns.
+	 */
+	public static String zoneLabel(GameFiles game, int parentLoc, int zoneIndex) {
+		return getLocName(game, parentLoc) + " - " + zoneIndex;
 	}
 
 	/** What a location id the table has no line for is called. */

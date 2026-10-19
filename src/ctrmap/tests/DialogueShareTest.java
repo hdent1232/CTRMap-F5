@@ -86,8 +86,11 @@ public class DialogueShareTest {
 		String mf = SourceSeamTest.stripComments(DialogSeamTest.read(new File(root, "ctrmap/CtrmapMainframe.java")));
 		int caught = mf.indexOf("catch (ZoneManager.SharedNameOnly shared)");
 		int asked = mf.indexOf("Ui.confirm(", caught);
-		int told = mf.indexOf("ZoneManager.renameZone(game, idx, name, true)");
-		check(caught >= 0 && asked > caught && told > asked && mf.indexOf("renameZone(game, idx, name, true)", told + 13) < 0,
+		//THROUGH THE KEPT SEAM (F209c): the window says "every sharer" to WorkspaceOps.rename, which says it on
+		int told = mf.indexOf("WorkspaceOps.rename(game, idx, name, true,");
+		String ops = SourceSeamTest.stripComments(DialogSeamTest.read(new File(root, "ctrmap/WorkspaceOps.java")));
+		check(caught >= 0 && asked > caught && told > asked && mf.indexOf("rename(game, idx, name, true", told + "WorkspaceOps.rename(".length()) < 0
+				&& ops.contains("everyZone ? ZoneManager.renameZone(ws, idx, name, true)"),
 				"and the Rename dialog asks, by name and count, before it says so");
 	}
 

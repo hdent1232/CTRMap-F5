@@ -29,9 +29,7 @@ import java.awt.Component;
 import java.awt.Point;
 import java.awt.event.MouseEvent;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -50,6 +48,9 @@ import javax.swing.JTextArea;
  */
 public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 
+	/** What this view draws its models with: the drawing left the format classes (F214). */
+	final ctrmap.render.ModelRenderer draw = new ctrmap.render.ModelRenderer();
+
 	public boolean loaded = false;
 	public ZoneEntities e;
 	public ZoneEntities.NPC npc;
@@ -63,6 +64,8 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	private ScriptIdDropdown scriptIds;
 	private GFMessageFile storyFile;
 	private int storyFileTextID = -1;
+	/** The zone's history: a story-text write is made through it, as an edit (F209). */
+	private final UndoHistory history;
 
 	/** The zone owner this form was handed; its open zone's script fills the script dropdown. */
 	private final LoadedZone loadedZone;
@@ -119,6 +122,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			throw new IllegalArgumentException("NPCEditForm must be handed the zone's history the NPC registry is"
 					+ " a document of");
 		}
+		this.history = history;
 		//the NPC registry, while loaded, is a document of the zone's history (F209); the NPCs are the zone's
 		//entities, which the window's history already holds
 		history.watch(() -> reg == null ? java.util.Collections.<UndoHistory.Document<?>>emptyList()
@@ -332,7 +336,8 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					reg.mapModel(failsafe.uid, failsafe.uid);
 					regentry = failsafe;
 				} else {
-					ctrmap.Ui.error(this, "The registry's maximum capacity of 31 unique NPCs has been reached.\n"
+					ctrmap.Ui.error(this, "The registry's maximum capacity of " + NPCRegistry.MAX_ENTRIES
+							+ " unique NPCs has been reached.\n"
 							+ "Please free up space in the registry editor and try again.", "Could not create registry entry");
 				}
 			}
@@ -502,7 +507,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * can count - the 256th used to be written as a count byte of 0.
 	 */
 	public void addEntry(Point tile) {
-		if (kindFull(e.npcs.size(), "NPCs")) {
+		if (kindFull(e.npcs.size(), 1, "NPCs")) {
 			return;
 		}
 		loaded = false;
@@ -560,12 +565,17 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		e.modified = true;
 	}
 
-	/** Tells the user when the zone already holds every record of a kind the format can count. */
-	private boolean kindFull(int count, String kind) {
-		if (count < ZoneEntities.MAX_PER_KIND) {
+	/**
+	 * Tells the user when adding {@code adding} records of a kind would pass the most the format can count.
+	 * HOW MANY, not whether one (census M.76): it was asked once for an Add, and the trainer wizard then placed
+	 * a double-battle partner too - at 254 NPCs the 256th went in, and the refusal came at the save.
+	 */
+	private boolean kindFull(int count, int adding, String kind) {
+		if (count + adding <= ZoneEntities.MAX_PER_KIND) {
 			return false;
 		}
-		ctrmap.Ui.error(this, "This zone already has " + count + " " + kind + ", the most the game can store.\n"
+		ctrmap.Ui.error(this, "This zone already has " + count + " " + kind + (adding > 1 ? ", and this adds " + adding
+				+ " - past " + ZoneEntities.MAX_PER_KIND + ", the most the game can store.\n" : ", the most the game can store.\n")
 				+ "Remove one before adding another.", "Zone full");
 		return true;
 	}
@@ -652,10 +662,10 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 */
 	private void updateDialogueSection() {
 		dlgPreview.setText("");
-		btnEditDialogue.setEnabled(false);
+		ctrmap.Ui.offer(btnEditDialogue, "Only a simple talker's line is edited here - the line above says what this NPC's script is");
 		Zone zone = getLoadedZone();
 		if (zone == null || zone.s == null) {
-			btnAddTalker.setEnabled(false);
+			ctrmap.Ui.offer(btnAddTalker, "No zone loaded.");
 			dlgStatus.setText("No zone loaded.");
 			return;
 		}
@@ -667,9 +677,10 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		//Trainer); each template validates its own needs, so the button only
 		//needs a script dispatch (every zone has one). A missing message wrapper
 		//no longer disables anything - the talker path offers to inject one.
-		btnAddTalker.setEnabled(hasDispatch && e != null);
-		if (!hasDispatch) {
-			btnAddTalker.setToolTipText("This zone's script has no script dispatch (main SWITCH/CASETBL).");
+		ctrmap.Ui.offer(btnAddTalker, !hasDispatch ? "This zone's script has no script dispatch (main SWITCH/CASETBL)."
+				: e == null ? "This zone's NPCs and objects are not loaded." : null);
+		if (!hasDispatch || e == null) {
+			//the reason is the tooltip while it is grey
 		} else if (!hasStoryText) {
 			btnAddTalker.setToolTipText("Add a trainer here; talking NPCs and signs need the STORYTEXT archive, which was not found.");
 		} else if (!hasWrapper) {
@@ -761,14 +772,17 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (f == null) {
 			throw new IOException("story text file " + textID + " could not be extracted from the STORYTEXT archive");
 		}
-		OutputStream os = new FileOutputStream(f);
+		//AN EDIT, NOT A SAVE (F209): written through the zone's history, joined with the NPC and the script case
+		//the same wizard adds, so one Undo takes back all three; the story text held here is read again after
+		//an undo or a redo puts the file back
 		try {
-			os.write(b);
-			os.flush();
-		} finally {
-			os.close();
+			history.write(ZoneDocuments.file(f, "story text " + textID, Workspace.session(), () -> {
+				storyFile = null;
+				storyFileTextID = -1;
+			}), b);
+		} catch (RuntimeException notWritten) {
+			throw new IOException(ctrmap.util.Bytes.reason(notWritten), notWritten);
 		}
-		Workspace.addPersist(f);
 	}
 
 	/** {@link #writeStoryFile}, reporting the reason through Ui instead: for the dialogue editor's in-place edit. */
@@ -912,7 +926,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (choice == null) {
 			return;
 		}
-		if ("Sign".equals(choice) ? kindFull(e.furniture.size(), "props") : kindFull(e.npcs.size(), "NPCs")) {
+		if ("Sign".equals(choice) ? kindFull(e.furniture.size(), 1, "props") : kindFull(e.npcs.size(), 1, "NPCs")) {
 			return;
 		}
 		if ("Sign".equals(choice)) {
@@ -1117,17 +1131,24 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (!showForm(form.panel, "Add item giver")) {
 			return;
 		}
-		if (addGiver(zone, form.item(), form.count(), form.model(), viewportCentre.tile()) != null) {
+		if (addGiver(zone, form.item(), form.count(), form.model(), viewportCentre.tile(), form.onceFlag()) != null) {
 			finishNpcAdd(zone, true);
 		}
 	}
 
-	/**
-	 * The item-giver wizard past its form: refuses a missing item or model
-	 * (saying which), else adds the give-item case and the NPC record at pos.
-	 * Returns the placed record, or null when nothing was added.
-	 */
+	/** {@link #addGiver(Zone, int, int, int, Point, int)} for an NPC that gives on every talk. */
 	public ZoneEntities.NPC addGiver(Zone zone, final int itemId, final int count, int model, Point pos) {
+		return addGiver(zone, itemId, count, model, pos, -1);
+	}
+
+	/**
+	 * The item-giver wizard past its form: refuses a missing item or model, or a one-time flag a zone
+	 * script already uses (saying which), else adds the give-item case and the NPC record at pos.
+	 * Returns the placed record, or null when nothing was added.
+	 *
+	 * @param onceFlag the event flag the NPC gives once by, or -1 for every talk (F085)
+	 */
+	public ZoneEntities.NPC addGiver(Zone zone, final int itemId, final int count, int model, Point pos, final int onceFlag) {
 		if (itemId < 1) {
 			ctrmap.Ui.error(this, "Select an item first.", "Add item giver");
 			return null;
@@ -1136,10 +1157,13 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			ctrmap.Ui.error(this, "Select an overworld model first.", "Add item giver");
 			return null;
 		}
+		if (!onceFlagIsFree(onceFlag, "Add item giver")) {
+			return null;
+		}
 		int caseId;
 		try {
 			caseId = new ZoneScriptEdit(zone, "the give-item script")
-					.apply((measured, work, line) -> NpcTemplates.addItemGiverScript(measured, work, itemId, count), this::writeStoryFile);
+					.apply((measured, work, line) -> NpcTemplates.addItemGiverScript(measured, work, itemId, count, onceFlag), this::writeStoryFile);
 		} catch (ZoneScriptEdit.Refused ex) {
 			ctrmap.Ui.error(this, ex.reason(), "Add item giver");
 			return null;
@@ -1147,6 +1171,29 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		ZoneEntities.NPC placed = NpcTemplates.makeScriptedNpc(NpcTemplates.measuredOn(zone.game()), NpcTemplates.nextFreeUid(e), model, caseId, pos.x, pos.y);
 		placeNpc(placed);
 		return placed;
+	}
+
+	/**
+	 * Whether a one-time giver may guard itself with {@code onceFlag}: true for -1 (a giver that gives
+	 * on every talk), and for a flag no zone script of the open game uses, read as the game holds them
+	 * now (F085). Says why when it refuses - an unreadable script included: a flag it may use is unknown.
+	 */
+	private boolean onceFlagIsFree(int onceFlag, String title) {
+		if (onceFlag < 0) {
+			return true;
+		}
+		String why;
+		try {
+			why = ctrmap.ScriptFlags.of(Workspace.session()).refusal(onceFlag);
+		} catch (java.io.IOException unread) {
+			why = "Which event flags this game's scripts use could not be read, so flag " + onceFlag
+					+ " may be one of them:\n" + ctrmap.util.Bytes.reason(unread);
+		}
+		if (why != null) {
+			ctrmap.Ui.error(this, why, title);
+			return false;
+		}
+		return true;
 	}
 
 	/**
@@ -1304,9 +1351,21 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			return null;
 		}
 		final int self = loadedZone.index();
+		//ZONES, NOT ENTRIES: the archive's last entries are the master table and the encounter pack. Walked
+		//as zones they never read, so every challenge added on a retail game asked about "2 zone script(s)
+		//[536, 537]" that do not exist (measured 2026-10-10, building the test world)
+		final int zones;
+		try {
+			zones = ctrmap.ZoneTables.zoneCount(zoneGarc, Workspace.profile());
+		} catch (java.io.IOException unread) {
+			ctrmap.Ui.error(this, "How many zones the game has could not be read (" + ctrmap.Ui.reason(unread) + "), so"
+					+ " whether streak variable 0x" + Integer.toHexString(wanted) + " is already used cannot be checked.",
+					"Add battle challenge");
+			return null;
+		}
 		//the open zone's script as edited here, every other zone's from the game's own files (F248)
 		ctrmap.formats.scripts.GauntletScriptWizard.WorkUsage usage = ctrmap.formats.scripts.GauntletScriptWizard.workUsage(
-				z -> z == self ? zone.s : ctrmap.formats.scripts.PawnClosure.zoneScript(Workspace.session(), z), zoneGarc.length);
+				z -> z == self ? zone.s : ctrmap.formats.scripts.PawnClosure.zoneScript(Workspace.session(), z), zones);
 		if (self < 0 && zone.s != null) {
 			for (int w : ctrmap.formats.scripts.GauntletScriptWizard.workVariablesUsed(zone.s)) {
 				usage.zones.computeIfAbsent(w, k -> new java.util.ArrayList<>()).add(self);
@@ -1329,8 +1388,13 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		String share = "Share " + hex;
 		String[] options = free < 0 ? new String[]{share, "Cancel"}
 				: new String[]{"Use 0x" + Integer.toHexString(free), share, "Cancel"};
+		//a zone opened from a file has no number: it was said as "-1" (measured 2026-10-16)
+		java.util.List<String> named = new java.util.ArrayList<>();
+		for (int u : users.subList(0, Math.min(8, users.size()))) {
+			named.add(u < 0 ? "the one open from a file" : String.valueOf(u));
+		}
 		int pick = ctrmap.Ui.option(this, "Streak variable " + hex + " is already used by zone(s) "
-				+ users.subList(0, Math.min(8, users.size())) + (users.size() > 8 ? ", ..." : "") + (users.contains(self) ? " (this one included)" : "")
+				+ named + (users.size() > 8 ? ", ..." : "") + (users.contains(self) ? " (this one included)" : "")
 				+ " - another challenge's streak, or a variable the game itself keeps.\n"
 				+ "Two challenges on one variable share one streak: winning at one advances the other." + unread,
 				"Add battle challenge", JOptionPane.DEFAULT_OPTION, JOptionPane.WARNING_MESSAGE, options, options[0]);
@@ -1352,25 +1416,35 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (!showForm(form.panel, "Add Give BP")) {
 			return;
 		}
-		if (addGiveBp(zone, form.amount(), form.model(), viewportCentre.tile()) != null) {
+		if (addGiveBp(zone, form.amount(), form.model(), viewportCentre.tile(), form.onceFlag()) != null) {
 			finishNpcAdd(zone, true);
 		}
 	}
 
-	/**
-	 * The Give-BP wizard past its form: refuses a missing model (saying so),
-	 * else adds the script case and the NPC record at pos. Returns the placed
-	 * record, or null when nothing was added.
-	 */
+	/** {@link #addGiveBp(Zone, int, int, Point, int)} for an NPC that gives on every talk. */
 	public ZoneEntities.NPC addGiveBp(Zone zone, final int amount, int model, Point pos) {
+		return addGiveBp(zone, amount, model, pos, -1);
+	}
+
+	/**
+	 * The Give-BP wizard past its form: refuses a missing model, or a one-time flag a zone script
+	 * already uses (saying so), else adds the script case and the NPC record at pos. Returns the
+	 * placed record, or null when nothing was added.
+	 *
+	 * @param onceFlag the event flag the NPC gives once by, or -1 for every talk (F085)
+	 */
+	public ZoneEntities.NPC addGiveBp(Zone zone, final int amount, int model, Point pos, final int onceFlag) {
 		if (model < 0) {
 			ctrmap.Ui.error(this, "Select an overworld model first.", "Add Give BP");
+			return null;
+		}
+		if (!onceFlagIsFree(onceFlag, "Add Give BP")) {
 			return null;
 		}
 		int caseId;
 		try {
 			caseId = new ZoneScriptEdit(zone, "the Give BP script")
-					.apply((measured, work, line) -> ctrmap.formats.scripts.FacilityScriptWizard.addGiveBpScript(measured, work, amount),
+					.apply((measured, work, line) -> ctrmap.formats.scripts.FacilityScriptWizard.addGiveBpScript(measured, work, amount, onceFlag),
 							this::writeStoryFile);
 		} catch (ZoneScriptEdit.Refused ex) {
 			ctrmap.Ui.error(this, ex.reason(), "Add Give BP");
@@ -1412,6 +1486,9 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			ctrmap.Ui.error(this, "Select an overworld model first.", "Add trainer");
 			return 0;
 		}
+		if (kindFull(e.npcs.size(), pair ? 2 : 1, "NPCs")) {   //the partner is a record too (census M.76)
+			return 0;
+		}
 		int placed = 0;
 		try {
 			placeNpc(NpcTemplates.makeTrainerNpc(NpcTemplates.measuredOn(zone.game()), NpcTemplates.nextFreeUid(e), tid, model, sight, face, pos.x, pos.y));
@@ -1432,6 +1509,11 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * do it and a suite can watch the record land.
 	 */
 	private void placeNpc(ZoneEntities.NPC newNPC) {
+		//THE ONE DOOR KEEPS THE CAP (census M.76): an Add that asked for one record and placed two went past it
+		if (e.npcs.size() >= ZoneEntities.MAX_PER_KIND) {
+			throw new IllegalStateException("this zone already holds " + ZoneEntities.MAX_PER_KIND
+					+ " NPCs, the most the game can store");
+		}
 		loaded = false;
 		e.npcs.add(newNPC);
 		entryBox.addItem(String.valueOf(newNPC.uid));
@@ -1511,9 +1593,9 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * DialogSeamTest counts this call, and only this one, for this file.
 	 */
 	private boolean showForm(javax.swing.JComponent body, String title) {
-		int rsl = JOptionPane.showConfirmDialog(ctrmap.Ui.parent(), body, title, JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+		boolean ok = ctrmap.Ui.form(ctrmap.Ui.parent(), body, title);
 		disposePreviews();
-		return rsl == JOptionPane.OK_OPTION;
+		return ok;
 	}
 
 	private void scrDropdownActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_scrDropdownActionPerformed
@@ -1629,9 +1711,9 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		for (int i : modelledNPCs()) {
 			updateH3D(i);
 			H3DModel m = modelAt(i);
-			m.render(gl);
+			draw.render(gl, m);
 			if (boxedNPC(i)) {
-				m.renderBox(gl);
+				draw.renderBox(gl, m);
 			}
 		}
 	}
@@ -1639,14 +1721,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	@Override
 	public void uploadBuffers(GL2 gl) {
 		for (H3DModel m : ownedModels()) {
-			m.uploadAllBOs(gl);
+			draw.upload(gl, m);
 		}
 	}
 
 	@Override
 	public void deleteGLInstanceBuffers(GL2 gl) {
 		for (H3DModel m : ownedModels()) {
-			m.destroyAllBOs(gl);
+			draw.destroy(gl, m);
 		}
 	}
 

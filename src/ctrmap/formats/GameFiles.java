@@ -81,6 +81,31 @@ public interface GameFiles {
 	/** A directory this operation may write temporary files into; nothing in it survives cleaning the workspace. */
 	File scratch();
 
+	/**
+	 * {@code bytes} written to a new file in {@link #scratch()} named after {@code prefix}, for a reader that
+	 * takes a file - a container opened from an archive's entry. It goes when the program does, and a write
+	 * that fails leaves nothing behind. The one way a byte array becomes a scratch file: three readers each
+	 * wrote their own (F209d).
+	 */
+	default File toScratch(String prefix, byte[] bytes) throws java.io.IOException {
+		return toScratch(prefix, "", bytes);
+	}
+
+	/** The same, the file's name ending {@code suffix} - for a reader that goes by the extension. */
+	@ctrmap.util.NotAnEdit("it writes bytes already read into a new file of the scratch folder, for a reader that"
+			+ " takes a file; the folder is emptied with the workspace, and nothing the user made changes")
+	default File toScratch(String prefix, String suffix, byte[] bytes) throws java.io.IOException {
+		File out = File.createTempFile(prefix, suffix, scratch());
+		out.deleteOnExit();
+		try {
+			java.nio.file.Files.write(out.toPath(), bytes);
+		} catch (java.io.IOException | RuntimeException failed) {
+			out.delete();
+			throw failed;
+		}
+		return out;
+	}
+
 	/** The opened archive, or null when the game lacks it or nothing opened it. */
 	GARC archive(ArchiveType type);
 

@@ -43,6 +43,7 @@ public class PackTransactionTest {
 			anUneditedGameIsNotRewritten();
 			anEditIsPackedAndNothingElse();
 			aPackThatFailsPartWayLeavesTheGameAsItWas();
+			aMoveIntoTheGameThatFailsSaysWhatMoved();
 			anItemIsStagedLikeEveryOtherEditAndPackedInPlace();
 		} finally {
 			Workspace.reset();
@@ -150,6 +151,43 @@ public class PackTransactionTest {
 				"and the edit is still staged, so packing again carries it");
 		inside.delete();
 		blocked.delete();
+	}
+
+	/**
+	 * A move into the game that fails after another archive has gone in is refused, saying which moved and which did
+	 * not - the one moved is in the game, the other as it was, and its edit still staged for the next pack.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (WorkspaceSession 1401, dropped, SURVIVED): the part-way check above breaks
+	 * a pack while it PREPARES, before anything reaches the game; nothing broke one while it MOVES. Dropped, the pack
+	 * went on past the archive it could not move and answered done - that archive's edits never in the game, and the
+	 * owner told nothing. Asked on Windows, where an archive held open cannot be replaced.
+	 */
+	static void aMoveIntoTheGameThatFailsSaysWhatMoved() throws Exception {
+		System.out.println("--- a move into the game that fails part way says what moved and what did not");
+		if (!System.getProperty("os.name", "").toLowerCase().contains("win")) {
+			Skip.section("an archive held open so it cannot be replaced is asked only on Windows - NOT asked here");
+			return;
+		}
+		Game g = game("moving");
+		byte[] painted = MapResizeTest.region("region zero, painted");
+		edit(g.ws, ArchiveType.FIELD_DATA, 0, painted);
+		edit(g.ws, ArchiveType.ZONE_DATA, 0, MapResizeTest.zone(0));
+		byte[] zoBefore = Files.readAllBytes(g.zo.toPath());
+		String refused;
+		try (java.io.FileInputStream hold = new java.io.FileInputStream(g.zo)) {   //ZoneData moves after FieldData
+			try {
+				pack(g.ws);
+				refused = "the pack answered done";
+			} catch (java.io.IOException ex) {
+				refused = ex.getMessage();
+			}
+		}
+		check(refused.contains("moved [FIELD_DATA] into the game and then could not move ZONE_DATA"),
+				"the pack says it moved FieldData and could not move ZoneData: " + refused);
+		check(Arrays.equals(new GARC(g.fd).getDecompressedEntry(0), painted) && Arrays.equals(Files.readAllBytes(g.zo.toPath()), zoBefore),
+				"and FieldData's edit is in the game while ZoneData is as it was");
+		check(g.ws.isPersisted(g.ws.getWorkspaceFile(ArchiveType.ZONE_DATA, 0)),
+				"and ZoneData's edit is still staged, so packing again carries it");
 	}
 
 	// ------------------------------------------------------------ F082

@@ -3,7 +3,6 @@ package ctrmap.humaninterface;
 import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.ZoneAppender;
-import ctrmap.ZoneCloner;
 import ctrmap.ZoneTables;
 import ctrmap.formats.containers.ZO;
 import ctrmap.formats.text.LocationNames;
@@ -58,9 +57,25 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 	private final Runnable showMap;
 	private final Runnable showAtmosphere;
 
+	/**
+	 * The workspace's history (F209c): a clone, an append and the map fork offered on load each change which zones and
+	 * maps there are, so each is kept there, and Undo and Redo read the zone list again.
+	 */
+	private final SaveHistory ops;
+
+	/** The zone list read again, and the open zone if its file moved - what Undo and Redo of this tab's changes do. */
+	private void readAgain() {
+		loadEverything(this::reopenIfChangedOnDisk);
+	}
+
 	/** Creates the form over the zone owner it is handed. */
 	public ZoneLoadingPanel(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, OpenEditors openEditors, ZoneEditors zoneEditors, Navigator navi,
-			Runnable showMap, Runnable showAtmosphere, UndoHistory history) {
+			Runnable showMap, Runnable showAtmosphere, UndoHistory history, SaveHistory ops) {
+		if (ops == null) {
+			throw new IllegalArgumentException("the Zone tab must be handed the workspace's history its clone, append and"
+					+ " fork are kept in");
+		}
+		this.ops = ops;
 		if (history == null) {
 			throw new IllegalArgumentException("the Zone tab must be handed the zone's history its properties are"
 					+ " a document of");
@@ -251,9 +266,10 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 					ctrmap.Ui.error(ZoneLoadingPanel.this, ctrmap.Ui.reason(ex), "Loading Zone data");
 					listed = null;
 				}
-				if (listed != null) {
-					showListed(listed);
-				}
+				//A LOAD THAT FAILED LISTS NOTHING: the table was released before the worker started, so a
+				//dropdown left as it was named the last game's zones at positions holding none - measured
+				//2026-10-09 by ZoneLoadingStateTest, 536 stale names over an archive that held no zones
+				showListed(listed != null ? listed : new Listed(0));
 				if (onDone != null) {
 					onDone.run();
 				}
@@ -277,7 +293,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 				for (int i = 0; i < totalZones; i++) {
 					ZO zo = new ZO(Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, i), Workspace.session());
 					listed.zones[i] = new Zone(zo, Workspace.game());
-					listed.names.add(LocationNames.getLocName(ctrmap.Workspace.session(), listed.zones[i].header.parentMap) + " - " + i);
+					listed.names.add(LocationNames.zoneLabel(ctrmap.Workspace.session(), listed.zones[i].header.parentMap, i));
 					progress.setBarPercent((int) ((float) i / totalZones * 100));
 				}
 				return listed;
@@ -315,8 +331,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		//live "Add zones" button that opens a dialog which cannot
 		//finish - the gate said "not XY", the appender means "ORAS".
 		if (!Workspace.profile().supports(GameProfile.Feature.ZONE_APPEND)) {
-			btnAddZone.setEnabled(false);
-			btnAddZone.setToolTipText("Adding new zones is not available for "
+			ctrmap.Ui.offer(btnAddZone, "Adding new zones is not available for "
 					+ Workspace.profile().displayName()
 					+ " - it needs that game's zone-table limit found in its executable.");
 		} else {
@@ -395,6 +410,8 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		return new javax.swing.JComponent[]{type, move, ad, matrix, textFile, script, tmg, mapTransition, parentMap, isParentMap, weather, battleBG, bgmSpring, bgmCyclingEnable, run, skate, cycling, escrope, fly, dowsing, coldbreath, ghosting, specWalk, flash, enable3d, skybox, cam1, cam2, camFlags, unknownFlags, unknownFlag, x1, y1, z1, x2, y2, z2};
 	}
 
+	@ctrmap.util.WritesOut("the zone's header boxes, which this panel has the zone's history watch as one of its"
+		+ " documents")
 	public boolean store(boolean dialog) {
 		Zone zone = loadedZone.open();
 		if (zone == null) {
@@ -552,6 +569,11 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 						+ ctrmap.Ui.reason(ex), "Save zone");
 			}
 			loadZone(zone);
+			//A SAVED AREA OR MAP ID IS READ AGAIN (F255): what the zone holds for the old ones would go on taking its
+			//edits. After this save and whatever saves it is part of, so the reopen asks nothing of this one
+			if (zone.header.repointed()) {
+				javax.swing.SwingUtilities.invokeLater(this::reopenIfChangedOnDisk);
+			}
 			return true;
 		} else {
 			return false;
@@ -1416,11 +1438,14 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 	 * dropdown goes: what the editors hold is saved first, asked as a zone switch asks (a part
 	 * edited here AND changed on disk is refused, never written over), and the zone is then read
 	 * again from its file. Nothing happens when the open zone's file is as it was read.
+	 *
+	 * <p>Or when the zone names an area or map other than the ones it holds (F255) - a header saved with the Zone
+	 * tab's area or map box moved: read again, its containers are the ones it names.
 	 */
 	public void reopenIfChangedOnDisk() {
 		Zone open = loadedZone.open();
 		if (open == null || loadedZone.index() < 0 || zoneList.getSelectedIndex() != loadedZone.index()
-				|| open.changedOnDisk().isEmpty()) {
+				|| (open.changedOnDisk().isEmpty() && !open.header.repointed())) {
 			return;
 		}
 		zoneListActionPerformed(null);
@@ -1500,8 +1525,62 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 			original.removeActionListener(listener);
 		}
 		original.setVisible(false);
-		original.setEnabled(false);
+		ctrmap.Ui.offer(original, "Moved - its copy is the one shown");
 		return copy;
+	}
+
+	/** Where a zone-limit patch is made again, said wherever one was not saved (census H.2). */
+	public static final String MAKE_IT_AGAIN = "make it again from File > Deploy to emulator (mod), \"Make zone-limit patch...\".";
+
+	/**
+	 * Saves the zone-limit patch into a code.ips the user picks, the patches already in it kept (F152), and
+	 * answers the file - null when the user picked none. The one door Add zones and Make zone-limit patch share.
+	 */
+	private File saveZoneLimitIps(byte[] ips) throws IOException {
+		javax.swing.JFileChooser fc = new javax.swing.JFileChooser();
+		fc.setDialogTitle("Save the zone-limit code patch (name it code.ips)");
+		fc.setSelectedFile(new File("code.ips"));
+		if (ctrmap.Ui.choose(this, fc, true) == null) {
+			return null;
+		}
+		ctrmap.Exports.zoneLimitPatch(fc.getSelectedFile(), ips);
+		return fc.getSelectedFile();
+	}
+
+	/**
+	 * Makes the zone-limit patch again for the zones this game holds now, into a code.ips the user picks, and
+	 * answers the file - null when none was saved, which is said. Add zones was its only producer and runs once
+	 * per stock base, so a patch lost to a cancelled save or a failed write could never be made again, and the
+	 * game black-screened without it (census H.2).
+	 */
+	public File makeZoneLimitPatch() {
+		ctrmap.formats.garc.GARC zones = Workspace.getArchive(ArchiveType.ZONE_DATA);
+		if (zones == null) {
+			ctrmap.Ui.error(this, "Load a workspace first.", "Make zone-limit patch");
+			return null;
+		}
+		File codeFile = CodeBinFile.pick(this, "The zone-limit patch is built against it.", new File(Workspace.GAMEDIR_PATH));
+		if (codeFile == null) {
+			return null;
+		}
+		final byte[] ips;
+		try {
+			ips = ctrmap.formats.codepatch.ZoneLimitPatch.forZoneCount(ZoneTables.zoneCount(zones),
+					java.nio.file.Files.readAllBytes(codeFile.toPath()));
+		} catch (IOException | IllegalStateException refused) {
+			CodeBinFile.forget();
+			ctrmap.Ui.error(this, "No zone-limit patch was made:\n" + ctrmap.util.Bytes.reason(refused),
+					"Make zone-limit patch");
+			return null;
+		}
+		CodeBinFile.remember(codeFile);
+		try {
+			return saveZoneLimitIps(ips);
+		} catch (IOException failed) {
+			ctrmap.Ui.error(this, "The zone-limit patch could not be saved:\n" + ctrmap.util.Bytes.reason(failed),
+					"Make zone-limit patch");
+			return null;
+		}
 	}
 
 	/**
@@ -1733,8 +1812,8 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		StringBuilder who = new StringBuilder();
 		for (int k = 0; k < sharerIdx.size() && k < 6; k++) {
 			int i = sharerIdx.get(k);
-			who.append("  - zone ").append(i).append(" (").append(LocationNames.getLocName(ctrmap.Workspace.session(), loadedZone.at(i).header.parentMap))
-					.append(i >= baseZones ? ", added zone" : "").append(")\n");
+			who.append("  - ").append(LocationNames.zoneLabel(ctrmap.Workspace.session(), loadedZone.at(i).header.parentMap, i))
+					.append(i >= baseZones ? " (added zone)" : "").append("\n");
 		}
 		if (sharerIdx.size() > 6) {
 			who.append("  - and ").append(sharerIdx.size() - 6).append(" more\n");
@@ -1763,7 +1842,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		}
 		final int idx = zoneIndex;
 		try {
-			ctrmap.GeometryForker.ForkResult r = ctrmap.GeometryForker.ensurePrivate(idx);
+			ctrmap.GeometryForker.ForkResult r = ctrmap.WorkspaceOps.forkMap(Workspace.session(), idx, ops, this::readAgain);
 			Workspace.packWorkspace(new Runnable() {
 				@Override
 				public void run() {
@@ -1808,7 +1887,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		int srcIndex = zoneIndex;
 		String[] names = new String[loadedZone.count()];
 		for (int i = 0; i < names.length; i++) {
-			names[i] = LocationNames.getLocName(ctrmap.Workspace.session(), loadedZone.at(i).header.parentMap) + " - " + i;
+			names[i] = LocationNames.zoneLabel(ctrmap.Workspace.session(), loadedZone.at(i).header.parentMap, i);
 		}
 		JComboBox<String> dstPicker = new JComboBox<>(names);
 		dstPicker.setMaximumRowCount(20);
@@ -1829,7 +1908,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 			" ",
 			forkChk
 		};
-		if (JOptionPane.showConfirmDialog(this, form, "Clone zone", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+		if (!ctrmap.Ui.form(this, form, "Clone zone")) {
 			return;
 		}
 		int dstIndex = dstPicker.getSelectedIndex();
@@ -1844,18 +1923,22 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 				+ "header, NPCs, warps, triggers, scripts.\n"
 				+ "Its wild encounters are NOT changed.\n"
 				+ (doFork ? "It will also get its OWN private map (independent geometry).\n" : "")
-				+ "\nThis is reversible only by restoring a backup.",
+				+ (doFork ? "\nThe private map is packed into the game at once, and from then on Undo cannot take the"
+						+ " clone back:\na pack only adds archive entries."
+						: "\nUndo, under the zone list, takes it back."),
 				"Confirm zone clone", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
 		if (confirm != JOptionPane.OK_OPTION) {
 			return;
 		}
 		try {
-			ZoneCloner.cloneIntoSlot(srcIndex, dstIndex);
-			clearForkDecline(dstIndex); //the slot holds a NEW zone now
+			//KEPT (F209c): the clone - and, ticked, the map of its own that keeps edits to it off the source, as
+			//Add zones gives one - is one change of the workspace's history
 			if (doFork) {
-				//give the clone its own map so editing it won't change the source (same as Add zones)
-				ctrmap.GeometryForker.ensurePrivate(dstIndex);
+				ctrmap.WorkspaceOps.cloneWithOwnMap(Workspace.session(), srcIndex, dstIndex, ops, this::readAgain);
+			} else {
+				ctrmap.WorkspaceOps.clone(Workspace.session(), srcIndex, dstIndex, ops, this::readAgain);
 			}
+			clearForkDecline(dstIndex); //the slot holds a NEW zone now
 		} catch (Exception ex) {
 			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
 			ctrmap.Ui.error(this, "Could not clone the zone:\n" + ctrmap.util.Bytes.reason(ex), "Clone zone");
@@ -1921,7 +2004,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		int baseCount = loadedZone.count();
 		String[] names = new String[baseCount];
 		for (int i = 0; i < baseCount; i++) {
-			names[i] = LocationNames.getLocName(ctrmap.Workspace.session(), loadedZone.at(i).header.parentMap) + " - " + i;
+			names[i] = LocationNames.zoneLabel(ctrmap.Workspace.session(), loadedZone.at(i).header.parentMap, i);
 		}
 		JComboBox<String> srcPicker = new JComboBox<>(names);
 		srcPicker.setMaximumRowCount(20);
@@ -1946,7 +2029,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 			"A matching code patch (code.ips) is generated - the game needs BOTH the",
 			"new ZoneData and that patch installed, or it will not boot."
 		};
-		if (JOptionPane.showConfirmDialog(this, form, "Add new zones (lift zone limit)", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+		if (!ctrmap.Ui.form(this, form, "Add new zones (lift zone limit)")) {
 			return;
 		}
 		int realZones = (Integer) countSpin.getValue();
@@ -1978,7 +2061,8 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 				+ replaces
 				+ "You MUST install the generated code.ips or the game will black-screen:\n"
 				+ "  Azahar: right-click the game -> Open Mods Location -> exefs\\code.ips\n"
-				+ "  3DS Luma: sdmc:/luma/titles/000400000011C400/code.ips (enable Game Patching)\n\n"
+				+ "  3DS Luma: sdmc:/luma/titles/" + ctrmap.formats.codepatch.ZoneLimitPatch.TITLE_ID
+				+ "/code.ips (enable Game Patching)\n\n"
 				+ ctrmap.ZoneAppender.sharedWarning(srcIndex)
 				+ "\n\nContinue?",
 				"Add new zones (lift zone limit)",
@@ -2007,33 +2091,31 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		}
 		CodeBinFile.remember(codeFile);
 		ctrmap.ZoneAppender.AppendResult res;
-		try {
-			//THE USER HAS JUST BEEN SHOWN WHAT THESE ZONES WILL SHARE, in the dialog
-			//above, and pressed OK. The appender refuses the form that does not say so,
-			//which is what stops a zone being created shared by accident from anywhere.
-			res = ctrmap.ZoneAppender.appendZones(realZones, srcIndex, true);
-		} catch (Exception ex) {
-			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
-			ctrmap.Ui.error(this, "Could not add the zones:\n" + ctrmap.util.Bytes.reason(ex), "Add new zones");
-			return;
-		}
-		//generate + save the paired code patch (same N drives both sides)
 		boolean savedIps = false;
-		try {
-			byte[] ips = ctrmap.formats.codepatch.ZoneLimitPatch.buildIPS(res.patchZones, code);
-			javax.swing.JFileChooser fc = new javax.swing.JFileChooser();
-			fc.setDialogTitle("Save the zone-limit code patch (name it code.ips)");
-			fc.setSelectedFile(new java.io.File("code.ips"));
-			if (ctrmap.Ui.choose(this, fc, true) != null) {
-				//into the code.ips already there, its shop and icon patches kept (F152)
-				ctrmap.formats.codepatch.CodeIps.save(fc.getSelectedFile(), ips,
-						ctrmap.formats.codepatch.ZoneLimitPatch.owned());
-				savedIps = true;
+		//KEPT (F209c): the zones and the code.ips saved with them are one change of the workspace's history. The pack
+		//below carries the zones into the game at once, and Undo then refuses in words: a pack only adds entries
+		try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Add " + realZones + " zone(s)", Workspace.session())) {
+			try {
+				//THE USER HAS JUST BEEN SHOWN WHAT THESE ZONES WILL SHARE, in the dialog
+				//above, and pressed OK. The appender refuses the form that does not say so,
+				//which is what stops a zone being created shared by accident from anywhere.
+				res = ctrmap.ZoneAppender.appendZones(realZones, srcIndex, true);
+			} catch (Exception ex) {
+				Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
+				ctrmap.Ui.error(this, "Could not add the zones:\n" + ctrmap.util.Bytes.reason(ex), "Add new zones");
+				return;
 			}
-		} catch (Exception ex) {
-			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
-			ctrmap.Ui.message(this, "The zones were staged, but the code.ips could not be saved:\n" + ctrmap.util.Bytes.reason(ex)
-					+ "\n\nThe game will not boot without it - regenerate it before testing.", "Add new zones", JOptionPane.WARNING_MESSAGE);
+			//generate + save the paired code patch (same N drives both sides)
+			try {
+				byte[] ips = ctrmap.formats.codepatch.ZoneLimitPatch.buildIPS(res.patchZones, code);
+				savedIps = saveZoneLimitIps(ips) != null;
+			} catch (Exception ex) {
+				Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
+				ctrmap.Ui.message(this, "The zones were staged, but the code.ips could not be saved:\n" + ctrmap.util.Bytes.reason(ex)
+						+ "\n\nThe game will not boot without it - " + MAKE_IT_AGAIN, "Add new zones", JOptionPane.WARNING_MESSAGE);
+			}
+			ctrmap.WorkspaceUnit.inMemory(this::readAgain, this::readAgain);
+			ops.keep(unit.commitKeeping());
 		}
 		//the append changed the GARC layout. packWorkspace and loadEverything are
 		//BOTH async (SwingWorkers); chain: pack -> reload -> select + confirm.
@@ -2056,7 +2138,8 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 								+ "so editing its geometry won't affect the zone you copied it from.\n\n"
 								+ (ipsSaved
 										? "code.ips saved - install it (Azahar mods exefs, or Luma titles folder) before booting.\n\n"
-										: "code.ips was NOT saved - the game will black-screen until you generate and install it.\n\n")
+										: "code.ips was NOT saved - the game will black-screen until you install one: "
+										+ MAKE_IT_AGAIN + "\n\n")
 								+ "New zones aren't reachable until you point a warp or script at them (edit a\n"
 								+ "warp in another zone to target zone " + firstNew + "). Wild encounters start empty.",
 								"Add new zones", JOptionPane.INFORMATION_MESSAGE);

@@ -163,6 +163,7 @@ public final class Ips {
 	}
 
 	/** Applies an IPS to a copy of code (for tests / verification). */
+	@ctrmap.util.ForSuites("ORACLE: applies an IPS the way the emulator's patcher does, so a suite can hold what the editor's patches write to the bytes they mean")
 	public static byte[] apply(byte[] code, byte[] ips) {
 		byte[] out = code.clone();
 		for (int[] rec : parse(ips)) {

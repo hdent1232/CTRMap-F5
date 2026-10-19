@@ -16,11 +16,11 @@ import static ctrmap.formats.containers.ContainerBytes.subfile;
  * (talking NPCs, signs, triggers) must live in a base slot.
  *
  * <p>Signals used (none is a guarantee - the game also connects some zones by
- * walking/adjacency and by story scripts, which this cannot see, so the caller
- * must VERIFY a pick in-game): a zone with NO incoming warps, empty of placed
- * content, and a placeholder/blank/duplicate name is the safest. A named, empty
- * zone with no incoming warps is often a dungeon interior reached on foot - usable
- * only if you are deliberately replacing that area.
+ * walking/adjacency, which this cannot see, so the caller must VERIFY a pick
+ * in-game): a zone with NO incoming warps and no zone script sending the player
+ * to it (F225), empty of placed content, and a placeholder/blank/duplicate name is
+ * the safest. A named, empty zone with nothing leading in is often a dungeon
+ * interior reached on foot - usable only if you are deliberately replacing that area.
  */
 public class ZoneRepurposeScanner {
 
@@ -53,6 +53,50 @@ public class ZoneRepurposeScanner {
 		public final List<String> unreadable = new ArrayList<>();
 	}
 
+	/**
+	 * What the reusable-zone list says (F225) - its text, apart from the window's scrolling dialog, which no
+	 * suite can read: the unreadable zones it names were asserted by nothing (the 2026-10-12 sweep).
+	 */
+	public static String report(Scan scan) {
+		java.util.List<Candidate> cands = scan.candidates;
+		int t0 = 0, t1 = 0;
+		for (Candidate c : cands) {
+			if (c.tier == 0) {
+				t0++;
+			} else if (c.tier == 1) {
+				t1++;
+			}
+		}
+		StringBuilder sb = new StringBuilder();
+		sb.append("Base zones (index < " + ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES + ") CAN run scripts - build interactive custom areas\n");
+		sb.append("(talking NPCs, signs, triggers) here. Appended zones (" + ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES + "+) can't run scripts.\n\n");
+		sb.append(t0).append(" SAFEST (placeholder/blank name, empty, no incoming warps),  ")
+		  .append(t1).append(" likely-free.\n\n");
+		if (!scan.unreadable.isEmpty()) {
+			sb.append(scan.unreadable.size()).append(" zone(s) or script(s) could not be read or counted - an unreadable zone is\n")
+					.append("not listed, and a warp or script map change from any of them into a zone below is NOT counted:\n");
+			for (int i = 0; i < Math.min(5, scan.unreadable.size()); i++) {
+				sb.append("  ").append(scan.unreadable.get(i)).append('\n');
+			}
+			if (scan.unreadable.size() > 5) {
+				sb.append("  ...and ").append(scan.unreadable.size() - 5).append(" more\n");
+			}
+			sb.append('\n');
+		}
+		sb.append("A zone a script sends the player to - its own zone's script or a shared one - counts as reached, like a warp.\n");
+		sb.append("VERIFY a pick in-game first: some empty, unreferenced zones are dungeon\n");
+		sb.append("interiors reached on foot, and named ones are real areas you'd be replacing.\n\n");
+		sb.append(String.format("%-5s %-26s %-4s %-5s %-4s %s%n", "zone", "name", "NPCs", "warp", "trg", "status"));
+		sb.append("---------------------------------------------------------------------------\n");
+		for (Candidate c : cands) {
+			String nm = c.name.length() > 25 ? c.name.substring(0, 25) : c.name;
+			sb.append(String.format("%-5d %-26s %-4d %-5d %-4d %s%n", c.index, nm, c.npcs, c.warpsOut, c.triggers, c.tierLabel()));
+		}
+		sb.append("\nWorkflow: pick a zone -> Empty zone -> Clone your template map into it\n");
+		sb.append("(keep 'own map' checked) -> Rename zone -> add your NPCs. Scripts will work.");
+		return sb.toString();
+	}
+
 	/** The open workspace's candidates, best-first; see {@link #scanZones}. */
 	public static List<Candidate> scan() {
 		return scanZones(Workspace.isValid() ? Workspace.session() : null).candidates;
@@ -64,8 +108,70 @@ public class ZoneRepurposeScanner {
 		if (zo == null) {
 			return new Scan();
 		}
-		return scanZones(Math.min(BASE_ZONES, zo.length), i -> ZoneTables.zoneNow(s, i),
-				parentMap -> LocationNames.getLocName(s, parentMap));
+		int base = Math.min(BASE_ZONES, zo.length);
+		int count;
+		try {
+			count = Math.max(base, ZoneTables.zoneCount(zo));
+		} catch (java.io.IOException unread) {
+			count = zo.length;   //every entry is asked; one that is no zone is passed over as such
+		}
+		return scanZones(base, count, i -> ZoneTables.zoneNow(s, i),
+				parentMap -> LocationNames.getLocName(s, parentMap), sharedReach(s));
+	}
+
+	/**
+	 * Where the scripts no zone owns send the player (F225), and what of them could not be read.
+	 *
+	 * <p>MEASURED 2026-10-10 on the ORAS dump: the shared-script archive holds 85 scripts, every one reads,
+	 * and 15 of them send the player to 37 zones through {@code _MapChangeCore}, one more to a zone it
+	 * computes. A scan that read only the zones' own scripts offered a zone only they reach as safe to
+	 * overwrite.
+	 */
+	public static final class SharedReach {
+
+		/** The zones a shared script names as a destination, one per call that names one. */
+		public final List<Integer> zones = new ArrayList<>();
+		/** Beside each of {@link #zones}, the shared script that names it. */
+		public final List<Integer> from = new ArrayList<>();
+		/** "shared script N: why" - each a destination nobody could count, never "no script goes there". */
+		public final List<String> unread = new ArrayList<>();
+	}
+
+	/**
+	 * The workspace's shared scripts. A game whose shared-script archive is not known, or one that did not
+	 * open, is said in {@link SharedReach#unread} - it is not a game whose shared scripts go nowhere.
+	 */
+	public static SharedReach sharedReach(WorkspaceSession s) {
+		GARC g = s == null ? null : s.getArchive(ArchiveType.SHARED_SCRIPTS);
+		if (g == null) {
+			SharedReach r = new SharedReach();
+			r.unread.add("the shared-script archive: " + (s == null || s.profile().archivePath(ArchiveType.SHARED_SCRIPTS) == null
+					? "where this game keeps them is not measured" : "their archive did not open"));
+			return r;
+		}
+		return sharedReach(g.length, g::getDecompressedEntry);
+	}
+
+	/** Where shared scripts 0..count-1 send the player, each read through {@code scripts}. */
+	public static SharedReach sharedReach(int count, ZoneTables.ZoneBytes scripts) {
+		SharedReach r = new SharedReach();
+		for (int i = 0; i < count; i++) {
+			ctrmap.formats.scripts.ZoneScriptAnalyzer.MapChanges mc;
+			try {
+				mc = ctrmap.formats.scripts.ZoneScriptAnalyzer.mapChangesOfScript(scripts.zone(i));
+			} catch (java.io.IOException | RuntimeException unread) {
+				r.unread.add("shared script " + i + ": " + Ui.reason(unread));
+				continue;
+			}
+			for (int to : mc.zones) {
+				r.zones.add(to);
+				r.from.add(i);
+			}
+			if (mc.computed > 0) {
+				r.unread.add("shared script " + i + ": " + mc.computed + " map change(s) whose destination is computed");
+			}
+		}
+		return r;
 	}
 
 	/**
@@ -76,17 +182,23 @@ public class ZoneRepurposeScanner {
 	 * pack, a zone whose entity block was missing counted as having none - the safest tier - and a
 	 * zone whose entities would not read went unsaid. It is listed in {@link Scan#unreadable}, is no
 	 * candidate, and its warps, which nobody could count, are said to be uncounted.
+	 *
+	 * <p>{@code shared} is where the scripts no zone owns send the player - no overload leaves it out, so no
+	 * caller can scan as though there were none.
+	 *
+	 * <p>Each candidate is named by its parent map through {@code names} - the handed game's location names.
+	 *
+	 * <p>For a game holding {@code count} zones: the candidates are still base zones, and the warps and
+	 * script map changes of EVERY zone are counted into them (census H.57) - a door from an added zone, past the
+	 * base, into a base zone did not count, and that zone was offered as safe to overwrite.
 	 */
-	public static Scan scanZones(int base, ZoneTables.ZoneBytes zones) {
-		return scanZones(base, zones, parentMap -> "");
-	}
-
-	/** As above, naming each candidate by its parent map through {@code names} - the handed game's location names. */
-	public static Scan scanZones(int base, ZoneTables.ZoneBytes zones, java.util.function.IntFunction<String> names) {
+	public static Scan scanZones(int base, int count, ZoneTables.ZoneBytes zones, java.util.function.IntFunction<String> names,
+			SharedReach shared) {
 		Scan scan = new Scan();
-		int[] npcs = new int[base], warps = new int[base], trig = new int[base], parent = new int[base], incoming = new int[base];
-		boolean[] valid = new boolean[base];
-		for (int i = 0; i < base; i++) {
+		count = Math.max(base, count);
+		int[] npcs = new int[count], warps = new int[count], trig = new int[count], parent = new int[count], incoming = new int[count];
+		boolean[] valid = new boolean[count];
+		for (int i = 0; i < count; i++) {
 			byte[] z;
 			try {
 				z = zones.zone(i);
@@ -111,7 +223,21 @@ public class ZoneRepurposeScanner {
 				scan.unreadable.add("zone " + i + ": its entities do not read - " + Ui.reason(unread));
 				continue;
 			}
-			valid[i] = true;
+			//AND WHERE ITS SCRIPT SENDS THE PLAYER (F225): a zone reached only by a script's map change had no
+			//incoming warp, so it was offered as safe to overwrite
+			ctrmap.formats.scripts.ZoneScriptAnalyzer.MapChanges mc;
+			try {
+				mc = ctrmap.formats.scripts.ZoneScriptAnalyzer.mapChangesOfZone(z);
+			} catch (RuntimeException unread) {
+				scan.unreadable.add("zone " + i + ": " + Ui.reason(unread) + ", so the zones it sends the player to are not counted");
+				continue;
+			}
+			//a destination computed at run time could be any zone: said, and this zone is no candidate - but
+			//its warps and the destinations its script does name still count
+			if (mc.computed > 0) {
+				scan.unreadable.add("zone " + i + ": " + mc.computed + " script map change(s) whose destination is computed are not counted");
+			}
+			valid[i] = mc.computed == 0;
 			npcs[i] = e.npcs.size();
 			warps[i] = e.warps.size();
 			trig[i] = e.triggers1.size() + e.triggers2.size();
@@ -120,6 +246,21 @@ public class ZoneRepurposeScanner {
 					incoming[w.targetZone]++;
 				}
 			}
+			for (int to : mc.zones) {
+				if (to >= 0 && to < base) {
+					incoming[to]++;
+				}
+			}
+		}
+
+		//AND WHERE THE SHARED SCRIPTS SEND THE PLAYER (F225): no zone owns them, so no zone above read them
+		for (int to : shared.zones) {
+			if (to >= 0 && to < base) {
+				incoming[to]++;
+			}
+		}
+		for (String u : shared.unread) {
+			scan.unreadable.add(u + ", so the zones it sends the player to are not counted");
 		}
 
 		List<Candidate> out = scan.candidates;
@@ -129,13 +270,16 @@ public class ZoneRepurposeScanner {
 			}
 			Candidate c = new Candidate();
 			c.index = i;
-			c.name = safeName(names, parent[i]);
+			String name = readName(names, parent[i], i, scan);
+			c.name = name == null ? "(its name could not be read)" : name;
 			c.npcs = npcs[i];
 			c.warpsOut = warps[i];
 			c.triggers = trig[i];
 			c.incomingWarps = 0;
 			boolean empty = npcs[i] == 0 && warps[i] == 0 && trig[i] == 0;
-			boolean placeholder = c.name == null || c.name.trim().isEmpty() || c.name.contains("?") || c.name.contains("�");
+			//A NAME NOBODY COULD READ IS NOT A PLACEHOLDER (census H.57): it answered "", the placeholder's own
+			//look, and the zone was offered as the SAFEST to overwrite
+			boolean placeholder = name != null && (name.trim().isEmpty() || name.contains("?") || name.contains("�"));
 			c.tier = (empty && placeholder) ? 0 : (empty ? 1 : 2);
 			out.add(c);
 		}
@@ -143,12 +287,15 @@ public class ZoneRepurposeScanner {
 		return scan;
 	}
 
-	private static String safeName(java.util.function.IntFunction<String> names, int parentMap) {
+	/** Zone {@code zone}'s name, "" when it has none; null - and said - when it cannot be read. */
+	private static String readName(java.util.function.IntFunction<String> names, int parentMap, int zone, Scan scan) {
 		try {
 			String n = names.apply(parentMap);
 			return n == null ? "" : n;
-		} catch (RuntimeException ex) {
-			return "";
+		} catch (RuntimeException unread) {
+			scan.unreadable.add("zone " + zone + ": its name cannot be read (" + Ui.reason(unread)
+					+ "), so it is not taken for a placeholder");
+			return null;
 		}
 	}
 }

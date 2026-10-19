@@ -55,7 +55,7 @@ public class MapModelObjImportTest {
 				MapModelObj.export(bmm, sw);
 				List<MapModelObj.ObjMesh> parsed = MapModelObj.parse(new BufferedReader(new StringReader(sw.toString())));
 				List<MapModelObjImporter.Outcome> outcomes = new ArrayList<>();
-				byte[] applied = MapModelObjImporter.apply(model, parsed, outcomes);
+				byte[] applied = MapModelObjImporter.apply(model, parsed, outcomes, null, -1);
 				BchMapModel re = new BchMapModel(applied);
 				if (!re.validate().isEmpty()) {
 					throw new IllegalStateException("region " + i + " identity: re-parse problems " + re.validate());
@@ -85,7 +85,7 @@ public class MapModelObjImportTest {
 					savedPos[v] = first.positions[v].clone();
 					first.positions[v][1] += 25f;
 				}
-				byte[] shifted = MapModelObjImporter.apply(model, parsed, new ArrayList<>());
+				byte[] shifted = MapModelObjImporter.apply(model, parsed, new ArrayList<>(), null, -1);
 				BchMapModel sh = new BchMapModel(shifted);
 				float[][] shPos = sh.getVertexPositions(first.meshIndex);
 				int[] shTris = sh.getTriangles(first.meshIndex);
@@ -109,7 +109,7 @@ public class MapModelObjImportTest {
 					}
 					int[] fullTris = first.triangles;
 					first.triangles = halfTris;
-					byte[] retopo = MapModelObjImporter.apply(model, parsed, new ArrayList<>());
+					byte[] retopo = MapModelObjImporter.apply(model, parsed, new ArrayList<>(), null, -1);
 					BchMapModel rt = new BchMapModel(retopo);
 					if (rt.getTriangles(first.meshIndex).length != halfTris.length) {
 						throw new IllegalStateException("region " + i + " retopo: face count not applied");

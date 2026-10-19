@@ -6,6 +6,22 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
 . (Join-Path $root "stamp.ps1")
+. (Join-Path $root "native.ps1")
+
+# ON THE UNATTENDED DESKTOP (2026-10-11): the build's structure gates are Java programs, and whatever
+# opened a window or took the keyboard did it on the owner's screen while they worked - twice that day
+# a window of theirs was lost. The build runs itself again on a second desktop of the same session
+# (tools/guard/hidden_desktop.py), saying here what it says there.
+if ($env:CTRMAP_ON_UNATTENDED_DESKTOP -ne "1" -and $env:OS -eq "Windows_NT") {
+    $hpy = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $hpy) {
+        Write-Host "REFUSING: no python on PATH to build on the unattended desktop - its windows would open on yours" -ForegroundColor Red
+        exit 1
+    }
+    $self = $MyInvocation.MyCommand.Path
+    Invoke-Native { & $hpy.Source -B (Join-Path $root "tools\guard\hidden_desktop.py") --stream -- powershell -NoProfile -ExecutionPolicy Bypass -File $self }
+    exit $LASTEXITCODE
+}
 
 $jdk = $env:CTRMAP_JDK
 if (-not $jdk) {
@@ -34,21 +50,33 @@ if (-not $jdk) { throw "No JDK found. Set CTRMAP_JDK to a JDK install path." }
 # happened twice in one afternoon, both times while waiting for a battery and "just"
 # rebuilding something else. A rule that has to be remembered mid-wait is not a rule.
 #
-# The lock is the running battery own file. A battery that was killed leaves a stale one,
-# so this only refuses while it is fresh - ninety minutes, comfortably longer than a full
-# run - and says what it is when it ignores an old one.
+# The lock is the running battery's own file. Whether a battery still holds it is asked of
+# tools/guard/battery_lock.py, the one reader test.ps1 and replant.py ask too. This judged it by
+# age alone until 2026-10-11: a battery past ninety minutes would have had its classes deleted
+# under it, and a killed one blocked every build for ninety. A lock nothing holds is ignored, and
+# said; one that cannot be judged is refused like a live one.
+# AND THE EDITOR (2026-10-11): run from this checkout it loads its classes from build\classes as it
+# needs them, so deleting them takes them from an open window. It declares itself in
+# build\.editor-running (ctrmap.RunningFrom), and --classes asks about both.
 $lock = Join-Path $root "build\.battery-running"
-if ((Test-Path $lock) -and -not $env:CTRMAP_BUILD_ANYWAY) {
-  $age = (Get-Date) - (Get-Item $lock).LastWriteTime
-  if ($age.TotalMinutes -lt 90) {
-    $mins = [int]$age.TotalMinutes
-    Write-Host ("REFUSING to build: a battery has been running out of build\classes for " + $mins + " minute(s).") -ForegroundColor Red
-    Write-Host '  Deleting the classes under it turns its suites into failures that are'
-    Write-Host '  this build fault rather than the tree - it has happened twice.'
-    Write-Host ("  Wait for it, stop it, or if it is long dead:  Remove-Item " + $lock)
+$editorLock = Join-Path $root "build\.editor-running"
+if (((Test-Path $lock) -or (Test-Path $editorLock)) -and -not $env:CTRMAP_BUILD_ANYWAY) {
+  $askPy = Get-Command python -ErrorAction SilentlyContinue
+  $heldOut = @("no python on PATH to ask whether what wrote the lock still runs")
+  $heldExit = 2
+  if ($askPy) {
+    $heldOut = @(Invoke-Native { & $askPy.Source -B (Join-Path $root "tools\guard\battery_lock.py") --classes 2>&1 })
+    $heldExit = $LASTEXITCODE
+  }
+  if ($heldExit -ne 0) {
+    Write-Host "REFUSING to build: a battery or the editor may be running out of build\classes." -ForegroundColor Red
+    $heldOut | ForEach-Object { Write-Host ("  " + $_) }
+    Write-Host '  Deleting the classes under it turns a battery''s suites into failures that are this'
+    Write-Host '  build''s fault, and takes them from an open editor window.'
+    Write-Host '  Close it or wait for it: a lock nothing live holds is ignored.'
     exit 1
   }
-  Write-Host ("(ignoring a stale battery lock, " + [int]$age.TotalMinutes + " minutes old)")
+  Write-Host ("(ignoring a lock nothing live holds: " + ($heldOut -join " ") + ")")
 }
 
 if (Test-Path build\classes) { Remove-Item -Recurse -Force build\classes }
@@ -60,24 +88,16 @@ Get-ChildItem -Recurse src -Filter *.java |
     Out-File -Encoding ascii build\sources.txt
 
 # javac writes warnings (e.g. "Note: Some input files use unchecked...") to
-# stderr even on success, and with ErrorActionPreference=Stop PowerShell turns
-# that into a terminating error - which used to abort the build here, AFTER
-# compiling but BEFORE copying resources, silently leaving stale .tsv tables in
-# build\classes. Judge success by the exit code, not by stderr.
-$ErrorActionPreference = "Continue"
-& "$jdk\bin\javac.exe" --release 8 -encoding UTF-8 `
-    -cp "lib\jogl-all.jar;lib\gluegen-rt.jar" `
-    -d build\classes "@build\sources.txt"
+# stderr even on success - judged by its exit code, through Invoke-Native (native.ps1).
+Invoke-Native {
+    & "$jdk\bin\javac.exe" --release 8 -encoding UTF-8 `
+        -cp "lib\jogl-all.jar;lib\gluegen-rt.jar" `
+        -d build\classes "@build\sources.txt"
+}
 $javacExit = $LASTEXITCODE
-$ErrorActionPreference = "Stop"
 if ($javacExit -ne 0) { throw "javac failed with exit code $javacExit" }
 
 Copy-Item -Recurse -Force src\ctrmap\resources build\classes\ctrmap\
-
-# Sign what was just built. test.ps1, the mutation sweeps and BatteryHygieneTest
-# all recompute this and refuse a build\classes that is not exactly this
-# script's output from exactly these sources - see stamp.ps1 for why.
-Write-BuildStamp $root
 
 # THE STRUCTURAL RULES RUN HERE, not only in the battery.
 #
@@ -97,10 +117,20 @@ $gates = @(
 )
 if (-not $env:CTRMAP_SKIP_STRUCTURE_GATE) {
   foreach ($g in $gates) {
-    $out = & java -cp "build\classes;lib\jogl-all.jar;lib\gluegen-rt.jar" $g.c src 2>&1
+    $out = Invoke-Native { & "$jdk\bin\java.exe" -cp "build\classes;lib\jogl-all.jar;lib\gluegen-rt.jar" $g.c src 2>&1 }
     if ($LASTEXITCODE -ne 0) {
+      # A REFUSAL IS A FAILED CHECK. On 2026-10-14 DialogSeamTest exited non-zero under eight sweep JVMs having
+      # failed nothing, and the old filter (FAIL|REFUS, case-blind) showed only an ok line that said "refused":
+      # the crash was thrown away, and a mutation sweep reads BUILD REFUSED as a kill by the gate's suite.
+      $failed = @($out | ForEach-Object { "$_" } | Where-Object { $_ -cmatch "FAIL" })
+      if ($failed.Count -eq 0) {
+        Write-Host ("BUILD FAILED - " + $g.n + ": its gate stopped (exit " + $LASTEXITCODE + ") without failing a check, so it judged nothing. Its last lines:") -ForegroundColor Red
+        @($out | ForEach-Object { "$_" }) | Select-Object -Last 25 | ForEach-Object { Write-Host ("  " + $_) }
+        if (Test-Path build\classes) { Remove-Item -Recurse -Force build\classes }
+        exit 1
+      }
       Write-Host ("BUILD REFUSED - " + $g.n) -ForegroundColor Red
-      $out | Where-Object { $_ -match "FAIL|REFUS" } | ForEach-Object { Write-Host ("  " + $_) }
+      $failed | ForEach-Object { Write-Host ("  " + $_) }
       Write-Host "  These are structural rules, checked here because checking them in the"
       Write-Host "  battery let three of them be broken and shipped first."
       Write-Host "  build\classes has been removed: a tree that breaks one of these does not"
@@ -110,6 +140,14 @@ if (-not $env:CTRMAP_SKIP_STRUCTURE_GATE) {
     }
   }
 }
+
+# SIGNED LAST, once the gates have judged it. Signed before them, a build the gates never finished
+# judging - one that died between the two, as a gate's stderr warning made it do on 2026-10-10 -
+# kept a valid stamp, and test.ps1 ran the battery out of it. Unsigned, test.ps1 refuses it.
+# test.ps1, the mutation sweeps and BatteryHygieneTest all recompute this and refuse a
+# build\classes that is not exactly this script's output from exactly these sources - see
+# stamp.ps1 for why.
+Write-BuildStamp $root
 
 Write-Host "Build OK -> build\classes  (run with run.bat or:"
 Write-Host "  java -Xmx1024m -cp `"build/classes;lib/jogl-all.jar;lib/gluegen-rt.jar;lib/jogl-all-natives-windows-amd64.jar;lib/gluegen-rt-natives-windows-amd64.jar`" ctrmap.CtrmapMainframe )"

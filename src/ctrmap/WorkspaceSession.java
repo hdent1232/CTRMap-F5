@@ -130,7 +130,9 @@ public final class WorkspaceSession implements GameFiles {
 		//clean reverted its name and kept the record, and a failed save could not be put back. Its
 		//records are fixed-size and uncompressed, so the pack writes them over themselves - no table
 		//rebuilt - and may begin with 0x11, so nothing sniffs them
-		{ArchiveType.ITEM_DATA, "itemdata", null, false, true, true}
+		{ArchiveType.ITEM_DATA, "itemdata", null, false, true, true},
+		//READ, NEVER WRITTEN: where the shared scripts send the player is part of which zones are reached (F225)
+		{ArchiveType.SHARED_SCRIPTS, "sharedscripts", null, true, false, false}
 	};
 
 	/** Derived from {@link #ARCHIVES}: each archive's extraction folder. */
@@ -287,6 +289,7 @@ public final class WorkspaceSession implements GameFiles {
 	 * (null drops it), sharing this one's edited-file list. For a suite that
 	 * needs one archive to misbehave while everything else stays as opened.
 	 */
+	@ctrmap.util.ForSuites("SEAM: a suite swaps one archive's handle for one that misbehaves, everything else as opened")
 	public WorkspaceSession withArchive(ArchiveType type, GARC handle) {
 		EnumMap<ArchiveType, GARC> handles = new EnumMap<>(archives);
 		if (handle == null) {
@@ -303,6 +306,7 @@ public final class WorkspaceSession implements GameFiles {
 	 * {@link #packArchives} refuses; {@link Workspace#packWorkspace} leaves
 	 * it alone. Nothing the application opens is read-only.
 	 */
+	@ctrmap.util.ForSuites("SEAM: a suite reading the pristine dump marks its session read-only, so nothing it does can pack into the game folder every suite shares")
 	public WorkspaceSession readOnly() {
 		return new WorkspaceSession(workspaceDir, gameDir, game, archives, persistPaths, true);
 	}
@@ -460,6 +464,7 @@ public final class WorkspaceSession implements GameFiles {
 	}
 
 	/** True when the list of edits could not be read on open: see {@link #readPersist}. */
+	@ctrmap.util.ForSuites("SEAM: a suite asks whether the edit list failed to read on open, to see it is said and not swept")
 	public boolean editListUnreadable() {
 		return editListUnreadable;
 	}
@@ -664,6 +669,8 @@ public final class WorkspaceSession implements GameFiles {
 	 * The extracted copy of one entry, extracting it first when the
 	 * workspace does not hold it yet. Null when the archive has no such entry.
 	 */
+	@ctrmap.util.NotAnEdit("it extracts an entry of the dump into the workspace, unchanged, the first time it is"
+		+ " asked for: the bytes it writes are the dump's own, so nothing the user made changes")
 	public File getWorkspaceFile(ArchiveType arc, int fileNum) {
 		//IT USED TO POISON THE WORKSPACE ON ONE FAILURE, permanently. The output file was
 		//opened - which CREATES and TRUNCATES it - before the bytes existed, so a null entry
@@ -717,6 +724,37 @@ public final class WorkspaceSession implements GameFiles {
 	 */
 	private final EnumMap<ArchiveType, Map<Integer, Boolean>> pendingCompression = new EnumMap<>(ArchiveType.class);
 
+	/**
+	 * How many packs have begun moving archives into the game (F209b). A kept change made before one is in the
+	 * game: taken back, its files must stay edits, or the next pack leaves the game holding what was undone.
+	 */
+	private final java.util.concurrent.atomic.AtomicInteger packs = new java.util.concurrent.atomic.AtomicInteger();
+
+	/** How many packs have begun moving archives into the game since this session opened. */
+	public int packs() {
+		return packs.get();
+	}
+
+	/**
+	 * Packs the edited entries of {@code t} into the game's archive now, and counts it as a pack (F209b): what a change
+	 * kept before it wrote is in the game from here on. For a tool that adds an entry and must show the archive
+	 * holding it - the raw browser's Add file, which packed the archive itself and was counted by nothing.
+	 */
+	@ctrmap.util.NotAnEdit("it rebuilds one of the game's archives from the workspace's files: it writes out edits"
+		+ " already made and kept in the workspace, and makes none of its own")
+	public void packOne(ArchiveType t) throws IOException {
+		if (readOnly) {
+			throw new IllegalStateException("this session is read-only: " + gameDir + " must not be written");
+		}
+		GARC g = getArchive(t);
+		if (g == null) {
+			throw new IOException("the " + t + " archive is not open, so there is nothing to pack it into");
+		}
+		packs.incrementAndGet();   //from the move on the game may hold what the list held
+		g.packDirectory(getExtractionDirectory(t), this::isPersisted, workspaceDir);
+		reloadGARC(t);
+	}
+
 	/** Records that the added entry {@code index} of {@code t} is (or is not) stored compressed. */
 	public void registerPendingCompression(ArchiveType t, int index, boolean compressed) {
 		Map<Integer, Boolean> m = pendingCompression.get(t);
@@ -725,6 +763,17 @@ public final class WorkspaceSession implements GameFiles {
 			pendingCompression.put(t, m);
 		}
 		m.put(index, compressed);
+	}
+
+	/** Forgets the flag of the added entry {@code index} of {@code t}: a kept change that set it, taken back. */
+	public void forgetPendingCompression(ArchiveType t, int index) {
+		Map<Integer, Boolean> m = pendingCompression.get(t);
+		if (m != null) {
+			m.remove(index);
+			if (m.isEmpty()) {
+				pendingCompression.remove(t);
+			}
+		}
 	}
 
 	/** Whether a fork or an append left flags for {@code t} that only a pack can carry. */
@@ -938,6 +987,7 @@ public final class WorkspaceSession implements GameFiles {
 			}
 			if (which.test(n)) {
 				persistPaths.remove(f.getAbsolutePath());
+				WorkspaceUnit.touching(f);   //copied first, so a kept change that drops it can put it back (F209c)
 				if (f.exists() && !f.delete()) {
 					stuck.add(f);
 				}
@@ -1088,21 +1138,15 @@ public final class WorkspaceSession implements GameFiles {
 	}
 
 	/** Deletes the pristine snapshot so the next load re-takes it from the current game folder. */
-	public static void discardSnapshot(File workspaceDir) {
-		deleteTree(originalSnapshotDir(workspaceDir));
-	}
-
-	private static void deleteTree(File f) {
-		if (f == null || !f.exists()) {
-			return;
+	@ctrmap.util.NotAnEdit("it deletes the snapshot of the game's own archives, taken before any edit, so the next"
+		+ " load takes it again from the game folder now in use: retail files, nothing the user made")
+	public static void discardSnapshot(File workspaceDir) throws java.io.IOException {
+		//SAID WHEN IT STAYS (2026-10-12): a snapshot that would not go was reported gone, and the switch went ahead
+		//on the other game's backup
+		if (!ctrmap.util.Bytes.deleteTree(originalSnapshotDir(workspaceDir))) {
+			throw new java.io.IOException("the old backup could not be removed (a file in it is in use or read-only): "
+					+ originalSnapshotDir(workspaceDir));
 		}
-		File[] kids = f.listFiles();
-		if (kids != null) {
-			for (File k : kids) {
-				deleteTree(k);
-			}
-		}
-		f.delete();
 	}
 
 	public File originalSnapshotDir() {
@@ -1192,6 +1236,9 @@ public final class WorkspaceSession implements GameFiles {
 	 * {@link Workspace} puts in front of the user; nothing here can show a
 	 * dialog.
 	 */
+	@ctrmap.util.NotAnEdit("it copies the game's archives into the workspace's snapshot before any edit is made -"
+		+ " the record of the game as it was, and never re-taken over edited archives: retail files, nothing the"
+		+ " user made")
 	public SnapshotReport snapshotOriginals() {
 		SnapshotReport report = new SnapshotReport();
 		try {
@@ -1270,6 +1317,8 @@ public final class WorkspaceSession implements GameFiles {
 	 * so a pack that could see the game was broken still ended in the success
 	 * dialog alone.
 	 */
+	@ctrmap.util.NotAnEdit("it rebuilds the game's archives from the workspace's files: it writes out edits already"
+		+ " made and kept in the workspace, and makes none of its own")
 	public List<String> packArchives(PackProgress progress) throws IOException {
 		if (readOnly) {
 			throw new IllegalStateException("this session is read-only: " + gameDir + " must not be written");
@@ -1296,6 +1345,13 @@ public final class WorkspaceSession implements GameFiles {
 				//asked before the archive is fetched: story text is loaded lazily and is huge
 				File dir = getExtractionDirectory(t);
 				if (dir == null || !(hasPersistedFiles(dir) || hasPendingCompression(t))) {
+					//NOT WRITTEN, STILL ASKED (PackScope): an archive with nothing to pack is skipped, but one
+					//rewritten underneath this editor is read again and said, as a repack would have - held ones
+					//only, so story text that was never opened is not opened for it
+					GARC held = archives.get(t);
+					if (held != null) {
+						held.refreshIfStale();
+					}
 					continue;
 				}
 				GARC g = t == ArchiveType.STORYTEXT ? getStoryTextGARC() : getArchive(t);
@@ -1332,6 +1388,7 @@ public final class WorkspaceSession implements GameFiles {
 			throw notPacked;
 		}
 		progress.at(95, "Moving the packed archives into the game");
+		packs.incrementAndGet();   //from the first move the game may hold what the list held: a change kept before it is carried
 		for (int i = 0; i < packed.size(); i++) {
 			ArchiveType t = packed.get(i);
 			GARC g = t == ArchiveType.STORYTEXT ? getStoryTextGARC() : getArchive(t);

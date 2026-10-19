@@ -19,12 +19,17 @@ import java.util.Arrays;
  * on every edit, and equals left out exactly those eight; its Add put the new entry under UID 0,
  * over the dummy. A registry that could not be read was logged and stood in for by an empty one.
  *
- * <p>ORDER: needs no dump and no display; writes only under {@link Scratch}. The editor is a form
- * over a 3D preview no suite here can make, so its half is read in its source.
+ * <p>ORDER: needs no dump and no display; writes only under {@link Scratch}. Most of the editor's
+ * half is read in its source; its UID refusal is asked of the form itself, built headless - the 3D
+ * preview it holds stands without OpenGL (F077).
  *
  * Usage: java ctrmap.tests.NpcRegistryTest
  */
 public class NpcRegistryTest {
+
+	static {
+		Headless.require();
+	}
 
 	static int fails = 0;
 
@@ -91,6 +96,69 @@ public class NpcRegistryTest {
 		check(reg.entries.get(0) != null && reg.entries.get(0).u13 == 0,
 				"removing UID 0 removes the one it answered for, and the other dummy answers now");
 
+		System.out.println("--- the cap is kept at the one door every entry comes in by (census M.57)");
+		NPCRegistry capped = new NPCRegistry(f, game);
+		for (int uid = 2000; capped.entries.size() < NPCRegistry.MAX_ENTRIES; uid++) {
+			capped.register(new NPCRegistryEntry(), uid);
+		}
+		check(capped.entries.size() == NPCRegistry.MAX_ENTRIES, "control: a registry filled to its cap (" + capped.entries.size() + ")");
+		try {
+			capped.register(new NPCRegistryEntry(), 9000);
+			check(false, "an entry past the cap is refused by the registry itself");
+		} catch (IllegalStateException refused) {
+			check(refused.getMessage().contains("maximum of " + NPCRegistry.MAX_ENTRIES)
+					&& capped.entries.size() == NPCRegistry.MAX_ENTRIES,
+					"an entry past the cap is refused by the registry itself, naming the cap: " + refused.getMessage());
+		}
+		//three callers each checked the cap before calling, one against a literal 31 in the words it showed: no
+		//production string states the cap as a number of its own
+		java.util.regex.Pattern spelled = java.util.regex.Pattern.compile("\"[^\"\\n]*\\b" + NPCRegistry.MAX_ENTRIES
+				+ "\\b[^\"\\n]*(?:NPC|registry|models)[^\"\\n]*\"|\"[^\"\\n]*(?:NPC|registry)[^\"\\n]*\\b" + NPCRegistry.MAX_ENTRIES + "\\b[^\"\\n]*\"");
+		check(spelled.matcher("\"The registry's maximum capacity of 31 unique NPCs has been reached.\"").find()
+				&& !spelled.matcher("\"maximum of \" + NPCRegistry.MAX_ENTRIES + \" NPCs\"").find(),
+				"control: the scan sees the cap spelled in words and not the constant quoted");
+		java.util.List<String> literal = new java.util.ArrayList<>();
+		int scanned = 0;
+		for (File src : CollisionReadTest.javaFiles(new File("src/ctrmap"), new java.util.ArrayList<>())) {
+			if (src.getPath().contains(File.separator + "tests" + File.separator)) {
+				continue;
+			}
+			scanned++;
+			if (spelled.matcher(SourceSeamTest.stripComments(source(src.getPath()))).find()) {
+				literal.add(src.getName());
+			}
+		}
+		check(literal.isEmpty() && scanned > 100, "no production string spells the registry's cap as "
+				+ NPCRegistry.MAX_ENTRIES + " (" + literal + " in " + scanned + " files)");
+
+		System.out.println("--- a registry's model is decoded by the registry alone (census M.58)");
+		//the NPC registry editor's preview, the prop registry editor's, the prop form's failsafe and the prop drawn
+		//after it is registered each decoded the model themselves, from the global workspace - one with no
+		//empty-model guard, one printing its failure to a console - beside the registries' guarded loaders
+		//BY SHAPE, QUALIFIED OR NOT: the first cut matched the short names only, and a decode spelled
+		//new ctrmap.formats.h3d.BCHFile(new ctrmap.formats.containers.MM(...)) walked past it
+		java.util.regex.Pattern decode = java.util.regex.Pattern.compile(
+				"new\\s+(?:[\\w.]*\\.)?BCHFile\\s*\\(\\s*new\\s+(?:[\\w.]*\\.)?(?:MM|BM)\\s*\\(");
+		check(decode.matcher("BCHFile b = new BCHFile(new BM(f, Workspace.session()).getFile(0));").find()
+				&& decode.matcher("x(new ctrmap.formats.h3d.BCHFile(new ctrmap.formats.containers.MM(f, s).getFile(0)))").find()
+				&& !decode.matcher("BCHFile b = new BCHFile(bytes);").find(),
+				"control: the scan sees a container model decoded by hand, its classes named short or in full");
+		java.util.Map<String, Integer> decoders = new java.util.TreeMap<>();
+		for (File src : CollisionReadTest.javaFiles(new File("src/ctrmap"), new java.util.ArrayList<>())) {
+			if (src.getPath().contains(File.separator + "tests" + File.separator)) {
+				continue;
+			}
+			java.util.regex.Matcher m = decode.matcher(SourceSeamTest.stripComments(source(src.getPath())));
+			while (m.find()) {
+				decoders.merge(src.getName(), 1, Integer::sum);
+			}
+		}
+		check(decoders.toString().equals("{ADPropRegistry.java=1, NPCRegistry.java=1}"),
+				"a MoveModels or BuildingModels model is decoded only by its registry: " + decoders);
+		String preview = CollisionReadTest.body(source("src/ctrmap/humaninterface/NPCRegistryEditor.java"), "void showEntry(");
+		check(preview != null && preview.contains("customH3DPreview1.loadModel(reg.loadFreshModel(entry.uid))"),
+				"and the NPC registry editor previews an entry through its registry");
+
 		System.out.println("--- what cannot be read or written is said (F081)");
 		try {
 			new NPCRegistry(new File(f.getParentFile(), "not there"), game);
@@ -128,9 +196,84 @@ public class NpcRegistryTest {
 		check(add != null && add.contains("reg.register(") && add.contains("mapModel(") && add.contains("MAX_ENTRIES"),
 				"Add registers a free UID, maps its model, and is capped by the registry's own limit");
 		check(rem != null && rem.contains("reg.remove("), "Remove goes through the registry");
+		//census M.77: with nothing selected Remove threw out of its listener, and the entry it removed stayed the one
+		//shown, so moving the selection saved it back into a registry that no longer holds it
+		int guarded = rem == null ? -1 : rem.indexOf("if (index < 0");
+		int forgotten = rem == null ? -1 : rem.indexOf("e = null;");
+		int removed = rem == null ? -1 : rem.indexOf("reg.remove(");
+		check(guarded > 0 && removed > guarded, "Remove with nothing selected removes nothing (" + guarded + ", " + removed + ")");
+		check(forgotten > 0 && removed > forgotten, "and the entry it removes stops being the one shown first ("
+				+ forgotten + ", " + removed + ")");
+		//census L.44: the shadow box with no entry shown dereferenced the null entry
+		String shadow = CollisionReadTest.body(editor, "private void shadowActionPerformed(");
+		int asks = shadow == null ? -1 : shadow.indexOf("if (e == null)");
+		int reads = shadow == null ? -1 : shadow.indexOf("e.shadowEnabled");
+		check(asks > 0 && reads > asks, "the shadow box asks for an entry before it reads one (" + asks + ", " + reads + ")");
+		//census L.46: the ESPICA chooser opens in ESPICA's folder, not the tileset's
+		String settings = source("src/ctrmap/humaninterface/WorkspaceSettings.java");
+		String spica = CollisionReadTest.body(settings, "private void btnSetSpicaActionPerformed(");
+		check(spica != null && spica.contains("new JFileChooser(new File(spicaField.getText())") && !spica.contains("tilesetPath"),
+				"the ESPICA chooser opens in ESPICA's folder");
+
+		System.out.println("--- the editor refuses a UID another entry holds, and only that");
+		//the 2026-10-15 shared sweep, NPCRegistryEditor 102, negate-if, SURVIVED: the editor's half was read in its
+		//source and no suite saved an entry through it. Inverted, an entry kept or moved to a free UID is refused as
+		//taken, and one moved onto another entry's UID gets past the form and throws out of the registry, unsaid.
+		FakeGameFiles two = HandedGameTest.npcGame("hero", "rival").plant(ArchiveType.NPC_REGISTRIES, 3, entries);
+		NPCRegistry held = new NPCRegistry(two.staged(ArchiveType.NPC_REGISTRIES, 3), two);
+		ctrmap.humaninterface.NPCRegistryEditor regedit = new ctrmap.humaninterface.NPCRegistryEditor();
+		regedit.loadRegistry(held);
+		regedit.showEntry(7);
+		java.lang.reflect.Field box = ctrmap.humaninterface.NPCRegistryEditor.class.getDeclaredField("uid");
+		box.setAccessible(true);
+		javax.swing.JSpinner uidBox = (javax.swing.JSpinner) box.get(regedit);
+		String taken = saved(regedit, uidBox, 0);
+		check(taken.equals("false, [UID not unique: The specified UID is already registered. Please use another one.]")
+				&& held.entries.keySet().equals(new java.util.HashSet<>(Arrays.asList(0, 7)))
+				&& held.entries.get(0).model == 0,
+				"an entry moved onto the UID another holds is refused, in words, and neither is written: " + taken + ", "
+				+ held.entries.keySet());
+		String kept = saved(regedit, uidBox, 7);
+		check(kept.equals("true, []"), "an entry that keeps its own UID is not refused: " + kept);
+		String moved = saved(regedit, uidBox, 8);
+		check(moved.equals("true, []") && held.entries.keySet().equals(new java.util.HashSet<>(Arrays.asList(0, 8)))
+				&& held.entries.get(8).model == 1,
+				"and one moved to a free UID is saved there: " + moved + ", " + held.entries.keySet());
+		//Add on a registry with room adds (the 2026-10-15 shared sweep, NPCRegistryEditor 362, negate-if, SURVIVED: the
+		//editor's Add was read in its source only) - inverted, a registry with room was refused as full
+		javax.swing.AbstractButton addButton = ItemEditTest.button(regedit, "Add");
+		java.util.Set<Integer> held0 = new java.util.HashSet<>(held.entries.keySet());
+		java.util.List<String> said = ctrmap.Ui.record();
+		String pressed;
+		try {
+			addButton.doClick();
+			pressed = "added";
+		} catch (RuntimeException threw) {
+			pressed = "threw " + threw;
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		java.util.Set<Integer> grew = new java.util.HashSet<>(held.entries.keySet());
+		grew.removeAll(held0);
+		check(pressed.equals("added") && said.isEmpty() && grew.size() == 1 && !grew.contains(0),
+				"Add on a registry with room registers one entry under a free UID, and says nothing: " + pressed + ", "
+				+ said + ", new " + grew);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		System.exit(fails == 0 ? 0 : 1);
+	}
+
+	/** The registry editor's save with {@code uid} in its UID box: what it answered and what it said, or what it threw. */
+	static String saved(ctrmap.humaninterface.NPCRegistryEditor editor, javax.swing.JSpinner uidBox, int uid) {
+		uidBox.setValue(uid);
+		java.util.List<String> said = ctrmap.Ui.record();
+		try {
+			return editor.saveEntry(false) + ", " + said;
+		} catch (RuntimeException threw) {
+			return "threw " + threw + ", " + said;
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
 	}
 
 	static String source(String path) throws Exception {

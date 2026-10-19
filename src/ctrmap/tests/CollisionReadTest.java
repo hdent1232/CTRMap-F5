@@ -1,5 +1,6 @@
 package ctrmap.tests;
 
+import ctrmap.Ui;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.gfcollision.GRCollisionFile;
 import ctrmap.formats.gfcollision.GfColl;
@@ -12,6 +13,7 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import javax.swing.JOptionPane;
 
 /**
  * A region's collision is read by one strict parser, keeps every triangle it holds, and a
@@ -232,6 +234,9 @@ public class CollisionReadTest {
 
 		aQuadStandsOnTheGround();
 		theCollisionIsADocumentOfTheZonesHistory();
+		aMeshPickedInTheTreeIsTheRegionItIsDrawnUnder();
+		aCollisionIsAskedBeforeItIsWritten(dir, game);
+		aButtonThatAddsNothingChangesNothing();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		System.exit(fails == 0 ? 0 : 1);
 	}
@@ -355,6 +360,155 @@ public class CollisionReadTest {
 			check(false, "Undo over a selection past the end of its mesh threw " + threw);
 		}
 		check(zone.redo() && coll.meshes[0].tris.size() == 3 && coll.meshes[5].tris.size() == 1, "and Redo puts the edit again");
+	}
+
+	/**
+	 * Census H.26: a mesh or triangle picked in the tree is one of the region it is drawn under.
+	 *
+	 * <p>The tree holds a container per region, and a "Mesh" node was resolved by its position under its
+	 * parent alone, against whichever file was last selected - so with two regions loaded, picking "Mesh 0"
+	 * under the second edited the first one's mesh 0, and a triangle added there was saved into a region the
+	 * user never opened. Picked straight from the tree here, as a click does, with no container clicked first.
+	 */
+	static void aMeshPickedInTheTreeIsTheRegionItIsDrawnUnder() throws Exception {
+		System.out.println("--- a mesh picked in the collision tree is one of the region it is drawn under (census H.26)");
+		CollEditPanel panel = new CollEditPanel(new ToolSelection(), UndoHistoryTest.overOneNumber(new int[]{0}));
+		GRCollisionFile first = GRCollisionFile.blank(null);
+		GRCollisionFile second = GRCollisionFile.blank(null);
+		panel.loadCollision(first, "Region 0x0");
+		panel.loadCollision(second, "Region 1x0");
+		panel.selectFile(0);
+		check(panel.coll == first, "control: the first region is the one selected before the pick");
+		java.lang.reflect.Field t = CollEditPanel.class.getDeclaredField("meshTree");
+		t.setAccessible(true);
+		javax.swing.JTree tree = (javax.swing.JTree) t.get(panel);
+		javax.swing.tree.DefaultMutableTreeNode root = (javax.swing.tree.DefaultMutableTreeNode) tree.getModel().getRoot();
+		javax.swing.tree.TreeNode region = root.getChildAt(1);
+		javax.swing.tree.TreeNode mesh = region.getChildAt(0);
+		tree.setSelectionPath(new javax.swing.tree.TreePath(new Object[]{root, region, mesh}));
+		check(panel.coll == second, "picking Mesh 0 under the second region edits the second region, not the first");
+		check(second.meshes[0].tris.get(0).isSelected() && !first.meshes[0].tris.get(0).isSelected(),
+				"and it is the second region's triangles that are shown selected");
+		panel.selectFile(0);
+		javax.swing.tree.TreeNode tri = mesh.getChildAt(1);
+		tree.setSelectionPath(new javax.swing.tree.TreePath(new Object[]{root, region, mesh, tri}));
+		check(panel.coll == second && panel.selectedTri == 1,
+				"and a triangle picked under it is that region's triangle (selected " + panel.selectedTri + ")");
+	}
+
+	/**
+	 * Census H.1: the collision editor asks before it writes, and No puts it back. Its save wrote every changed
+	 * collision without asking and answered true whatever happened, so answering No to every question of a zone
+	 * switch still wrote them, and a written collision stayed marked changed.
+	 */
+	static void aCollisionIsAskedBeforeItIsWritten(File dir, FakeGameFiles game) throws Exception {
+		System.out.println("--- the collision editor asks before it writes, and No puts it back (census H.1)");
+		float[] floor = {-300f, 0f, -300f, 300f, 0f, -300f, -300f, 0f, 300f};
+		GR region = region(dir, "asked", GfColl.build(Arrays.asList(floor), null), game);
+		byte[] stored = region.getFile(2);
+		GRCollisionFile coll = GRCollisionFile.read(region);
+		CollEditPanel panel = new CollEditPanel(new ToolSelection(), UndoHistoryTest.overOneNumber(new int[]{0}));
+		panel.loadCollision(coll, "Region 0x0");
+		List<String> said = Ui.record();
+		boolean answered;
+		try {
+			answered = panel.store(true);
+		} finally {
+			Ui.stopRecording();
+		}
+		check(answered && said.isEmpty(), "control: with nothing changed nobody is asked: " + said);
+		coll.meshes[0].tris.get(0).setY(0, 40f);
+		coll.modified = true;
+		said = Ui.record(JOptionPane.NO_OPTION);
+		try {
+			answered = panel.store(true);
+		} finally {
+			Ui.stopRecording();
+		}
+		check(said.size() == 1 && answered, "a changed collision is asked about, and No answers true: " + said);
+		check(Arrays.equals(new GR(region.getOriginFile(), game).getFile(2), stored),
+				"No writes nothing to the region");
+		check(!coll.modified && coll.meshes[0].tris.get(0).getY(0) == 0f,
+				"and puts the triangle back as the region holds it (" + coll.meshes[0].tris.get(0).getY(0) + ")");
+		coll.meshes[0].tris.get(0).setY(0, 40f);
+		coll.modified = true;
+		Ui.record(JOptionPane.CANCEL_OPTION);
+		try {
+			answered = panel.store(true);
+		} finally {
+			Ui.stopRecording();
+		}
+		check(!answered && coll.modified && Arrays.equals(new GR(region.getOriginFile(), game).getFile(2), stored),
+				"Cancel answers false, writes nothing and keeps the edit");
+		Ui.record(JOptionPane.YES_OPTION);
+		try {
+			answered = panel.store(true);
+		} finally {
+			Ui.stopRecording();
+		}
+		GRCollisionFile reread = GRCollisionFile.read(new GR(region.getOriginFile(), game));
+		check(answered && !coll.modified && reread.meshes[0].tris.get(0).getY(0) == 40f,
+				"Yes writes it and it is no longer marked changed (read back "
+				+ reread.meshes[0].tris.get(0).getY(0) + ")");
+	}
+
+	/**
+	 * Census M.74: New triangle and the fill tool's quad mark the collision changed only when they added to it.
+	 * Marked outside their guards, they threw with no collision loaded and called an untouched collision changed.
+	 */
+	static void aButtonThatAddsNothingChangesNothing() throws Exception {
+		System.out.println("--- a collision button that adds nothing marks nothing changed (census M.74)");
+		java.lang.reflect.Method newTri = CollEditPanel.class.getDeclaredMethod("btnNewTriangleActionPerformed",
+				java.awt.event.ActionEvent.class);
+		java.lang.reflect.Method fill = CollEditPanel.class.getDeclaredMethod("btnFillCoordsActionPerformed",
+				java.awt.event.ActionEvent.class);
+		newTri.setAccessible(true);
+		fill.setAccessible(true);
+		CollEditPanel empty = new CollEditPanel(new ToolSelection(), UndoHistoryTest.overOneNumber(new int[]{0}));
+		Throwable threw = null;
+		try {
+			newTri.invoke(empty, (Object) null);
+			fill.invoke(empty, (Object) null);
+		} catch (java.lang.reflect.InvocationTargetException ex) {
+			threw = ex.getCause();
+		}
+		check(threw == null, "with no collision loaded, New triangle and the fill quad throw nothing: " + threw);
+		CollEditPanel panel = new CollEditPanel(new ToolSelection(), UndoHistoryTest.overOneNumber(new int[]{0}));
+		GRCollisionFile ground = GRCollisionFile.blank(null);
+		ground.modified = false;
+		panel.loadCollision(ground, "Region 0x0");
+		newTri.invoke(panel, (Object) null);
+		fill.invoke(panel, (Object) null);
+		check(!ground.modified, "with no mesh picked and no fill rectangle, nothing was added and nothing is marked changed");
+		//census M.148: Remove triangle is offered only with a triangle to remove - it answered a press with nothing
+		java.lang.reflect.Field rem = CollEditPanel.class.getDeclaredField("btnRemTriangle");
+		rem.setAccessible(true);
+		javax.swing.JButton remove = (javax.swing.JButton) rem.get(panel);
+		boolean offeredEmpty = remove.isEnabled();
+		panel.selectTriangle(0, 0);
+		boolean offeredPicked = remove.isEnabled();
+		panel.deselectTri();
+		check(!offeredEmpty && offeredPicked && !remove.isEnabled(),
+				"Remove triangle is offered only while a triangle is picked (" + offeredEmpty + ", " + offeredPicked + ")");
+		//census M.10: a vertex field that did not hold a number wrote 0 into the vertex on every keystroke - clearing
+		//it to retype snapped the corner to the region's origin, marked changed and saved
+		panel.selectTriangle(0, 0);
+		java.lang.reflect.Field fx = CollEditPanel.class.getDeclaredField("v1x");
+		fx.setAccessible(true);
+		javax.swing.JFormattedTextField x1 = (javax.swing.JFormattedTextField) fx.get(panel);
+		ctrmap.formats.Triangle picked = ground.meshes[0].tris.get(0);
+		ground.modified = false;
+		x1.setText("123.5");
+		check(picked.getX(0) == 123.5f && ground.modified, "control: a number typed into a vertex field is written (" + picked.getX(0) + ")");
+		ground.modified = false;
+		x1.setText("");
+		x1.setText("-");
+		check(picked.getX(0) == 123.5f && !ground.modified, "an emptied field and a lone minus write nothing - the vertex stays "
+				+ picked.getX(0) + ", not 0, and nothing is marked changed");
+		check(java.awt.Color.RED.equals(x1.getForeground()), "and the field shows it was not taken");
+		x1.setText("-7");
+		check(picked.getX(0) == -7f && !java.awt.Color.RED.equals(x1.getForeground()), "a number typed again is written and taken");
+		panel.deselectTri();
 	}
 
 	static void check(boolean ok, String what) {

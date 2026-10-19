@@ -1,8 +1,5 @@
 package ctrmap.formats.h3d.model;
 
-import com.jogamp.opengl.GL;
-import com.jogamp.opengl.GL2;
-import com.jogamp.opengl.math.Matrix4;
 import ctrmap.formats.h3d.BCHHeader;
 import ctrmap.formats.h3d.PICACommand;
 import ctrmap.formats.h3d.PICACommandReader;
@@ -43,7 +40,7 @@ public class H3DModel {
 	public String name;
 	public int layerId;
 	public List<H3DMesh> meshes = new ArrayList<>();
-	public Matrix4 transform;
+	public Transform4 transform;
 	
 	public Vec3f minVector = new Vec3f();
 	public Vec3f maxVector = new Vec3f();
@@ -85,21 +82,21 @@ public class H3DModel {
 		modelHeader.skeletonScalingType = in.readByte();
 		modelHeader.silhouetteMaterialEntries = in.readShort();
 		
-		modelHeader.worldTransform = new Matrix4();
-		modelHeader.worldTransform.getMatrix()[0] = in.readFloat();
-		modelHeader.worldTransform.getMatrix()[1] = in.readFloat();
-		modelHeader.worldTransform.getMatrix()[2] = in.readFloat();
-		modelHeader.worldTransform.getMatrix()[3] = in.readFloat();
+		modelHeader.worldTransform = new Transform4();
+		modelHeader.worldTransform.cells()[0] = in.readFloat();
+		modelHeader.worldTransform.cells()[1] = in.readFloat();
+		modelHeader.worldTransform.cells()[2] = in.readFloat();
+		modelHeader.worldTransform.cells()[3] = in.readFloat();
 		
-		modelHeader.worldTransform.getMatrix()[4] = in.readFloat();
-		modelHeader.worldTransform.getMatrix()[5] = in.readFloat();
-		modelHeader.worldTransform.getMatrix()[6] = in.readFloat();
-		modelHeader.worldTransform.getMatrix()[7] = in.readFloat();
+		modelHeader.worldTransform.cells()[4] = in.readFloat();
+		modelHeader.worldTransform.cells()[5] = in.readFloat();
+		modelHeader.worldTransform.cells()[6] = in.readFloat();
+		modelHeader.worldTransform.cells()[7] = in.readFloat();
 		
-		modelHeader.worldTransform.getMatrix()[8] = in.readFloat();
-		modelHeader.worldTransform.getMatrix()[9] = in.readFloat();
-		modelHeader.worldTransform.getMatrix()[10] = in.readFloat();
-		modelHeader.worldTransform.getMatrix()[11] = in.readFloat();
+		modelHeader.worldTransform.cells()[8] = in.readFloat();
+		modelHeader.worldTransform.cells()[9] = in.readFloat();
+		modelHeader.worldTransform.cells()[10] = in.readFloat();
+		modelHeader.worldTransform.cells()[11] = in.readFloat();
 		
 		modelHeader.materialsTableOffset = in.readInt();
 		modelHeader.materialsTableEntries = in.readInt();
@@ -124,14 +121,15 @@ public class H3DModel {
 		
 		modelHeader.objectNames = new String[modelHeader.objectsNodeNameEntries];
 		in.seek(modelHeader.objectsNodeNameOffset);
-		int rootReferenceBit = in.readInt();
-		int rootLeftNode = in.readShort();
-		int rootRightNode = in.readShort();
-		int rootNameOffset = in.readInt();
+		//the root node - reference bit, left and right node, name offset - is stepped over
+		in.readInt();
+		in.readShort();
+		in.readShort();
+		in.readInt();
 		for (int i = 0; i < modelHeader.objectsNodeNameEntries; i++) {
-			int referenceBit = in.readInt();
-			int leftNode = in.readUnsignedShort();
-			int rightNode = in.readUnsignedShort();
+			in.readInt();   //reference bit
+			in.readUnsignedShort();   //left node
+			in.readUnsignedShort();   //right node
 			modelHeader.objectNames[i] = StringUtils.readString(in.readInt(), buf);
 		}
 
@@ -281,7 +279,6 @@ public class H3DModel {
 					}
 					
 					in.seek(idxBufferOffset);
-					ArrayList<String> list = new ArrayList<>();
 					for (int faceIndex = 0; faceIndex < idxBufferTotalVertices; faceIndex++) {
 						int index = 0;
 						switch (idxBufferFormat) {
@@ -385,9 +382,9 @@ public class H3DModel {
 							if (vertex.weight.isEmpty()) {
 								vertex.weight.add(1f);
 							}
-							vertex.position.x += skeleton.transform.get(vertex.node.get(0)).getMatrix()[12] * vertex.weight.get(0);
-							vertex.position.y += skeleton.transform.get(vertex.node.get(0)).getMatrix()[13] * vertex.weight.get(0);
-							vertex.position.z += skeleton.transform.get(vertex.node.get(0)).getMatrix()[14] * vertex.weight.get(0);
+							vertex.position.x += skeleton.transform.get(vertex.node.get(0)).cells()[12] * vertex.weight.get(0);
+							vertex.position.y += skeleton.transform.get(vertex.node.get(0)).cells()[13] * vertex.weight.get(0);
+							vertex.position.z += skeleton.transform.get(vertex.node.get(0)).cells()[14] * vertex.weight.get(0);
 						}
 						
 						OhanaMeshUtils.calculateBounds(this, vertex);
@@ -417,18 +414,6 @@ public class H3DModel {
 			}
 			meshes.get(i).doVBOUpdate = true;
 			meshes.get(i).useVBO = true;
-		}
-	}
-	
-	public void uploadAllBOs(GL2 gl) {
-		for (int i = 0; i < meshes.size(); i++) {
-			meshes.get(i).uploadVBO(gl);
-		}
-	}
-	
-	public void destroyAllBOs(GL2 gl) {
-		for (int i = 0; i < meshes.size(); i++) {
-			meshes.get(i).destroyGl(gl);
 		}
 	}
 	
@@ -520,39 +505,6 @@ public class H3DModel {
 		return output;
 	}
 	
-	public void render(GL2 gl) {
-		gl.glPushMatrix();
-		gl.glTranslatef(worldLocX, worldLocY, worldLocZ);
-		gl.glRotatef(rotationZ, 0f, 0f, 1f);
-		gl.glRotatef(rotationX, 1f, 0f, 0f);
-		gl.glRotatef(rotationY, 0f, 1f, 0f);
-		gl.glScalef(scaleX, scaleY, scaleZ);
-		for (int i = 0; i < meshes.size(); i++) {
-			meshes.get(i).render(gl, (materials.size() > meshes.get(i).materialId) ? materials.get(meshes.get(i).materialId) : null);
-		}
-		gl.glPopMatrix();
-	}
-	
-	public void renderBox(GL2 gl) { //calculated by calculateBounds
-		gl.glPushMatrix();
-		gl.glTranslatef(worldLocX, worldLocY, worldLocZ);
-		gl.glRotatef(rotationZ, 0f, 0f, 1f);
-		gl.glRotatef(rotationX, 1f, 0f, 0f);
-		gl.glRotatef(rotationY, 0f, 1f, 0f);
-		gl.glScalef(scaleX, scaleY, scaleZ);
-		gl.glDisable(GL2.GL_TEXTURE_2D);
-		gl.glBegin(GL2.GL_LINES);
-		
-		gl.glColor3f(1f, 0f, 0f);
-		
-		for (int i = 0; i < boxVectors.length; i++) {
-			gl.glVertex3fv(boxVectors[i], 0);
-		}
-		
-		gl.glEnd();
-		gl.glPopMatrix();
-	}
-	
 	public static class H3DMesh {
 		
 		public String name;
@@ -592,8 +544,12 @@ public class H3DModel {
 		public boolean doVBOUpdate = true;
 		public boolean useVBO = false;
 		
-		public Map<GL2, int[]> glBufPtrs = new HashMap<>();
-		public Map<GL2, int[]> glTexturePtrs = new HashMap<>();
+		/**
+		 * The buffer and texture names ctrmap.render.ModelRenderer was given for this mesh, per GL
+		 * context it was drawn in - kept here, as plain ints, so the renderer keeps no state (F214).
+		 */
+		public Map<Object, int[]> glBufPtrs = new HashMap<>();
+		public Map<Object, int[]> glTexturePtrs = new HashMap<>();
 		
 		public void makeBOs(H3DMaterial mat) { //maybe someday?
 			vbo = FloatBuffer.allocate(vertices.size() * 3);
@@ -608,13 +564,13 @@ public class H3DModel {
 				tcbo[1] = DoubleBuffer.allocate(vertices.size() * 2);
 				tcbo[2] = DoubleBuffer.allocate(vertices.size() * 2);
 				
-				if (H3DMaterial.TextureMapper.getGlTextureWrap(mat.mappers[0].wrapU) == GL2.GL_MIRRORED_REPEAT) {
+				if (mat.mappers[0].wrapU == H3DMaterial.TextureMapper.TextureWrap.mirroredRepeat) {
 					mirrorx0 = true;
 				}
-				if (H3DMaterial.TextureMapper.getGlTextureWrap(mat.mappers[1].wrapU) == GL2.GL_MIRRORED_REPEAT) {
+				if (mat.mappers[1].wrapU == H3DMaterial.TextureMapper.TextureWrap.mirroredRepeat) {
 					mirrorx1 = true;
 				}
-				if (H3DMaterial.TextureMapper.getGlTextureWrap(mat.mappers[2].wrapU) == GL2.GL_MIRRORED_REPEAT) {
+				if (mat.mappers[2].wrapU == H3DMaterial.TextureMapper.TextureWrap.mirroredRepeat) {
 					mirrorx2 = true;
 				}
 				if (!(mat.texture0 == null && mat.texture1 == null && mat.texture2 == null)) {
@@ -660,55 +616,14 @@ public class H3DModel {
 				}
 			}
 		}
-		
-		public void destroyGl(GL2 gl) {
-			if (glBufPtrs.get(gl) != null) {
-				gl.glDeleteBuffers(1, glBufPtrs.get(gl), 0);
-				gl.glDeleteTextures(1, glTexturePtrs.get(gl), 0);
-				glBufPtrs.remove(gl);
-				glTexturePtrs.remove(gl);
-			}
-		}
-		
-		public void uploadVBO(GL2 gl) {
-			if (vbo == null) {
-				useVBO = false;
-				return;
-			}
-			if (!glBufPtrs.containsKey(gl)) {
-				int[] ptr = new int[1];
-				gl.glGenBuffers(1, ptr, 0);
-				glBufPtrs.put(gl, ptr);
-			}
-			if (!glTexturePtrs.containsKey(gl)) {
-				int[] textureptr = new int[1];
-				gl.glGenTextures(1, textureptr, 0);
-				glTexturePtrs.put(gl, textureptr);
-			}
-			//THE NAMES ARE KEPT (F078): each upload deleted the buffer and texture it had been given
-			//and then bound the deleted names; glBufferData and glTexImage2D below re-specify both
-			int[] vboPtr = glBufPtrs.get(gl);
-			long cap = rewound();
-			gl.glBindBuffer(GL2.GL_ARRAY_BUFFER, vboPtr[0]);
-			gl.glBufferData(GL2.GL_ARRAY_BUFFER, cap, null, GL2.GL_STATIC_DRAW);
-			gl.glBufferSubData(GL2.GL_ARRAY_BUFFER, 0, vbo.capacity() * Float.BYTES, vbo);
-			gl.glBufferSubData(GL2.GL_ARRAY_BUFFER, vbo.capacity() * Float.BYTES, vcbo.capacity(), vcbo);
-			if (tcbo[0] != null) {
-				gl.glBufferSubData(GL2.GL_ARRAY_BUFFER, vbo.capacity() * Float.BYTES + vcbo.capacity(), tcbo[0].capacity() * Double.BYTES, tcbo[0]);
-			}
-			gl.glBindTexture(GL2.GL_TEXTURE_2D, glTexturePtrs.get(gl)[0]);
-			if (textureData != null) {
-				gl.glTexImage2D(GL2.GL_TEXTURE_2D, 0, GL2.GL_RGBA, textureWidth, textureHeight, 0, GL2.GL_RGBA, GL2.GL_UNSIGNED_BYTE, ByteBuffer.wrap(textureData));
-			}
-		}
-		
+
 		/**
 		 * Every buffer this mesh uploads, rewound, and the bytes they take together. A mesh with
-		 * no material has no texture coordinates (makeBOs leaves them null): uploadVBO rewound them
+		 * no material has no texture coordinates (makeBOs leaves them null): the upload rewound them
 		 * before asking, a NullPointerException on the render thread (F078). Apart from the upload
-		 * so that it can be asked without a GL context.
+		 * (ctrmap.render.ModelRenderer) so that it can be asked without a GL context.
 		 */
-		long rewound() {
+		public long rewound() {
 			vbo.rewind();
 			vcbo.rewind();
 			for (DoubleBuffer t : tcbo) {
@@ -728,82 +643,8 @@ public class H3DModel {
 		 * for tall grass, which is drawn white - asked of a mesh that may have no material (F078: it
 		 * read the null material's name).
 		 */
-		boolean vertexColoured(H3DMaterial mat) {
+		public boolean vertexColoured(H3DMaterial mat) {
 			return hasColor && (mat == null || !(mat.name.contains("blc") || mat.name0.equals("enc_grass")));
-		}
-
-		public void render(GL2 gl, H3DMaterial mat) {
-			/*
-			Stuff involving checking for "blc" in material name is a workaround for tall grass rendering, which uses weird vertex coloring and alpha testing
-			 */
-			boolean mirrorx = false;
-			if (!glTexturePtrs.containsKey(gl) || !glBufPtrs.containsKey(gl)) {
-				uploadVBO(gl);
-			}
-			if (mat != null) {
-				if (!(mat.texture0 == null && mat.texture1 == null && mat.texture2 == null)) {
-					gl.glEnable(GL2.GL_TEXTURE_2D);
-					gl.glBindTexture(GL2.GL_TEXTURE_2D, glTexturePtrs.get(gl)[0]);
-					int twX = H3DMaterial.TextureMapper.getGlTextureWrap(mat.mappers[texindex].wrapU);
-					if (twX == GL2.GL_MIRRORED_REPEAT) {
-						mirrorx = true;
-					}
-					int twY = H3DMaterial.TextureMapper.getGlTextureWrap(mat.mappers[texindex].wrapV);
-					gl.glTexParameteri(GL2.GL_TEXTURE_2D, GL2.GL_TEXTURE_WRAP_S, twX);
-					gl.glTexParameteri(GL2.GL_TEXTURE_2D, GL2.GL_TEXTURE_WRAP_T, twY);
-					gl.glTexParameteri(GL2.GL_TEXTURE_2D, GL2.GL_TEXTURE_MAG_FILTER, GL2.GL_NEAREST);
-					gl.glTexParameteri(GL2.GL_TEXTURE_2D, GL2.GL_TEXTURE_MIN_FILTER, GL2.GL_NEAREST);
-					if (mat.params.blendop.mode == H3DMaterial.BlendOperation.BlendMode.blend) {
-						gl.glBlendFunc(GL2.GL_SRC_ALPHA, GL2.GL_ONE_MINUS_SRC_ALPHA); //forces to 1-a to prevent drunk framebuffer. renders fine.
-						gl.glBlendEquation(GL2.GL_FUNC_ADD);
-						gl.glEnable(GL2.GL_BLEND);
-					}
-					if (mat.params.alphaTest.isTestEnabled && !mat.name.contains("blc")) {
-						gl.glAlphaFunc(mat.params.alphaTest.getGlTestFunc(), 0); //forcing to 0 prevents some meshes not appearing, with references like 58 etc. no glitches afaik caused by this.
-						gl.glEnable(GL2.GL_ALPHA_TEST);
-					} else {
-						gl.glDisable(GL2.GL_ALPHA_TEST);
-					}
-					if (mat.name.contains("blc") || mat.name0.equals("enc_grass")) {
-						gl.glAlphaFunc(GL.GL_NOTEQUAL, 0);
-						gl.glEnable(GL2.GL_ALPHA_TEST);
-					}
-				}
-			}
-			
-			if (useVBO) {
-				gl.glBindBuffer(GL2.GL_ARRAY_BUFFER, glBufPtrs.get(gl)[0]);
-				gl.glEnableClientState(GL2.GL_VERTEX_ARRAY);
-				gl.glEnableClientState(GL2.GL_COLOR_ARRAY);
-				
-				gl.glVertexPointer(3, GL2.GL_FLOAT, 0, 0);
-				gl.glColorPointer(4, GL2.GL_UNSIGNED_BYTE, 0, vbo.capacity() * Float.BYTES);
-				
-				if (tcbo[0] != null) {
-					gl.glEnableClientState(GL2.GL_TEXTURE_COORD_ARRAY);
-					gl.glTexCoordPointer(2, GL2.GL_DOUBLE, 0, vbo.capacity() * Float.BYTES + vcbo.capacity());
-				}
-				
-				gl.glDrawArrays(GL2.GL_TRIANGLES, 0, vbo.capacity() / 3);
-				gl.glDisableClientState(GL2.GL_VERTEX_ARRAY);  // disable vertex arrays
-				gl.glDisableClientState(GL2.GL_COLOR_ARRAY);
-				gl.glDisableClientState(GL2.GL_TEXTURE_COORD_ARRAY);
-			} else {
-				gl.glBegin(GL2.GL_TRIANGLES);
-				for (int i = 0; i < vertices.size(); i++) {
-					H3DVertex v = vertices.get(i);
-					if (vertexColoured(mat)) {
-						gl.glColor4ub((byte) (v.diffuseColor >> 16 & 0xFF), (byte) (v.diffuseColor >> 8 & 0xFF), (byte) (v.diffuseColor & 0xFF), (byte) (v.diffuseColor >> 24 & 0xFF));
-					} else {
-						gl.glColor3f(1f, 1f, 1f);
-					}
-					if (mat != null) {
-						gl.glTexCoord2d((mirrorx ? 1 : 0) - v.texture0.x, v.texture0.y);
-					}
-					gl.glVertex3f(v.position.x, v.position.y, v.position.z);
-				}
-				gl.glEnd();
-			}
 		}
 	}
 }

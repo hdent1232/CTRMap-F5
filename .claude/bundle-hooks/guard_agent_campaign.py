@@ -138,6 +138,14 @@ def verdict(payload):
     scripted = bool(bundle_shell.workflows(payload))
     if not bundle_shell.launches(payload) and not scripted:
         return False, None
+    # A MESSAGE TO ONE OF THE OWNER'S OWN RUNNING SESSIONS IS NOT A CAMPAIGN ROUND: it starts no
+    # agent, so neither STATE.md nor a falling trend is its business. `launches` counts it as one,
+    # so in a window that had already run an agent, a session telling another why it stopped was
+    # refused for want of a STATE.md - the same gap guard_held_writes had (found 2026-10-10 by
+    # deriving every hook that calls `launches`).
+    if not scripted and bundle_shell.message_to_session(
+            payload, request_ledger.read_rows(payload.get("transcript_path"))):
+        return False, None
     # THE REVIEW THE LEDGER DEMANDS IS NOT A CAMPAIGN ROUND. Refusing it in a window that already
     # ran an agent, or under a flat round log, leaves a turn that must be reviewed to end and may
     # not be - the deadlock `guard_agent_edits` put two sessions in on 2026-09-26. Its own

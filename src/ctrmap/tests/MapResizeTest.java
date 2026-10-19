@@ -47,6 +47,7 @@ public class MapResizeTest {
 			aMapGrowsOneWayAndShrinksTheOther();
 			aShrinkOverTheZonesOwnContentIsRefused();
 			aZoneWhoseEntitiesCannotBeReadIsNotShrunk();
+			everyRefusalOfAResizeIsItsOwn();
 			theHeadlessResizeCropsEveryGridAndCutsTheCamera();
 		} finally {
 			Workspace.reset();
@@ -292,6 +293,105 @@ public class MapResizeTest {
 		}
 		check(refused != null && refused.contains("could not be read") && ws.persistPaths().isEmpty(),
 				"refused in words, nothing written: " + refused);
+	}
+
+	/**
+	 * Every refusal of a resize is its own, in its own words.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (MapResizer 79, 90, 254, 313, 317 and 381, dropped or swallowed -
+	 * SURVIVED): nothing asked any of them. Dropped, each let the resize run on into a crash in no one's words,
+	 * a refusal from a later check that names the wrong thing, or - for 313 and 317 - a copy of a region that is
+	 * not there; swallowed, each answered a resize that did not happen.
+	 */
+	static void everyRefusalOfAResizeIsItsOwn() throws Exception {
+		System.out.println("--- every refusal of a resize is its own, in its own words");
+		String said = refusal(() -> MapResizer.buildResizedMatrix(new byte[]{0x4D, 0x4D, 2, 0}, 2, 1, new int[1], -1));
+		check(said.contains("offset table is cut short"),
+				"a matrix whose offset table is cut short is refused in words: " + said);
+		said = refusal(() -> MapResizer.buildResizedMatrix(matrix(0), 2, 1, new int[0], -1));
+		check(said.contains("Need 1 new region ids"), "a grow handed too few new region ids is refused in words: " + said);
+
+		WorkspaceSession same = game("samesize");
+		said = refusal(() -> MapResizer.resize(same, 2, 1, 1));
+		check(said.startsWith("IOException: ") && said.contains("New size must differ") && same.persistPaths().isEmpty(),
+				"a resize to the size it is is refused by the resize, in words, nothing written: " + said);
+
+		WorkspaceSession missing = game("missingregion", new byte[][]{zone(0), zone(0), zone(1)}, new int[]{0, 0, 1},
+				new byte[][]{matrix(2, 1, 0, 9), matrix(1)}, region("region zero"), region("region one"));
+		said = refusal(() -> MapResizer.resize(missing, 0, 3, 1));
+		check(said.contains("names region 9, which does not exist") && missing.persistPaths().isEmpty(),
+				"a shared map naming a region the game does not hold is not grown, said in words: " + said);
+
+		WorkspaceSession cut = game("cutregion", new byte[][]{zone(0), zone(0), zone(1)}, new int[]{0, 0, 1},
+				new byte[][]{matrix(2, 1, 0, 1), matrix(1)}, region("region zero"), region("region one"));
+		//the archive the session OPENED - written beside its workspace by game(), not at the game's own path
+		File regions = new File(cut.workspaceDir().getParentFile(), "archives" + File.separator + "regions");
+		try (java.io.RandomAccessFile f = new java.io.RandomAccessFile(regions, "rw")) {
+			f.setLength(f.length() - 12);   //region one's bytes run past the end of the archive now
+		}
+		check(cut.getWorkspaceFile(ArchiveType.FIELD_DATA, 1) == null,
+				"CONTROL: region 1 cannot be read out of the archive cut short");
+		said = refusal(() -> MapResizer.resize(cut, 0, 3, 1));
+		check(said.contains("region 1 could not be read out of the workspace") && cut.persistPaths().isEmpty(),
+				"a region that cannot be read out is not copied, said in words: " + said);
+
+		WorkspaceSession bare = wideGame("noentities", zone(0), zone(1));
+		said = refusal(() -> MapResizer.resize(bare, 2, 1, 1));
+		check(said.contains("holds no entities"), "a zone whose container holds no entities is not shrunk, and the"
+				+ " reason says that, not an index past the end: " + said);
+
+		//287: a shrink crops BEFORE the fork plans its copies, so a shared map cropped to cells that hold no
+		//region leaves the fork nothing to copy - asked of the crop, which the regions check before it never saw
+		WorkspaceSession emptied = game("croppedempty", new byte[][]{zoneWith(0, npcAt(5, 5)), zone(0), zone(1)},
+				new int[]{0, 0, 1}, new byte[][]{matrix(2, 1, 0xFFFF, 0), matrix(1)}, region("region zero"),
+				region("region one"));
+		said = refusal(() -> MapResizer.resize(emptied, 0, 1, 1));
+		check(said.contains("could not be made its own") && emptied.persistPaths().isEmpty(),
+				"a shared map cropped to cells holding no region is not resized, said in words: " + said);
+
+		//336: a region whose model reads as a map model that the blank canvas cannot rebuild
+		check(ctrmap.formats.h3d.BchMapModel.isMapModel(unrebuildableMapModel()),
+				"CONTROL: the made model passes as a map model");
+		WorkspaceSession odd = game("unblankable", new byte[][]{zone(0), zone(0), zone(1)}, new int[]{0, 0, 1},
+				new byte[][]{matrix(0), matrix(1)}, region("region zero"),
+				container(0x4752, new byte[]{9}, unrebuildableMapModel()));
+		said = refusal(() -> MapResizer.resize(odd, 2, 2, 1));
+		check(said.contains("the blank canvas cannot rebuild") && odd.persistPaths().isEmpty(),
+				"a grow whose new cell's model the blank canvas cannot rebuild is refused, not left unblanked: " + said);
+	}
+
+	/**
+	 * A model every map-model check passes - "BCH", compatibility 0x21, contents at 0x44, one model - whose model
+	 * pointer runs far past the file, so reading the model itself throws.
+	 */
+	static byte[] unrebuildableMapModel() {
+		byte[] b = new byte[0x44 + 15 * 12];
+		b[0] = 'B';
+		b[1] = 'C';
+		b[2] = 'H';
+		b[4] = 0x21;
+		putI32(b, 8, 0x44);
+		putI32(b, 0x44, 0x7FFFFF00);
+		putI32(b, 0x44 + 4, 1);
+		return b;
+	}
+
+	interface Attempt {
+
+		Object run() throws Exception;
+	}
+
+	/** What an attempt said: its refusal by type and words, a crash, or what it answered instead. */
+	static String refusal(Attempt a) {
+		try {
+			return "answered " + a.run();
+		} catch (java.io.IOException said) {
+			return "IOException: " + said.getMessage();
+		} catch (IllegalArgumentException said) {
+			return "IllegalArgumentException: " + said.getMessage();
+		} catch (Exception crash) {
+			return "crashed: " + crash;
+		}
 	}
 
 	static void theHeadlessResizeCropsEveryGridAndCutsTheCamera() throws Exception {

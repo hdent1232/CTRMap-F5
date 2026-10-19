@@ -13,7 +13,7 @@ A GUARD IS AT THE POINT OF ACTION WHEN ONE OF THESE IS TRUE, and this derives wh
 
     a hook the harness runs on the tool call      `.claude/hooks/guard_*.py` with the dispatcher
                                                   wired, or any other hook the settings name
-    a rule a wired hook asks at the act           it declares AT_WRITE, AT_WRITE_TREE,
+    a rule a wired hook asks at the act           it declares AT_WRITE, AT_WRITE_SET, AT_WRITE_TREE,
                                                   AT_WRITE_CHANGE, AT_RECORD, AT_COMMAND,
                                                   AT_COMMIT or AT_AFTER, and `bundle_rules.asked`
                                                   says the hook that asks that marker is wired
@@ -57,6 +57,7 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import bundle_hooks      # noqa: E402  - where the bundle's hooks are, found rather than spelled
 import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 sys.path.insert(0, bundle_hooks.path(_tree_root.require(__file__)))
 import bundle_rules      # noqa: E402  - what a file declares, and whether that act is asked
 
@@ -90,6 +91,38 @@ NOT_GUARDS = {
                     "imports the owner's notes onto a machine without them. It refuses nothing and "
                     "always exits 0; its words about refusing describe the commit gate it turns "
                     "ON, and that gate is asked at the act.",
+    "drive_owed": "The remedy commit_guard's gate_owed rule names, run by hand: it drives the plants a "
+                  "commit made past the gate left owed, through the gate's own doors, and writes the "
+                  "record. Its refusals - a record it cannot read, a tree that moved during the run - "
+                  "are about its own run; the rule judging the record is asked at the commit.",
+    "liveness": "A LIBRARY, not a gate: this project's one answer to whether a process is alive, "
+                "returning (running, how it knows) and refusing nothing; its words about refusing "
+                "describe the mistake it exists to prevent. LivenessProbeTest drives it, and "
+                "tools/guard/liveness_check.py refuses any other spelling of the probe here.",
+    "sweep": "A RUNNER, not a gate: its refusals are about its own run - a lock another run holds, "
+             "its own tooling uncommitted, a stop on purpose. What it writes is asked at the act "
+             "by the three machine guards, which read its state on every call.",
+    "bundle_plant": "A LOADER, not a gate: it decides which copy of a hook the dispatcher and "
+                    "after_rules run - git's index while a plant holds the file on disk - and "
+                    "returns what it could not load. Every refusal over that is the entry's.",
+    "_cli": "A RE-EXPORT, not a gate: it hands the tools in tools/guard the bundle's cli_words.refused, "
+            "which lives one folder up. It judges nothing about the tree; the rule that every tool stops "
+            "on a word it does not read is cli_words', asked at the write.",
+    "hidden_desktop": "A LAUNCHER, not a gate: it runs a command on a second desktop of the owner's own "
+                      "session, so the windows unattended suites open are never drawn on the screen "
+                      "they are working on; it judges nothing about the tree.",
+    "battery_lock": "A QUERY, not a gate: whether a battery holds build/.battery-running, answered by "
+                    "the bundle hook's own reader, bundle_runs.lock_runs. It says no to nothing; "
+                    "test.ps1 and build.ps1 ask it at the act - starting a battery, deleting "
+                    "build/classes - and refuse on its answer there.",
+    "bounded": "A LIBRARY, not a gate: subprocess.run with the child's whole tree ended on the "
+               "deadline, copied byte for byte beside the tools, hooks and tests. It refuses "
+               "nothing about the tree; the rule that requires it, timeouts.py, declares AT_WRITE, "
+               "and counted_roots.py holds every copy at the write.",
+    "release_channel": "A PRINTER, not a gate: it prints the commands that publish one packaged version on "
+                       "its channel, core or nightly. Its one refusal - a version that is neither 1.2.3 nor "
+                       "1.2.3-nightly.4 - is about the argument it is handed, not about the tree; package.ps1 "
+                       "asks it as it packages, and tests/test_release_channel.py drives both channels.",
 }
 
 #: A reason shorter than this is a label.
@@ -165,6 +198,8 @@ def hook_folder_of(root, rel):
 
 def wired_from(settings, folder):
     """The names of the files in `folder` the settings run - either separator, as JSON spells it."""
+    if bundle_rules.hooks_disabled(settings):
+        return set()                           # every entry in place, and none of them runs
     pattern = r"[/\\]+".join(re.escape(part) for part in folder.split("/"))
     return set(re.findall(pattern + r"[/\\]+([\w.-]+\.py)", settings or ""))
 
@@ -379,9 +414,9 @@ def adopted(root):
 def committed_declarations(root):
     """The declarations' text at HEAD, '' when HEAD has none, None when git could not say."""
     try:
-        done = subprocess.run(["git", "show", "HEAD:" + DECLARATIONS.replace(os.sep, "/")],
-                              cwd=root, capture_output=True, text=True, timeout=60,
-                              creationflags=NO_WINDOW)
+        done = bounded.run(["git", "show", "HEAD:" + DECLARATIONS.replace(os.sep, "/")],
+                           cwd=root, capture_output=True, text=True, timeout=60,
+                           creationflags=NO_WINDOW)
     except (OSError, subprocess.SubprocessError):
         return None
     return done.stdout if done.returncode == 0 else ""
@@ -452,6 +487,11 @@ def adopt(root, committed):
 
 
 def main(argv):
+    import cli_words      # a word this does not read refuses the run, before anything runs
+    why = cli_words.refused(argv[1:], flags=("--adopt",), most=0)
+    if why:
+        print(why)
+        return 2
     root = _root()
     found = guards(root)
     if not found:

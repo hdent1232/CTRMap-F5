@@ -88,7 +88,7 @@ public class BchMapModelTest {
 						System.out.println("region " + idx + " translate: " + tProblem);
 					}
 					// --- writer plumbing: a no-op raw-data rebuild is byte-identical ---
-					byte[] noop = mm.rebuildRawData(new java.util.HashMap<Integer, byte[]>());
+					byte[] noop = mm.rebuildRawData(new java.util.HashMap<Integer, byte[]>(), null);
 					if (!java.util.Arrays.equals(noop, model)) {
 						fails++;
 						System.out.println("region " + idx + " rebuildRawData no-op not byte-identical ("
@@ -146,6 +146,7 @@ public class BchMapModelTest {
 					+ " grows, " + upgrades + " upgrades. A check that found nothing to test said nothing");
 			System.exit(1);
 		}
+		fails += aMovedMeshCarriesItsBox(garc);
 		if (fails == 0) {
 			System.out.println("PASS");
 		} else {
@@ -154,20 +155,135 @@ public class BchMapModelTest {
 		}
 	}
 
-	/** A translate must be surgical: same length, re-parses clean, and every byte
-	 *  that changed lies inside the raw-data section (offset-preserving). */
+	/**
+	 * Every mesh's bounds hold it, before and after a write (F075).
+	 *
+	 * <p>Each mesh's metadata names an "OBBox" - centre, orientation with the axes in its columns, full
+	 * size - and the header's centre (+0x20) is that centre. Measured 2026-10-09 over the whole corpus:
+	 * true of every mesh whose positions decode. Every writer moved vertices and left both as they were,
+	 * so a moved, grown or repainted mesh could stand outside the box the engine may cull by. Now a write
+	 * that moves vertices out of their box refits it along the same axes.
+	 *
+	 * @return the failures
+	 */
+	private static int aMovedMeshCarriesItsBox(GARC garc) throws Exception {
+		System.out.println("--- a moved mesh carries its box with it (F075)");
+		int fails = 0, boxes = 0;
+		java.util.List<String> retail = new java.util.ArrayList<>();
+		byte[] sample = null;
+		for (int idx = 0; idx < garc.length; idx++) {
+			byte[] model = ctrmap.formats.containers.ContainerBytes.subfile(garc.getDecompressedEntry(idx), 1);
+			if (model == null || !BchMapModel.isMapModel(model)) {
+				continue;
+			}
+			BchMapModel m = new BchMapModel(model);
+			for (int mi = 0; mi < m.meshCount; mi++) {
+				boxes += m.boundsAt(mi) != null ? 1 : 0;
+			}
+			for (String p : boundsProblems(model)) {
+				retail.add("region " + idx + " " + p);
+			}
+			if (sample == null && idx > 0 && m.meshCount > 1) {
+				sample = model;
+			}
+		}
+		if (boxes == 0 || !retail.isEmpty()) {
+			System.out.println("  FAIL: every retail mesh's box holds it: " + boxes + " boxes read, " + retail.size()
+					+ " not holding their mesh " + retail.subList(0, Math.min(3, retail.size())));
+			fails++;
+		} else {
+			System.out.println("  ok: every one of " + boxes + " retail mesh boxes holds its mesh, centred where its header says");
+		}
+		BchMapModel m = new BchMapModel(sample);
+		int mi = 0;
+		while (mi < m.meshCount && (!m.geometry().get(mi).posOk || m.boundsAt(mi) == null)) {
+			mi++;
+		}
+		float[][] pos = m.getVertexPositions(mi);
+		float[][] moved = new float[pos.length][];
+		for (int v = 0; v < pos.length; v++) {
+			moved[v] = new float[]{pos[v][0] + 500f, pos[v][1], pos[v][2]};
+		}
+		//CONTROL: the same move written past the writer is seen outside its box
+		byte[] raw = sample.clone();
+		BchMapModel.MeshGeom g = m.geometry().get(mi);
+		for (int v = 0; v < pos.length; v++) {
+			ctrmap.util.LittleEndian.putF32(raw, g.vtxAbs + v * g.stride + g.posOffset, moved[v][0]);
+		}
+		boolean seen = !boundsProblems(raw).isEmpty();
+		//and the acceptance rule writers are held to says so too
+		boolean verified = ctrmap.formats.h3d.BchModelVerifier.verify(raw).stream().anyMatch(f -> f.contains("outside its OBBox"));
+		if (!verified) {
+			System.out.println("  FAIL: BchModelVerifier refuses a model whose mesh stands outside its box");
+			fails++;
+		}
+		BchMapModel written = new BchMapModel(m.setVertexPositions(java.util.Collections.singletonMap(mi, moved)));
+		float centreX = ctrmap.util.LittleEndian.f32(written.raw, written.boundsAt(mi)[0]);
+		float wasX = ctrmap.util.LittleEndian.f32(sample, m.boundsAt(mi)[0]);
+		if (!seen) {
+			System.out.println("  FAIL: control: a mesh moved 500 past the writer is seen outside its box");
+			fails++;
+		} else if (!boundsProblems(written.raw).isEmpty() || Math.abs(centreX - wasX - 500f) > 1f) {
+			System.out.println("  FAIL: a mesh moved 500 by setVertexPositions carries its box: " + boundsProblems(written.raw)
+					+ ", centre x " + wasX + " -> " + centreX);
+			fails++;
+		} else {
+			System.out.println("  ok: a mesh moved 500 by setVertexPositions carries its box (centre x " + wasX + " -> " + centreX
+					+ "); written past the writer, the same move is seen outside it");
+		}
+		//THE REBUILD PATH: a blank canvas replaces the ground mesh with a grid plane through setMeshGeometry
+		int ground = ctrmap.formats.tilemap.PaintedMaterials.defaultGroundMesh(m);
+		java.util.List<String> blank = boundsProblems(ctrmap.formats.h3d.RegionFactory.blankModel(sample, ground));
+		if (!blank.isEmpty()) {
+			System.out.println("  FAIL: a blank canvas's plane stands inside its mesh's box after the rebuild: " + blank);
+			fails++;
+		} else {
+			System.out.println("  ok: a blank canvas's plane, written through the rebuild, stands inside its mesh's box");
+		}
+		return fails;
+	}
+
+	/**
+	 * The bounds problems BchModelVerifier finds in a model's bytes - a mesh outside its box, or a header
+	 * centre that is not its box's (F075) - and nothing else it finds.
+	 */
+	static java.util.List<String> boundsProblems(byte[] bch) {
+		java.util.List<String> out = new java.util.ArrayList<>();
+		for (String f : ctrmap.formats.h3d.BchModelVerifier.verify(bch)) {
+			if (f.contains("outside its OBBox") || f.contains("header's centre is not")) {
+				out.add(f);
+			}
+		}
+		return out;
+	}
+
+	/** A translate must be surgical: same length, re-parses clean, and every byte that changed lies
+	 *  inside the raw-data section (offset-preserving) - or is a moved mesh's bounds, its header centre
+	 *  and its OBBox, which a move must carry with it (F075) - and every mesh's box holds it after. */
 	private static String checkTranslateIsSurgical(BchMapModel mm) {
 		byte[] edited = mm.translate(0f, 100f, 0f);
 		if (edited.length != mm.raw.length) {
 			return "length changed " + mm.raw.length + " -> " + edited.length;
 		}
-		if (!new BchMapModel(edited).validate().isEmpty()) {
+		BchMapModel re = new BchMapModel(edited);
+		if (!re.validate().isEmpty()) {
 			return "translated model no longer parses cleanly";
+		}
+		if (!boundsProblems(edited).isEmpty()) {
+			return "after the translate a mesh stands outside its box: " + boundsProblems(edited).get(0);
+		}
+		boolean[] bounds = new boolean[edited.length];
+		for (int mi = 0; mi < mm.meshCount; mi++) {
+			int[] at = mm.boundsAt(mi);
+			if (at != null) {
+				java.util.Arrays.fill(bounds, at[0], at[0] + 12, true);
+				java.util.Arrays.fill(bounds, at[1], at[1] + 60, true);
+			}
 		}
 		int lo = mm.rawDataAddr, hi = mm.rawDataAddr + mm.rawDataLen;
 		for (int i = 0; i < edited.length; i++) {
-			if (edited[i] != mm.raw[i] && (i < lo || i >= hi)) {
-				return "byte " + i + " changed outside raw-data section [" + lo + "," + hi + ")";
+			if (edited[i] != mm.raw[i] && (i < lo || i >= hi) && !bounds[i]) {
+				return "byte " + i + " changed outside raw-data section [" + lo + "," + hi + ") and outside every mesh's bounds";
 			}
 		}
 		return null;
@@ -182,7 +298,7 @@ public class BchMapModelTest {
 		int cmdLoc = mm.vtxBuffers.get(0)[1];
 		java.util.Map<Integer, byte[]> repl = new java.util.HashMap<>();
 		repl.put(cmdLoc, new byte[80]); // a different-size buffer forces every later buffer to slide
-		byte[] resized = mm.rebuildRawData(repl);
+		byte[] resized = mm.rebuildRawData(repl, null);
 		BchMapModel re;
 		try {
 			re = new BchMapModel(resized);
@@ -209,7 +325,7 @@ public class BchMapModelTest {
 			if (pos == null) {
 				continue; // undecodable mesh - skipped elsewhere
 			}
-			byte[] back = mm.setVertexPositions(mi, pos);
+			byte[] back = mm.setVertexPositions(java.util.Collections.singletonMap(mi, pos));
 			if (!java.util.Arrays.equals(back, original)) {
 				return "mesh " + mi + " read/write-back not byte-identical";
 			}

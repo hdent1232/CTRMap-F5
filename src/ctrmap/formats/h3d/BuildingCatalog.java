@@ -5,7 +5,6 @@ import ctrmap.formats.containers.GR;
 import ctrmap.formats.garc.GARC;
 import ctrmap.gamedef.ArchiveType;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
@@ -122,6 +121,14 @@ public class BuildingCatalog {
 		return java.util.Collections.unmodifiableList(problems);
 	}
 
+	/**
+	 * What a row places, as one string: its donor region and tile box. Two rows with one key cut the same
+	 * geometry, whatever they are named - the harvester writes no key a curated or earlier row holds.
+	 */
+	public static String boxKey(int donorRegion, int tx0, int ty0, int tx1, int ty1) {
+		return donorRegion + ":" + tx0 + "," + ty0 + "," + tx1 + "," + ty1;
+	}
+
 	private static void load(String resource, boolean auto, List<Entry> into, List<String> problems) {
 		InputStream opened;
 		try {
@@ -130,6 +137,15 @@ public class BuildingCatalog {
 			problems.add(ctrmap.util.Bytes.reason(missing));
 			return;
 		}
+		readAll(opened, resource, auto, into, problems);
+	}
+
+	/**
+	 * One opened catalog file read whole and closed; a close that fails is said too, naming the file. Its own method so
+	 * a suite can hand it a stream that fails - the shipped files always open, and nothing could reach this report
+	 * through them (the 2026-10-14 shared sweep, BuildingCatalog 143).
+	 */
+	static void readAll(InputStream opened, String resource, boolean auto, List<Entry> into, List<String> problems) {
 		try (InputStream in = opened) {
 			parse(in, resource, auto, into, problems);
 		} catch (java.io.IOException ex) {
@@ -287,17 +303,6 @@ public class BuildingCatalog {
 				.toLowerCase(java.util.Locale.ROOT);
 	}
 
-	/** Entries of one kind, or all for null. */
-	public static List<Entry> byKind(String kind) {
-		List<Entry> out = new ArrayList<>();
-		for (Entry e : entries()) {
-			if (kind == null || e.kind.equals(kind)) {
-				out.add(e);
-			}
-		}
-		return out;
-	}
-
 	/**
 	 * The cut prefabs, kept by the game they were cut from (F218) - here beside the cut itself, and no
 	 * longer in the palette dialog (F248): the map painter stamps them, and reaching for them through a
@@ -424,13 +429,8 @@ public class BuildingCatalog {
 		if (bytes == null) {
 			return null;
 		}
-		File tmp = new File(files.scratch(), "bcat_region_" + region);
-		try (FileOutputStream fo = new FileOutputStream(tmp)) {
-			fo.write(bytes);
-		}
-		//THE COPY GOES WITH THE PROGRAM (F067): it was left behind, one per donor region cut
-		tmp.deleteOnExit();
-		return new GR(tmp, files);
+		//THE COPY GOES WITH THE PROGRAM (F067): it was left behind, one per donor region cut - toScratch's are not
+		return new GR(files.toScratch("bcat_region_" + region + "_", bytes), files);
 	}
 
 	private static final java.util.Map<String, GARC> SNAPSHOTS = new java.util.HashMap<>();

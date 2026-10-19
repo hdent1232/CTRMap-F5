@@ -66,6 +66,7 @@ public class ZoneCloner {
 	 * bits 21..31 of unknownFlags are not the zone index and are copied
 	 * verbatim.
 	 */
+	@ctrmap.util.ForSuites("SEAM: the clone's byte transform with the files handed in, which a suite drives over copies of its own; the application clones into a slot of the open workspace")
 	public static void cloneIntoFiles(File srcZo, File dstZo, File masterFile, int srcIndex, int dstIndex, boolean patchOAZoneNumber) throws IOException {
 		byte[] master = Files.readAllBytes(masterFile.toPath());
 		byte[] cloned = cloneInto(Files.readAllBytes(srcZo.toPath()), Files.readAllBytes(dstZo.toPath()), master,

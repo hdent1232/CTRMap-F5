@@ -185,9 +185,11 @@ public class AreaForker {
 
 	/**
 	 * How many more areas this workspace can create before the engine runs out of
-	 * ids. Asked BEFORE an append writes anything, because running out half way
-	 * through leaves some new zones private and some sharing.
+	 * ids. The append does not ask this: {@link #takeAreaIds} refuses the whole
+	 * batch before anything is written, because running out half way through
+	 * leaves some new zones private and some sharing.
 	 */
+	@ctrmap.util.ForSuites("SEAM: a suite asks how many area forks the open workspace has left, to size an append past them; the append itself refuses through takeAreaIds before it writes anything")
 	public static int areaIdsLeft() throws IOException {
 		GARC ad = Workspace.getArchive(ArchiveType.AREA_DATA);
 		GARC np = Workspace.getArchive(ArchiveType.NPC_REGISTRIES);
@@ -365,6 +367,7 @@ public class AreaForker {
 		int npReaches = np.length;
 		for (int i = 0; i < count; i++) {
 			int newArea = ids[i];
+			requireInStep(newArea, ad.length, np.length);
 			int oldArea = ZoneResource.AREA.idIn(zos[i]);
 			File srcAdFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, oldArea);
 			if (srcAdFile == null) {
@@ -406,6 +409,20 @@ public class AreaForker {
 		Workspace.addPersist(tableFile);
 	}
 	/**
+	 * Refuses a fork to tail id {@code newArea} when the NPC registry archive already reaches past it: the engine
+	 * indexes registries by area id, so the registry and AreaData are out of step, and a fork would not repair that
+	 * - it would write its registry over whatever sits at that id. ONE CHECK FOR EVERY FORK (census M.43): Fork area
+	 * asked it and the append's fork did not.
+	 */
+	public static void requireInStep(int newArea, int adLength, int npLength) throws IOException {
+		if (newArea >= adLength && npLength > newArea + 1) {
+			throw new IOException("The NPC registry (" + npLength + " entries) already reaches"
+					+ " past the new area id " + newArea + "; it and AreaData (" + adLength
+					+ " entries) are out of step, and an area fork would not repair that.");
+		}
+	}
+
+	/**
 	 * Clones this zone's area (and its NPC registry) to private tail entries and
 	 * repoints the zone at them. Pack the Workspace afterwards.
 	 */
@@ -444,11 +461,7 @@ public class AreaForker {
 		//at index 228) against 228 registries, so the first forked id, 229, is
 		//two past the end of the registry archive. The gap is filled below. An id
 		//given back sits inside both archives, where there is no gap to fill.
-		if (newArea >= ad.length && np.length > newArea + 1) {
-			throw new IOException("The NPC registry (" + np.length + " entries) already reaches"
-					+ " past the new area id " + newArea + "; it and AreaData (" + ad.length
-					+ " entries) are out of step, and an area fork would not repair that.");
-		}
+		requireInStep(newArea, ad.length, np.length);
 		File adDir = Workspace.getExtractionDirectory(ArchiveType.AREA_DATA);
 		File npDir = Workspace.getExtractionDirectory(ArchiveType.NPC_REGISTRIES);
 		File adOut = new File(adDir, String.valueOf(newArea));

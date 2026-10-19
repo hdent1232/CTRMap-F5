@@ -94,10 +94,54 @@ public class HarvesterGuardsTest {
 		{"chip_sea_b", null},
 	};
 
+	/**
+	 * Every program run with too few arguments hands its refusal to whatever started it: its usage line, and exit
+	 * status 1 (the 2026-10-15 shared sweep: BuildingHarvester 59 and TerrainDonorHarvester 44, negate-if, SURVIVED -
+	 * suites call what answers a status, and no suite may call a main - BatteryHygieneTest - so main's half was never
+	 * asked). Inverted, a refused run ended 0, or ran on into its first argument, and one given its arguments was
+	 * stopped as refused. THE PROGRAMS ARE FOUND, NOT LISTED: every class under src/ctrmap, suites aside, with a main
+	 * and a "Usage: java" line naming itself; each is asked in a child JVM with no arguments, as UiOutputTest asks
+	 * its own child.
+	 */
+	static void aRefusedHarvestEndsItsProcessRefused() throws Exception {
+		System.out.println("--- every program given no arguments ends with status 1, saying how to run it");
+		List<String> programs = new ArrayList<>();
+		try (java.util.stream.Stream<java.nio.file.Path> walk = Files.walk(new File("src/ctrmap").toPath())) {
+			for (java.nio.file.Path f : (Iterable<java.nio.file.Path>) walk::iterator) {
+				String rel = new File("src").toPath().relativize(f).toString().replace(File.separatorChar, '/');
+				if (!rel.endsWith(".java") || rel.startsWith("ctrmap/tests/")) {
+					continue;
+				}
+				String name = rel.substring(0, rel.length() - ".java".length()).replace('/', '.');
+				String text = new String(Files.readAllBytes(f), StandardCharsets.UTF_8);
+				if (text.contains("public static void main(String[] args)") && text.contains("\"Usage: java " + name + " ")) {
+					programs.add(name);
+				}
+			}
+		}
+		java.util.Collections.sort(programs);
+		check(programs.contains(BuildingHarvester.class.getName()) && programs.size() >= 3,
+				"control: the walk finds the programs with a usage line, the harvester among them: " + programs);
+		File java = new File(System.getProperty("java.home"), "bin/java.exe");
+		if (!java.isFile()) {
+			java = new File(System.getProperty("java.home"), "bin/java");
+		}
+		for (String program : programs) {
+			ProcessBuilder pb = new ProcessBuilder(java.getPath(), "-cp", System.getProperty("java.class.path"), program);
+			pb.redirectErrorStream(true);
+			Process p = pb.start();
+			String said = CommitGuardTest.drain(p).trim();
+			int code = p.waitFor();
+			check(code == 1 && said.startsWith("Usage: java " + program + " "), program + " given no arguments ends with"
+					+ " status 1 and its usage: status " + code + ", said " + (said.length() > 80 ? said.substring(0, 80) : said));
+		}
+	}
+
 	public static void main(String[] args) throws Exception {
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		File garcFile = new File(dump.getAbsolutePath()
 				+ Workspace.getArchivePath(ArchiveType.FIELD_DATA, GameType.ORAS));
+		aRefusedHarvestEndsItsProcessRefused();
 		if (!garcFile.isFile()) {
 			Skip.suite("no pristine FieldData archive under " + dump + " (pass the romfs root as args[0])");
 			return;
@@ -105,6 +149,7 @@ public class HarvesterGuardsTest {
 		int wanted = args.length > 1 ? Integer.parseInt(args[1]) : DEFAULT_REGIONS;
 
 		materialFamiliesAreRead();
+		aThrowIsNotARefusal();
 
 		GARC gr = new GARC(garcFile);
 		Set<Integer> regions = donorRegions(wanted);
@@ -118,6 +163,76 @@ public class HarvesterGuardsTest {
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
+		}
+	}
+
+	/**
+	 * A candidate that threw is not one the gate refused (census M.142). One counter took both, and a regression in
+	 * the cut or the stamp showed up as a smaller catalogue in the run that decides what ships. The verify loop runs
+	 * the whole harvest, so its catch is read.
+	 */
+	static void aThrowIsNotARefusal() throws Exception {
+		System.out.println("--- the harvester counts a throw apart from a refusal, and names it (census M.142)");
+		String src = SourceSeamTest.stripComments(new String(java.nio.file.Files.readAllBytes(
+				new File("src/ctrmap/tools/BuildingHarvester.java").toPath()), java.nio.charset.StandardCharsets.UTF_8));
+		int verify = src.indexOf("for (Map.Entry<Long, Cand> en : bySig.entrySet()) {");
+		int report = src.indexOf("said.println(\"verified \"", verify);   //the run prints to the stream it is handed
+		String loop = verify >= 0 && report > verify ? src.substring(verify, report) : "";
+		int caught = loop.lastIndexOf("} catch (Exception ex) {");
+		check(caught > 0 && loop.indexOf("threw.add(", caught) > caught && loop.indexOf("dropped++", caught) < 0,
+				"a candidate whose cut or stamp threw is counted as a throw, with its reason, not as one the gate refused");
+		check(src.indexOf("threw.size()", report) > report, "and the run's summary says how many threw");
+		//census L.11: the cuts went to a fixed temp folder keyed by region index alone, never cleared, so a run
+		//against a second dump cut from the first dump's bytes
+		check(src.contains("File tmpDir = java.nio.file.Files.createTempDirectory(\"ctrmap_harvest\").toFile();")
+				&& src.contains("removeRunFolder(tmpDir);"),
+				"each harvest cuts into a folder of its own, made fresh and removed at the end");
+		File run = java.nio.file.Files.createTempDirectory("ctrmap_harvest_probe").toFile();
+		java.nio.file.Files.write(new File(run, "reg_7").toPath(), new byte[]{1});
+		new File(run, "ws").mkdirs();
+		java.nio.file.Files.write(new File(run, "ws/x").toPath(), new byte[]{2});
+		java.lang.reflect.Method remove = BuildingHarvester.class.getDeclaredMethod("removeRunFolder", File.class);
+		remove.setAccessible(true);
+		remove.invoke(null, run);
+		check(!run.exists(), "and the removal takes the folder and what is in it, nested folders too");
+		//and a cut folder that cannot be removed is said, so the next run is not trusted to be clean (the 2026-10-15
+		//shared sweep, BuildingHarvester 282, drop-throw, SURVIVED: every folder a suite removed went). A file held
+		//open in a read-only folder - what stops a delete on Windows and on POSIX - with a probe as the control
+		File stuck = java.nio.file.Files.createTempDirectory("ctrmap_harvest_stuck").toFile();
+		File probe = java.nio.file.Files.createTempDirectory("ctrmap_harvest_stuck_probe").toFile();
+		java.util.List<java.io.RandomAccessFile> held = new ArrayList<>();
+		for (File dir : new File[]{stuck, probe}) {
+			java.nio.file.Files.write(new File(dir, "reg_7").toPath(), new byte[]{1});
+			held.add(new java.io.RandomAccessFile(new File(dir, "reg_7"), "rw"));
+			dir.setWritable(false);
+		}
+		String said;
+		try {
+			if (ctrmap.util.Bytes.deleteTree(probe)) {
+				Skip.section("a file held open in a read-only folder is deleted here, so a cut folder that cannot be"
+						+ " removed cannot be made");
+				said = null;
+			} else {
+				try {
+					remove.invoke(null, stuck);
+					said = "removed, it said";
+				} catch (java.lang.reflect.InvocationTargetException threw) {
+					said = String.valueOf(threw.getCause().getMessage());
+				}
+			}
+		} finally {
+			for (java.io.RandomAccessFile f : held) {
+				f.close();
+			}
+			for (File dir : new File[]{stuck, probe}) {
+				dir.setWritable(true);
+			}
+			ctrmap.util.Bytes.deleteTree(stuck);
+			ctrmap.util.Bytes.deleteTree(probe);
+		}
+		if (said != null) {
+			check(said.startsWith("the harvest's cut folder could not be removed"),
+					"a cut folder that cannot be removed is said, naming it: " + said);
 		}
 	}
 
@@ -260,16 +375,67 @@ public class HarvesterGuardsTest {
 	 * under the dump is opened for writing.
 	 */
 	static void onlyWholeCutsAreCatalogued(File dump, GARC gr, Set<Integer> regions) throws Exception {
-		Set<Integer> keep = new LinkedHashSet<>(regions);
-		keep.add(1);                       //the base the harvester stamps candidates onto
-		//...and a contiguous block of the dump's own first regions, catalogued
-		//or not: the catalogue's donor regions are by construction regions
-		//whose cuts PASSED, and a candidate pool made only of those is a pool
-		//chosen by the very gate under test.
+		onlyWholeCutsAreCatalogued0(dump, gr, regions);
+		theTerrainHarvestSaysWhatItSkipped(dump, gr);
+	}
+
+	/**
+	 * The terrain harvest says once what it skipped, or that it skipped nothing (the 2026-10-15 shared sweep,
+	 * TerrainDonorHarvester 147, drop-report, SURVIVED: no suite ran it - it could only end its process, until it
+	 * answered a status as BuildingHarvester's does). Dropped, a donor table chosen without some regions said so
+	 * nowhere. Over a cut-down dump of the first 24 regions and the ones it injects a donor into to test it, read
+	 * from the program so the two cannot drift.
+	 */
+	static void theTerrainHarvestSaysWhatItSkipped(File dump, GARC gr) throws Exception {
+		System.out.println("--- the terrain harvest says once what it skipped, or that it skipped nothing");
+		java.lang.reflect.Field probes = ctrmap.tools.TerrainDonorHarvester.class.getDeclaredField("PROBE_TARGETS");
+		probes.setAccessible(true);
+		Set<Integer> keep = new LinkedHashSet<>();
 		for (int r = 0; r < 24; r++) {
 			keep.add(r);
 		}
-		File romfs = Scratch.dir("ctrmap_harvest_dump");
+		for (int r : (int[]) probes.get(null)) {
+			keep.add(r);
+		}
+		File romfs = cutDownDump(dump, gr, keep, "ctrmap_terrain_dump");
+		java.io.ByteArrayOutputStream heard = new java.io.ByteArrayOutputStream();
+		int status = ctrmap.tools.TerrainDonorHarvester.run(new String[]{romfs.getAbsolutePath(),
+			Scratch.file("terrain_tsv").getAbsolutePath()}, new java.io.PrintStream(heard, true, "UTF-8"));
+		String said = heard.toString("UTF-8");
+		System.out.print(said);
+		check(status == 0 && skipReports(said) == 1, "the terrain harvest ran and says once what it skipped, or that it"
+				+ " skipped nothing: status " + status + ", " + skipReports(said) + " report(s)");
+		//and what it scanned, each brush's donor or that it has none, and what it wrote (the 2026-10-16 assembly,
+		//TerrainDonorHarvester 162, 207, 210 and 226, drop-report, SURVIVED: a print to a stream it was handed was not
+		//read as a report until then, and nothing read these lines). This cut-down dump leaves ICE with no donor
+		List<String> lines = Arrays.asList(said.split("\r?\n"));
+		int brushes = ctrmap.formats.tilemap.TilePalette.values().length - 1;   //every brush but VOID
+		long chosen = lines.stream().filter(l -> l.startsWith("  ") && l.contains(" <- region ")).count();
+		long without = lines.stream().filter(l -> l.startsWith("  ") && l.endsWith(": NO usable donor")).count();
+		long scanned = lines.stream().filter(l -> l.matches("scanned \\d+ regions")).count();
+		long wrote = lines.stream().filter(l -> l.startsWith("wrote " + chosen + " donors -> ")).count();
+		check(scanned == 1 && without > 0 && chosen + without == brushes && wrote == 1,
+				"the terrain harvest says what it scanned, each of its " + brushes + " brushes' donor or that it has none,"
+				+ " and what it wrote: " + scanned + " scanned line(s), " + chosen + " donor(s), " + without
+				+ " without, " + wrote + " wrote line(s)");
+	}
+
+	/** How many lines of a harvest's output say what it skipped: "skipped nothing", or "SKIPPED n - ...". */
+	static int skipReports(String printed) {
+		int reports = 0;
+		for (String line : printed.split("\r?\n")) {
+			reports += line.equals("skipped nothing") || line.startsWith("SKIPPED ") ? 1 : 0;
+		}
+		return reports;
+	}
+
+	/**
+	 * A dump to harvest from, made under the scratch folder {@code name}: the real zone, matrix and gametext archives,
+	 * and a FieldData archive holding the regions in {@code keep} as stored, every other slot up to the last of them a
+	 * four-byte stub. Nothing under {@code dump} is opened for writing.
+	 */
+	static File cutDownDump(File dump, GARC gr, Set<Integer> keep, String name) throws Exception {
+		File romfs = Scratch.dir(name);
 		for (ArchiveType t : new ArchiveType[]{
 			ArchiveType.ZONE_DATA, ArchiveType.MAP_MATRIX, ArchiveType.GAMETEXT}) {
 			String rel = Workspace.getArchivePath(t, GameType.ORAS);
@@ -290,9 +456,36 @@ public class HarvesterGuardsTest {
 				+ Workspace.getArchivePath(ArchiveType.FIELD_DATA, GameType.ORAS));
 		field.getParentFile().mkdirs();
 		GarcRebuilder.write(gr.file, field, stored);
+		return romfs;
+	}
+
+	/** See {@link #onlyWholeCutsAreCatalogued}: the building harvest's half. */
+	static void onlyWholeCutsAreCatalogued0(File dump, GARC gr, Set<Integer> regions) throws Exception {
+		Set<Integer> keep = new LinkedHashSet<>(regions);
+		keep.add(1);                       //the base the harvester stamps candidates onto
+		//...and a contiguous block of the dump's own first regions, catalogued
+		//or not: the catalogue's donor regions are by construction regions
+		//whose cuts PASSED, and a candidate pool made only of those is a pool
+		//chosen by the very gate under test.
+		for (int r = 0; r < 24; r++) {
+			keep.add(r);
+		}
+		File romfs = cutDownDump(dump, gr, keep, "ctrmap_harvest_dump");
 
 		File tsv = Scratch.file("harvest_tsv");
-		BuildingHarvester.main(new String[]{romfs.getAbsolutePath(), tsv.getAbsolutePath()});
+		//what the run prints is handed to a stream of this suite's and shown after: it says what it skipped, or that
+		//it skipped nothing (the 2026-10-15 shared sweep, BuildingHarvester 166, drop-report, SURVIVED: nothing read
+		//what the run printed). Dropped, a catalog harvested without some regions said so nowhere
+		java.io.ByteArrayOutputStream heard = new java.io.ByteArrayOutputStream();
+		java.io.PrintStream said = new java.io.PrintStream(heard, true, "UTF-8");
+		int status = BuildingHarvester.run(new String[]{romfs.getAbsolutePath(), tsv.getAbsolutePath()}, said);
+		System.out.print(heard.toString("UTF-8"));
+		check(status == 0, "the harvester ran on a dump and an output it was handed: status " + status);
+		if (status != 0) {
+			return;
+		}
+		check(skipReports(heard.toString("UTF-8")) == 1, "the harvest says once what it skipped, or that it skipped nothing ("
+				+ skipReports(heard.toString("UTF-8")) + " report(s))");
 
 		List<String> rows = new ArrayList<>();
 		for (String line : Files.readAllLines(tsv.toPath(), StandardCharsets.UTF_8)) {
@@ -302,6 +495,41 @@ public class HarvesterGuardsTest {
 		}
 		check(!rows.isEmpty(), "the harvester catalogued " + rows.size() + " cuts out of "
 				+ keep.size() + " regions");
+		//and what it swept and what it wrote, no progress line under 500 candidates, and the table says what its rows
+		//passed (the 2026-10-16 assembly, BuildingHarvester 172, 263, 276 and 282, SURVIVED: a print to a stream it was
+		//handed was not read as a report until then). Inverted, 263 printed progress for every candidate but each 500th
+		List<String> printed = Arrays.asList(heard.toString("UTF-8").split("\r?\n"));
+		long swept = printed.stream().filter(l -> l.startsWith("sweep: ") && l.contains(" regions, ")).count();
+		long progress = printed.stream().filter(l -> l.startsWith("verify: ")).count();
+		long wrote = printed.stream().filter(l -> l.startsWith("wrote " + rows.size() + " entries -> ")).count();
+		boolean header = Files.readAllLines(tsv.toPath(), StandardCharsets.UTF_8).stream()
+				.anyMatch(l -> l.startsWith("# Every row passed the cut->stamp->validate gate."));
+		check(swept == 1 && progress == 0 && wrote == 1 && header, "the building harvest says what it swept and what it"
+				+ " wrote, no progress under 500 candidates, and its table says what its rows passed: " + swept
+				+ " sweep line(s), " + progress + " progress line(s), " + wrote + " wrote line(s), header "
+				+ (header ? "written" : "missing"));
+		//and offers no box the curated catalog already offers, wired with its doors (the 2026-10-15 shared sweep,
+		//BuildingHarvester 192, negate-if, SURVIVED: nothing compared a harvest's boxes with the curated ones).
+		//Inverted, the boxes held back were the auto table's own, and the curated ones came back unwired
+		Set<String> curated = new java.util.HashSet<>();
+		int curatedHere = 0;
+		for (BuildingCatalog.Entry e : BuildingCatalog.entries()) {
+			if (!e.auto) {
+				curated.add(BuildingCatalog.boxKey(e.donorRegion, e.tx0, e.ty0, e.tx1, e.ty1));
+				curatedHere += keep.contains(e.donorRegion) ? 1 : 0;
+			}
+		}
+		List<String> again = new ArrayList<>();
+		for (String row : rows) {
+			String[] f = row.split("\t");
+			String box = BuildingCatalog.boxKey(Integer.parseInt(f[2]), Integer.parseInt(f[4]), Integer.parseInt(f[5]),
+					Integer.parseInt(f[6]), Integer.parseInt(f[7]));
+			if (curated.contains(box)) {
+				again.add(f[1] + " " + box);
+			}
+		}
+		check(curatedHere > 0, "control: the harvested regions hold curated buildings (" + curatedHere + ")");
+		check(again.isEmpty(), "no harvested row offers a box the curated catalog already offers: " + again);
 
 		int dim = PaintedGeometry.DIM;
 		TilePalette[][] grid = new TilePalette[dim][dim];

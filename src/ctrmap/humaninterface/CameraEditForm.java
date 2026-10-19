@@ -45,7 +45,7 @@ public class CameraEditForm extends javax.swing.JPanel {
 			fov.setMaximum(179);
 			fov.setLabelTable(fov.createStandardLabels(45, 45));
 		}
-		btnAdd.setEnabled(false);
+		ctrmap.Ui.offer(btnAdd, "Open a zone first - there is no camera file to add a camera to");
 	}
 
 	public void unload() {
@@ -56,7 +56,7 @@ public class CameraEditForm extends javax.swing.JPanel {
 		f = null;
 		loaded = false;
 		//NOTHING TO ADD TO (census M.73): its handler adds to f, which is gone
-		btnAdd.setEnabled(false);
+		ctrmap.Ui.offer(btnAdd, "Open a zone first - there is no camera file to add a camera to");
 	}
 
 	/**

@@ -392,7 +392,9 @@ public class GeoEditForm extends JPanel {
 					+ (r.missingMaterials.isEmpty() ? "" : "  (skipped: " + r.missingMaterials.size() + " piece(s), see log)")
 					+ "  (unsaved)");
 			if (!r.missingMaterials.isEmpty()) {
-				System.out.println("Prefab stamp skipped pieces: " + r.missingMaterials);
+				//TO THE LOG THE STATUS NAMES (census L.27's class): stdout reaches no log - the launcher has no console
+				java.util.logging.Logger.getLogger(GeoEditForm.class.getName()).warning(
+						"Prefab stamp skipped pieces: " + r.missingMaterials);
 			}
 		} catch (RuntimeException ex) {
 			status.setText("Stamp failed: " + ctrmap.util.Bytes.reason(ex));
@@ -665,8 +667,8 @@ public class GeoEditForm extends JPanel {
 		updateEnabled();
 	}
 
+	/** Shows the region's tiles again - each edit painted its own (census L.39), so this only rescales. */
 	private void refreshTiles(Tilemap tm) {
-		tm.updateImage();
 		map.perfScale(map.tilemapScale, cellX, cellY);
 	}
 
@@ -757,6 +759,8 @@ public class GeoEditForm extends JPanel {
 		return true;
 	}
 
+	@ctrmap.util.WritesOut("the region's geometry, which this form has the zone's history watch as one of its"
+		+ " documents")
 	private void save() {
 		if (gr == null || currentModel == null || !unsaved) {
 			return;

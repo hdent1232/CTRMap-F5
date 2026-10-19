@@ -38,9 +38,11 @@ public class ContainerWriteSafetyTest {
 	public static void main(String[] args) throws Exception {
 		aStoreThatFailsLeavesTheContainerWhole();
 		twoObjectsOverOneFileReadTheFilesOwnTable();
+		aContainerDamagedSinceItOpenedIsRefused();
 		aContainerOfAnyMagicOpens();
 		aNewMoveModelContainerIsLaidOutPadded();
 		aContainerThatCannotBeCreatedIsRefused();
+		aSubfileThatCannotBeReadIsRefusedNotNull();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -166,15 +168,68 @@ public class ContainerWriteSafetyTest {
 		//B STORES BEFORE IT READS ANYTHING: a read re-reads the table as a side effect, so a check
 		//that read through B first refreshed it and could not see a stale store (2026-10-07)
 		b.storeFile(2, new byte[]{5, 5});
-		check(Arrays.equals(new byte[]{2, 2, 2, 2}, b.getFile(1)),
-				"the second object reads subfile 1 where the file now holds it (read "
-				+ Arrays.toString(b.getFile(1)) + ")");
-		check(Arrays.equals(new byte[]{8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8}, a.getFile(0)),
+		//EVERY READ ANSWERS IN WORDS: under the stale table a read throws, and a check whose own message threw took
+		//the suite down before it said what it watches for (container-store-at-a-stale-table, NOT PROVEN 2026-10-14)
+		String second = readOf(b, 1);
+		check(second.equals(Arrays.toString(new byte[]{2, 2, 2, 2})),
+				"the second object reads subfile 1 where the file now holds it (read " + second + ")");
+		String first = readOf(a, 0);
+		check(first.equals(Arrays.toString(new byte[]{8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8})),
 				"a store through the second object leaves what the first stored intact - a store at the"
-				+ " offsets it read when it opened overwrites the first object's subfile (read "
-				+ Arrays.toString(a.getFile(0)) + ")");
-		check(Arrays.equals(new byte[]{2, 2, 2, 2}, a.getFile(1)) && Arrays.equals(new byte[]{5, 5}, a.getFile(2)),
+				+ " offsets it read when it opened overwrites the first object's subfile (read " + first + ")");
+		check(readOf(a, 1).equals(Arrays.toString(new byte[]{2, 2, 2, 2}))
+				&& readOf(a, 2).equals(Arrays.toString(new byte[]{5, 5})),
 				"and every subfile reads back as the last store left it");
+	}
+
+	/** Subfile {@code n} as the container reads it, or the refusal it threw - never an exception out of a check. */
+	static String readOf(MM c, int n) {
+		try {
+			return Arrays.toString(c.getFile(n));
+		} catch (RuntimeException refused) {
+			return "a refusal: " + refused.getMessage();
+		}
+	}
+
+	/**
+	 * A container whose file was damaged after it opened is refused, naming why - never answered, and never written,
+	 * from the table it read before.
+	 *
+	 * <p>Measured by the 2026-10-14 shared sweep (AbstractGamefreakContainer 235, dropped, SURVIVED): no container's
+	 * file was ever damaged after it opened. Dropped, the table it re-reads every time it is used (F234) failed
+	 * without a word, and {@code hasFile} and {@code storeFile} went on from the offsets of the file as it had been.
+	 */
+	static void aContainerDamagedSinceItOpenedIsRefused() throws Exception {
+		System.out.println("--- a container whose file was damaged after it opened is refused, naming why");
+		Files2 files = new Files2();
+		File f = new File(Scratch.dir("ctrmap_cws_damaged"), "6");
+		MM mm = new MM(f, 3, MM.MM_MAP_MATRIX, files);
+		mm.storeFile(0, new byte[]{1, 1, 1, 1});
+		mm.storeFile(1, new byte[]{2, 2, 2, 2});
+		mm.storeFile(2, new byte[]{3, 3, 3, 3});
+		check(mm.hasFile(2) && !mm.hasFile(3), "control: a container of 3 subfiles holds a subfile 2 and no 3");
+		//the header kept, everything after it gone: the table now names subfiles past the end of the file
+		byte[] whole = Files.readAllBytes(f.toPath());
+		byte[] torn = Arrays.copyOf(whole, 20);
+		Files.write(f.toPath(), torn);
+		String asked;
+		try {
+			asked = "it answered " + mm.hasFile(2);
+		} catch (IllegalStateException refused) {
+			asked = refused.getMessage();
+		}
+		check(asked.startsWith(f.getName() + " is truncated or damaged"),
+				"asked for a subfile after its file was torn, the container refuses, naming why: " + asked);
+		String stored;
+		try {
+			mm.storeFile(0, new byte[]{9, 9, 9, 9});
+			stored = "it stored";
+		} catch (IllegalStateException refused) {
+			stored = refused.getMessage();
+		}
+		check(stored.startsWith(f.getName() + " is truncated or damaged")
+				&& Arrays.equals(torn, Files.readAllBytes(f.toPath())),
+				"and a store into it is refused the same way, the file left as it was: " + stored);
 	}
 
 	static void aContainerOfAnyMagicOpens() throws Exception {
@@ -207,6 +262,78 @@ public class ContainerWriteSafetyTest {
 		check(first == 0x80, "its first subfile starts on the 0x80 padding a move model is read with"
 				+ " (starts at 0x" + Integer.toHexString(first) + ") - laid out as a map matrix, it is read back"
 				+ " at offsets that are not there");
+	}
+
+	/**
+	 * A subfile that cannot be read is refused, naming the container and the subfile - never null (census M.4).
+	 * getFile answered null for an index the container does not hold and for a file cut short after it was
+	 * opened, and 72 of its 80 callers handed that to a parser: a NullPointerException with no word of either.
+	 */
+	static void aSubfileThatCannotBeReadIsRefusedNotNull() throws Exception {
+		System.out.println("--- a subfile that cannot be read is refused in words, never null (census M.4)");
+		File f = new File(Scratch.dir("ctrmap_cws_unread"), "7");
+		ByteBuffer bb = ByteBuffer.allocate(0x84).order(ByteOrder.LITTLE_ENDIAN);
+		bb.putShort((short) 0x5858).putShort((short) 1).putInt(0x80).putInt(0x84);
+		bb.position(0x80);
+		bb.put(new byte[]{4, 3, 2, 1});
+		Files.write(f.toPath(), bb.array());
+		DefaultGamefreakContainer c = new DefaultGamefreakContainer(f, (short) 0x5858, new Files2());
+		check(Arrays.equals(new byte[]{4, 3, 2, 1}, c.getFile(0)), "control: the one subfile reads");
+		check(c.hasFile(0) && !c.hasFile(1) && !c.hasFile(-1), "hasFile answers for the one it holds and none other");
+		check(refusal(c, 1).contains("7 has no subfile 1") && refusal(c, -1).contains("7 has no subfile -1"),
+				"a subfile it does not hold is refused, naming the container and the subfile: " + refusal(c, 1));
+		//census L.2: a producer's null was handed to storeFile, which threw from inside the padding or wrote nothing
+		byte[] whole = Files.readAllBytes(f.toPath());
+		String nothing = null;
+		try {
+			c.storeFile(0, (byte[]) null);
+		} catch (RuntimeException refused) {   //any refusal: a NullPointerException out of the padding is reported, not thrown on
+			nothing = refused.getMessage();
+		}
+		check(nothing != null && nothing.contains("nothing to store") && Arrays.equals(whole, Files.readAllBytes(f.toPath())),
+				"storing nothing is refused in words, and the container is as it was: " + nothing);
+		Files.write(f.toPath(), Arrays.copyOf(bb.array(), 0x82));
+		String cut = refusal(c, 0);
+		check(cut.contains("Subfile 0 of 7 could not be read") && cut.contains("truncated"),
+				"a container cut short after it was opened is refused, saying so: " + cut);
+
+		//the painter's seed and the atmosphere preview opened a region from the extraction folder by name, which
+		//holds nothing until something extracts it; their catch made that "all grass" and "no preview". A container
+		//is opened through the workspace, which extracts on demand - by shape, whatever the variables are called
+		java.util.regex.Pattern byName = java.util.regex.Pattern.compile(
+				"new\\s+(?:[\\w.]*\\.)?(?:GR|AD|ZO|MM|BM|DefaultGamefreakContainer)\\s*\\(\\s*new\\s+(?:java\\.io\\.)?File\\s*\\([^;]*getExtractionDirectory\\(");
+		for (String probe : new String[]{
+				"new GR(new File(Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA), String.valueOf(region)), s)",
+				"new ctrmap.formats.containers.GR(\n\t\t\tnew File(ws.getExtractionDirectory(ArchiveType.FIELD_DATA), \"5\"), s)",
+				"new AD(new java.io.File(Workspace.getExtractionDirectory(ArchiveType.AREA_DATA), \"3\"), s)"}) {
+			check(byName.matcher(probe).find(), "control: the scan sees a container opened from the extraction folder: " + probe);
+		}
+		check(!byName.matcher("new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, region), s)").find(),
+				"control: and not one opened through the workspace");
+		int scanned = 0;
+		java.util.List<String> bypass = new java.util.ArrayList<>();
+		for (File src : CollisionReadTest.javaFiles(new File("src/ctrmap"), new java.util.ArrayList<>())) {
+			if (src.getPath().contains(File.separator + "tests" + File.separator)) {
+				continue;
+			}
+			scanned++;
+			if (byName.matcher(SourceSeamTest.stripComments(new String(Files.readAllBytes(src.toPath()),
+					java.nio.charset.StandardCharsets.UTF_8))).find()) {
+				bypass.add(src.getName());
+			}
+		}
+		check(bypass.isEmpty() && scanned > 100, "no production file opens a container from the extraction folder by name ("
+				+ bypass + " in " + scanned + " files)");
+	}
+
+	/** What getFile said refusing {@code num}, or what it answered instead. */
+	static String refusal(DefaultGamefreakContainer c, int num) {
+		try {
+			byte[] answered = c.getFile(num);
+			return "ANSWERED " + (answered == null ? "null" : answered.length + " bytes");
+		} catch (IllegalStateException refused) {
+			return refused.getMessage();
+		}
 	}
 
 	static void aContainerThatCannotBeCreatedIsRefused() throws Exception {

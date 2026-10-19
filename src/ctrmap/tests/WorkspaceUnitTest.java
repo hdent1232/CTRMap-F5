@@ -41,6 +41,7 @@ public class WorkspaceUnitTest {
 			aCommittedUnitKeepsEverything();
 			aContainerStoreIsPutBackToo();
 			aNestedUnitJoinsTheOutermost();
+			aNestedUnitThatFailsPutsBackItsOwn();
 			aFileThatCannotBeCopiedIsNotWritten();
 			whatCannotBePutBackIsSaid();
 			rawWritesOnlyFall(new File(args.length > 0 ? args[0] : "build/classes"));
@@ -94,7 +95,7 @@ public class WorkspaceUnitTest {
 				boolean unit = x.owner.equals("ctrmap/WorkspaceUnit");
 				if (unit && x.name.equals("begin") && begin < 0) {
 					begin = i;
-				} else if (unit && x.name.equals("commit")) {
+				} else if (unit && (x.name.equals("commit") || x.name.equals("commitKeeping"))) {
 					commit = i;
 				} else if (x.name.equals(op[2]) && first < 0) {
 					first = i;
@@ -146,8 +147,8 @@ public class WorkspaceUnitTest {
 						boolean unit = x.owner.equals("ctrmap/WorkspaceUnit");
 						if (unit && x.name.equals("begin") && begin < 0) {
 							begin = i;
-						} else if (unit && x.name.equals("commit")) {
-							commit = i;
+						} else if (unit && (x.name.equals("commit") || x.name.equals("commitKeeping"))) {
+							commit = i;   //commitKeeping commits, and keeps what it takes to put it back (F209c)
 						} else if (x.owner.equals(save[0]) && x.name.equals(save[1])) {
 							at.add(i);
 						}
@@ -199,7 +200,7 @@ public class WorkspaceUnitTest {
 			WorkspaceUnit.copy(a, c);
 			s.addPersist(b);
 			s.registerPendingCompression(ArchiveType.FIELD_DATA, 2, false);
-			WorkspaceUnit.onRollback(() -> undone[0] = true);
+			WorkspaceUnit.inMemory(() -> undone[0] = true, () -> { });
 			throw planted;
 		} catch (IOException ex) {
 			caught = ex;
@@ -234,7 +235,7 @@ public class WorkspaceUnitTest {
 			WorkspaceUnit.write(b, "new b".getBytes(StandardCharsets.UTF_8));
 			s.addPersist(b);
 			s.registerPendingCompression(ArchiveType.ZONE_DATA, 5, true);
-			WorkspaceUnit.onRollback(() -> undone[0] = true);
+			WorkspaceUnit.inMemory(() -> undone[0] = true, () -> { });
 			//the two it wrote, and the list of edits it added b to - written through as it changes (F034)
 			check(unit.touched().size() == 3 && unit.touched().contains(WorkspaceSession.persistFile(ws).getAbsoluteFile()),
 					"the unit knows the 2 files it touched and the edit list (" + unit.touched() + ")");
@@ -297,6 +298,62 @@ public class WorkspaceUnitTest {
 		check(!new File(ws, "c.bin").exists(),
 				"and a write the outer operation made AFTER the nested unit closed is put back too - a nested"
 				+ " unit that ends the outer one's protection leaves everything after it on disk");
+
+		//measured by the 2026-10-12 sweep (WorkspaceUnit 224, dropped, SURVIVED): no nested unit was ever asked to be
+		//kept. Dropped, it handed back a change to take back made of files the larger one owns - Undo then put back
+		//one step of an operation the owner made as one, and left the rest standing
+		String refused;
+		try (WorkspaceUnit outer = WorkspaceUnit.begin("Apply map", s)) {
+			try (WorkspaceUnit inner = WorkspaceUnit.begin("Wire signs", s)) {
+				WorkspaceUnit.write(b, "wired".getBytes(StandardCharsets.UTF_8));
+				inner.commitKeeping();
+				refused = "the nested unit was kept on its own";
+			} catch (IllegalStateException partOfMore) {
+				refused = partOfMore.getMessage();
+			} catch (RuntimeException wentOn) {
+				refused = "it went on to keep the nested unit and failed: " + wentOn;
+			}
+			outer.commit();
+		}
+		check(refused.contains("Wire signs is part of a larger change, and only that one can be taken back"),
+				"a unit begun inside another cannot be kept on its own - only the outermost can be taken back: " + refused);
+	}
+
+	/**
+	 * A nested unit that does not finish puts back what it wrote - to what each file held when IT began - though
+	 * its caller reports the failure and carries on, and the outer unit commits the rest (F209c).
+	 */
+	static void aNestedUnitThatFailsPutsBackItsOwn() throws Exception {
+		System.out.println("--- a nested unit that does not finish puts back its own writes, though its caller carries on");
+		WorkspaceSession s = session("savepoint");
+		File ws = s.workspaceDir();
+		File a = put(ws, "a.bin", "old a");
+		File b = put(ws, "b.bin", "old b");
+		File c = new File(ws, "c.bin");
+		final String[] memory = {"before"};
+		try (WorkspaceUnit outer = WorkspaceUnit.begin("Apply map", s)) {
+			WorkspaceUnit.write(a, "new a".getBytes(StandardCharsets.UTF_8));
+			try (WorkspaceUnit inner = WorkspaceUnit.begin("Wire signs", s)) {
+				WorkspaceUnit.write(a, "a written over by the wiring".getBytes(StandardCharsets.UTF_8));
+				WorkspaceUnit.write(b, "half-wired b".getBytes(StandardCharsets.UTF_8));
+				WorkspaceUnit.write(c, "made by the wiring".getBytes(StandardCharsets.UTF_8));
+				s.addPersist(b);
+				memory[0] = "wired";
+				WorkspaceUnit.inMemory(() -> memory[0] = "before", () -> memory[0] = "wired");
+				throw new IOException("planted: the wiring failed part way");
+			} catch (IOException reported) {
+				//the painter's Apply says a failed wiring in its result, and the map stays applied
+			}
+			check(WorkspaceUnit.current() == outer, "control: the outer unit is still the open one");
+			outer.commit();
+		}
+		check("new a".equals(read(a)) && "old b".equals(read(b)) && !c.exists(),
+				"a nested unit that failed and was carried past puts back its own writes - each file to what it held when"
+				+ " the nested unit began, the outer's own write kept - and the outer commits the rest (a=" + read(a)
+				+ ", b=" + read(b) + ", c " + (c.exists() ? "made" : "gone") + ")");
+		check(!s.isPersisted(b) && memory[0].equals("before"),
+				"and with them the files it listed and what it changed in memory (listed: " + s.isPersisted(b)
+				+ ", memory: " + memory[0] + ")");
 	}
 
 	static void aFileThatCannotBeCopiedIsNotWritten() throws Exception {
@@ -354,6 +411,38 @@ public class WorkspaceUnitTest {
 		check(told.contains("planted: the operation failed") && told.contains("a.bin")
 				&& told.contains("could not be put back"),
 				"and the reason a caller shows names both the failure and what was not put back: " + told);
+		//census L.56: java.nio's file exceptions carry the path as their message, so a missing file was said as a
+		//bare path. A real one, read from a file that is not there, not one built to match
+		String missing = "";
+		try {
+			Files.readAllBytes(new File(Scratch.dir("reason"), "not there.bin").toPath());
+		} catch (IOException absent) {
+			missing = ctrmap.util.Bytes.reason(absent);
+		}
+		check(missing.contains("not there.bin"), "control: the reason for a missing file names it (" + missing + ")");
+		check(missing.contains("there is no such file"), "and says what is wrong with it, not only its name: " + missing);
+		String held = ctrmap.util.Bytes.reason(new java.nio.file.AccessDeniedException("x.bin", null, "held by the emulator"));
+		check(held.equals("x.bin: held by the emulator"), "a file exception that carries its own reason is said as it was: " + held);
+		//and EACH kind of file failure is said in its own words, never another's (the 2026-10-15 shared sweep, Bytes
+		//137, negate-if, SURVIVED: only the missing file was ever asked). Inverted, a file in use was "the file system
+		//refused (AccessDeniedException)" and a file already there, a folder not empty and a file that is not a folder
+		//were each told "access was denied"
+		Object[][] kinds = {
+			{new java.nio.file.NoSuchFileException("k.bin"), "there is no such file"},
+			{new java.nio.file.AccessDeniedException("k.bin"), "access was denied (the file is in use, read-only, or not this account's)"},
+			{new java.nio.file.FileAlreadyExistsException("k.bin"), "a file is already there"},
+			{new java.nio.file.DirectoryNotEmptyException("k.bin"), "the folder is not empty"},
+			{new java.nio.file.NotDirectoryException("k.bin"), "it is not a folder"},
+			{new java.nio.file.FileSystemLoopException("k.bin"), "the file system refused (FileSystemLoopException)"},
+		};
+		List<String> wrong = new java.util.ArrayList<>();
+		for (Object[] k : kinds) {
+			String sentence = ctrmap.util.Bytes.reason((Throwable) k[0]);
+			if (!sentence.equals(k[1] + ": k.bin")) {
+				wrong.add(k[0].getClass().getSimpleName() + " said \"" + sentence + "\"");
+			}
+		}
+		check(wrong.isEmpty(), "each kind of file failure is said in its own words (" + kinds.length + " kinds): " + wrong);
 	}
 
 	/**
@@ -389,15 +478,21 @@ public class WorkspaceUnitTest {
 	 * Bytes.replaceFile (F120), the class gone being ResourceAccess; then, 2026-10-08, 22 over 46
 	 * once an item record was staged in the workspace instead of written into the game folder
 	 * through its own RandomAccessFile (F082), the edge gone being ItemTable's
-	 * java/io/RandomAccessFile.&lt;init&gt; - the tree before it measured 22 over 47 with that edge.
+	 * java/io/RandomAccessFile.&lt;init&gt; - the tree before it measured 22 over 47 with that edge;
+	 * then, the same day, 21 over 45 once the NPC form's story-text write went through the zone's
+	 * history and WorkspaceUnit.write (F209): the list this method printed no longer names
+	 * NPCEditForm, whose only raw write was that java/io/FileOutputStream.&lt;init&gt;; then, 2026-10-09, 17 over
+	 * 40 once the raw browser's writes went through WorkspaceUnit.write and its converter template through the
+	 * scratch writer (F209c, F209d): the list no longer names humaninterface/builder/Builder, whose
+	 * java/nio/file/Files.copy and Files.write were its raw writes - battery b17 measured 17 over 40.
 	 * Some are the unit's own seams - a container reports its store through {@code aboutToWrite}
 	 * before writing raw - so this is an upper bound on the debt, not the debt.
 	 */
-	private static final int RAW_WRITE_CLASSES = 22;
-	private static final int RAW_WRITE_EDGES = 46;
+	private static final int RAW_WRITE_CLASSES = 17;
+	private static final int RAW_WRITE_EDGES = 40;
 
 	/** The members that write, move or delete a file without asking anything first. */
-	private static final String[][] RAW_WRITES = {
+	static final String[][] RAW_WRITES = {
 		{"java/nio/file/Files", "write"}, {"java/nio/file/Files", "copy"}, {"java/nio/file/Files", "move"},
 		{"java/nio/file/Files", "newOutputStream"}, {"java/nio/file/Files", "newBufferedWriter"},
 		{"java/nio/file/Files", "delete"}, {"java/nio/file/Files", "deleteIfExists"},

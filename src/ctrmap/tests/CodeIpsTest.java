@@ -33,6 +33,10 @@ public class CodeIpsTest {
 
 	static int fails = 0;
 
+	/** The history the Game Data tab hands its editors: each Save is kept in it (F209c). */
+	static final ctrmap.humaninterface.SaveHistory SAVES = new ctrmap.humaninterface.SaveHistory(
+			() -> java.util.Collections.<Object>emptyList());
+
 	public static void main(String[] args) throws Exception {
 		Headless.require();
 		File root = new File(args.length > 0 ? args[0] : "src");
@@ -43,10 +47,15 @@ public class CodeIpsTest {
 			threePatchesShareOneFile(code, new File(dir, "code.ips"));
 			anEditPutBackIsPutBackInTheFile(code, new File(dir, "revert.ips"));
 			aRecordAcrossTheEdgeIsSplit();
+			aRecordIpsCannotCarryIsRefused();
+			aDiffOfDifferentLengthsIsRefused();
+			aPatchHoldingRleIsRefused();
+			noCodeBinIsRefusedByEveryVerifier(code);
 			aFileThatIsNotAPatchIsLeftAlone(new File(dir, "other.ips"));
 			removingTheZonesKeepsTheRest(code, new File(dir, "removed.ips"));
 			theEditorsSaveButtons(code, dir, new File(dir, "editors.ips"), root);
 			everyWriterGoesThroughTheOne(root);
+			theCodeBinIsRememberedPerGame(dir);
 		} finally {
 			for (File f : dir.listFiles()) {
 				f.delete();
@@ -98,16 +107,16 @@ public class CodeIpsTest {
 	static void threePatchesShareOneFile(byte[] code, File out) throws Exception {
 		System.out.println("--- the zone-limit, shop and icon patches saved into one file, in that order (F152)");
 		byte[] zoneIps = ZoneLimitPatch.buildIPS(4, code);
-		check(CodeIps.save(out, zoneIps, ZoneLimitPatch.owned()).isEmpty()
+		check(CodeIps.save(out, zoneIps, ZoneLimitPatch.owned(), ctrmap.WorkspaceUnit::touching).isEmpty()
 				&& Arrays.equals(Files.readAllBytes(out.toPath()), zoneIps),
 				"with no file there, the save is the patch itself");
 		int[][] shops = edited(ShopData.read(code), 18, new int[]{50, 51, 52, 53});
-		String note = CodeIps.save(out, Ips.diff(code, ShopData.write(code, shops)), ShopData.owned());
+		String note = CodeIps.save(out, Ips.diff(code, ShopData.write(code, shops)), ShopData.owned(), ctrmap.WorkspaceUnit::touching);
 		check(note.contains("kept"), "a save into a file already there says the patches in it were kept: '" + note + "'");
 		int[] icons = ItemIconTable.read(code);
 		int[] iconsEdited = icons.clone();
 		iconsEdited[50] = icons[2];
-		CodeIps.save(out, ItemIconTable.diffIPS(code, iconsEdited), ItemIconTable.owned());
+		CodeIps.save(out, ItemIconTable.diffIPS(code, iconsEdited), ItemIconTable.owned(), ctrmap.WorkspaceUnit::touching);
 
 		byte[] all = Ips.apply(code, Files.readAllBytes(out.toPath()));
 		byte[] zoneOnly = ZoneLimitPatch.applyToCode(4, code);
@@ -120,7 +129,7 @@ public class CodeIpsTest {
 		check(ItemIconTable.read(all)[50] == icons[2] && ItemIconTable.read(all)[51] == icons[51],
 				"the icon edit is there, and an icon nobody edited is not touched");
 
-		CodeIps.save(out, ZoneLimitPatch.buildIPS(8, code), ZoneLimitPatch.owned());
+		CodeIps.save(out, ZoneLimitPatch.buildIPS(8, code), ZoneLimitPatch.owned(), ctrmap.WorkspaceUnit::touching);
 		byte[] again = Ips.apply(code, Files.readAllBytes(out.toPath()));
 		check(Arrays.equals(Arrays.copyOfRange(again, 0x012bc0, 0x012bc4),
 				Arrays.copyOfRange(ZoneLimitPatch.applyToCode(8, code), 0x012bc0, 0x012bc4))
@@ -132,19 +141,19 @@ public class CodeIpsTest {
 		System.out.println("--- a shop slot put back to the game's own is put back in code.ips too (F152)");
 		int[][] stock = ShopData.read(code);
 		int[][] first = edited(stock, 18, new int[]{50, 51, 52, 53});
-		CodeIps.save(out, Ips.diff(code, ShopData.write(code, first)), ShopData.owned());
+		CodeIps.save(out, Ips.diff(code, ShopData.write(code, first)), ShopData.owned(), ctrmap.WorkspaceUnit::touching);
 		int[][] second = edited(stock, 18, new int[]{50, stock[18][1], stock[18][2], stock[18][3]});
 		byte[] secondIps = Ips.diff(code, ShopData.write(code, second));
 
 		byte[] plain = Ips.apply(code, Ips.merge(Files.readAllBytes(out.toPath()), secondIps));
 		check(ShopData.read(plain)[18][1] == 51,
 				"control: merging the new save over the old keeps the slot the new save no longer writes");
-		CodeIps.save(out, secondIps, ShopData.owned());
+		CodeIps.save(out, secondIps, ShopData.owned(), ctrmap.WorkspaceUnit::touching);
 		byte[] saved = Ips.apply(code, Files.readAllBytes(out.toPath()));
 		check(Arrays.equals(ShopData.read(saved)[18], second[18]),
 				"the save puts the 3 slots back: " + Arrays.toString(ShopData.read(saved)[18]));
 
-		CodeIps.save(out, Ips.diff(code, ShopData.write(code, stock)), ShopData.owned());
+		CodeIps.save(out, Ips.diff(code, ShopData.write(code, stock)), ShopData.owned(), ctrmap.WorkspaceUnit::touching);
 		check(Ips.parse(Files.readAllBytes(out.toPath())).isEmpty(),
 				"and every list put back takes the shop table out of the file - a save with nothing changed is still a save");
 	}
@@ -158,6 +167,127 @@ public class CodeIpsTest {
 		check(left.size() == 2 && left.get(0)[0] == at - 2 && left.get(0)[1] == 2 && left.get(0)[2] == 1 && left.get(0)[3] == 2
 				&& left.get(1)[0] == end && left.get(1)[1] == 2 && left.get(1)[2] == 9 && left.get(1)[3] == 10,
 				"the 2 bytes before the table and the 2 after it stay, the 6 inside go: " + describe(left));
+	}
+
+	/**
+	 * A record IPS cannot carry is refused, never written as another: an offset past 24 bits or below 0, a length of 0
+	 * (which IPS reads as RLE) or past 16 bits.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (Ips 45, dropped, SURVIVED): no record past IPS's range was ever written.
+	 * Dropped, the writer kept the offset's low 24 bits, so a patch for 0x1000000 landed on 0x000000 of the game's code
+	 * - another place's bytes overwritten, and nothing said. Its twin on the length (48) is asked with it.
+	 */
+	static void aRecordIpsCannotCarryIsRefused() {
+		System.out.println("--- a record IPS cannot carry is refused, never written as another");
+		check(Ips.parse(Ips.write(Arrays.asList(Ips.record(0xFFFFFF, new byte[]{9}, 0, 1)))).get(0)[0] == 0xFFFFFF,
+				"control: a record at 0xFFFFFF, the last offset IPS names, is written and read back there");
+		String past = ipsRefusal(0x1000000, 1);
+		String below = ipsRefusal(-1, 1);
+		check(past.equals("offset beyond IPS range: 0x1000000") && below.equals("offset beyond IPS range: 0xffffffff"),
+				"a record past 24 bits or below 0 is refused, naming its offset: " + past + " / " + below);
+		String none = ipsRefusal(0x10, 0);
+		String tooLong = ipsRefusal(0x10, 0x10000);
+		check(none.equals("an IPS record of 0 bytes at 0x10 cannot be written")
+				&& tooLong.equals("an IPS record of 65536 bytes at 0x10 cannot be written"),
+				"and one of 0 bytes, or past 16 bits, is refused too: " + none + " / " + tooLong);
+	}
+
+	/**
+	 * A patch holding an RLE record - which this writer never emits, but another tool's code.ips may - is refused,
+	 * never read out of step.
+	 *
+	 * <p>Measured by the 2026-10-14 shared sweep (Ips 151, dropped, SURVIVED): no patch holding an RLE record had been
+	 * read. Dropped, its record of 0 bytes was read as an empty one, and its run length and fill byte as the next
+	 * record's offset - every record after it read out of step.
+	 */
+	static void aPatchHoldingRleIsRefused() {
+		System.out.println("--- a patch holding an RLE record is refused, never read out of step");
+		check(Ips.parse(ips(new int[]{0x10, 2, 1, 2})).size() == 1, "control: a patch of 1 plain record reads as 1 record");
+		byte[] rle = {'P', 'A', 'T', 'C', 'H', 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x04, (byte) 0xAA, 'E', 'O', 'F'};
+		String said;
+		try {
+			said = "it read " + Ips.parse(rle).size() + " record(s)";
+		} catch (IllegalArgumentException refused) {
+			said = refused.getMessage();
+		} catch (RuntimeException other) {
+			said = "it failed some other way: " + other;
+		}
+		check(said.equals("RLE IPS records not supported"), "a patch holding an RLE record is refused in words: " + said);
+	}
+
+	/**
+	 * A diff of two codes of different lengths is refused, never written as a patch of the bytes they share.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (Ips 81, dropped, SURVIVED): no diff of different lengths was ever asked.
+	 * Dropped, the loop walked the original's length only, so a code 2 bytes longer with its change in those 2 bytes
+	 * diffed to a patch of 0 records - the edit lost, and a patch written that says nothing changed.
+	 */
+	static void aDiffOfDifferentLengthsIsRefused() {
+		System.out.println("--- a diff of two codes of different lengths is refused");
+		byte[] same = Ips.diff(new byte[]{1, 2, 3, 4}, new byte[]{1, 2, 7, 4});
+		check(same != null && Ips.parse(same).size() == 1 && Ips.parse(same).get(0)[0] == 2,
+				"control: a diff of 4 bytes against 4, one changed, is a patch of 1 record at 2");
+		String longer = diffRefusal(new byte[]{1, 2, 3, 4}, new byte[]{1, 2, 3, 4, 5, 6});
+		String shorter = diffRefusal(new byte[]{1, 2, 3, 4, 5, 6}, new byte[]{1, 2, 3, 4});
+		check(longer.equals("length mismatch") && shorter.equals("length mismatch"),
+				"a diff of 4 bytes against 6, either way round, is refused: " + longer + " / " + shorter);
+	}
+
+	/**
+	 * No code.bin at all is refused by every patch's verifier, in its own words - never passed, and never a bare
+	 * NullPointerException that names nothing.
+	 *
+	 * <p>Measured by the 2026-10-14 shared sweep (ShopData 105, dropped, SURVIVED): no verifier was ever handed no
+	 * file. Dropped, ShopData's refusal becomes whatever its anchor search throws on no array; swallowed, verify
+	 * returns as if the file had passed. Its 2 siblings, ItemIconTable's and ZoneLimitPatch's, are asked with it.
+	 */
+	static void noCodeBinIsRefusedByEveryVerifier(byte[] code) {
+		System.out.println("--- no code.bin at all is refused by every patch's verifier, in its words");
+		check(verifyRefusal(ShopData::verify, code).equals("it passed")
+				&& verifyRefusal(ItemIconTable::verify, code).equals("it passed")
+				&& verifyRefusal(ZoneLimitPatch::verify, code).equals("it passed"),
+				"control: all 3 verifiers pass the stand-in executable");
+		String shop = verifyRefusal(ShopData::verify, null);
+		check(shop.equals("no code.bin"), "no code.bin at all is refused by ShopData: " + shop);
+		String icons = verifyRefusal(ItemIconTable::verify, null);
+		check(icons.equals("no code.bin"), "no code.bin at all is refused by ItemIconTable: " + icons);
+		String zone = verifyRefusal(ZoneLimitPatch::verify, null);
+		check(zone.startsWith("this file is 0 bytes, too short to hold the patch site"),
+				"no code.bin at all is refused by ZoneLimitPatch: " + zone);
+	}
+
+	/** What one verifier said of {@code code} - its refusal, or that it passed. */
+	static String verifyRefusal(java.util.function.Consumer<byte[]> verifier, byte[] code) {
+		try {
+			verifier.accept(code);
+			return "it passed";
+		} catch (IllegalArgumentException | IllegalStateException refused) {
+			return refused.getMessage();
+		} catch (RuntimeException other) {
+			return "it failed some other way: " + other;
+		}
+	}
+
+	/** What diffing {@code original} against {@code patched} said - its refusal, or what it did. */
+	static String diffRefusal(byte[] original, byte[] patched) {
+		try {
+			byte[] patch = Ips.diff(original, patched);
+			return patch == null ? "it answered no patch at all" : "it wrote a patch of " + Ips.parse(patch).size() + " record(s)";
+		} catch (IllegalArgumentException refused) {
+			return refused.getMessage();
+		} catch (RuntimeException other) {
+			return "it failed some other way: " + other;
+		}
+	}
+
+	/** What writing one record of {@code length} bytes at {@code offset} said - its refusal, or what it did. */
+	static String ipsRefusal(int offset, int length) {
+		try {
+			byte[] patch = Ips.write(Arrays.asList(Ips.record(offset, new byte[Math.max(length, 0)], 0, length)));
+			return patch == null ? "it answered no patch at all" : "it wrote a " + patch.length + "-byte patch";
+		} catch (IllegalStateException refused) {
+			return refused.getMessage();
+		}
 	}
 
 	static void aFileThatIsNotAPatchIsLeftAlone(File out) throws Exception {
@@ -175,15 +305,15 @@ public class CodeIpsTest {
 
 	static void removingTheZonesKeepsTheRest(byte[] code, File out) throws Exception {
 		System.out.println("--- removing the added zones takes the zone-limit patch out and keeps the rest (F152)");
-		CodeIps.save(out, ZoneLimitPatch.buildIPS(4, code), ZoneLimitPatch.owned());
+		CodeIps.save(out, ZoneLimitPatch.buildIPS(4, code), ZoneLimitPatch.owned(), ctrmap.WorkspaceUnit::touching);
 		int[][] shops = edited(ShopData.read(code), 18, new int[]{50, 51, 52, 53});
-		CodeIps.save(out, Ips.diff(code, ShopData.write(code, shops)), ShopData.owned());
-		int left = CodeIps.strip(out, ZoneLimitPatch.owned());
+		CodeIps.save(out, Ips.diff(code, ShopData.write(code, shops)), ShopData.owned(), ctrmap.WorkspaceUnit::touching);
+		int left = CodeIps.strip(out, ZoneLimitPatch.owned(), ctrmap.WorkspaceUnit::touching);
 		byte[] after = Ips.apply(code, Files.readAllBytes(out.toPath()));
 		check(Arrays.equals(Arrays.copyOfRange(after, 0x012bc0, 0x012bc4), Arrays.copyOfRange(code, 0x012bc0, 0x012bc4))
 				&& Arrays.equals(ShopData.read(after)[18], shops[18]) && left > 0,
 				"the zone-limit sites are stock again, the shop edit stays, " + left + " patched byte(s) left");
-		check(CodeIps.strip(out, ShopData.owned()) == 0 && Ips.parse(Files.readAllBytes(out.toPath())).isEmpty(),
+		check(CodeIps.strip(out, ShopData.owned(), ctrmap.WorkspaceUnit::touching) == 0 && Ips.parse(Files.readAllBytes(out.toPath())).isEmpty(),
 				"and with the shops taken out too, the file patches nothing");
 	}
 
@@ -194,24 +324,30 @@ public class CodeIpsTest {
 	static void theEditorsSaveButtons(byte[] code, File dir, File out, File root) throws Exception {
 		System.out.println("--- the shop and icon editors' Save buttons keep the zone-limit patch (F152)");
 		File codeFile = new File(dir, "code.bin");   //only its folder is read: where the chooser starts
-		CodeIps.save(out, ZoneLimitPatch.buildIPS(4, code), ZoneLimitPatch.owned());
+		CodeIps.save(out, ZoneLimitPatch.buildIPS(4, code), ZoneLimitPatch.owned(), ctrmap.WorkspaceUnit::touching);
 		int[][] stock = ShopData.read(code);
 		int[][] shops = edited(stock, 18, new int[]{50, 51, 52, 53});
+		byte[] zoneOnly = Files.readAllBytes(out.toPath());
 
 		List<String> said = ctrmap.Ui.record(out);
 		try {
-			ctrmap.humaninterface.ShopEditDialog.savePatch(null, codeFile, code, shops);
+			ctrmap.humaninterface.ShopEditDialog.savePatch(null, codeFile, code, shops, SAVES);
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
 		byte[] after = Ips.apply(code, Files.readAllBytes(out.toPath()));
 		check(zoneKept(code, after) && Arrays.equals(ShopData.read(after)[18], shops[18]),
 				"the shop editor's Save writes the shops into the code.ips there and keeps its zone-limit patch: " + said);
+		byte[] saved = Files.readAllBytes(out.toPath());
+		check(SAVES.history().undo() && Arrays.equals(Files.readAllBytes(out.toPath()), zoneOnly),
+				"Undo in the Game Data tab puts the code.ips back byte for byte as it was before the shop save (F209c)");
+		check(SAVES.history().redo() && Arrays.equals(Files.readAllBytes(out.toPath()), saved),
+				"and Redo writes the shop save into it again");
 
 		byte[] before = Files.readAllBytes(out.toPath());
 		said = ctrmap.Ui.record();   //nothing answers the chooser: it was closed
 		try {
-			ctrmap.humaninterface.ShopEditDialog.savePatch(null, codeFile, code, stock);
+			ctrmap.humaninterface.ShopEditDialog.savePatch(null, codeFile, code, stock, SAVES);
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
@@ -219,7 +355,7 @@ public class CodeIpsTest {
 
 		said = ctrmap.Ui.record(out);
 		try {
-			ctrmap.humaninterface.ShopEditDialog.savePatch(null, codeFile, code, stock);
+			ctrmap.humaninterface.ShopEditDialog.savePatch(null, codeFile, code, stock, SAVES);
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
@@ -233,16 +369,20 @@ public class CodeIpsTest {
 		iconsEdited[50] = icons[2];
 		said = ctrmap.Ui.record(out);
 		try {
-			ctrmap.humaninterface.ItemEditDialog.saveIconPatch(null, codeFile, code, iconsEdited);
+			ctrmap.humaninterface.ItemEditDialog.saveIconPatch(null, codeFile, code, iconsEdited, SAVES);
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
 		after = Ips.apply(code, Files.readAllBytes(out.toPath()));
 		check(ItemIconTable.read(after)[50] == icons[2] && zoneKept(code, after),
 				"the icon editor's Save writes the icon and keeps the zone-limit patch: " + said);
+		byte[] iconSaved = Files.readAllBytes(out.toPath());
+		check(SAVES.history().undo() && ItemIconTable.read(Ips.apply(code, Files.readAllBytes(out.toPath())))[50] == icons[50]
+				&& SAVES.history().redo() && Arrays.equals(Files.readAllBytes(out.toPath()), iconSaved),
+				"and the icon save is taken back and put again the same way (F209c)");
 		said = ctrmap.Ui.record(out);
 		try {
-			ctrmap.humaninterface.ItemEditDialog.saveIconPatch(null, codeFile, code, icons);
+			ctrmap.humaninterface.ItemEditDialog.saveIconPatch(null, codeFile, code, icons, SAVES);
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
@@ -283,11 +423,34 @@ public class CodeIpsTest {
 			+ "|0x50\\W{1,80}0x41\\W{1,80}0x54\\W{1,80}0x43\\W{1,80}0x48"
 			+ "|\\b80\\W{1,80}65\\W{1,80}84\\W{1,80}67\\W{1,80}72\\b", Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
 
+	/**
+	 * Census M.31: a code.bin is remembered for the game folder it was picked in. One was remembered for every
+	 * game, so a user who had edited one dump's shops and opened another workspace was handed the first dump's
+	 * executable silently, and saved a code.ips diffed against it into the other game. Driven through a map, so
+	 * the owner's own remembered file is never touched.
+	 */
+	static void theCodeBinIsRememberedPerGame(File dir) throws Exception {
+		System.out.println("--- a code.bin is remembered for the game folder it was picked in (census M.31)");
+		File code = new File(dir, "omega-code.bin");
+		Files.write(code.toPath(), new byte[]{1});
+		java.util.Map<String, String> prefs = new java.util.HashMap<>();
+		String omega = new File(dir, "omega").getAbsolutePath();
+		String alpha = new File(dir, "alpha").getAbsolutePath();
+		prefs.put(ctrmap.humaninterface.CodeBinFile.keyFor(omega), code.getAbsolutePath());
+		check(code.equals(ctrmap.humaninterface.CodeBinFile.rememberedFor(omega, prefs::get)),
+				"control: the game folder it was picked in is handed it");
+		check(ctrmap.humaninterface.CodeBinFile.rememberedFor(alpha, prefs::get) == null,
+				"another game folder is not handed it, and is asked again");
+		prefs.put("CODEBIN_PATH", code.getAbsolutePath());
+		check(ctrmap.humaninterface.CodeBinFile.rememberedFor(alpha, prefs::get) == null,
+				"nor is one remembered before, for every game at once");
+	}
+
 	static void everyWriterGoesThroughTheOne(File root) throws Exception {
 		System.out.println("--- every code.ips writer goes through CodeIps (F152)");
 		check(RAW_IPS_WRITE.matcher("Files.write(out.toPath(), ips);").find()
 				&& RAW_IPS_WRITE.matcher("ctrmap.util.Bytes.replaceFile(fc.getSelectedFile(), ips);").find()
-				&& !RAW_IPS_WRITE.matcher("String note = CodeIps.save(out, ips, ShopData.owned());").find(),
+				&& !RAW_IPS_WRITE.matcher("String note = CodeIps.save(out, ips, ShopData.owned(), ctrmap.WorkspaceUnit::touching);").find(),
 				"control: the shop and zone writers' old raw writes are seen, a save through CodeIps is not");
 		List<String> raw = new ArrayList<>();
 		List<String> merges = new ArrayList<>();
@@ -327,13 +490,18 @@ public class CodeIpsTest {
 		String[][] writers = {
 			{"humaninterface/ShopEditDialog.java", "save", "ShopData"},
 			{"humaninterface/ItemEditDialog.java", "save", "ItemIconTable"},
-			{"humaninterface/ZoneLoadingPanel.java", "save", "ZoneLimitPatch"},
-			{"CtrmapMainframe.java", "strip", "ZoneLimitPatch"}};
+			{"Exports.java", "save", "ZoneLimitPatch"},
+			{"WorkspaceOps.java", "strip", "ZoneLimitPatch"}};
 		for (String[] w : writers) {
 			String src = SourceSeamTest.stripComments(DialogSeamTest.read(new File(root, "ctrmap/" + w[0])));
-			check(Pattern.compile("CodeIps\\." + w[1] + "\\([^;]*\\b" + w[2] + "\\.owned\\(\\)\\)").matcher(src).find(),
-					w[0] + " goes through CodeIps." + w[1] + " with the ranges " + w[2] + " owns");
+			//AND TELLS THE UNIT FIRST (F209c): handed anything but the unit's touching, the code.ips is written where
+			//no kept change copied it, and Undo leaves the patch in
+			check(Pattern.compile("CodeIps\\." + w[1] + "\\([^;]*\\b" + w[2] + "\\.owned\\(\\),\\s*(?:ctrmap\\.)?WorkspaceUnit::touching\\)")
+					.matcher(src).find(),
+					w[0] + " goes through CodeIps." + w[1] + " with the ranges " + w[2] + " owns, telling the unit before it writes");
 		}
+		String zones = SourceSeamTest.stripComments(DialogSeamTest.read(new File(root, "ctrmap/humaninterface/ZoneLoadingPanel.java")));
+		check(zones.contains("ctrmap.Exports.zoneLimitPatch("), "and the Zone Loader saves its zone-limit patch through that export");
 	}
 
 	// ------------------------------------------------------------ helpers
@@ -412,7 +580,7 @@ public class CodeIpsTest {
 
 	static void refused(String what, File out, String why) {
 		try {
-			CodeIps.save(out, empty(), ShopData.owned());
+			CodeIps.save(out, empty(), ShopData.owned(), ctrmap.WorkspaceUnit::touching);
 			check(false, what + " is refused (it was saved into)");
 		} catch (Exception said) {
 			String m = String.valueOf(said.getMessage());

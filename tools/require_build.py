@@ -25,8 +25,13 @@ other. There is ONE now, below; `source_digest` answers through it. CTRMap's own
 kept: text files lose their CRs, as stamp.ps1 and the Java mirrors take them.
 """
 import hashlib
+import os
 import subprocess
+import sys
 from pathlib import Path
+if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bounded  # noqa: E402  - a deadline ends the child's whole tree: the build is a tree
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console window for a captured child (F184)
 
 STAMP = ".built-by-build-ps1"
@@ -135,7 +140,7 @@ def subject_digest(root, exclude=()):
     """
     exclude = {e.replace("\\", "/") for e in exclude}
     try:
-        done = subprocess.run(
+        done = bounded.run(
             ["git", "-C", str(root), "ls-files", "--cached", "--others", "--exclude-standard"],
             capture_output=True, text=True, timeout=SUBJECT_TIMEOUT, creationflags=NO_WINDOW)
     except (OSError, subprocess.SubprocessError) as cannotAsk:
@@ -220,8 +225,8 @@ def build_with_battery_verbose(root):
     #: adding the keyword without catching it converts "blocks forever" into "crashes with a
     #: traceback" - which is louder and still not an answer.
     try:
-        r = subprocess.run(BUILD_COMMAND, cwd=str(root), capture_output=True, text=True,
-                           timeout=BUILD_TIMEOUT, creationflags=NO_WINDOW)
+        r = bounded.run(BUILD_COMMAND, cwd=str(root), capture_output=True, text=True,
+                        timeout=BUILD_TIMEOUT, creationflags=NO_WINDOW)
     except subprocess.TimeoutExpired:
         return False, ("the build did not finish in %ds. It has not necessarily failed - a "
                        "capture_output run reads to EOF, and EOF does not arrive while any "
@@ -230,7 +235,10 @@ def build_with_battery_verbose(root):
     out = (r.stdout or "") + (r.stderr or "")
     if r.returncode != 0 or "Build OK" not in (r.stdout or ""):
         return False, out
-    return stamp_problem(root) is None, out
+    #THE REASON TRAVELS WITH THE ANSWER (2026-10-14): a stamp that refused after "Build OK" answered False and kept
+    #why to itself, and the sweep filed the mutant "nocompile: no diagnostic captured" - its own failure, unnamed
+    problem = stamp_problem(root)
+    return problem is None, out if problem is None else out + "\nTHE BUILD'S STAMP REFUSED: " + problem
 
 
 def build_with_battery(root):

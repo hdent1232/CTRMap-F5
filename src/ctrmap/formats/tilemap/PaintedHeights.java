@@ -7,6 +7,8 @@ import static ctrmap.formats.tilemap.PaintedGeometry.NO_RAMP;
 import static ctrmap.formats.tilemap.PaintedGeometry.ORIGIN;
 import static ctrmap.formats.tilemap.PaintedGeometry.STEP;
 import static ctrmap.formats.tilemap.PaintedGeometry.TILE;
+import static ctrmap.formats.tilemap.PaintedGeometry.edgeCorners;
+import static ctrmap.formats.tilemap.PaintedGeometry.lowCorner;
 
 /**
  * The painter's stage for what height each tile sits at, and which tiles are ground at all.
@@ -91,6 +93,7 @@ public final class PaintedHeights {
 	 * patch standing on ground taken from beside it is level with its
 	 * surroundings rather than at a height the map itself gave it.
 	 */
+	@ctrmap.util.ForSuites("SEAM: a suite counts the tiles that borrow ground straight from a region's subfiles, without a build, to hold Apply's report to it")
 	public static int borrowedGroundTiles(byte[] coll, byte[] tilemap, boolean[][] touched) {
 		float[][] by = sampleBaseY(coll);
 		return borrowedGroundTiles(by, nearestGround(by, walkableTiles(tilemap)), touched);
@@ -223,8 +226,12 @@ public final class PaintedHeights {
 		GfColl c;
 		try {
 			c = new GfColl(donorColl);
-		} catch (RuntimeException ex) {
-			return out;
+		} catch (RuntimeException damaged) {
+			//A DAMAGED COLLISION IS SAID, NOT FLAT GROUND (census M.118): this answered "no ground anywhere", so a
+			//paint over the region laid every floor, wall and collision at the flat baseline while Apply reported
+			//success - and the collision builder threw on the same bytes. Not a collision at all is still no ground
+			throw new IllegalStateException("The region's collision (subfile 2) starts like a collision and does not read,"
+					+ " so its ground heights are unknown: " + ctrmap.util.Bytes.reason(damaged), damaged);
 		}
 		for (float[] t : c.uniqueTris) {
 			float minX = Math.min(t[0], Math.min(t[3], t[6])), maxX = Math.max(t[0], Math.max(t[3], t[6]));
@@ -386,6 +393,44 @@ public final class PaintedHeights {
 			return myY - STEP;
 		}
 		return yTop[ny][nx];
+	}
+
+	/**
+	 * The floor of the tile beside (tx,ty) on {@code side}, at the two corners their shared edge
+	 * has, in {@link PaintedGeometry#edgeCorners} order: a painted ramp's own slope there, else the
+	 * flat top {@link #neighbourTopY} answers. Null where that answers nothing.
+	 *
+	 * <p>A ramp's side skirt is bounded by this. It was bounded by the ramp's own level whatever
+	 * stood beside it, and the lane of the same ramp beside it was skipped outright - so two lanes
+	 * whose feet land at different levels had nothing at all between their floors (measured
+	 * 2026-10-18: 20 of 20 sight lines through, the lower lane looking under the higher one).
+	 */
+	static float[] floorBeside(TilePalette[][] grid, int[][] height, int[][] ramp, float[][] yTop, float[][] baseY,
+			boolean[][] touched, int tx, int ty, int side) {
+		Float top = neighbourTopY(grid, yTop, baseY, touched, tx, ty, side);
+		if (top == null) {
+			return null;
+		}
+		float[] at = {top, top};
+		int nx = tx + (side == 0 ? 1 : side == 1 ? -1 : 0);
+		int ny = ty + (side == 2 ? 1 : side == 3 ? -1 : 0);
+		if (nx < 0 || ny < 0 || nx >= DIM || ny >= DIM || (touched != null && !touched[ny][nx])
+				|| grid[ny][nx] == null || grid[ny][nx] == TilePalette.VOID) {
+			return at;
+		}
+		int nrd = rampDir(grid, height, ramp, nx, ny);
+		if (nrd < 0) {
+			return at;
+		}
+		float foot = rampFoot(grid, yTop, baseY, touched, nx, ny, nrd, yTop[ny][nx]);
+		int[][] c = edgeCorners(side);
+		for (int i = 0; i < 2; i++) {
+			//the same world corner, seen from the tile beside: across an E/W edge its x index flips, across S/N its z
+			int xi = side == 0 || side == 1 ? 1 - c[i][0] : c[i][0];
+			int zi = side == 2 || side == 3 ? 1 - c[i][1] : c[i][1];
+			at[i] = lowCorner(nrd, xi, zi) ? foot : yTop[ny][nx];
+		}
+		return at;
 	}
 
 	/** The neighbour tile's touched state; off-map counts as untouched. */

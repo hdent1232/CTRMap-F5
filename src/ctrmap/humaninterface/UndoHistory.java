@@ -76,6 +76,22 @@ public final class UndoHistory {
 		void redo();
 	}
 
+	/**
+	 * Bytes the workspace holds - one subfile of a container, or a file - read and written whole: where
+	 * a write that IS an edit lands ({@link #write}).
+	 */
+	public interface Place {
+
+		/** What it holds now, or null when it cannot be read. */
+		byte[] read();
+
+		/** Puts {@code data} there, and reads again whatever is held in memory from it; throws with the reason when it cannot. */
+		void write(byte[] data);
+
+		/** What it is, in words, for the button: "the area's prop textures". */
+		String what();
+	}
+
 	/** How many edits are kept; the oldest go first. */
 	public static final int LIMIT = 100;
 
@@ -89,6 +105,8 @@ public final class UndoHistory {
 	/** What the scope was when last asked: its objects, by identity. */
 	private List<Object> lastScope;
 	private final List<Runnable> listeners = new ArrayList<>();
+	/** How many of the newest edits were added since the last settle, and join what it finds changed. */
+	private int joinable;
 
 	/**
 	 * A history of whatever documents {@code documents} answers with when asked - asked afresh at every
@@ -147,6 +165,7 @@ public final class UndoHistory {
 		lastScope = new ArrayList<>(now);
 		undo.clear();
 		redo.clear();
+		joinable = 0;
 		seen = new IdentityHashMap<>();
 		changed();
 		return true;
@@ -181,20 +200,77 @@ public final class UndoHistory {
 		}
 		seen = now;
 		if (parts.isEmpty()) {
+			joinable = 0;   //an edit added since the last settle stays its own: nothing joined it
 			return false;
 		}
-		add(new StateEdit(parts));
+		List<Edit> made = new ArrayList<>();
+		for (; joinable > 0 && !undo.isEmpty(); joinable--) {
+			made.add(0, undo.pop());   //the newest is on top: taken off, they are oldest first
+		}
+		add(new StateEdit(parts, made));
+		joinable = 0;
 		return true;
 	}
 
-	/** Records an edit made some other way (a file operation's kept unit), as the newest. */
+	/**
+	 * Records an edit made some other way - a write through {@link #write}, a file operation's kept unit -
+	 * as the newest. Until the next settle it is JOINABLE: what the same gesture turns out to have changed
+	 * in the documents is recorded with it as one edit, so Undo takes back a prop's registration whole -
+	 * the textures written into its area and its registry entry - and never in halves.
+	 */
 	public void add(Edit e) {
+		if (e == null) {
+			throw new IllegalArgumentException("add was handed no edit");
+		}
+		rescope();   //an edit belongs to the scope it was made in: asked only at the next settle, a moved scope wiped it
 		undo.push(e);
 		while (undo.size() > LIMIT) {
 			undo.removeLast();
 		}
 		redo.clear();
+		joinable++;
 		changed();
+	}
+
+	/**
+	 * Writes {@code data} to {@code at} as an edit of this history (F209): for a write that IS the edit -
+	 * a prop's textures imported into its area, the story line an NPC wizard adds - and never for a save,
+	 * whose bytes are the documents' state, already theirs. Taken back and put again only over what it left
+	 * there: a place written since, by a save or by another editor, is refused rather than overwritten.
+	 *
+	 * @throws IllegalStateException when it cannot be read before (nothing is written then) or after
+	 */
+	public void write(Place at, byte[] data) {
+		//A READ THAT THROWS IS SAID AS ONE THAT ANSWERED NULL (census M.4): a container's subfile refuses in
+		//words now, and those words lost the one this history adds - whether anything was written
+		byte[] before = readOrNull(at);
+		if (before == null) {
+			throw new IllegalStateException(at.what() + " could not be read" + unread + ", so writing it could not be"
+					+ " taken back: nothing was written");
+		}
+		at.write(data);
+		byte[] after = readOrNull(at);
+		if (after == null) {
+			throw new IllegalStateException(at.what() + " was written and cannot be read back" + unread
+					+ ", so it cannot be taken back");
+		}
+		if (!java.util.Arrays.equals(before, after)) {
+			add(new Written(at, before, after));
+		}
+	}
+
+	/** Why the last {@link #readOrNull} answered null, as " (reason)", or empty when its Place answered null itself. */
+	private String unread = "";
+
+	/** {@code at}'s bytes, or null with {@link #unread} saying why when it cannot be read - whether it answers null or throws. */
+	private byte[] readOrNull(Place at) {
+		unread = "";
+		try {
+			return at.read();
+		} catch (RuntimeException refused) {
+			unread = " (" + ctrmap.util.Bytes.reason(refused) + ")";
+			return null;
+		}
 	}
 
 	public boolean canUndo() {
@@ -228,10 +304,11 @@ public final class UndoHistory {
 		}
 		Edit e = undo.peek();
 		refuseWhatIsNotOpen(e);
+		e.undo();   //before it is taken off: a refused undo leaves the edit where it was
 		undo.pop();
-		e.undo();
 		redo.push(e);
 		settleQuietly();
+		joinable = 0;
 		changed();
 		return true;
 	}
@@ -244,10 +321,11 @@ public final class UndoHistory {
 		}
 		Edit e = redo.peek();
 		refuseWhatIsNotOpen(e);
+		e.redo();   //before it is taken off: a refused redo leaves the edit where it was
 		redo.pop();
-		e.redo();
 		undo.push(e);
 		settleQuietly();
+		joinable = 0;
 		changed();
 		return true;
 	}
@@ -269,6 +347,7 @@ public final class UndoHistory {
 			if (!open.containsKey(p.doc.subject())) {
 				undo.clear();
 				redo.clear();
+				joinable = 0;
 				seen = new IdentityHashMap<>();
 				settle();
 				changed();
@@ -285,6 +364,7 @@ public final class UndoHistory {
 	public void reset() {
 		undo.clear();
 		redo.clear();
+		joinable = 0;
 		seen = new IdentityHashMap<>();
 		settle();   //notes the documents as they are now, recording nothing: nothing was seen before
 		changed();
@@ -307,7 +387,7 @@ public final class UndoHistory {
 			Edit e = it.next();
 			if (e instanceof StateEdit) {
 				((StateEdit) e).parts.removeIf(p -> p.doc.subject() == subject);
-				if (((StateEdit) e).parts.isEmpty()) {
+				if (((StateEdit) e).parts.isEmpty() && ((StateEdit) e).made.isEmpty()) {
 					it.remove();
 				}
 			}
@@ -350,24 +430,41 @@ public final class UndoHistory {
 		}
 	}
 
-	/** What one gesture changed, across however many documents. */
+	/** What one gesture changed, across however many documents, with the writes it made. */
 	private static final class StateEdit implements Edit {
 
 		private final List<Part> parts;
+		/**
+		 * The edits added during the gesture (a write it made), oldest first. Put back and put again BEFORE
+		 * the documents: what a document shows when it is put may be read from what they wrote.
+		 */
+		private final List<Edit> made;
 
-		StateEdit(List<Part> parts) {
+		StateEdit(List<Part> parts, List<Edit> made) {
 			this.parts = parts;
+			this.made = made;
 		}
 
 		@Override
 		public String name() {
-			String first = parts.get(0).doc.what();
-			return parts.size() == 1 ? first : first + " and " + (parts.size() - 1) + " more";
+			String first = made.isEmpty() ? parts.get(0).doc.what() : made.get(0).name();
+			int more = made.size() + parts.size() - 1;
+			return more == 0 ? first : first + " and " + more + " more";
 		}
 
 		@Override
 		@SuppressWarnings("unchecked")
 		public void undo() {
+			for (int i = made.size() - 1; i >= 0; i--) {
+				try {
+					made.get(i).undo();
+				} catch (RuntimeException refused) {
+					for (int j = i + 1; j < made.size(); j++) {
+						made.get(j).redo();   //all of it or none: what was taken back goes on again
+					}
+					throw refused;
+				}
+			}
 			for (int i = parts.size() - 1; i >= 0; i--) {
 				parts.get(i).doc.put(parts.get(i).before);
 			}
@@ -376,9 +473,56 @@ public final class UndoHistory {
 		@Override
 		@SuppressWarnings("unchecked")
 		public void redo() {
+			for (int i = 0; i < made.size(); i++) {
+				try {
+					made.get(i).redo();
+				} catch (RuntimeException refused) {
+					for (int j = i - 1; j >= 0; j--) {
+						made.get(j).undo();   //all of it or none: what was put again comes off again
+					}
+					throw refused;
+				}
+			}
 			for (Part p : parts) {
 				p.doc.put(p.after);
 			}
+		}
+	}
+
+	/** A write made through {@link #write}: taken back, and put again, only over what it left there. */
+	private static final class Written implements Edit {
+
+		private final Place at;
+		private final byte[] before;
+		private final byte[] after;
+
+		Written(Place at, byte[] before, byte[] after) {
+			this.at = at;
+			this.before = before;
+			this.after = after;
+		}
+
+		@Override
+		public String name() {
+			return at.what();
+		}
+
+		@Override
+		public void undo() {
+			put(after, before, "taken back");
+		}
+
+		@Override
+		public void redo() {
+			put(before, after, "put again");
+		}
+
+		private void put(byte[] expect, byte[] next, String how) {
+			if (!java.util.Arrays.equals(at.read(), expect)) {
+				throw new IllegalStateException(at.what() + " has been written since, so it was not " + how
+						+ ": taking back an edit is not taking back what was written after it");
+			}
+			at.write(next);
 		}
 	}
 

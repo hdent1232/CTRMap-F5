@@ -66,6 +66,26 @@ public class GfHashTest {
 			}
 		}
 
+		//a table that will not read is refused in words, never left as "no native has a name" (F130; the 2026-10-15
+		//shared sweep, GfHash 73, drop-throw, SURVIVED: the built-in table always read)
+		java.util.Map<Integer, String> byHash = new java.util.HashMap<>();
+		java.util.Map<String, Integer> byName = new java.util.HashMap<>();
+		String said;
+		try {
+			GfHash.readTable(() -> {
+				throw new java.io.IOException("the table is not there");
+			}, byHash, byName);
+			said = "(nothing was said)";
+		} catch (IllegalStateException refused) {
+			said = refused.getMessage();
+		}
+		if (said.startsWith("The native-name table built into the program could not be read: ") && byHash.isEmpty()) {
+			System.out.println("PASS a native-name table that will not read is refused in words: " + said);
+		} else {
+			failures++;
+			System.out.println("FAIL a native-name table that will not read is refused in words: " + said);
+		}
+
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT (" + failures + ")");
 		if (failures > 0) {
 			System.exit(1);

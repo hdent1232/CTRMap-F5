@@ -1,13 +1,12 @@
 package ctrmap.formats.h3d.model;
 
-import com.jogamp.opengl.math.Matrix4;
 
 public class BCHModelHeader {
 
 	public byte flags;
 	public byte skeletonScalingType;
 	public short silhouetteMaterialEntries;
-	public Matrix4 worldTransform;
+	public Transform4 worldTransform;
 
 	public int materialsTableOffset;
 	public int materialsTableEntries;

@@ -262,6 +262,29 @@ public class SourceSeamTest {
 			System.out.println("  EXEC: the converter's command does not keep a spaced path whole: " + argv);
 			bad++;
 		}
+		//census H.65: the converter succeeds by its exit code and the file it was asked for, and its errors are read
+		File written = File.createTempFile("espica", ".bch");
+		written.deleteOnExit();
+		File missing = new File(written.getParentFile(), written.getName() + ".not-there");
+		String ok = ctrmap.humaninterface.ESPICAControl.failure(0, written);
+		String exited = ctrmap.humaninterface.ESPICAControl.failure(1, written);
+		String nothing = ctrmap.humaninterface.ESPICAControl.failure(0, missing);
+		if (ok != null || exited == null || !exited.contains("code 1") || nothing == null || !nothing.contains("wrote no")) {
+			System.out.println("  EXEC: the converter's run is not judged by its exit code and its output file: "
+					+ ok + " / " + exited + " / " + nothing);
+			bad++;
+		}
+		String control = stripComments(new String(java.nio.file.Files.readAllBytes(
+				new File("src/ctrmap/humaninterface/ESPICAControl.java").toPath()), java.nio.charset.StandardCharsets.UTF_8));
+		if (!control.contains(".redirectErrorStream(true)") || !control.contains("failure(process.waitFor(), proc.output)")) {
+			System.out.println("  EXEC: the converter's errors are not read with its output, or its exit is not waited for");
+			bad++;
+		}
+		//census M.92: and the reader over its output is closed when it is read
+		if (!control.contains("try (BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream())))")) {
+			System.out.println("  EXEC: the reader over the converter's output is not closed when read");
+			bad++;
+		}
 		System.out.println("command-line rule: " + execs.size() + " Runtime.exec call(s); the converter's command is "
 				+ argv.size() + " arguments, its spaced paths whole");
 		return bad;
@@ -1122,7 +1145,7 @@ public class SourceSeamTest {
 	 * on 2026-10-08, measured by this suite: F250's scratch-pack section in GarcSniffTest had spelled the
 	 * dress-up archive's path in three messages (169, past this ceiling), and they name it now.
 	 */
-	private static final int SUITE_PATH_CEILING = 166;
+	private static final int SUITE_PATH_CEILING = 159;   //2026-10-15: PaintFormGuardsTest's six "a/0/3/9" became holdsRegions
 
 	private static String allowedRedirect(String fileName) {
 		for (String[] a : ALLOWED_REDIRECTS) {

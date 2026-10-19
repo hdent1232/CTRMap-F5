@@ -68,9 +68,9 @@ public class CM3DNavigator {
 			return;
 		}
 		measure(parent.translateX, parent.translateY, parent.translateZ);
-		ax.render(gl);
-		ay.render(gl);
-		az.render(gl);
+		ctrmap.render.CollisionRenderer.render(gl, ax);
+		ctrmap.render.CollisionRenderer.render(gl, ay);
+		ctrmap.render.CollisionRenderer.render(gl, az);
 	}
 
 	/**

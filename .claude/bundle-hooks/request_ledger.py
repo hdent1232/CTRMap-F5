@@ -84,9 +84,15 @@ import _tree_root        # noqa: E402  - the project root, anchored: never count
 ROOT = _tree_root.require(__file__)
 import bundle_env        # noqa: E402  - the one spelling of the owner's switches
 import bundle_shell      # noqa: E402  - an agent launch, found by shape
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 
 #: The project's store, one file per session. The directory ignores itself.
 STORE = os.path.join(".claude", "requests")
+
+#: What this tool writes: its ledger, in STORE - a folder of its own that ignores everything in it - and
+#: a mark in the temp folder; nothing a measurement of the tree reads. guard_suite_running reads this line
+#: by its shape, so the review a turn owes can be asked for beside a live sweep (census M.85).
+WRITES_ONLY_ITS_STORE = True
 #: The second copy of where each ledger starts, outside the project.
 MARKS = "bundle-request-starts"
 DECLARATIONS = os.path.join(".claude", "bundle-install.json")
@@ -202,6 +208,125 @@ def content(text):
     return {w for w in words(text).split() if len(w) >= 4 and w not in COMMON}
 
 
+#: A LIST IN ONE SENTENCE IS SEVERAL REQUESTS. Measured 2026-10-15: the owner asked for an analysis "whether thats for
+#: the money section, the invest section, the trade section, or maybe it reveals something entirely new"; ONE item
+#: named all four and covered the sentence, a finding was checked against Invest alone, and the report's Trade section
+#: read as covered. Every clause shared words with an item, and nothing asked whether every THING the sentence listed
+#: had an item of its own - so one resolution closed four. Read as listed: the parts of a comma list (its last part
+#: split on "and"/"or" too: "Money, Invest and Trade"), and requests joined by "and"/"or" with three or more words on
+#: each side ("make it impossible and ship it to every project and update the repo"). A part is a THING only by the
+#: words that are its own - "section" in all of them tells none of them apart.
+SEPARATOR = re.compile(r"\s*[,;]\s*")
+JOINER = re.compile(r"\s+(?:and|or|nor)\s+", re.I)
+OPENER = re.compile(r"^(?:and|or|nor|but|then|also)\s+", re.I)
+#: A part that opens on one of these continues the part before it - "you come back and tell me", ", when you didnt",
+#: "so if the subagents ... or hallucinations" - it is narrative or a condition, not one more thing asked for.
+#: Measured on the request this was built for: without it, its four-part analogy read as four requests.
+CONTINUES = frozenset(("i", "you", "we", "he", "she", "they", "it", "this", "that", "these", "those", "there",
+                       "which", "who", "whom", "whose", "when", "while", "because", "since", "so", "if", "unless",
+                       "though", "although", "as", "like", "where", "whereas", "than"))
+
+
+def _continues(part):
+    first = words(OPENER.sub("", part.strip())).split()[:1]
+    return bool(first) and first[0] in CONTINUES
+
+
+def members(sentence):
+    """The separate things one owner sentence LISTS, as [(text, its own words)] - [] when it lists fewer than two."""
+    pieces = []
+    for piece in SEPARATOR.split(OPENER.sub("", flat(sentence))):
+        piece = OPENER.sub("", piece.strip())
+        if not piece:
+            continue
+        if pieces and _continues(piece):
+            pieces[-1] += ", " + piece
+        else:
+            pieces.append(piece)
+    parts, chained = [], 0
+    for index, piece in enumerate(pieces):
+        split = [OPENER.sub("", s.strip()) for s in JOINER.split(piece)]
+        closes_a_list = len(pieces) > 1 and index == len(pieces) - 1 and len(split[0].split()) <= 4
+        requests_joined = all(len(s.split()) >= 3 for s in split) and not any(_continues(s) for s in split)
+        if len(split) > 1 and (closes_a_list or requests_joined):
+            parts += split
+            chained = max(chained, len(split) if requests_joined else 0)
+        else:
+            parts.append(piece)
+    parts = [p for p in parts if content(p)]
+    listed = []
+    for index, part in enumerate(parts):
+        others = set()
+        for other in parts[:index] + parts[index + 1:]:
+            others |= content(other)
+        own = content(part) - others
+        if own:
+            listed.append((part, own))
+    return listed if len(listed) >= 2 and _a_list(listed, chained) else []
+
+
+def _a_list(listed, chained):
+    """Is this split a LIST of things asked for, rather than a sentence that happens to have commas?
+
+    Measured 2026-10-15 over 6,305 owner sentences: splitting on every comma and "and" read 1,463 as lists, and a
+    sample of 25 was mostly narrative ("On 2026-09-27, committing 90795a8, the rule refused...") - a guard that makes
+    an agent itemise the fragments of a story is one that gets switched off. A list is: things in a shared frame
+    ("the invest section, the trade section" - one word common to two of them, each short), three or more requests
+    chained by "and", or a run of three or more short names ("Money, Invest, Trade")."""
+    texts = [t for t, _ in listed]
+    short = [t for t in texts if len(t.split()) <= 6]
+    for i, a in enumerate(short):
+        for b in short[i + 1:]:
+            if content(a) & content(b):
+                return True
+    if chained >= 3:
+        return True
+    return sum(1 for t in texts if len(t.split()) <= 3) >= 3
+
+
+def named(ask, listed):
+    """The listed things an item's words name - each thing by the words that are its own."""
+    said = content(ask)
+    return [(text, own) for text, own in listed if own & said]
+
+
+def bundled(ask, covers, request):
+    """Why an item covering `covers` of `request` names several things one sentence LISTS, or '' - one item each."""
+    said = clauses(request["text"])
+    for number in covers:
+        if not 1 <= number <= len(said):
+            continue
+        hit = named(ask, members(said[number - 1]))
+        if len(hit) > 1:
+            return ("clause %d lists %d things separately and this item names %d of them (%s) - each thing the owner "
+                    "listed is its own item, done, asked, blocked or declined on its own; one item closing several is "
+                    "how one was skipped while the report read as covered"
+                    % (number, len(members(said[number - 1])), len(hit), "; ".join(t[:40] for t, _ in hit)))
+    return ""
+
+
+def owned(item, request):
+    """The one listed thing this item is the item for, per clause it covers: [(clause, text, own words)]."""
+    said, out = clauses(request["text"]), []
+    for number in item.get("covers") or []:
+        if not isinstance(number, int) or not 1 <= number <= len(said):
+            continue
+        hit = named(item.get("ask"), members(said[number - 1]))
+        if len(hit) == 1:
+            out.append((number,) + hit[0])
+    return out
+
+
+def unnamed_in(said, item, request):
+    """Why a resolution of a listed thing's own item never names that thing, or '' - the owner hears it by name."""
+    words_said = content(said)
+    for number, text, own in owned(item, request):
+        if not own & words_said:
+            return ("this item is the one for \"%s\" (clause %d), and what it records never names it - say %s"
+                    % (text[:60], number, " or ".join(sorted(own)[:3])))
+    return ""
+
+
 # ---------------------------------------------------------------------------- the transcript
 
 def read_rows(path):
@@ -226,6 +351,25 @@ def _parts(row):
     message = row.get("message") if isinstance(row.get("message"), dict) else {}
     content = message.get("content")
     return content if isinstance(content, list) else ([] if content is None else content)
+
+
+def parts(row):
+    """The dict parts of a transcript row's message - text, tool calls, tool results - or []. The
+    one reader of them for every hook outside this file."""
+    held = row.get("message") if isinstance(row, dict) and isinstance(row.get("message"),
+                                                                       dict) else {}
+    content = held.get("content")
+    return [p for p in content if isinstance(p, dict)] if isinstance(content, list) else []
+
+
+def result_text(content):
+    """A tool result's text, whether a string or a list of parts, nested results flattened."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return LF.join(result_text(p.get("text") if p.get("type") == "text" else p.get("content"))
+                       for p in content if isinstance(p, dict))
+    return ""
 
 
 def _text_parts(node):
@@ -272,6 +416,62 @@ def _owner_text(row):
     return LF.join(kept) if kept else None
 
 
+def owner_typed(row):
+    """The words the owner TYPED in this row, or None - the strict reading a YES needs.
+
+    `_owner_text` is the generous reading, built so no request is missed: it takes a queued row
+    that names no sender, and a row from before `origin` existed. A yes cannot be read that way,
+    because a yes the agent can produce is no yes. Counted 2026-10-07 over this session's
+    transcript, the owner's words are exactly two shapes, and nothing the agent writes, nothing a
+    hook says and nothing another session sends takes either:
+
+        a user row whose `origin.kind` is `human`        a message sent between turns
+        a `queued_command` attachment whose `origin.kind`  a message sent mid-turn
+          is `human`
+
+    Never a sidechain's row (a subagent's brief is a user row in its own transcript), never
+    `isMeta` (hook feedback, system notices), never a summary, never a tool's result, never the
+    queue's own row (it names no sender: a subagent's hand-back arrives that way)."""
+    if not isinstance(row, dict) or row.get("isSidechain"):
+        return None
+    if row.get("type") == "attachment":
+        held = row.get("attachment") if isinstance(row.get("attachment"), dict) else {}
+        origin = held.get("origin") if isinstance(held.get("origin"), dict) else {}
+        if held.get("type") != "queued_command" or origin.get("kind") != "human":
+            return None
+        return _text_parts(held.get("prompt")) or None
+    origin = row.get("origin") if isinstance(row.get("origin"), dict) else {}
+    if row.get("type") != "user" or row.get("isMeta") or row.get("isCompactSummary") \
+            or origin.get("kind") != "human":
+        return None
+    content = _parts(row)
+    if isinstance(content, str):
+        return content
+    if any(isinstance(p, dict) and p.get("type") == "tool_result" for p in content):
+        return None
+    return _text_parts(content) or None
+
+
+def approves_only(text, rows):
+    """Is this owner message NOTHING BUT codes a refusal in `rows` issued - the owner's typed yes
+    to a call the agent already described and priced - rather than a request?
+
+    A YES IS NOT A REQUEST. Measured 2026-10-09: the owner typed one issued code, this read it as
+    a request to itemise, an item had to share a word with the code, and the first item written
+    without one could never be retired - no verb retracts an item - so the turn could not end on
+    the owner's own approval. A message carrying any other word, or a code no refusal issued,
+    is still a request: only the issued code is the owner's answer to a question already asked."""
+    tokens = [token.rstrip(".,;:!") for token in str(text or "").split()]
+    if not tokens:
+        return False
+    import owner_codes
+    found = [owner_codes.CODE.fullmatch(token) for token in tokens]
+    if not all(found):
+        return False
+    issued = owner_codes.issued(rows)
+    return all(match.group(1) in issued for match in found)
+
+
 def requests(rows):
     """[{key, index, at, text}] - every request the owner made, in order.
 
@@ -293,6 +493,8 @@ def requests(rows):
     for index, row in enumerate(rows):
         text = _owner_text(row)
         if text is None or not text.strip():
+            continue
+        if approves_only(text, rows):
             continue
         said = flat(text)
         if row.get("type") == "queue-operation" and said in foreign:
@@ -343,18 +545,46 @@ RECORDS_OR_SAYS = re.compile(r"^\s*(?:echo|printf|Write-Output|Write-Host|Write-
                              r"|(?:^|[\s/\\\"'])request_ledger\.py\b", re.I)
 
 
+#: VAR=value anywhere in a call's commands, and $VAR / ${VAR} - so a ledger call spelled through a variable is still
+#: read as the ledger's own. MEASURED 2026-10-12: `L=.claude/hooks/request_ledger.py; python -B $L done ...` named no
+#: request_ledger.py, so its own refusal - "the measurement it names covered 160 of 162" - was read as the output of the
+#: measurement its argument cited, and every later citation of that measurement was refused on it.
+_ASSIGNED = re.compile(r"(?:^|[\s;&|(])([A-Za-z_][A-Za-z0-9_]*)=('[^']*'|\"[^\"]*\"|[^\s;&|()]+)")
+_REFERENCE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
+
+
+def _expanded(text, assigned):
+    return _REFERENCE.sub(lambda m: assigned.get(m.group(1) or m.group(2), m.group(0)), text)
+
+
 def evidence_strings(given):
     """The strings of one call's input that can evidence work. A call carrying commands counts by
     them alone - its `description` is the agent's prose - less every command that, read through
-    its wrappers, only records to this ledger or only says something."""
+    its wrappers and with the variables the call assigns expanded, only records to this ledger or
+    only says something."""
     commands = bundle_shell.commands({"tool_input": given})
+    #A CALL THAT RUNS NO COMMAND EVIDENCES ONLY THE PATHS IT NAMES (2026-10-13). A write: the file written to hand this
+    #ledger its done text held the cited command, and its Write was read as a run of it - the latest, printing nothing,
+    #shadowing the real run before it. Then an agent: the ledger's own review launch quotes every done item, its cited
+    #commands among them, and stood as the evidence each had run - the ledger evidencing itself. Whatever a call that
+    #runs nothing carries as TEXT is text; the path it read or wrote is the one thing it did, and a done may cite that.
     if not commands:
-        return _strings(given, [])
+        return bundle_shell.paths({"tool_input": given})
+    assigned = {}
+    for command in commands:
+        for name, value in _ASSIGNED.findall(command):
+            assigned[name] = value.strip("'" + chr(34))
     out = []
     for command in commands:
         for one in bundle_shell.split_commands(command):
+            #A COMMAND THAT ONLY ASSIGNS RUNS NOTHING (2026-10-12): `H='... cites `the measurement` ...'`, set to
+            #hand the ledger its text, was read as a call that did the work, and the refusal it shared a call with
+            #as that work's output
+            words = bundle_shell.pairs(one) or []
+            if words and all(re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", word) for word, _typed in words):
+                continue
             if not bundle_shell.every_command_is(
-                    one, lambda each: bool(RECORDS_OR_SAYS.search(each))):
+                    _expanded(one, assigned), lambda each: bool(RECORDS_OR_SAYS.search(each))):
                 out.append(flat(one))
     return out
 
@@ -376,6 +606,7 @@ def calls(rows):
                                    "input": part.get("input") or {},
                                    "strings": _strings(part.get("input"), []),
                                    "evidence": evidence_strings(part.get("input") or {}),
+                                   "commands": bool(bundle_shell.commands({"tool_input": part.get("input") or {}})),
                                    "error": None, "result": None, "agent": None}
             elif part.get("type") == "tool_result" and part.get("tool_use_id") in out:
                 call = out[part["tool_use_id"]]
@@ -461,13 +692,116 @@ def _epoch(stamp):
 def _commit_after(sha, after, root):
     """Is `sha` a commit in this repository, made at or after `after` (epoch seconds)?"""
     try:
-        done = subprocess.run(["git", "-C", root, "log", "-1", "--format=%ct", sha + "^{commit}"],
-                              capture_output=True, text=True, timeout=30,
-                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        done = bounded.run(["git", "-C", root, "log", "-1", "--format=%ct", sha + "^{commit}"],
+                           capture_output=True, text=True, timeout=30,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except (OSError, subprocess.SubprocessError):
         return False
     stamp = done.stdout.strip()
     return done.returncode == 0 and stamp.isdigit() and (after is None or int(stamp) >= after)
+
+
+#: THE WORDS BY WHICH WORK CLAIMS A WHOLE - in the item, or in the owner's clauses it covers. Measured on the project
+#: this came from, 2026-10-06: an item read "an entire app wide exhaustive audit of the money section", its evidence
+#: read "0 findings over 15 probes" over sixteen typed pages that left out the setup, and the reviewer passed it.
+WHOLE = re.compile(r"\b(?:every|everything|everywhere|whole|entire|entirely|exhaustive|exhaustively|app[- ]wide)\b",
+                   re.I)
+#: how a measurement says what it covered: "39 of 39 pages"
+COVERAGE = re.compile(r"\b(\d[\d,]*) of (\d[\d,]*)\b")
+#: a measurement in the repository - a file under tests/ or tools/ run, or a test module run - never prose
+MEASURES = re.compile(r"(?:^|[\s\"'/\\=])(?:tests|tools)[/\\]|-m\s+(?:unittest|pytest)\b", re.I)
+
+
+def _words(text):
+    """The words a command or a cited span reads as, quotes respected - None when it cannot be split."""
+    got = bundle_shell.pairs(text)
+    return None if got is None else [word for word, _typed in got]
+
+
+def names_span(span, value):
+    """Does `value` - one command a call ran - RUN the cited `span`, rather than carry its text inside an argument?
+
+    WORD BY WORD, QUOTES RESPECTED (2026-10-13): a script handed the cited command as a quoted argument, to look up
+    its runs, printed an old run's 164 of 165 and was read as the latest run of it. A sentence quoted into an
+    argument is ONE word, and matches no span of several; the span's words must be a run of the command's. A span or
+    command the reader cannot split is matched by its text, as every one was before."""
+    want, have = _words(span), _words(value)
+    if not want or have is None:
+        return span in value
+    n = len(want)
+    return any(all(_same_word(w, h) for w, h in zip(want, have[i:i + n])) for i in range(len(have) - n + 1))
+
+
+def _same_word(cited, ran):
+    """A cited word names the word run, or the file a run path ends in: `jogl_sums.py` is `C:/scratch/jogl_sums.py`."""
+    return ran == cited or ran.replace("\\", "/").endswith("/" + cited.replace("\\", "/").lstrip("/"))
+
+
+def cites(span, call):
+    """Did this call carry the cited span - a command it RAN, word by word, or a path it named?"""
+    if call.get("commands"):
+        return any(names_span(span, value) for value in call["evidence"])
+    return any(span in value for value in call["evidence"])
+
+
+def claims_whole(item, request):
+    """Does this item - in its own words, or the owner's in the clauses it covers - claim a whole?
+
+    A LISTED THING'S ITEM READS ITS OWN PART, AND THE LIST'S FIRST (2026-10-15). Once one sentence's list is one item
+    per thing, reading the whole sentence lent every item the other things' words: "the money section, the invest
+    section, the trade section, or something entirely new" made Money's item claim a whole because of "entirely new",
+    and an honest `done` for Money was refused for want of a whole-coverage measurement. A frame shared by every part
+    sits in the first ("check every page of Money, Invest and Trade"), so the first part is read for each - reading an
+    item's own part alone is the cheapest way past, and it is refused by the test of a shared frame."""
+    said = clauses(request["text"])
+    mine = {number: text for number, text, _own in owned(item, request)}
+    texts = [flat(item.get("ask"))]
+    for number in item.get("covers") or []:
+        if not isinstance(number, int) or not 1 <= number <= len(said):
+            continue
+        if number in mine:
+            texts += [mine[number], members(said[number - 1])[0][0]]
+        else:
+            texts.append(said[number - 1])
+    return any(WHOLE.search(text) for text in texts)
+
+
+def coverage_problem(said, request, rows, made=None):
+    """Why a `done` that claims a WHOLE is not backed by a measurement that says it covered all of it, or ''.
+
+    A CLAIM OF THE WHOLE IS A MEASUREMENT OF THE WHOLE. The evidence must cite the `command` of a measurement in the
+    repository (tests/ or tools/) that ran after the request without failing, and THAT command's own output must say
+    what it covered as N of N - at least once, and never an N of M short of the whole. A count typed into the evidence
+    proves nothing; the measurement printing it is what is read. What a measurement derives its N from is held in the
+    code (a project's scope rules, such as one refusing a typed list of pages), and what it covered is held here.
+
+    THE LATEST RUN OF EACH COMMAND IS ITS READING (2026-10-12). Every run since the request was read, so a measurement
+    that found a gap, had it closed and was run again stayed refused for the gap - measure, close, measure again is the
+    work - and the one way past was to spell the command so the first run no longer matched it. A run is a reading of
+    the tree at its time; the latest says what the tree is now, a part measured after a whole included."""
+    made = calls(rows) if made is None else made
+    spans = [flat(s) for s in BACKTICKED.findall(said)]
+    #a RUN of a measurement is a command that ran - a read of the measurement's file is not one (2026-10-13)
+    measured = [call for call in made.values()
+                if call["index"] > request["index"] and call["error"] is False and call.get("commands")
+                and any(MEASURES.search(value) for value in call["evidence"])]
+    latest = {}
+    for span in spans:
+        runs = [call for call in measured if cites(span, call)]
+        if runs:
+            latest[span] = max(runs, key=lambda call: call["index"])
+    ran = list({id(call): call for call in latest.values()}.values())
+    if not ran:
+        return ("it claims the whole, and no `command` it names ran a measurement in tests/ or tools/ after request %s"
+                " - the whole is shown by what a measurement covered, not by a description of it" % request["key"])
+    lines = [m for call in ran for m in COVERAGE.finditer(call["result"] or "")]
+    if not lines:
+        return ("it claims the whole, and the measurement it names printed nothing of the form N of N - what it "
+                "covered is unknown, and unknown is not all")
+    short = [m.group(0) for m in lines if m.group(1).replace(",", "") != m.group(2).replace(",", "")]
+    if short:
+        return ("it claims the whole, and the measurement it names covered %s - part of it" % ", ".join(short[:3]))
+    return ""
 
 
 def evidence_holds(said, request, rows, root, made=None):
@@ -476,8 +810,7 @@ def evidence_holds(said, request, rows, root, made=None):
     for span in BACKTICKED.findall(said):
         span = flat(span)
         for call in made.values():
-            if call["index"] > request["index"] and call["error"] is False \
-                    and any(span in value for value in call["evidence"]):
+            if call["index"] > request["index"] and call["error"] is False and cites(span, call):
                 return True
     after = _epoch(request.get("at"))
     return any(_commit_after(sha, after, root) for sha in COMMIT.findall(said))
@@ -495,14 +828,43 @@ def _root(root):
     return ROOT if root is None else root
 
 
+def home(root=None):
+    """Where a session's ledger lives: the repository's MAIN checkout, whichever checkout asks.
+
+    Reported 2026-10-09 by the Forven session: run inside a linked worktree, `review` read that
+    worktree's store while the session's items - and its Stop hook - were in the main
+    checkout's, and it printed "no review is owed" over six owed requests. A linked worktree's
+    `.git` is a FILE naming its git folder, whose `commondir` names the repository's; the main
+    checkout is the folder holding that. A `.git` folder, no `.git` at all, or a git folder with
+    no `commondir` (a submodule) is its own home. A `.git` file that cannot be followed REFUSES:
+    answering with the worktree would be the defect again, said confidently."""
+    root = _root(root)
+    marker = os.path.join(root, ".git")
+    if not os.path.isfile(marker):
+        return root
+    named = re.match(r"\s*gitdir:\s*(.+?)\s*$", _read(marker) or "")
+    if not named:
+        raise LookupError("%s is not a git file this ledger can follow - so which checkout holds "
+                          "this session's ledger cannot be said" % marker)
+    gitdir = os.path.join(root, named.group(1))
+    common = (_read(os.path.join(gitdir, "commondir")) or "").strip()
+    if not common:
+        return root
+    common = os.path.normpath(os.path.join(gitdir, common))
+    if os.path.basename(common) != ".git":
+        return root                                 # a bare repository has no main checkout
+    return os.path.dirname(common)
+
+
 def store_path(session, root=None):
-    return os.path.join(_root(root), STORE, _safe(session) + ".json")
+    return os.path.join(home(root), STORE, _safe(session) + ".json")
 
 
 def mark_path(session, root=None):
     """The start's second copy - per PROJECT as well as per session, so a ledger read against one
-    tree never places the start of the same session's ledger in another."""
-    tree = hashlib.sha256(os.path.normcase(os.path.abspath(_root(root))).encode("utf-8")).hexdigest()[:8]
+    tree never places the start of the same session's ledger in another. Every checkout of one
+    repository is one project (`home`)."""
+    tree = hashlib.sha256(os.path.normcase(os.path.abspath(home(root))).encode("utf-8")).hexdigest()[:8]
     return os.path.join(tempfile.gettempdir(), MARKS, "%s-%s.txt" % (tree, _safe(session)))
 
 
@@ -528,6 +890,10 @@ def _write(path, text):
 def load(session, asked, root=None):
     """(ledger, trouble). The ledger always has a start: the store's, else the mark's, else the
     request current NOW - recorded in both places at once, so the start never moves again."""
+    try:
+        home(root)
+    except LookupError as exc:
+        return None, str(exc)
     text = _read(store_path(session, root))
     held = None
     if text is not None:
@@ -607,6 +973,16 @@ def uncovered(request, items):
             out.append("request %s clause %d is covered by no item: \"%s\" - cover it, or "
                        "decline it to the owner in writing" % (request["key"], number,
                                                                sentence[:110]))
+    for item in items:
+        why = bundled(item.get("ask"), [n for n in item.get("covers") or [] if isinstance(n, int)], request)
+        if why:
+            out.append("%s: %s - `cover %s -` and write one item per thing" % (item.get("id"), why, item.get("id")))
+    for number in sorted(covered):
+        for text, own in members(said[number - 1]):
+            if not any(number in (i.get("covers") or []) and named(i.get("ask"), members(said[number - 1]))
+                       == [(text, own)] for i in items):
+                out.append("request %s clause %d lists \"%s\" and no item is its own - write one that names it and "
+                           "none of the other things that sentence lists" % (request["key"], number, text[:80]))
     return out
 
 
@@ -636,6 +1012,13 @@ def mechanical(held, asked, rows, last=None, root=None):
                 out.append("%s is done with nothing checkable: name a `command` or path that a "
                            "tool call made after the request carried and did not fail, or a "
                            "commit made after it" % label)
+            elif status == "done" and claims_whole(item, request):
+                whole = coverage_problem(said, request, rows, made)
+                if whole:
+                    out.append("%s is done, and %s" % (label, whole))
+            unnamed = unnamed_in(said, item, request)
+            if unnamed:
+                out.append("%s is %s, and %s" % (label, status, unnamed))
             if status == "answered" and "?" not in request["text"]:
                 out.append("%s is answered, and request %s asked no question - work asked for "
                            "is done, asked about, blocked or declined" % (label, request["key"]))
@@ -723,10 +1106,10 @@ def reviews(rows, made=None):
     out = []
     for call in made.values():
         found = [launch for launch in bundle_shell.launches({"tool_input": call["input"]})
-                 if TOKEN in str(launch.get("prompt") or "")]
+                 if TOKEN in bundle_shell.brief(launch)]
         if not found or call["error"] is not False:
             continue
-        prompt = str(found[0].get("prompt"))
+        prompt = bundle_shell.brief(found[0])
         digest = prompt.split(TOKEN, 1)[1][:12]
         pointed = handed_back_answer(call, handed)
         answer = (call["result"] or "") if pointed is None else pointed
@@ -855,6 +1238,10 @@ def earlier_failures(key, rows, made=None):
     return [shown(latest["text"])]
 
 
+#: What stands in a review prompt where the owner typed a one-time code.
+HIDDEN_CODE = "[an owner code]"
+
+
 def review_prompt(owing, rows, made=None):
     """The ONE prompt a review of these requests may be launched with."""
     blocks = []
@@ -874,6 +1261,14 @@ def review_prompt(owing, rows, made=None):
         for failure in earlier_failures(request["key"], rows, made):
             body.append("  AN EARLIER REVIEWER FAILED THIS REQUEST: %s" % failure)
         blocks.append(LF.join(body))
+    # AN OWNER'S CODE NEVER TRAVELS IN THE REVIEW. Measured 2026-10-09: the owner typed a fan-out
+    # code to approve one send, the next owed review quoted that message word for word, and
+    # `guard_owner_codes` refused the launch for carrying a code - so the review the stop demands
+    # could not be launched at all, and the turn could not end. A reviewer never needs the code.
+    # In any case: the code guard upper-cases a call before it looks, so a code the owner typed in
+    # lower case would refuse the launch just the same.
+    import owner_codes           # noqa: E402,PLC0415 - the one statement of what a code looks like
+    blocks = [re.sub(owner_codes.CODE.pattern, HIDDEN_CODE, block, flags=re.I) for block in blocks]
     digest = hashlib.sha256(LF.join(blocks).encode("utf-8")).hexdigest()[:12]
     return LF.join([
         "You are an independent reviewer. " + TOKEN + digest,
@@ -894,7 +1289,13 @@ def review_prompt(owing, rows, made=None):
         "plainly authorised, or names no concrete blocker;",
         "  5. an earlier reviewer's failure is shown and the items do not answer it. An earlier "
         "reviewer can be wrong: check each of its findings against the CURRENT item text above "
-        "and against the files, and count only the findings that still hold.",
+        "and against the files, and count only the findings that still hold;",
+        "  6. the owner asked for EVERY, ALL, the WHOLE, EVERYTHING or an ENTIRE or EXHAUSTIVE "
+        "anything, and the evidence names a narrower scope than the owner did - some pages of a "
+        "section, one part of an app, a sample of a set. Write the scope the evidence measured "
+        "beside the scope the owner named, word for word, and FAIL if they differ. A reviewer "
+        "passed \"0 findings over 15 probes\" over sixteen pages that left out a setup flow, as an "
+        "\"entire app wide exhaustive audit\" - this item is that comparison.",
         "Otherwise PASS. Judge the requests as the owner wrote them, not as the items restate "
         "them.",
         "",
@@ -1053,7 +1454,7 @@ def launch_problem(payload, root=None):
     """Why an agent launch in this call may not run as a ledger review, or ''. A launch that
     carries no review token is not this function's business."""
     for launch in bundle_shell.launches(payload):
-        prompt = str(launch.get("prompt") or "")
+        prompt = bundle_shell.brief(launch)
         if TOKEN not in prompt:
             continue
         config, trouble = review_config(root)
@@ -1087,7 +1488,7 @@ def is_owed_review(payload, root=None):
     """Is this call ONE launch, and exactly the review the ledger owes? Asked by the fan-out cap,
     which does not count a review the project declared it can afford."""
     found = bundle_shell.launches(payload)
-    return len(found) == 1 and TOKEN in str(found[0].get("prompt") or "") \
+    return len(found) == 1 and TOKEN in bundle_shell.brief(found[0]) \
         and not launch_problem(payload, root)
 
 
@@ -1116,7 +1517,7 @@ def beyond_clauses(request, covers):
             % (request["key"], said, ", ".join(str(n) for n in beyond)))
 
 
-def resolution_problem(verb, said, request, rows, root):
+def resolution_problem(verb, said, request, rows, root, item=None):
     """Why this resolution may not be recorded NOW, or '' - every check `mechanical` makes that
     does not wait on the message to the owner."""
     if request is None:
@@ -1131,6 +1532,14 @@ def resolution_problem(verb, said, request, rows, root):
         return ("nothing checkable stands behind this yet: name a `command` or path that a tool "
                 "call made after request %s carried and did not fail - not this verb, not an "
                 "echo - or a commit made after it" % request["key"])
+    if verb == "done" and item is not None and claims_whole(item, request):
+        whole = coverage_problem(said, request, rows)
+        if whole:
+            return whole
+    if item is not None:
+        unnamed = unnamed_in(said, item, request)
+        if unnamed:
+            return unnamed
     return ""
 
 
@@ -1187,6 +1596,7 @@ def main(argv, root=None):
             hits[0].get("request"))
         beyond = beyond_clauses(request, covers) if request else (
             "item %s belongs to no request this ledger holds" % argv[2])
+        beyond = beyond or bundled(hits[0].get("ask"), covers, request)
         if beyond:
             print(beyond)
             return 2
@@ -1207,7 +1617,7 @@ def main(argv, root=None):
         # A CLAUSE THE OWNER NEVER WROTE IS REFUSED HERE, where it is written - `uncovered` refused
         # it only at the end of the turn, after the item was recorded and built on (measured
         # 2026-10-06: `item <request> 3` accepted over a request of two clauses).
-        beyond = beyond_clauses(held_now[argv[2]], covers)
+        beyond = beyond_clauses(held_now[argv[2]], covers) or bundled(argv[4], covers, held_now[argv[2]])
         if beyond:
             print(beyond)
             return 2
@@ -1227,7 +1637,7 @@ def main(argv, root=None):
         # whether the owner was TOLD has to wait for the message that tells them.
         request = {r["key"]: r for r in held_requests(asked, held["since"])}.get(
             hits[0].get("request"))
-        why = resolution_problem(verb, argv[3], request, rows, root)
+        why = resolution_problem(verb, argv[3], request, rows, root, hits[0])
         if why:
             print(why)
             return 2

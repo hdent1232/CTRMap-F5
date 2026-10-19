@@ -121,6 +121,7 @@ public class MainframeEdgesTest {
 		nothingIsHandedAStaticTheWindowHasNotBuiltYet(new File(args.length > 1 ? args[1] : "src"));
 		everyZoneHandedToTheTabIsGivenASlot(new File(args.length > 1 ? args[1] : "src"));
 		theRuleSeesTheShapesItUsedToMiss();
+		theZonesHistoryWatchesItsScript(classes);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -547,6 +548,27 @@ public class MainframeEdgesTest {
 			}
 		}
 		return out;
+	}
+
+	/**
+	 * The window's zone history watches the zone's script (F209), which the NPC wizards replace, the dialogue
+	 * editor re-points and the script panel edits. Asked of the class file, because the window binds its zone
+	 * only in createAndShowGUI, which no suite builds: the window calls ZoneDocuments.script, as it calls
+	 * ZoneDocuments.entities for the history it is built over (the control).
+	 */
+	static void theZonesHistoryWatchesItsScript(File classes) throws Exception {
+		System.out.println("--- the window's zone history watches the zone's script (F209)");
+		ClassFileScanner.ClassFile window = ClassFileScanner.read(new File(classes, WINDOW + ".class"), WINDOW);
+		boolean entities = false;
+		boolean script = false;
+		for (ClassFileScanner.Method m : window.methods) {
+			for (String call : m.invokes) {
+				entities |= call.startsWith("ctrmap/humaninterface/ZoneDocuments#entities");
+				script |= call.startsWith("ctrmap/humaninterface/ZoneDocuments#script");
+			}
+		}
+		check(entities, "control: the window's calls are read - it builds its history over ZoneDocuments.entities");
+		check(script, "the window's zone history watches the zone's script: it calls ZoneDocuments.script");
 	}
 
 	/**

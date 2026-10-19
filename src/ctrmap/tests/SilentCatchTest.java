@@ -72,7 +72,10 @@ public class SilentCatchTest {
 	//rest of the 2026-10-06 audit's low fixes.
 	//TIGHTENED 50 -> 48 on 2026-10-08, measured by this suite on the trees between: TerrainHarvester
 	//went (F119) and the two injectors' donor searches became one (F087).
-	private static final int CEILING = 48;
+	//TIGHTENED 48 -> 46 on 2026-10-09, measured by this suite (the tree before measured 48, 28 of them log-only):
+	//the raw browser's Import container and its export each logged a failure and said nothing; both say it now
+	//(F209c, F209d).
+	private static final int CEILING = 43;
 
 	/**
 	 * Unchecked {@code read(byte[])} / {@code skip(long)} answers in production: 50,
@@ -112,7 +115,7 @@ public class SilentCatchTest {
 	//on a stream whose answer goes nowhere, each read off the probe's list.
 	//TIGHTENED 12 -> 10 on 2026-10-08, measured by this suite: a camera's first sixteen bytes are read
 	//whole (F221), and the BCH reader is a cursor over its array that skips no stream (F228).
-	private static final int UNCHECKED_READ_CEILING = 10;
+	private static final int UNCHECKED_READ_CEILING = 8;
 
 	/**
 	 * Catch blocks that ANSWER A DEFAULT and say nothing else (F211): return null, false, -1, 0,
@@ -137,16 +140,16 @@ public class SilentCatchTest {
 	//through the Grid now, whose refusal of a grid that does not fit turns into what each already
 	//answered - the -1 MapDefaultsTest pins, a matrix the pass leaves alone - which they did before by
 	//an `if`, out of this count's sight (+2). The same answers, now counted.
-	private static final int SUBSTITUTE_CEILING = 79;
+	private static final int SUBSTITUTE_CEILING = 68;
 
 	/** A statement that answers a default. */
 	private static final Pattern DEFAULT = Pattern.compile("(return\\s*(null|false|true|-1|0|0L|0f|\"\"|new\\s+[\\w.<>\\[\\]]+\\s*\\[\\s*0\\s*\\]"
 			+ "|new\\s+\\w+(<[^>]*>)?\\s*\\(\\s*\\)|(java\\.util\\.)?Collections\\.\\w+\\(\\)|[\\w.]*(EMPTY|NONE|NO_\\w+)\\w*)?\\s*;"
 			+ "|continue\\s*;|break\\s*;|[\\w.\\[\\]]+\\s*=\\s*(null|false|true|-1|0|\"\"|new\\s+[\\w.<>]+\\s*\\(\\s*\\)"
 			+ "|new\\s+[\\w.<>]+\\[\\s*0\\s*\\])\\s*;)");
-	/** A statement that only writes the failure down. */
+	/** A statement that only writes the failure down - to any stream, as {@link #LOG_ONLY} reads it. */
 	private static final Pattern LOG_STATEMENT = Pattern.compile(
-			"(?s)(Logger\\..*;|[\\w.]*printStackTrace\\(\\);|System\\.(out|err)\\.print.*;|[\\w.]*log\\(.*\\);)");
+			"(?s)(Logger\\..*;|[\\w.]*printStackTrace\\(\\);|[\\w.]+\\.print(ln|f)?\\(.*;|[\\w.]*log\\(.*\\);)");
 	/** A body that tells somebody, or hands the failure on. */
 	private static final Pattern REPORTS = Pattern.compile("\\bthrow\\b|Ui\\.|JOptionPane|\\.setText\\(|status\\.|error\\("
 			+ "|message\\(|warn\\(|refus|report|errors?\\.add|problems?\\.add|skipped\\.add|why\\w*\\s*=|\\.add\\(.*(reason|ex|e\\.getMessage)");
@@ -162,14 +165,17 @@ public class SilentCatchTest {
 				+ " int c() { try { x(); } catch (E e) { Ui.error(p, \"no\", \"t\"); return -1; } }\n"
 				+ " int d() { try { x(); } catch (E e) { if (y) { return 0; } } }\n"
 				+ " void e() { try { x(); } catch (E e) { } }\n"
-				+ " String f() { try { x(); } catch (E e) { return \"} not a brace\".trim(); } return null; }\n}\n";
+				+ " String f() { try { x(); } catch (E e) { return \"} not a brace\".trim(); } return null; }\n"
+				+ " int g(P said) { try { x(); } catch (E e) { said.println(e); return -1; } }\n"
+				+ " void h(P said) { try { x(); } catch (E e) { said.println(e); } }\n}\n";
 		List<String> kinds = new ArrayList<>();
 		for (int[] c : catchKinds(known)) {
 			kinds.add(c[0] + ":" + KIND[c[1]]);
 		}
-		check(kinds.equals(java.util.Arrays.asList("2:substitute", "3:substitute", "4:other", "5:other", "6:empty", "7:other")),
-				"control: a bare default and a logged one are counted; a report, a nested block, an empty catch and"
-				+ " a brace inside a string are told apart: " + kinds);
+		check(kinds.equals(java.util.Arrays.asList("2:substitute", "3:substitute", "4:other", "5:other", "6:empty", "7:other",
+				"8:substitute", "9:log-only")),
+				"control: a bare default and a logged one are counted, logged to a handed stream too; a report, a nested"
+				+ " block, an empty catch and a brace inside a string are told apart: " + kinds);
 		List<String> found = new ArrayList<>();
 		int files = 0;
 		for (File f : DialogSeamTest.javaSources(new File(root, "ctrmap"))) {
@@ -285,9 +291,13 @@ public class SilentCatchTest {
 
 	/** A catch block whose body holds no nested braces - the shape we can read. */
 	private static final Pattern CATCH = Pattern.compile("catch\\s*\\([^)]*\\)\\s*\\{([^{}]*)\\}");
-	/** A body that only writes the failure down somewhere. */
+	/**
+	 * A body that only writes the failure down somewhere - to any stream, not System.out and System.err alone: the
+	 * updater's reports were handed a PrintStream so a suite could read them (2026-10-15), and its log-only catch,
+	 * printing to that stream and carrying on as before, dropped out of this count unseen.
+	 */
 	private static final Pattern LOG_ONLY = Pattern.compile(
-			"(?s)\\s*(Logger[^;]*;|[\\w.]*printStackTrace\\(\\);|System\\.(out|err)\\.print[^;]*;)\\s*");
+			"(?s)\\s*(Logger[^;]*;|[\\w.]*printStackTrace\\(\\);|[\\w.]+\\.print(ln|f)?\\([^;]*;)\\s*");
 
 	static int fails = 0;
 
@@ -339,6 +349,10 @@ public class SilentCatchTest {
 		check(quoted[0] + quoted[1] == 0 && real[0] == 1 && knownWorst.equals(java.util.Collections.singletonList("Real.java:3")),
 				"the rule's known answers: a catch quoted in a comment is not counted, the same catch in code is, and is"
 				+ " named by its line: " + knownWorst);
+		int[] handed = silentCatches("class A {\n\tvoid f(java.io.PrintStream said) {\n\t\ttry { g(); } catch (Exception e) {"
+				+ " said.println(e); }\n\t}\n}\n", "Handed.java", new ArrayList<>());
+		check(handed[0] == 0 && handed[1] == 1, "and a catch that only prints to a stream it was handed is log-only, as one"
+				+ " printing to System.out is: " + java.util.Arrays.toString(handed));
 		int empty = 0, logOnly = 0;
 		List<String> worst = new ArrayList<>();
 		for (File f : DialogSeamTest.javaSources(new File(root, "ctrmap"))) {

@@ -82,9 +82,13 @@ public class DialogSeamTest {
 
 	/**
 	 * The raw calls that stay raw, as {file, message-argument source, count,
-	 * reason}. Every one has a live Swing component where the text goes: the
-	 * seam carries a String on purpose, and recording "javax.swing.JPanel[...]"
-	 * would be an assertion about nothing at all.
+	 * reason}. None, since 2026-10-15: there were seven entries, sixteen form
+	 * dialogs with a live Swing component where the text goes, allowed because
+	 * the seam carried only a String - and the code between each form and its
+	 * action sat behind a dialog no suite could answer, so the shared sweep's
+	 * mutants there survived by default (NPCEditForm 1134). Ui.form,
+	 * Ui.formOption and Ui.show carry a component now and tell a recording
+	 * Ui.A_FORM, or the words a report holds.
 	 *
 	 * <p>The message argument is the key rather than a line number, because it
 	 * is the fact that makes the call unmigratable - a new raw dialog with a
@@ -92,23 +96,7 @@ public class DialogSeamTest {
 	 * count is a ceiling, so migrating one away costs nothing and adding one
 	 * costs a code review.
 	 */
-	private static final String[][] ALLOWED = {
-		{"CtrmapMainframe.java", "form", "9",
-			"the tool dialogs (fork, rename, empty, export, import, canvas, resize) put a filled-in form in the dialog"},
-		{"CtrmapMainframe.java", "tForm", "1",
-			"the OBJ importer's new-material form"},
-		{"CtrmapMainframe.java", "new javax.swing.JScrollPane(ta)", "1",
-			"the reusable-zones report is a scrollable text area, not a string"},
-		{"NPCEditForm.java", "body", "1",
-			"showForm, the one place the Add NPC wizards and the dialogue editor show their forms;"
-			+ " the forms are built by the *Form classes and acted on by the add*/editDialogue methods, without a window"},
-		{"PaintForm.java", "panel", "1",
-			"the map painter's sign-text form (its Prompts)"},
-		{"ZoneLoadingPanel.java", "form", "2",
-			"the clone-zone and add-zones forms"},
-		{"UpdateUI.java", "body", "1",
-			"the update dialog carries a live \"check on startup\" checkbox"},
-	};
+	private static final String[][] ALLOWED = {};
 
 	/**
 	 * How many entries the allowed list may hold. Mirrors ALLOWED's length;
@@ -116,7 +104,7 @@ public class DialogSeamTest {
 	 * as MutationBaselineTest caps its exclusions at 4. Shrinking it is free
 	 * and welcome - each entry removed is a dialog a test can finally answer.
 	 */
-	private static final int ALLOWED_CEILING = 7;
+	private static final int ALLOWED_CEILING = 0;
 
 	private static final Pattern RAW_CALL = Pattern.compile("(javax\\.swing\\.)?JOptionPane\\.show([A-Za-z]*)Dialog\\s*\\(");
 	/** {@code case JOptionPane.CANCEL_OPTION:}, however it is qualified. */
@@ -151,6 +139,10 @@ public class DialogSeamTest {
 		theAllowedListCannotGrowQuietly();
 		aFeatureLivesInItsTabAndNotInAWindow(root);
 		closingADialogIsNeverConsent(root);
+		aChooseIsNeverACancel(root);
+		aRecordIsPickedNotTyped(root);
+		aListSelectionIsHandledOnce(root);
+		aControlIsNeverGreyedWithoutAReason(root);
 		aCancelIsNeverTheOnlyNo(root);
 		aReportNeverSaysOnlyNull(root);
 		theSeamCannotSayNothing();
@@ -159,10 +151,98 @@ public class DialogSeamTest {
 		closedMeansTheRegistryIsNotWritten();
 		aFileDialogsAnswerIsNeverDiscarded(root);
 		onlyTheSeamShowsAFileChooser(root);
+		aFormIsAnsweredAsAQuestionIs();
+		theConverterPaneSaysTheResultWasStored();
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
+		}
+	}
+
+	/**
+	 * The converter's pane - a pane in Extras since F243, not a window - says the result was stored when
+	 * Close stores it (the 2026-10-14 shared sweep, ESPICAControl 102, drop-report, SURVIVED: no suite
+	 * pressed Close). Before a run has succeeded, Close stores nothing and says nothing of a result.
+	 */
+	static void theConverterPaneSaysTheResultWasStored() throws Exception {
+		System.out.println("--- the converter's pane says the result was stored when Close stores it (F243)");
+		int[] stored = {0};
+		ctrmap.humaninterface.ESPICAControl pane = new ctrmap.humaninterface.ESPICAControl(() -> stored[0]++);
+		javax.swing.JButton close = (javax.swing.JButton) declared(pane, "btnClose").get(pane);
+		javax.swing.JLabel status = (javax.swing.JLabel) declared(pane, "status").get(pane);
+		String before = status.getText();
+		press(close);
+		check(stored[0] == 0 && java.util.Objects.equals(before, status.getText()), "CONTROL: before a run has succeeded,"
+				+ " Close stores nothing and says nothing of a result: " + stored[0] + " stored, \"" + status.getText() + "\"");
+		//how a run ends (the 2026-10-14 shared sweep, ESPICAControl 134, negate-if, SURVIVED: no suite ended one)
+		pane.finished("ESPICA exited with code 1");
+		boolean offered = close.isEnabled();
+		press(close);
+		check(stored[0] == 0 && "Failed - ESPICA exited with code 1".equals(status.getText()) && offered,
+				"a run that failed says why, offers Close, and Close stores nothing: " + stored[0] + " stored, \""
+				+ status.getText() + "\"");
+		pane.finished(null);
+		check("ESPICA has finished".equals(status.getText()) && close.isEnabled(),
+				"a run that succeeded says it finished and offers Close: \"" + status.getText() + "\"");
+		press(close);
+		check(stored[0] == 1 && "ESPICA has finished and the result was stored. Back to Extras leaves.".equals(status.getText()),
+				"after a run has succeeded, Close stores the result and says so: " + stored[0] + " stored, \""
+				+ status.getText() + "\"");
+
+		//a converter that will not start (the 2026-10-14 shared sweep, ESPICAControl 154, drop-report, SURVIVED: no
+		//suite ran one): the real run, handed a folder, whose start fails on its own thread
+		int[] stored2 = {0};
+		ctrmap.humaninterface.ESPICAControl failing = new ctrmap.humaninterface.ESPICAControl(() -> stored2[0]++);
+		javax.swing.JButton close2 = (javax.swing.JButton) declared(failing, "btnClose").get(failing);
+		javax.swing.JLabel status2 = (javax.swing.JLabel) declared(failing, "status").get(failing);
+		File folder = java.nio.file.Files.createTempDirectory("espica-not-a-program").toFile();
+		folder.deleteOnExit();
+		check(folder.canExecute(), "CONTROL: a folder passes the pane's can-it-run check, so the run itself is asked");
+		failing.runProcess(folder.getAbsolutePath(), new ctrmap.humaninterface.ESPICAControl.ESPICAProcess(
+				ctrmap.humaninterface.ESPICAControl.ESPICAFunctionMode.MODEL_CONVERT, new File(folder, "map.obj"),
+				new File(folder, "donor.bch"), new File(folder, "out.bch"), new String[0]));
+		for (int i = 0; i < 100 && !String.valueOf(status2.getText()).startsWith("Failed"); i++) {
+			Thread.sleep(50);
+			javax.swing.SwingUtilities.invokeAndWait(() -> { });
+		}
+		boolean offered2 = close2.isEnabled();
+		press(close2);
+		check(String.valueOf(status2.getText()).startsWith("Failed - ESPICA could not run: ") && offered2 && stored2[0] == 0,
+				"a converter that will not start says why, offers Close, and Close stores nothing: \"" + status2.getText()
+				+ "\", " + stored2[0] + " stored");
+
+		//a progress dialog with no window waits for its work, and work that never finishes is a failure, not a finish
+		//(census M.124; the 2026-10-14 shared sweep, LoadingDialog 104, drop-throw, SURVIVED: no suite waited it out)
+		java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+		done.countDown();
+		String finished = "(returned)", stuck = "(returned)";
+		try {
+			ctrmap.humaninterface.LoadingDialog.awaitWork(done, 20, java.util.concurrent.TimeUnit.MILLISECONDS);
+		} catch (IllegalStateException failed) {
+			finished = failed.getMessage();
+		}
+		try {
+			ctrmap.humaninterface.LoadingDialog.awaitWork(new java.util.concurrent.CountDownLatch(1), 20,
+					java.util.concurrent.TimeUnit.MILLISECONDS);
+		} catch (IllegalStateException failed) {
+			stuck = failed.getMessage();
+		}
+		check("(returned)".equals(finished) && stuck.startsWith("the work behind the progress dialog did not finish within 20"
+				+ " milliseconds"), "work that finished lets the caller go, and work that never does is a failure said in"
+				+ " words: " + finished + " / " + stuck);
+	}
+
+	static java.lang.reflect.Field declared(Object o, String name) throws Exception {
+		java.lang.reflect.Field f = o.getClass().getDeclaredField(name);
+		f.setAccessible(true);
+		return f;
+	}
+
+	/** What a press of {@code b} runs: its listeners, as Swing calls them. */
+	static void press(javax.swing.AbstractButton b) {
+		for (java.awt.event.ActionListener l : b.getActionListeners()) {
+			l.actionPerformed(new java.awt.event.ActionEvent(b, java.awt.event.ActionEvent.ACTION_PERFORMED, b.getActionCommand()));
 		}
 	}
 
@@ -242,7 +322,9 @@ public class DialogSeamTest {
 			}
 		}
 		check(found.isEmpty(), "no file chooser is shown outside Ui: " + found);
-		check(sites >= 21, "control: the 21 choosers that go through it are seen: " + sites);
+		//19, not 21, since the window's OBJ dialogs went through its picked/pickedToSave helpers (census L.31): two
+		//call sites became calls of the helper that holds one - the floor is what the scan must still see
+		check(sites >= 19, "control: the 19 choosers that go through it are seen: " + sites);
 		String builder = read(new File(root, "ctrmap/humaninterface/builder/Builder.java"));
 		check(builder.contains("saveFileDialog(\"Select external location\")") && builder.contains("saveFileDialog(\"Select export location\")"),
 				"and the builder's two save targets are picked with a Save dialog, not an Open one");
@@ -607,10 +689,8 @@ public class DialogSeamTest {
 			Ui.message("a", "t", JOptionPane.INFORMATION_MESSAGE);
 			Ui.confirm("a", "t", JOptionPane.YES_NO_OPTION);
 			Ui.confirm("a", "t", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
-			Ui.option("a", "t", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE,
-					new Object[]{"ok"}, "ok");
 			Ui.input("a", "t", JOptionPane.QUESTION_MESSAGE, new Object[]{"one"}, "one");
-			check(parents.size() == 6, "all six unparented forms reached the seam (" + parents.size() + ")");
+			check(parents.size() == 5, "all five unparented forms reached the seam (" + parents.size() + ")");
 			boolean allOverTheWindow = true;
 			for (java.awt.Component p : parents) {
 				allOverTheWindow &= p == window;
@@ -790,6 +870,39 @@ public class DialogSeamTest {
 		return s.trim().replaceAll("\\s+", " ");
 	}
 
+	/**
+	 * A form dialog is answered through the seam as a question is (the 2026-10-15 shared sweep, NPCEditForm 1134: the
+	 * sixteen form dialogs were raw, and what ran between a form and its action was out of every suite's reach). A
+	 * recording answers OK, Cancel and a button by index, and is told a form was asked - or a report's words; with
+	 * dialogs off and nobody recording, no form is accepted and no button pressed.
+	 */
+	static void aFormIsAnsweredAsAQuestionIs() {
+		System.out.println("--- a form dialog is answered through the seam, as a question is");
+		javax.swing.JPanel form = new javax.swing.JPanel();
+		Object[] buttons = {"Deploy", "Deploy and launch", "Cancel"};
+		List<String> said = Ui.record(JOptionPane.OK_OPTION, JOptionPane.CANCEL_OPTION, Integer.valueOf(1));
+		boolean ok;
+		boolean cancelled;
+		int pressed;
+		try {
+			ok = Ui.form(null, form, "Rename zone");
+			cancelled = Ui.form(null, form, "Rename zone");
+			pressed = Ui.formOption(null, form, "Deploy", JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, buttons,
+					buttons[0]);
+			Ui.show(null, new javax.swing.JScrollPane(), "zone 12 is unused", "Find reusable base zones",
+					JOptionPane.INFORMATION_MESSAGE);
+		} finally {
+			Ui.stopRecording();
+		}
+		check(ok && !cancelled && pressed == 1 && said.equals(Arrays.asList("Rename zone: " + Ui.A_FORM,
+				"Rename zone: " + Ui.A_FORM, "Deploy: " + Ui.A_FORM, "Find reusable base zones: zone 12 is unused")),
+				"OK accepts a form, Cancel does not, a button is pressed by index, and a report says its words: " + ok
+				+ ", " + cancelled + ", " + pressed + ", " + said);
+		check(!Ui.form(null, form, "Rename zone") && Ui.formOption(null, form, "Deploy", JOptionPane.DEFAULT_OPTION,
+				JOptionPane.PLAIN_MESSAGE, buttons, buttons[0]) == JOptionPane.CLOSED_OPTION,
+				"and with dialogs off and nobody recording, no form is accepted and no button pressed");
+	}
+
 	static String[] allowedFor(String file, String body) {
 		for (String[] e : ALLOWED) {
 			if (e[0].equals(file) && e[1].equals(body)) {
@@ -815,8 +928,236 @@ public class DialogSeamTest {
 		return out;
 	}
 
+	/**
+	 * The picker's Choose is never a Cancel (census M.138). Typing in its search cleared the list and the selection
+	 * with it, nothing chose again, and Choose then closed the picker with nothing picked - which the caller reads as
+	 * Cancel. Its rebuild is read; its Choose is pressed, on the picker's content apart from its window
+	 * (PokePickers.Picker, 2026-10-15 - before that the window was the only way in, and its Choose was read too).
+	 */
+	static void aChooseIsNeverACancel(File root) throws Exception {
+		System.out.println("--- the picker's Choose is never a Cancel (census M.138)");
+		String src = SourceSeamTest.stripComments(read(new File(root, "ctrmap/humaninterface/pokepick/PokePickers.java")));
+		int rebuildAt = src.indexOf("Runnable rebuild = () -> {");
+		int rebuildEnd = rebuildAt < 0 ? -1 : src.indexOf("};", rebuildAt);
+		String rebuild = rebuildAt >= 0 && rebuildEnd > rebuildAt ? src.substring(rebuildAt, rebuildEnd) : "";
+		check(rebuild.indexOf("lm.clear();") > 0 && rebuild.indexOf("selectId(list, visibleIds, was);") > rebuild.indexOf("lm.clear();"),
+				"the search's rebuild chooses again after it clears the list");
+		//Choose, pressed (the 2026-10-15 shared sweep, PokePickers 170, negate-if, SURVIVED: the window was the only way
+		//in) - after a search that keeps the species shown it takes that species and closes; with nothing to choose it
+		//neither chooses nor closes, which a caller would read as a Cancel
+		ctrmap.formats.pokedata.PokeData data = ctrmap.formats.pokedata.PokeData.of(HandedGameTest.referenceGame("Bulbasaur",
+				new int[]{45, 49, 49, 45, 65, 65}, 11, 3, "Pound", 40, "Master Ball"));
+		final boolean[] closed = {false, false};
+		ctrmap.humaninterface.pokepick.PokePickers.Picker kept = new ctrmap.humaninterface.pokepick.PokePickers.Picker(1,
+				ctrmap.humaninterface.pokepick.PokePickers.Kind.SPECIES, data, () -> closed[0] = true);
+		kept.search.setText("bulba");
+		kept.ok.doClick();
+		ctrmap.humaninterface.pokepick.PokePickers.Picker none = new ctrmap.humaninterface.pokepick.PokePickers.Picker(1,
+				ctrmap.humaninterface.pokepick.PokePickers.Kind.SPECIES, data, () -> closed[1] = true);
+		none.search.setText("no such pokemon");
+		none.ok.setEnabled(true);   //offered only with a choice; pressed anyway, as Enter or a double click could
+		String pressed;
+		try {
+			none.ok.doClick();
+			pressed = "nothing thrown";
+		} catch (RuntimeException threw) {
+			pressed = "threw " + threw;
+		}
+		check(kept.result() == 1 && closed[0] && none.result() == -1 && !closed[1] && "nothing thrown".equals(pressed)
+				&& src.contains("ok.setEnabled(list.getSelectedIndex() >= 0)"),
+				"and Choose after a search takes the species shown, and with nothing chosen neither chooses nor closes as a"
+				+ " Cancel - it is not offered then: " + kept.result() + "/" + closed[0] + ", " + none.result() + "/"
+				+ closed[1] + ", " + pressed);
+		//and a click on the list: one selects, two choose and close (the 2026-10-16 assembly, PokePickers 209,
+		//negate-if, SURVIVED: no suite clicked the list). Inverted, a single click chose and closed the picker on the
+		//first species touched, and a double click did nothing
+		final boolean[] clickClosed = {false};
+		ctrmap.humaninterface.pokepick.PokePickers.Picker clicked = new ctrmap.humaninterface.pokepick.PokePickers.Picker(1,
+				ctrmap.humaninterface.pokepick.PokePickers.Kind.SPECIES, data, () -> clickClosed[0] = true);
+		String clicks = "";
+		try {
+			for (int count = 1; count <= 2; count++) {
+				java.awt.event.MouseEvent click = new java.awt.event.MouseEvent(clicked.list,
+						java.awt.event.MouseEvent.MOUSE_CLICKED, 0L, 0, 1, 1, count, false);
+				for (java.awt.event.MouseListener l : clicked.list.getMouseListeners()) {
+					l.mouseClicked(click);
+				}
+				clicks += (count == 1 ? "" : ", ") + clicked.result() + "/" + clickClosed[0];
+			}
+		} catch (RuntimeException threw) {
+			clicks += " threw " + threw;
+		}
+		check("-1/false, 1/true".equals(clicks), "a single click on the picker's list chooses nothing, and a double click"
+				+ " chooses the species selected and closes: " + clicks);
+	}
+
+	/**
+	 * A Game Data editor's record is picked from a list, never typed as a number (census M.149, M.150). The trainer
+	 * editor opened on a prompt for one of 949 ids nothing in the program listed, and the encounter editor's Copy
+	 * from zone asked for a raw zone number; a wrong-but-valid one copied another route's table. A free-text
+	 * question - Ui.input with no options - is the shape, whatever it asks.
+	 */
+	static void aRecordIsPickedNotTyped(File root) throws Exception {
+		System.out.println("--- a Game Data editor's record is picked, not typed as a number (census M.149, M.150)");
+		java.util.regex.Pattern typed = java.util.regex.Pattern.compile("Ui\\.input\\([^;]*_MESSAGE,\\s*null,");
+		check(typed.matcher("ctrmap.Ui.input(dlg, \"Copy encounters from which zone number?\", \"Input\", JOptionPane.QUESTION_MESSAGE, null, null);").find()
+				&& !typed.matcher("ctrmap.Ui.input(dlg, \"Copy which?\", \"Copy\", JOptionPane.QUESTION_MESSAGE, zones.toArray(), null);").find(),
+				"control: the scan sees a free-text question and not one that offers choices");
+		List<String> asks = new ArrayList<>();
+		for (String editor : new String[]{"TrainerEditDialog", "EncounterEditDialog", "ShopEditDialog", "MaisonEditDialog", "ItemEditDialog"}) {
+			String src = SourceSeamTest.stripComments(read(new File(root, "ctrmap/humaninterface/" + editor + ".java")));
+			java.util.regex.Matcher m = typed.matcher(src);
+			while (m.find()) {
+				asks.add(editor);
+			}
+		}
+		check(asks.isEmpty(), "no Game Data editor asks for a record by typing" + (asks.isEmpty() ? "" : " - these do: " + asks));
+		String trainers = SourceSeamTest.stripComments(read(new File(root, "ctrmap/humaninterface/TrainerEditDialog.java")));
+		check(trainers.contains("new IdChooser("), "and the trainer editor lists its trainers by name to pick from");
+	}
+
+	/**
+	 * A list's selection is handled once per selection (census L.42). A mouse click sends an adjusting event and
+	 * then a settled one; eight of the thirteen listeners did their whole work on both, and the raw browser decoded
+	 * every model in a container twice per click. Selections.onSettled is the one listener, driven here the way a
+	 * click drives it, and the tree is held to it.
+	 */
+	static void aListSelectionIsHandledOnce(File root) throws Exception {
+		System.out.println("--- a list's selection is handled once per selection (census L.42)");
+		javax.swing.JList<String> list = new javax.swing.JList<>(new String[]{"a", "b", "c"});
+		int[] runs = {0};
+		ctrmap.util.Selections.onSettled(list, () -> runs[0]++);
+		list.setValueIsAdjusting(true);
+		list.setSelectedIndex(1);
+		check(runs[0] == 0, "a click's adjusting event does no work (" + runs[0] + " runs)");
+		list.setValueIsAdjusting(false);
+		check(runs[0] == 1, "and its settled event does it once (" + runs[0] + " runs)");
+		list.setSelectedIndex(2);
+		check(runs[0] == 2, "and a selection made by the keyboard or the program is handled too (" + runs[0] + " runs)");
+		java.util.regex.Pattern raw = java.util.regex.Pattern.compile("\\.addListSelectionListener\\s*\\(");
+		List<String> rawListeners = new ArrayList<>();
+		boolean seen = false;
+		for (File f : javaSources(new File(root, "ctrmap"))) {
+			if (f.getParentFile() != null && f.getParentFile().getName().equals("tests")) {
+				continue;
+			}
+			java.util.regex.Matcher m = raw.matcher(SourceSeamTest.stripComments(read(f)));
+			while (m.find()) {
+				if (f.getName().equals("Selections.java")) {
+					seen = true;
+				} else {
+					rawListeners.add(f.getName());
+				}
+			}
+		}
+		check(seen, "control: the scan finds the one listener, in Selections.onSettled");
+		check(rawListeners.isEmpty(), "nothing else listens to a list's selection raw"
+				+ (rawListeners.isEmpty() ? "" : " - these do, and run twice per click: " + rawListeners + ". Call ctrmap.util.Selections.onSettled."));
+	}
+
+	/**
+	 * A control is never greyed out without saying why (census L.59). The Matrix Editor disabled its Multizone tool and
+	 * chunk controls on a matrix without LOD with nothing on screen saying the checkbox above turns them on, and 24 more
+	 * went grey the same way. Ui.offer is the one way: the reason is the tooltip while the control is grey, and its own
+	 * tooltip comes back when it is enabled by any path. NetBeans' initComponents sets the designer's first state, is
+	 * never hand-edited, and is left out.
+	 */
+	static void aControlIsNeverGreyedWithoutAReason(File root) throws Exception {
+		System.out.println("--- a control is never greyed out without saying why (census L.59)");
+		javax.swing.JButton b = new javax.swing.JButton("Fill");
+		b.setToolTipText("its own tip");
+		ctrmap.Ui.offer(b, "the reason");
+		check(!b.isEnabled() && "the reason".equals(b.getToolTipText()), "greyed out, the reason is its tooltip (" + b.getToolTipText() + ")");
+		ctrmap.Ui.offer(b, "a second reason");
+		b.setEnabled(true);
+		check(b.isEnabled() && "its own tip".equals(b.getToolTipText()),
+				"enabled again by a plain setEnabled, its own tooltip is back, not a reason (" + b.getToolTipText() + ")");
+		ctrmap.Ui.offer(b, "again");
+		ctrmap.Ui.offer(b, null);
+		check(b.isEnabled() && "its own tip".equals(b.getToolTipText()), "and offered again, the same");
+		boolean refused = false;
+		try {
+			ctrmap.Ui.offer(b, "  ");
+		} catch (IllegalArgumentException expected) {
+			refused = true;
+		}
+		check(refused && b.isEnabled(), "and a blank reason is refused, the control left as it was");
+		//measured by the 2026-10-12 sweep (Ui 499, negated, SURVIVED): the check above greys the control twice before
+		//enabling it, and the second offer gave a listener the first had not - so a control greyed ONCE and enabled
+		//by a plain setEnabled kept its reason as a tooltip, and every later offer stacked another listener
+		javax.swing.JButton once = new javax.swing.JButton("Paint");
+		once.setToolTipText("paint a tile");
+		int before = once.getPropertyChangeListeners("enabled").length;
+		ctrmap.Ui.offer(once, "no zone is loaded");
+		once.setEnabled(true);
+		check(once.isEnabled() && "paint a tile".equals(once.getToolTipText()),
+				"greyed out once and enabled by a plain setEnabled, its own tooltip is back (" + once.getToolTipText() + ")");
+		ctrmap.Ui.offer(once, "no zone is loaded");
+		ctrmap.Ui.offer(once, "still none");
+		ctrmap.Ui.offer(once, null);
+		check(once.getPropertyChangeListeners("enabled").length == before + 1,
+				"and however often it is offered, it holds one listener for it ("
+				+ (once.getPropertyChangeListeners("enabled").length - before) + ")");
+		java.util.regex.Pattern bare = java.util.regex.Pattern.compile("\\.setEnabled\\(\\s*false\\s*\\)");
+		java.util.regex.Pattern offered = java.util.regex.Pattern.compile("Ui\\.offer\\(\\s*(\\w+)\\s*,");
+		check(bare.matcher(withoutDesigner("x.setEnabled(false);")).find()
+				&& !bare.matcher(withoutDesigner("//GEN-BEGIN:initComponents\n x.setEnabled(false);\n//GEN-END:initComponents")).find()
+				&& !bare.matcher(withoutDesigner("ctrmap.Ui.offer(x, \"why\");")).find(),
+				"control: the scan sees a bare disable, and not one in initComponents or through Ui.offer");
+		List<String> greyed = new ArrayList<>();
+		List<String> stale = new ArrayList<>();
+		boolean seen = false;
+		int offers = 0;
+		for (File f : javaSources(new File(root, "ctrmap"))) {
+			if (f.getParentFile() != null && f.getParentFile().getName().equals("tests")) {
+				continue;
+			}
+			String src = SourceSeamTest.stripComments(withoutDesigner(read(f)));
+			if (f.getName().equals("Ui.java")) {
+				seen = bare.matcher(src).find();
+				continue;
+			}
+			java.util.regex.Matcher m = bare.matcher(src);
+			while (m.find()) {
+				greyed.add(f.getName() + ":" + (src.substring(0, m.start()).split("\n", -1).length));
+			}
+			java.util.regex.Matcher o = offered.matcher(src);
+			while (o.find()) {
+				offers++;
+				java.util.regex.Matcher computed = java.util.regex.Pattern.compile(
+						"\\b" + o.group(1) + "\\.setEnabled\\((?!\\s*true\\s*\\))").matcher(src);
+				if (computed.find()) {
+					stale.add(f.getName() + " " + o.group(1));
+				}
+			}
+		}
+		check(seen && offers >= 25, "control: the one bare disable is Ui.offer's own, and " + offers + " controls are offered through it");
+		check(greyed.isEmpty(), "no control is greyed out bare" + (greyed.isEmpty() ? "" : " - these are: " + greyed + ". Call Ui.offer with the reason."));
+		check(stale.isEmpty(), "and none a file offers is disabled there by a computed setEnabled, which would leave the last reason on it"
+				+ (stale.isEmpty() ? "" : " - these are: " + stale));
+	}
+
+	/**
+	 * {@code src} with NetBeans' initComponents blocks blanked to their line breaks - the designer's first state, never
+	 * hand-edited - so a line number found after it is still the file's.
+	 */
+	static String withoutDesigner(String src) {
+		java.util.regex.Matcher d = java.util.regex.Pattern.compile("(?s)GEN-BEGIN:initComponents.*?GEN-END:initComponents").matcher(src);
+		StringBuffer out = new StringBuffer();
+		while (d.find()) {
+			d.appendReplacement(out, d.group().replaceAll("[^\n]", ""));
+		}
+		d.appendTail(out);
+		return out.toString();
+	}
+
+	/**
+	 * A source file's text as the suites read it. LINE ENDINGS ARE NOT CONTENT: git's autocrlf hands a file to a
+	 * Windows checkout with CRLF, and every check that looked for {@code "\n\t}\n"} or a line's text found
+	 * nothing - measured 2026-10-09, five suites red on files this tree had checked out CRLF and nothing else.
+	 */
 	static String read(File f) throws Exception {
-		return new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
+		return new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8).replace("\r\n", "\n");
 	}
 
 	static void check(boolean ok, String what) {

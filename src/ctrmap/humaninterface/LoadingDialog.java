@@ -91,20 +91,40 @@ public class LoadingDialog extends javax.swing.JPanel {
 		return ret;
 	}
 
+	/**
+	 * Holds a caller with no window until {@code closed} opens, for at most {@code wait}. A TIMEOUT IS A FAILURE, not a
+	 * finish (census M.124): its answer was dropped, so a worker that never finished returned as if it had, and
+	 * everything after read a state it never reached. Apart from the dialog so a suite asks it with a bound of its own
+	 * (the 2026-10-14 shared sweep, LoadingDialog 104, drop-throw, SURVIVED: no suite waited out the two minutes).
+	 */
+	public static void awaitWork(CountDownLatch closed, long wait, TimeUnit unit) {
+		try {
+			if (!closed.await(wait, unit)) {
+				throw new IllegalStateException("the work behind the progress dialog did not finish within " + wait + " "
+						+ unit.name().toLowerCase(java.util.Locale.ROOT) + ", so nothing after it may read its result");
+			}
+		} catch (InterruptedException ex) {
+			Thread.currentThread().interrupt();
+		}
+	}
+
 	public void showDialog() {
 		if (dlg == null) {
 			//the caller expects to be held here until the worker's done() has
 			//closed this, because everything it does next assumes that. The
 			//timeout is a backstop against a worker that never finishes: a test
 			//run that stops is a result, one that hangs is not.
-			try {
-				closed.await(2, TimeUnit.MINUTES);
-			} catch (InterruptedException ex) {
-				Thread.currentThread().interrupt();
-			}
+			awaitWork(closed, 2, TimeUnit.MINUTES);
 			return;
 		}
 		onTheEventThread("A modal progress dialog was shown");
+		//ONE NOBODY'S CLICK JUST OPENED WAITS FOR THE OWNER (Ui.untilInUse) - the deploy a finished pack starts comes
+		//minutes after the click - and one whose work finished while it waited is not shown at all: close() has run,
+		//and a dialog shown after it is a modal window nothing will ever close
+		ctrmap.Ui.untilInUse();
+		if (closed.getCount() == 0) {
+			return;
+		}
 		if (ctrmap.Ui.parent() != null) {
 			dlg.setLocationRelativeTo(ctrmap.Ui.parent());
 		}

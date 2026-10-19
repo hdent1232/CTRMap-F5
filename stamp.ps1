@@ -36,6 +36,9 @@
 
 $script:StampName = ".built-by-build-ps1"
 
+# git runs through the one helper (native.ps1), whoever dot-sources this file
+. (Join-Path $PSScriptRoot "native.ps1")
+
 # The extensions whose CRs are not content. Kept as a literal list rather than a
 # heuristic, so the same six answers come out of PowerShell, Python and Java.
 $script:TextDigestExt = @(".java", ".form", ".properties", ".tsv", ".md", ".txt")
@@ -87,15 +90,11 @@ function Write-BuildStamp([string]$Root) {
     # same trap then bit the next external command in the same script.
     # "unknown" is a branch this stamp already had; it just could not be reached.
     $head = "unknown"
-    $prev = $ErrorActionPreference
     try {
-        $ErrorActionPreference = "Continue"
-        $found = (& git -C $Root rev-parse HEAD 2>$null)
+        $found = Invoke-Native { & git -C $Root rev-parse HEAD 2>$null }
         if ($LASTEXITCODE -eq 0 -and $found) { $head = ([string]$found).Trim() }
     } catch {
         $head = "unknown"
-    } finally {
-        $ErrorActionPreference = $prev
     }
     $src = Get-TreeDigest (Join-Path $Root "src") ""
     $classes = Get-TreeDigest (Join-Path $Root "build\classes") $script:StampName

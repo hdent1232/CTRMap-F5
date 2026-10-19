@@ -50,10 +50,86 @@ public class MapResizerTest {
 			}
 		}
 		System.out.println("\nMapResizer: tested=" + tested + " (" + lodTested + " LOD)  ok=" + ok + "  failures=" + failures);
+		failures += aGrownMapsNewCellIsFlooredWithTheGround(garcFile);
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT");
 		if (failures > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * A grown map's new cells are floored with the region's GROUND, not its biggest mesh (F017).
+	 *
+	 * <p>The resize floored them with the biggest mesh - a wall, a fence or the sea on 312 of the first
+	 * 400 retail regions - and now goes through the blank canvas's one blanking, which asks for the
+	 * ground. Only a region whose biggest mesh is NOT its ground tells the two apart, and no synthetic
+	 * map model exists, so this is the dump's: the first such retail region is put under a one-zone
+	 * game, the zone's map grown by a cell, and the new cell's one real mesh read back.
+	 *
+	 * @return the failures
+	 */
+	static int aGrownMapsNewCellIsFlooredWithTheGround(File a040) throws Exception {
+		System.out.println("--- a grown map's new cell is floored with the ground, not the biggest mesh (F017)");
+		File a039 = new File(new File(a040.getParentFile().getParentFile(), "3"), "9");
+		GARC fd = new GARC(a039);
+		int found = -1, differing = 0, scanned = 0, foundGround = -1, foundBiggest = -1;
+		for (int r = 0; r < fd.length; r++) {
+			byte[] model = ctrmap.formats.containers.ContainerBytes.subfile(fd.getDecompressedEntry(r), 1);
+			if (model == null || !ctrmap.formats.h3d.BchMapModel.isMapModel(model)) {
+				continue;
+			}
+			scanned++;
+			ctrmap.formats.h3d.BchMapModel m = new ctrmap.formats.h3d.BchMapModel(model);
+			int ground = ctrmap.formats.tilemap.PaintedMaterials.defaultGroundMesh(m);
+			int biggest = biggestMesh(m);
+			if (ground >= 0 && biggest >= 0 && ground != biggest) {
+				differing++;
+				if (found < 0) {
+					found = r;
+					foundGround = ground;
+					foundBiggest = biggest;
+				}
+			}
+		}
+		int fails = 0;
+		if (found < 0) {
+			System.out.println("  FAIL: control: no retail region has a biggest mesh that is not its ground ("
+					+ scanned + " read) - nothing here can tell the two floors apart");
+			return 1;
+		}
+		System.out.println("  ok: control: " + differing + " of " + scanned + " retail regions have a biggest mesh that is"
+				+ " not their ground; region " + found + " is the first (ground " + foundGround + ", biggest " + foundBiggest + ")");
+		ctrmap.WorkspaceSession ws = MapResizeTest.game("f017", new byte[][]{MapResizeTest.zone(0)}, new int[]{0},
+				new byte[][]{MapResizeTest.matrix(0)}, fd.getDecompressedEntry(found));
+		try {
+			ctrmap.MapResizer.ResizeResult grown = ctrmap.MapResizer.resize(ws, 0, 2, 1);
+			byte[] cell = ctrmap.formats.containers.ContainerBytes.subfile(
+					MapResizeTest.bytes(ws, ctrmap.gamedef.ArchiveType.FIELD_DATA, grown.newRegions[0]), 1);
+			int floor = biggestMesh(new ctrmap.formats.h3d.BchMapModel(cell));
+			if (floor != foundGround) {
+				System.out.println("  FAIL: the new cell is floored with mesh " + floor + ", not the ground " + foundGround
+						+ (floor == foundBiggest ? " - it is the region's biggest mesh" : ""));
+				fails++;
+			} else {
+				System.out.println("  ok: the new cell is floored with mesh " + floor + ", the ground, and the biggest mesh "
+						+ foundBiggest + " is left degenerate");
+			}
+		} finally {
+			ctrmap.Workspace.reset();
+		}
+		return fails;
+	}
+
+	/** The mesh with the most triangles, of those whose positions read. */
+	static int biggestMesh(ctrmap.formats.h3d.BchMapModel m) {
+		int best = -1, bestTris = -1;
+		for (ctrmap.formats.h3d.BchMapModel.MeshGeom g : m.geometry()) {
+			if (g.posOk && m.getTriangles(g.meshIndex).length > bestTris) {
+				bestTris = m.getTriangles(g.meshIndex).length;
+				best = g.meshIndex;
+			}
+		}
+		return best;
 	}
 
 	static void checkGrow(byte[] mat, int mi, int newW, int newH, int w, int h) {

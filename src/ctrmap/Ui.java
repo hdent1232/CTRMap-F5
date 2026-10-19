@@ -173,15 +173,20 @@ public final class Ui {
 		return confirm(parent, text, title, optionType, messageType);
 	}
 
-	/** Named buttons, parented to the window the application set. */
-	public static int option(String text, String title, int optionType, int messageType,
-			Object[] options, Object initial) {
-		return option(parent, text, title, optionType, messageType, options, initial);
-	}
-
 	/** A choice, parented to the window the application set. */
 	public static Object input(String text, String title, int type, Object[] options, Object initial) {
 		return input(parent, text, title, type, options, initial);
+	}
+
+	/**
+	 * Says, once, which name files could not be read, when any could not - the editor then shows numbers in their
+	 * place (census M.55). Nothing when every one was read.
+	 */
+	public static void saidUnread(Component parent, java.util.List<String> unread, String title) {
+		if (!unread.isEmpty()) {
+			message(parent, "Some names could not be read, so their numbers are shown instead:\n"
+					+ String.join("\n", unread), title, JOptionPane.WARNING_MESSAGE);
+		}
 	}
 
 	/** Tells the user something, through a dialog or through a test's sink. */
@@ -205,12 +210,71 @@ public final class Ui {
 	 * the worker sat inside it. Only real dialogs are refused: a suite's recording and the
 	 * dialogs-off log answer from any thread, since a suite's own main thread is not the event
 	 * thread either. EdtReachTest is the half that finds such a call before anything runs.
+	 *
+	 * <p>And then waits until the editor is the program in use - {@link #untilInUse} - so every real
+	 * dialog this seam opens, the five that pass through here, waits for the owner rather than coming up
+	 * over whatever else they are doing.
 	 */
 	private static void onTheEventThread(String title) {
 		if (!javax.swing.SwingUtilities.isEventDispatchThread()) {
 			throw new IllegalStateException("\"" + title + "\" was asked off the event thread, on "
 					+ Thread.currentThread().getName() + " - a dialog belongs to the event thread (F220)");
 		}
+		untilInUse();
+	}
+
+	/**
+	 * Returns once a window of this program is the one the owner is using - at once when one is, or when
+	 * none is showing (the program is starting, or has no window yet, so nothing of it is in front of
+	 * anything).
+	 *
+	 * <p>A WINDOW NOBODY JUST ASKED FOR WAITS (owner, 2026-10-12: "stop all of the pop ups going to my
+	 * foreground ... not just visually either"). The update offer that arrives when the network answers,
+	 * the result of a pack started minutes ago, anything in a window the updater reopened: each came up
+	 * while the owner was in another program, and a window that takes the foreground takes the keyboard
+	 * whether it is seen or not - a paused video, a deleted screenshot. Now such a dialog waits, and opens
+	 * the moment the owner comes back to the editor. The wait keeps the event thread dispatching, as a
+	 * modal dialog's own does, so the editor stays live under it. A dialog the owner's own click opens
+	 * never waits: the click made the editor the program in use.
+	 */
+	public static void untilInUse() {
+		if (inUse()) {
+			return;
+		}
+		java.awt.SecondaryLoop wait = java.awt.Toolkit.getDefaultToolkit().getSystemEventQueue().createSecondaryLoop();
+		//on the event thread, as every window event is: nothing is dispatched between the question above
+		//and the wait below, so an activation cannot slip between them
+		java.awt.event.AWTEventListener back = event -> {
+			if (event.getID() == java.awt.event.WindowEvent.WINDOW_ACTIVATED || inUse()) {
+				wait.exit();
+			}
+		};
+		java.awt.Toolkit.getDefaultToolkit().addAWTEventListener(back, java.awt.AWTEvent.WINDOW_EVENT_MASK);
+		try {
+			wait.enter();
+		} finally {
+			java.awt.Toolkit.getDefaultToolkit().removeAWTEventListener(back);
+		}
+	}
+
+	/**
+	 * Whether a window of this program is the active one, or none of its windows is showing.
+	 *
+	 * <p>The active window must be SHOWING to count: measured, a dialog closed while nothing else of the
+	 * program could take its place stayed the focus manager's active window after it was gone, and a
+	 * window nobody can see is not one anybody is using.
+	 */
+	static boolean inUse() {
+		java.awt.Window active = java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow();
+		if (active != null && active.isShowing()) {
+			return true;
+		}
+		for (java.awt.Window w : java.awt.Window.getWindows()) {
+			if (w.isShowing()) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/** An error, which is what nearly every one of these is. */
@@ -305,6 +369,70 @@ public final class Ui {
 		return JOptionPane.showOptionDialog(parent, text, title, optionType, messageType, null, options, initial);
 	}
 
+	/** What a recording is told a form said: a form is filled in, not read out. */
+	public static final String A_FORM = "(a form)";
+
+	/**
+	 * Shows {@code form} - a filled-in form, not a sentence - with OK and Cancel, and answers whether OK was pressed.
+	 *
+	 * <p>EVERY FORM DIALOG IS SHOWN HERE (the 2026-10-15 shared sweep, NPCEditForm 1134). Sixteen dialogs - fifteen
+	 * forms and a report - were opened with a raw JOptionPane, listed in DialogSeamTest as allowed because the forms
+	 * are built and acted on elsewhere -
+	 * but the code between the form and the action sat behind a dialog no suite could answer, so every mutant there
+	 * survived by default, as the branches behind a file chooser did until {@link #choose}. A recording answers a form
+	 * as it answers a confirm, OK_OPTION to accept; with dialogs off nobody can, and the answer is Cancel.
+	 */
+	public static boolean form(Component parent, Object form, String title) {
+		Component over = parent != null ? parent : Ui.parent;
+		if (sink != null) {
+			return sink.confirm(over, A_FORM, title, JOptionPane.OK_CANCEL_OPTION) == JOptionPane.OK_OPTION;
+		}
+		if (!dialogsEnabled) {
+			System.out.println("[Ui] " + title + "? (a form) - nobody can fill it in");
+			return false;
+		}
+		onTheEventThread(title);
+		return JOptionPane.showConfirmDialog(over, form, title, JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE)
+				== JOptionPane.OK_OPTION;
+	}
+
+	/**
+	 * A form with buttons of its own: which was pressed, as an index into {@code options}, or CLOSED_OPTION (-1) when
+	 * the form was closed - also the nobody-is-there answer, as {@link #option} says. See {@link #form}.
+	 */
+	public static int formOption(Component parent, Object form, String title, int optionType, int messageType,
+			Object[] options, Object initial) {
+		Component over = parent != null ? parent : Ui.parent;
+		if (sink != null) {
+			return sink.option(over, A_FORM, title, options);
+		}
+		if (!dialogsEnabled) {
+			System.out.println("[Ui] " + title + "? (a form) - nobody can fill it in");
+			return JOptionPane.CLOSED_OPTION;
+		}
+		onTheEventThread(title);
+		return JOptionPane.showOptionDialog(over, form, title, optionType, messageType, null, options, initial);
+	}
+
+	/**
+	 * Shows {@code content} - a component, such as a long report in a scroll pane - and says {@code text} to a
+	 * recording, which reads words, not components. See {@link #form}.
+	 */
+	public static void show(Component parent, Object content, String text, String title, int type) {
+		Component over = parent != null ? parent : Ui.parent;
+		text = saying(text);
+		if (sink != null) {
+			sink.message(over, text, title, type);
+			return;
+		}
+		if (!dialogsEnabled) {
+			System.out.println("[Ui] " + title + ": " + text.replace("\n", " | "));
+			return;
+		}
+		onTheEventThread(title);
+		JOptionPane.showMessageDialog(over, content, title, type);
+	}
+
 	/**
 	 * Asks the user to pick one of options and returns it, or null when they
 	 * cancel - which is also what nobody-is-there answers.
@@ -330,6 +458,7 @@ public final class Ui {
 	 * means the user closed the dialog. Returns the live list of what was said;
 	 * call {@link #stopRecording()} afterwards.
 	 */
+	@ctrmap.util.ForSuites("SEAM: a suite records what the program says and answers its questions, so no dialog opens")
 	public static List<String> record(Object... answers) {
 		final List<String> said = new ArrayList<>();
 		final Queue<Object> queue = new LinkedList<>(Arrays.asList(answers));
@@ -405,6 +534,7 @@ public final class Ui {
 	 * said and throws away which window it was said over, which is the one
 	 * thing the parented and unparented forms differ by.
 	 */
+	@ctrmap.util.ForSuites("SEAM: a suite hands the dialog seam a sink of its own, to see which window each sentence is said over")
 	public static void into(Sink custom) {
 		sink = custom;
 	}
@@ -478,7 +608,41 @@ public final class Ui {
 				"No workspace loaded", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.OK_OPTION;
 	}
 
+	/** Where {@link #offer} keeps the tooltip a control had before it was greyed out. */
+	private static final String KEPT_TIP = "ctrmap.Ui.keptTip";
+
+	/**
+	 * Offers {@code control} when {@code whyNot} is null; otherwise greys it out with {@code whyNot} as its tooltip.
+	 * THE ONE WAY A CONTROL IS GREYED OUT (census L.59): the Matrix Editor disabled its Multizone tool and chunk
+	 * controls on a matrix without LOD with nothing on screen saying the checkbox above turns them on, and 24 more
+	 * controls went grey the same way. The tooltip the control had comes back when it is enabled again, by this or
+	 * by any setEnabled(true), so a reason never outlives the condition it names.
+	 */
+	public static void offer(javax.swing.JComponent control, String whyNot) {
+		if (control.getClientProperty(KEPT_TIP) == null) {
+			control.addPropertyChangeListener("enabled", ev -> {
+				if (Boolean.TRUE.equals(ev.getNewValue())) {
+					String kept = (String) control.getClientProperty(KEPT_TIP);
+					control.setToolTipText(kept == null || kept.isEmpty() ? null : kept);
+				}
+			});
+		}
+		if (control.getClientProperty(KEPT_TIP) == null || control.isEnabled()) {
+			control.putClientProperty(KEPT_TIP, control.getToolTipText() == null ? "" : control.getToolTipText());
+		}
+		if (whyNot == null) {
+			control.setEnabled(true);
+			return;
+		}
+		if (whyNot.trim().isEmpty()) {
+			throw new IllegalArgumentException("a control is greyed out with a reason, and this one was handed none");
+		}
+		control.setEnabled(false);
+		control.setToolTipText(whyNot);
+	}
+
 	/** Back to real dialogs. */
+	@ctrmap.util.ForSuites("SEAM: a suite puts the real dialogs back after recording what the program said")
 	public static void stopRecording() {
 		sink = null;
 	}

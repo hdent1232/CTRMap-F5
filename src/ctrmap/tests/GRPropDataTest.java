@@ -39,6 +39,7 @@ public class GRPropDataTest {
 			aPropInACellWithNoRegionIsKept();
 			aPropOffTheGridIsKept();
 			aMapWithNoRegionRefusesInWords();
+			aGridWithNoPopulatedCellIsRefused();
 			propsThatCouldNotBeReadAreNeverWrittenOver();
 		} finally {
 			Workspace.reset();
@@ -138,6 +139,36 @@ public class GRPropDataTest {
 		} catch (IOException refused) {
 			check(false, "while no props on no regions is nothing to refuse - it said " + refused.getMessage());
 		}
+	}
+
+	/**
+	 * The cell lookup is handed a grid by write, which refuses a map with no region before it asks -
+	 * so no save reaches this refusal. It is asked directly: a grid with nothing in it has no cell
+	 * to answer, and answering one anyway would put a prop where no region is.
+	 */
+	static void aGridWithNoPopulatedCellIsRefused() throws Exception {
+		java.lang.reflect.Method cellFor = GRPropData.class.getDeclaredMethod("cellFor", float.class, float.class, Object[][].class);
+		cellFor.setAccessible(true);
+		Object[][] one = new Object[2][2];
+		one[1][0] = "region";
+		int[] got = null;
+		try {
+			got = (int[]) cellFor.invoke(null, 0f, 0f, one);
+		} catch (java.lang.reflect.InvocationTargetException e) {
+			got = null;
+		}
+		check(got != null && got[0] == 1 && got[1] == 0,
+				"a grid with one populated cell answers that cell (control): " + (got == null ? null : Arrays.toString(got)));
+		String said = null;
+		Object answered = null;
+		try {
+			answered = cellFor.invoke(null, 0f, 0f, new Object[2][2]);
+		} catch (java.lang.reflect.InvocationTargetException e) {
+			said = String.valueOf(e.getCause());
+		}
+		check(said != null && said.contains("no populated cell to put a prop in"),
+				"a grid with no populated cell is refused in words: "
+				+ (said != null ? said : "it answered " + (answered instanceof int[] ? Arrays.toString((int[]) answered) : answered)));
 	}
 
 	static void propsThatCouldNotBeReadAreNeverWrittenOver() throws Exception {

@@ -15,6 +15,9 @@ it has a verdict on, by naming its own entry points - discovered, never listed:
 
     AT_WRITE      = "fn"                 fn(rel, text) -> [finding]
                                          one file, as the write would leave it
+    AT_WRITE_SET  = "fn"                 fn({rel: text}) -> [finding]
+                                         every changed file in scope AT ONCE, None where absent:
+                                         asked once before and once after, however many changed
     AT_WRITE_TREE = ("facts", "judge")   facts(rel, text) -> JSON-able facts about ONE file
                                          judge({rel: facts}) -> [finding] over the whole scope
     AT_RECORD     = "fn"                 fn(path, payload) -> [finding]
@@ -74,6 +77,7 @@ if __name__ == "__main__":
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bundle_env        # noqa: E402  - one PREFIX renames every environment name
 import _tree_root        # noqa: E402  - the project root, anchored: never counted (F216)
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 
 LF = chr(10)
 
@@ -126,9 +130,9 @@ HOOKS = os.path.join(".claude", os.path.basename(os.path.dirname(os.path.abspath
 #: Adapted per project: see the bootstrap's ADAPT.md.
 ADAPT = ("RULE_DIRS", "SOURCE_SCOPE", "RECORD_SCOPE", "LOCK", "CACHE", "HOOKS")
 
-MARKERS = ("AT_WRITE", "AT_WRITE_TREE", "AT_WRITE_CHANGE", "AT_RECORD", "AT_COMMAND",
-           "AT_COMMIT", "AT_AFTER")
-WRITE_KINDS = ("AT_WRITE", "AT_WRITE_TREE", "AT_WRITE_CHANGE", "AT_RECORD")
+MARKERS = ("AT_WRITE", "AT_WRITE_SET", "AT_WRITE_TREE", "AT_WRITE_CHANGE", "AT_RECORD",
+           "AT_COMMAND", "AT_COMMIT", "AT_AFTER")
+WRITE_KINDS = ("AT_WRITE", "AT_WRITE_SET", "AT_WRITE_TREE", "AT_WRITE_CHANGE", "AT_RECORD")
 
 #: Which hook asks which marker. `tiers` reads this to decide whether a declared rule is really at
 #: the point of action: a marker nothing dispatched asks is a declaration, not a refusal.
@@ -138,7 +142,8 @@ WRITE_KINDS = ("AT_WRITE", "AT_WRITE_TREE", "AT_WRITE_CHANGE", "AT_RECORD")
 #: command says so - and before a write lands the disk is not the tree the write would leave, so
 #: nothing can ask them first. The earliest they can be asked is the moment after, and a finding
 #: there is handed straight back to the session that made the change, before anything else runs.
-ASKED_BY = {"AT_WRITE": "guard_write_rules.py", "AT_WRITE_TREE": "guard_write_rules.py",
+ASKED_BY = {"AT_WRITE": "guard_write_rules.py", "AT_WRITE_SET": "guard_write_rules.py",
+            "AT_WRITE_TREE": "guard_write_rules.py",
             "AT_WRITE_CHANGE": "guard_write_rules.py", "AT_RECORD": "guard_write_rules.py",
             "AT_COMMAND": "guard_command_rules.py", "AT_COMMIT": "guard_command_rules.py",
             "AT_AFTER": "after_rules.py"}
@@ -155,7 +160,9 @@ def repo_root(start=None):
 
 
 def rel_of(root, path):
-    return os.path.relpath(os.path.abspath(path), root).replace(os.sep, "/")
+    """`path` relative to `root` - outside it (`..`) for a path on another drive, never a crash."""
+    import bundle_shell                 # the one relative path, as payload_text is the one way in
+    return bundle_shell.relative(os.path.abspath(path), root)
 
 
 def _lock_names(root, name=None):
@@ -377,25 +384,47 @@ def _literals(tree):
     return out
 
 
+def _file_key(path):
+    """One spelling of a file for comparing two of them: absolute, real, case-folded on Windows."""
+    return os.path.normcase(os.path.realpath(os.path.abspath(path))) if path else ""
+
+
 def load(path):
     """The module at `path`, imported by its plain name with its directory importable.
 
     By the PLAIN name so a channel that already imported a checker gets the same module back,
     and a checker's `import sibling` resolves exactly as it does from its own command line.
+
+    THE FILE ASKED FOR, OR A REFUSAL - never a same-named file from somewhere else. A plain name
+    resolves by the ORDER of the import path, and another tree's folder can be earlier on it.
+    Measured 2026-10-09 on CTRMap: the bundle's install checker, loaded into the hook process from
+    the bundle's own folder, put that folder's `tools` FIRST on the path and left it there; the
+    project's `tools/tiers.py` was then asked as a rule, `import tiers` found the BUNDLE's newer
+    copy, and that copy called a function this `bundle_rules` does not have. Every judgement said
+    "tiers could not answer", so a held change could never be released and every act but a read
+    was refused. So the file's folder goes FIRST for the import - which is also what its own
+    command line gives its siblings - and what comes back must be the file asked for.
     """
     folder = os.path.dirname(os.path.abspath(path))
     stem = os.path.splitext(os.path.basename(path))[0]
-    if folder not in sys.path:
-        sys.path.insert(0, folder)
+    want = _file_key(path)
     held = sys.modules.get(stem)
-    if held is not None and os.path.abspath(getattr(held, "__file__", "") or "") == \
-            os.path.abspath(path):
+    if held is not None and _file_key(getattr(held, "__file__", "")) == want:
         return held
+    key = os.path.normcase(folder)
+    sys.path[:] = [folder] + [p for p in sys.path
+                              if not p or os.path.normcase(os.path.abspath(p)) != key]
     held_bytecode = sys.dont_write_bytecode
     sys.dont_write_bytecode = True
     try:
         if held is None:
-            return importlib.import_module(stem)
+            module = importlib.import_module(stem)
+            if _file_key(getattr(module, "__file__", "")) != want:
+                sys.modules.pop(stem, None)
+                raise ImportError("`import %s` resolved to %s, not the rule asked for at %s - a "
+                                  "same-named module from another folder answered for it"
+                                  % (stem, getattr(module, "__file__", None), path))
+            return module
         spec = importlib.util.spec_from_file_location("rules_" + stem, path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -514,7 +543,7 @@ def declarations_in(text):
             out.append((kind, None, None, "%s must be %s" % (
                 kind, "a pair of function names" if want_pair else "one function name")))
             continue
-        if kind in ("AT_WRITE", "AT_WRITE_CHANGE"):
+        if kind in ("AT_WRITE", "AT_WRITE_SET", "AT_WRITE_CHANGE"):
             where = scope or SOURCE_SCOPE
         elif kind == "AT_RECORD":
             where = scope or RECORD_SCOPE
@@ -571,6 +600,111 @@ def rules(root, honour_lock=True):
     return found
 
 
+#: The hooks git runs, by git's own names (`git help hooks`) - a fact about git, so a data file
+#: beside them in the folder (`gate-before`) is not asked to be one.
+GIT_HOOKS = frozenset((
+    "applypatch-msg", "pre-applypatch", "post-applypatch", "pre-commit", "pre-merge-commit",
+    "prepare-commit-msg", "commit-msg", "post-commit", "pre-rebase", "post-checkout", "post-merge",
+    "pre-push", "pre-receive", "update", "proc-receive", "post-receive", "post-update",
+    "reference-transaction", "push-to-checkout", "pre-auto-gc", "post-rewrite",
+    "sendemail-validate", "fsmonitor-watchman", "p4-changelist", "p4-prepare-changelist",
+    "p4-post-changelist", "p4-pre-submit", "post-index-change"))
+
+
+#: Whether git skips a hook that is not executable. Git for Windows runs a hook whatever its mode.
+#: A module constant, so a test asks the POSIX question on any machine: a plant whose test skips
+#: here can never redden here, and the install drives every plant it merges - measured 2026-10-07,
+#: this one refused DF Engine's install on Windows.
+MODES_MATTER = os.name != "nt"
+
+
+def unrunnable_hooks(folder):
+    """The git hooks in `folder` git would SKIP, or that cannot be told not to be - the names of
+    `hook_problems`, the one answer."""
+    return [name for name, _why in hook_problems(folder)]
+
+
+def hook_problems(folder):
+    """[(name, why)] - each git hook in `folder` git would SKIP because it is not executable, as
+    git's index records it or as this disk holds it, and each whose mode cannot be asked.
+
+    MEASURED 2026-10-07 in the bundle's own repository: both `.githooks/pre-commit` and
+    `.githooks/commit-msg` tracked as mode 100644, so git printed a hint and ran neither, and every
+    commit of that session went in with no gate asked - a commit gated in name only reads exactly
+    like one the gate passed. Asked by the commit guard, the install check and the bundle check -
+    which held a second reading of the index of its own until this one read it.
+
+    AS GIT'S INDEX RECORDS THEM, ON EVERY SYSTEM. A clone takes a file's mode from the index, and
+    Git for Windows commits a new file 100644 and runs it anyway: measured 2026-10-07 by the CTRMap
+    session, four hooks across two repositories committed from Windows, every one skipped on every
+    Linux and macOS checkout - every cloud session's gate off - while the machine that made them
+    ran them. (Ported from that session's branch, `ctrmap/hook-modes`, into this one answer.) On
+    disk only where git reads the bit (`MODES_MATTER`): Git for Windows runs a hook whatever its
+    mode. And a mode git could not be asked is UNKNOWN, never executable."""
+    try:
+        names = sorted(name for name in os.listdir(folder) if name in GIT_HOOKS
+                       and os.path.isfile(os.path.join(folder, name)))
+    except OSError:
+        return []
+    recorded = index_modes(folder, names)
+    out = []
+    for name in names:
+        if recorded is None:
+            out.append((name, "UNKNOWN - git could not be asked what mode it records"))
+        elif recorded.get(name, "100755") != "100755":
+            out.append((name, "recorded by git as %s, so every clone checks it out without the "
+                              "executable bit" % recorded[name]))
+        elif MODES_MATTER and not os.access(os.path.join(folder, name), os.X_OK):
+            out.append((name, "not executable on this disk"))
+    return out
+
+
+def _in_repository(folder):
+    """Is there a `.git` at or above `folder` - an index for a mode to be recorded in?"""
+    here = os.path.abspath(folder)
+    while True:
+        if os.path.exists(os.path.join(here, ".git")):
+            return True
+        parent = os.path.dirname(here)
+        if parent == here:
+            return False
+        here = parent
+
+
+def index_modes(folder, names):
+    """{name: the mode git's index records for `folder/name`} for each of `names` it tracks - {}
+    outside any repository, where no index records a mode, and None - UNKNOWN - when git cannot
+    be asked inside one."""
+    if not names or not _in_repository(folder):
+        return {}
+    try:
+        done = bounded.run(["git", "-C", folder, "ls-files", "-s", "--"] + list(names),
+                           capture_output=True, text=True, timeout=30,
+                           creationflags=NO_WINDOW)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    out = {}
+    for line in done.stdout.splitlines():
+        meta, _tab, path = line.partition("\t")
+        name = path.strip().replace(chr(92), "/").rsplit("/", 1)[-1]
+        if meta.split():
+            out[name] = meta.split()[0]
+    return out
+
+
+#: The one setting that turns every hook off while every entry stays wired.
+HOOKS_OFF = re.compile(r'"disableAllHooks"\s*:\s*true\b')
+
+
+def hooks_disabled(wiring):
+    """Do these settings turn every hook off? Measured 2026-10-07: one Edit adding
+    `"disableAllHooks": true` left every wiring entry in place, so every check that reads the
+    entries still counted each guard asked."""
+    return bool(HOOKS_OFF.search(wiring or ""))
+
+
 def asked(root, kind, wiring=None):
     """Is a rule of this kind really asked - its hook present, and wired where the harness runs it?
 
@@ -589,6 +723,8 @@ def asked(root, kind, wiring=None):
                     wiring += handle.read()
             except OSError:
                 pass
+    if hooks_disabled(wiring):
+        return False
     if hook.startswith("guard_"):
         return "dispatch.py" in wiring
     return re.search(r"\b%s\b" % re.escape(hook), wiring) is not None
@@ -604,8 +740,8 @@ def tracked(root):
     Outside a repository it falls back to a walk that skips dot-directories.
     """
     try:
-        done = subprocess.run(["git", "ls-files", "-co", "--exclude-standard", "-z"], cwd=root,
-                              capture_output=True, timeout=30, creationflags=NO_WINDOW)
+        done = bounded.run(["git", "ls-files", "-co", "--exclude-standard", "-z"], cwd=root,
+                           capture_output=True, timeout=30, creationflags=NO_WINDOW)
         if done.returncode == 0:
             return sorted(set(p.decode("utf-8", "replace").replace(chr(92), "/")
                               for p in done.stdout.split(b"\0") if p))
@@ -803,6 +939,21 @@ def ask_write(root, rel, before, after, found=None):
     return ask_changes(root, {rel: (before, after)}, found)
 
 
+def write_target(payload, root):
+    """The absolute path a Write or Edit call's text is for - a TOP-LEVEL `file_path` or `path`
+    carrying `content`, `new_string` or `edits` - or None for any other call."""
+    tool_input = (payload or {}).get("tool_input")
+    if not isinstance(tool_input, dict):
+        return None
+    target = tool_input.get("file_path") or tool_input.get("path")
+    if not isinstance(target, str) or not target:
+        return None
+    if not (isinstance(tool_input.get("content"), str) or isinstance(tool_input.get("edits"), list)
+            or isinstance(tool_input.get("new_string"), str)):
+        return None
+    return os.path.abspath(target if os.path.isabs(target) else os.path.join(root, target))
+
+
 def judged_at_write(payload, root):
     """The project path the WRITE HOOK asks the rules about for this call, or '' - the one answer
     to "was this write judged before it landed", which `after_rules` records instead of re-asking.
@@ -811,20 +962,172 @@ def judged_at_write(payload, root):
     `new_string` or `edits`, inside the project, outside a mutation lock - this, which it asks
     first. Anything else - a notebook edit, a write nested in a batching tool's input - was asked
     nothing by it, and the moment-after recorded it as asked: a write judged by neither hook
-    (measured 2026-10-06)."""
-    tool_input = (payload or {}).get("tool_input")
-    if not isinstance(tool_input, dict):
+    (measured 2026-10-06).
+
+    AND NOT A FILE OF ANOTHER CHECKOUT. A linked worktree can sit inside the project folder - the
+    harness keeps them in its worktrees folder - and its files were judged here as this tree's,
+    against this tree's modules: a test reading a function only the worktree had was refused, and
+    a worktree test, whose path did not start with `tests/`, was read as a module and its claims
+    never checked (measured 2026-10-06). `landing` says whose file it is; the write hook asks that
+    checkout's own rules in a child."""
+    path = write_target(payload, root)
+    if path is None:
         return ""
-    target = tool_input.get("file_path") or tool_input.get("path")
-    if not isinstance(target, str) or not target:
-        return ""
-    if not (isinstance(tool_input.get("content"), str) or isinstance(tool_input.get("edits"), list)
-            or isinstance(tool_input.get("new_string"), str)):
-        return ""
-    rel = rel_of(root, target if os.path.isabs(target) else os.path.join(root, target))
+    rel = rel_of(root, path)
     if rel.startswith("..") or rel == locked(root):
         return ""
+    if landing(root, path) != root:
+        return ""
     return rel
+
+
+def _norm(path):
+    return os.path.normcase(os.path.realpath(path))
+
+
+def repository(place):
+    """(top, common git directory) of the repository `place` is in, both normalised, or None
+    when git cannot say - which is never read as "not a repository"."""
+    if place is None:
+        return None
+    done = _git(place, ["rev-parse", "--show-toplevel", "--git-common-dir"])
+    if done is None or done.returncode != 0:
+        return None
+    lines = done.stdout.decode("utf-8", "replace").splitlines()
+    if len(lines) < 2:
+        return None
+    return _norm(lines[0]), _norm(os.path.join(place, lines[1]))
+
+
+def judged(root, place):
+    """Which project an act in `place` acts on, laid out as `root` is.
+
+    `root` itself; the same project in a LINKED WORKTREE of this repository, a path of its own,
+    whose files and rules are its own; or None for ANOTHER repository, which this project's rules
+    have no say over. Where git cannot say, the answer is `root`.
+    """
+    theirs = repository(place)
+    if theirs is None:
+        return root
+    ours = repository(root)
+    if ours is None:
+        return None
+    if theirs[1] != ours[1]:
+        return None
+    try:
+        inside = os.path.relpath(_norm(root), ours[0])
+    except ValueError:
+        return root
+    target = os.path.normpath(os.path.join(theirs[0], inside))
+    return root if _norm(target) == _norm(root) else target
+
+
+def worktrees(root):
+    """Every checkout git LISTS for root's repository, normalised - empty when git cannot say."""
+    done = _git(root, ["worktree", "list", "--porcelain"])
+    if done is None or done.returncode != 0:
+        return set()
+    return {_norm(line[len("worktree "):].strip())
+            for line in done.stdout.decode("utf-8", "replace").splitlines()
+            if line.startswith("worktree ")}
+
+
+def landing(root, path):
+    """The checkout a path belongs to: `root`; ANOTHER checkout of this repository - a linked
+    worktree, whose files and rules are its own; or None for a path outside `root` in no checkout
+    of it.
+
+    Found by walking up from the path to the nearest `.git` - the folder, or the FILE a linked
+    worktree keeps - so a path in `root` with nothing between costs no git call. Compared by
+    `realpath` and `normcase`, because a guard keyed on a path is one spelling from blind: `..`
+    and a drive letter in the other case name the same folder. A path that is a folder - where a
+    call runs - is its own first step.
+
+    ONLY A CHECKOUT GIT LISTS. A `.git` file is one line of text, and one naming a real worktree's
+    git folder makes git report the folder holding it as that worktree - so a file written into
+    `src/` would have made `src/` a checkout with no rules, and every write under it unjudged.
+    Inside `root`, anything but a checkout `git worktree list` names is `root`'s, as it always
+    was - another repository nested in this folder included.
+    """
+    here = os.path.abspath(path)
+    if not os.path.isdir(here):
+        here = os.path.dirname(here)
+    top = _norm(root)
+    inside = _norm(here) == top or _norm(here).startswith(top.rstrip(os.sep) + os.sep)
+    while True:
+        if _norm(here) == top:
+            return root
+        if os.path.exists(os.path.join(here, ".git")):
+            place = judged(root, here)
+            if place is not None and _norm(place) == top:
+                return root
+            if place is not None and _norm(place) in worktrees(root):
+                return place
+            return root if inside else None
+        parent = os.path.dirname(here)
+        if parent == here:
+            return None
+        here = parent
+
+
+def acting_in(payload, root):
+    """The checkout a call RUNS in - where the harness says it started, its `cwd` - or `root`
+    when that is not another checkout of this repository, or cannot be told."""
+    held = payload.get("cwd") if isinstance(payload, dict) else None
+    if not isinstance(held, str) or not os.path.isdir(held):
+        return root
+    place = landing(root, held)
+    return root if place is None else place
+
+
+def checkouts(payload, root):
+    """Every checkout of this repository one call acts in: where it runs, then where a Write or
+    Edit's file lands when that is somewhere else. A tree is judged by the call that acts in it.
+
+    MEASURED 2026-10-06, in a session working in a linked worktree the harness made:
+    the main tree's `git status` cannot see that folder at all (the harness excludes it), so
+    every command's write in the worktree was judged by nobody, while the main tree's held
+    changes - another session's work in progress - refused the worktree session's own acts.
+    """
+    out = [acting_in(payload, root)]
+    target = write_target(payload, root)
+    if target is not None:
+        place = landing(root, target)
+        if place is not None and place not in out:
+            out.append(place)
+    return out
+
+
+def ask_checkout(hook, place, payload):
+    """(code, said) from `hook` judging one call in ANOTHER checkout of this repository, or
+    (None, why) when it could not answer.
+
+    IN A CHILD OF ITS OWN, as a commit made in a worktree is: that checkout's rules are its own
+    modules, imported by their plain names, and one process cannot hold two copies of a module
+    under one name. The child is this same hook run as `hook --judge <checkout>`, so the judge
+    is the one this session runs and only the tree and its rules are the checkout's.
+    """
+    try:
+        # `-B`: the child imports this folder's modules, and bytecode written beside them is a
+        # file nobody shipped. The payload goes as ASCII JSON, so no code page can mangle it.
+        done = bounded.run([sys.executable, "-B", os.path.abspath(hook), "--judge", place],
+                           input=json.dumps(payload), capture_output=True, text=True,
+                           encoding="utf-8", timeout=1200, creationflags=NO_WINDOW)
+        answer = json.loads(done.stdout) if done.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError, ValueError):
+        answer, done = None, None
+    if (isinstance(answer, list) and len(answer) == 2 and isinstance(answer[0], int)
+            and not isinstance(answer[0], bool) and isinstance(answer[1], str)):
+        return answer[0], answer[1]
+    said = ((done.stderr or done.stdout) if done is not None else "").strip()[-300:]
+    return None, said or "no answer"
+
+
+def judge_mode(argv):
+    """The checkout a hook was started to judge as `--judge <checkout>`, or None."""
+    if argv[:1] == ["--judge"] and len(argv) > 1 and os.path.isdir(argv[1]):
+        return argv[1]
+    return None
 
 
 def _compiles(rel, text):
@@ -867,9 +1170,9 @@ def java_parse_error(rel, text):
         source = os.path.join(folder, os.path.basename(rel) or "Source.java")
         with io.open(source, "w", encoding="utf-8", newline=LF) as handle:
             handle.write(text)
-        done = subprocess.run([compiler, "--should-stop=ifNoError=PARSE", "-d",
-                               os.path.join(folder, "out"), source], capture_output=True,
-                              text=True, timeout=120, creationflags=NO_WINDOW)
+        done = bounded.run([compiler, "--should-stop=ifNoError=PARSE", "-d",
+                            os.path.join(folder, "out"), source], capture_output=True,
+                           text=True, timeout=120, creationflags=NO_WINDOW)
     except (OSError, subprocess.SubprocessError):
         return None
     finally:
@@ -985,6 +1288,14 @@ def _ask_changes_once(root, changes, found):
                         was = _findings(judge(dict(facts)))
                 now = _findings(judge(facts))
                 change = _grew(was, now)
+            elif rule.kind == "AT_WRITE_SET":
+                # ONE ASKING A SIDE, for every changed file the rule watches. Its verdict is about
+                # the set, so it was asked one file at a time as AT_WRITE: measured 2026-10-10,
+                # the install check - 1.6 s - asked twice for each of 61 files a command wrote,
+                # and one dispatcher call took 98 s.
+                call = rule.call(rule.entry)
+                was = _findings(call({rel: changes[rel][0] for rel in mine}))
+                change = _grew(was, _findings(call({rel: changes[rel][1] for rel in mine})))
             else:
                 grown = [_grew(*_ask_one(root, rule, rel, *changes[rel])) for rel in mine]
                 grown = [g for g in grown if g]
@@ -1114,8 +1425,8 @@ BLOBS = "judged-blobs"
 def _git(root, args):
     """git's completed run, or None when git could not be started at all."""
     try:
-        return subprocess.run(["git", "--no-optional-locks"] + list(args), cwd=root,
-                              capture_output=True, timeout=60, creationflags=NO_WINDOW)
+        return bounded.run(["git", "--no-optional-locks"] + list(args), cwd=root,
+                           capture_output=True, timeout=60, creationflags=NO_WINDOW)
     except (OSError, subprocess.SubprocessError):
         return None
 
@@ -1495,7 +1806,11 @@ def named_by(root, judged):
     for _was, _now, findings in (judged.get("worse") or {}).values():
         for finding in findings:
             for word in _NAMING.findall(str(finding)):
-                word = word.strip(".:-")
+                # THE END OF A SENTENCE, NEVER THE START OF A NAME. This was `.strip(".:-")`, and
+                # measured 2026-10-10 by the DF Engine worktree session it took `.claude\x.json`
+                # to `claude/x.json`, which is no file: a held `bundle_install` finding named the
+                # one file whose Edit repairs it, and the Edit was refused. A dotfile's dot stays.
+                word = word.rstrip(".:-").lstrip(":-")
                 if word and not any(word in text for text in wrote):
                     words.add(word)
     files, out = None, set()

@@ -84,6 +84,7 @@ public class ScriptAssemblerGuardTest {
 		strayLine();
 		linesBeforeTheBrace();
 		truncatedCasetbl();
+		aCaseGivenTwiceIsAnError();
 		corpusRoundTrip(new File(garcPath));
 		editorButtons(new File(garcPath));
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -94,7 +95,7 @@ public class ScriptAssemblerGuardTest {
 
 	/** The baseline: a well-formed script assembles without a word of complaint. */
 	static void cleanScript() {
-		PawnAssembly asm = PawnDisassembler.assembleScript(CLEAN);
+		PawnAssembly asm = PawnDisassembler.assembleScript(CLEAN, null);
 		check(asm.errors.isEmpty(), "a clean script has no errors " + asm.errors);
 		check(asm.getInstructionCount() == 4, "a clean script keeps all 4 instructions, got " + asm.getInstructionCount());
 		int pushC = PawnInstruction.Commands.PUSH_C.ordinal();
@@ -106,7 +107,7 @@ public class ScriptAssemblerGuardTest {
 
 	/** The live defect: one mistyped mnemonic. */
 	static void mistypedMnemonic() {
-		PawnAssembly asm = PawnDisassembler.assembleScript(CLEAN.replace("PUSH_C(2)", "PSUH_C(2)"));
+		PawnAssembly asm = PawnDisassembler.assembleScript(CLEAN.replace("PUSH_C(2)", "PSUH_C(2)"), null);
 		check(asm.errors.size() == 1, "a mistyped mnemonic is exactly one error, got " + asm.errors);
 		String error = asm.errors.isEmpty() ? "" : asm.errors.get(0);
 		check(error.startsWith("line 4:"), "the error names the line: " + error);
@@ -117,7 +118,7 @@ public class ScriptAssemblerGuardTest {
 
 	/** An argument the assembler cannot read must not silently become 0. */
 	static void badArgument() {
-		PawnAssembly asm = PawnDisassembler.assembleScript(CLEAN.replace("PUSH_C(3)", "PUSH_C(0x3)"));
+		PawnAssembly asm = PawnDisassembler.assembleScript(CLEAN.replace("PUSH_C(3)", "PUSH_C(0x3)"), null);
 		check(asm.errors.size() == 1, "an unreadable argument is exactly one error, got " + asm.errors);
 		String error = asm.errors.isEmpty() ? "" : asm.errors.get(0);
 		check(error.startsWith("line 5:") && error.contains("\"0x3\""), "the error names the line and the argument: " + error);
@@ -125,32 +126,48 @@ public class ScriptAssemblerGuardTest {
 
 	/** Text outside every subroutine used to be skipped without a word. */
 	static void strayLine() {
-		PawnAssembly asm = PawnDisassembler.assembleScript(CLEAN + "PUSH_C(4)\n");
+		PawnAssembly asm = PawnDisassembler.assembleScript(CLEAN + "PUSH_C(4)\n", null);
 		check(asm.errors.size() == 1 && asm.errors.get(0).startsWith("line 8:"),
 				"a line outside any subroutine is an error naming the line, got " + asm.errors);
 	}
 
 	/** Between a name and its brace: a blank line is nothing, anything else is named. */
 	static void linesBeforeTheBrace() {
-		PawnAssembly asm = PawnDisassembler.assembleScript("sub_0\n\n{\n\tPUSH_C(1)\n\tRETN(0)\n}\n");
+		PawnAssembly asm = PawnDisassembler.assembleScript("sub_0\n\n{\n\tPUSH_C(1)\n\tRETN(0)\n}\n", null);
 		check(asm.errors.isEmpty() && asm.getInstructionCount() == 2,
 				"a blank line between a subroutine's name and its brace is nothing: " + asm.errors);
-		asm = PawnDisassembler.assembleScript("sub_0\nSTRAY\n{\n\tPUSH_C(1)\n\tRETN(0)\n}\n");
+		asm = PawnDisassembler.assembleScript("sub_0\nSTRAY\n{\n\tPUSH_C(1)\n\tRETN(0)\n}\n", null);
 		check(asm.errors.size() == 1 && asm.errors.get(0).startsWith("line 2:") && asm.errors.get(0).contains("\"STRAY\""),
 				"a stray token there is an error naming the line and the token: " + asm.errors);
 		String table = "sub_0\n{\n\tCASETBL\n%s\t{\n\t\t1 => 0x20\n\t\t* => 0x30\n\t}\n\tRETN(0)\n}\n";
-		asm = PawnDisassembler.assembleScript(String.format(table, "\n"));
+		asm = PawnDisassembler.assembleScript(String.format(table, "\n"), null);
 		check(asm.errors.isEmpty(), "a blank line between CASETBL and its brace is nothing: " + asm.errors);
-		asm = PawnDisassembler.assembleScript(String.format(table, "\tSTRAY\n"));
+		asm = PawnDisassembler.assembleScript(String.format(table, "\tSTRAY\n"), null);
 		check(asm.errors.size() == 1 && asm.errors.get(0).contains("\"STRAY\"") && asm.errors.get(0).contains("casetbl"),
 				"a stray token before the casetbl's brace is an error naming it: " + asm.errors);
+	}
+
+	/**
+	 * Census H.63: a casetbl arm given twice is an error, like every other malformed arm. The second replaced the
+	 * first and the table assembled one case short, with nothing said.
+	 */
+	static void aCaseGivenTwiceIsAnError() {
+		String table = "sub_0\n{\n\tCASETBL\n\t{\n%s\t}\n\tRETN(0)\n}\n";
+		PawnAssembly asm = PawnDisassembler.assembleScript(String.format(table, "\t\t1 => 0x20\n\t\t2 => 0x28\n\t\t* => 0x30\n"), null);
+		check(asm.errors.isEmpty(), "control: two cases and a default assemble: " + asm.errors);
+		asm = PawnDisassembler.assembleScript(String.format(table, "\t\t1 => 0x20\n\t\t1 => 0x28\n\t\t* => 0x30\n"), null);
+		check(asm.errors.size() == 1 && asm.errors.get(0).contains("case 1 twice"),
+				"a case given twice is an error naming it, not a table one case short: " + asm.errors);
+		asm = PawnDisassembler.assembleScript(String.format(table, "\t\t1 => 0x20\n\t\t* => 0x28\n\t\t* => 0x30\n"), null);
+		check(asm.errors.size() == 1 && asm.errors.get(0).contains("two defaults"),
+				"and so is a second default: " + asm.errors);
 	}
 
 	/** The casetbl that used to throw out of the assembler, and with it out of the editor's stream swap. */
 	static void truncatedCasetbl() {
 		PawnAssembly asm;
 		try {
-			asm = PawnDisassembler.assembleScript("sub_0\n{\n\tCASETBL\n\t{\n\t\t1 => 0x20\n\t\t2 => 0x30\n");
+			asm = PawnDisassembler.assembleScript("sub_0\n{\n\tCASETBL\n\t{\n\t\t1 => 0x20\n\t\t2 => 0x30\n", null);
 		} catch (RuntimeException ex) {
 			System.out.println("  FAIL: a truncated casetbl threw " + ex + " instead of reporting");
 			fails++;
@@ -235,7 +252,7 @@ public class ScriptAssemblerGuardTest {
 			check(false, "no zone script with a PUSH_C to mistype");
 			return;
 		}
-		TestWindow.mZonePnl(new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0})));
+		TestWindow.mZonePnl(new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList())));
 		ScriptEditor ed = new ScriptEditor(SAVER);
 		ed.loadScript(s);
 		flush();

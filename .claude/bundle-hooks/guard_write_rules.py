@@ -120,22 +120,52 @@ def into_git(payload, root):
     return ""
 
 
-def verdict(payload, root):
-    """(exit code, message) for one write."""
+def elsewhere(payload, root):
+    """(exit code, message) for a write whose file lands in ANOTHER checkout of this repository -
+    a linked worktree - asked of that checkout's own rules; None for a write that does not.
+
+    MEASURED 2026-10-06, a session working in a linked worktree the harness made: both
+    directions. A test reading a function only the worktree's module had was refused, and a
+    re-anchored claim was refused as describing no mutation site - true of the main tree's file
+    - while a worktree test, whose path did not start with `tests/`, was read as a module, so a
+    write that made thirty of its claims stale went through without a word.
+    """
+    target = bundle_rules.write_target(payload, root)
+    place = bundle_rules.landing(root, target) if target is not None else None
+    if place is None or place == root:
+        return None
+    code, said = bundle_rules.ask_checkout(__file__, place, payload)
+    if code is not None:
+        return code, said
+    rel = bundle_rules.rel_of(place, target)
+    if bundle_rules.repairs(place, rel):
+        return 0, ""                 # a broken rule stays fixable, as it does in this tree
+    return 2, ("BLOCKED: this write lands in the worktree at %s, and that worktree's own rules "
+               "could not be asked about it (%s). A write nobody could judge is not a clean one."
+               % (place, said))
+
+
+def verdict(payload, root, delegate=True):
+    """(exit code, message) for one write. `delegate` False: this process IS the child asked
+    about another checkout, and asks nothing further."""
     inside = into_git(payload, root)
     if inside:
         return 2, ("BLOCKED: this write to %s is inside the repository's git folder, which only "
                    "git writes. Use a git command - `git config`, `git commit` - so the hooks that "
                    "guard it are asked." % inside)
+    # A PLANTED JUDGE CAN REFUSE A WRITE AS WRONGLY AS IT CAN ALLOW ONE, so it is not asked. The
+    # moment after asks nothing of it either and records nothing, so this write is judged as a
+    # change the first time the real judge is back. Asked before a worktree's child is: the
+    # child runs this judge.
+    if bundle_shell.judge_under_mutation(root, bundle_rules.LOCK):
+        return 0, ""
+    there = elsewhere(payload, root) if delegate else None
+    if there is not None:
+        return there
     change = proposed(payload, root)
     if change is None:
         return 0, ""
     rel, before, after = change
-    # A PLANTED JUDGE CAN REFUSE A WRITE AS WRONGLY AS IT CAN ALLOW ONE, so it is not asked. The
-    # moment after asks nothing of it either and records nothing, so this write is judged as a
-    # change the first time the real judge is back.
-    if bundle_shell.judge_under_mutation(root, bundle_rules.LOCK):
-        return 0, ""
     worse = bundle_rules.ask_write(root, rel, before, after)
     if not worse:
         return 0, ""
@@ -146,7 +176,8 @@ def verdict(payload, root):
     return 2, bundle_rules.refusal("this write to %s" % rel, worse)
 
 
-def main():
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
     try:
         payload = json.load(sys.stdin)
     except (ValueError, IOError):
@@ -154,6 +185,12 @@ def main():
     if not isinstance(payload, dict) or not bundle_shell.is_tool_call(payload):
         return 0
     if not bundle_shell.writes(payload):
+        return 0
+    # `--judge <checkout>`: another checkout of this repository, asked by its parent in a process
+    # of its own. Its answer goes back as data; the parent decides.
+    place = bundle_rules.judge_mode(argv)
+    if place is not None:
+        sys.stdout.write(json.dumps(list(verdict(payload, place, delegate=False))) + LF)
         return 0
     root = bundle_rules.repo_root(__file__)
     if root is None:

@@ -54,6 +54,15 @@ public class CollEditPanel extends javax.swing.JPanel {
 				deselectTri();
 				deselectMesh();
 			} else {
+				//THE REGION A NODE IS DRAWN UNDER, asked first and in one place for every branch (census
+				//H.26): a mesh was picked by its position under its parent alone, so with two regions
+				//loaded, "Mesh 5" under region B edited region A's mesh 5 and saved it into A
+				int owner = fileOf(node);
+				if (owner >= 0 && owner != collIndex) {
+					deselectTri();
+					deselectMesh();
+					selectFile(owner);
+				}
 				String label = (String) node.getUserObject();
 				if (label.startsWith("Mesh")) {
 					selectMesh(node.getParent().getIndex(node));
@@ -63,7 +72,6 @@ public class CollEditPanel extends javax.swing.JPanel {
 				} else if (root != node) {
 					deselectTri();
 					deselectMesh();
-					selectFile(root.getIndex(node));
 				}
 			}
 		});
@@ -82,16 +90,51 @@ public class CollEditPanel extends javax.swing.JPanel {
 		selectedTri = -1;
 		meshTree.setModel(null);
 		coll = null;
+		collIndex = -1;
 		root = new DefaultMutableTreeNode("No map loaded");
 		meshNodes.clear();
 		meshContainers.clear();
 		files.clear();
 	}
 
-	public void store() {
-		for (int i = 0; i < files.size(); i++) {
-			if (files.get(i).modified) {
-				files.get(i).write();
+	/**
+	 * Writes each changed collision, asking first when {@code dialog} - false only when the user was asked
+	 * and cancelled. It wrote without asking and answered true whatever happened (census H.1): No to every
+	 * question of a zone switch still wrote the collisions, and a written one stayed marked changed.
+	 */
+	public boolean store(boolean dialog) {
+		boolean changed = false;
+		for (GRCollisionFile file : files) {
+			changed |= file.modified;
+		}
+		if (!changed) {
+			return true;
+		}
+		switch (ctrmap.Ui.askToKeep(dialog, "Collision data", this::discard)) {
+			case DISCARD:
+				return true;
+			case CANCEL:
+				return false;
+			default:
+				break;
+		}
+		for (GRCollisionFile file : files) {
+			if (file.modified) {
+				file.write();
+				file.modified = false;
+			}
+		}
+		buildTree();
+		return true;
+	}
+
+	/** Puts every changed collision back to what its region holds, and the tree with it. */
+	void discard() {
+		deselectTri();
+		deselectMesh();
+		for (GRCollisionFile file : files) {
+			if (file.modified) {
+				file.revert();
 			}
 		}
 		buildTree();
@@ -107,6 +150,7 @@ public class CollEditPanel extends javax.swing.JPanel {
 		this.coll = f;
 		root.setUserObject("Collision data");
 		files.add(coll);
+		collIndex = files.size() - 1;   //the file selected and the index that names it never part
 		meshTree.setModel(new DefaultTreeModel(root));
 		DefaultMutableTreeNode[] newNode = new DefaultMutableTreeNode[16];
 		DefaultMutableTreeNode cont = new DefaultMutableTreeNode(name);
@@ -199,6 +243,15 @@ public class CollEditPanel extends javax.swing.JPanel {
 		collIndex = idx;
 	}
 
+	/** The index in {@code files} of the region {@code node} is drawn under - the child of the root on its path - or -1 for the root itself. */
+	int fileOf(DefaultMutableTreeNode node) {
+		javax.swing.tree.TreeNode at = node;
+		while (at != null && at.getParent() != root) {
+			at = at.getParent();
+		}
+		return at == null ? -1 : root.getIndex(at);
+	}
+
 	public void selectTriangle(int mesh, int tri) {
 		deselectTri();
 		deselectMesh();
@@ -218,6 +271,7 @@ public class CollEditPanel extends javax.swing.JPanel {
 		triobj.setSelected(true);
 		selectedMesh = mesh;
 		selectedTri = tri;
+		btnRemTriangle.setEnabled(true);
 	}
 
 	public void deselectTri() {
@@ -225,6 +279,9 @@ public class CollEditPanel extends javax.swing.JPanel {
 			coll.meshes[selectedMesh].tris.get(selectedTri).setSelected(false);
 		}
 		selectedTri = -1;
+		//REMOVE OFFERED ONLY WITH A TRIANGLE TO REMOVE (census M.148): it stayed live with nothing selected and
+		//answered a press with nothing at all
+		ctrmap.Ui.offer(btnRemTriangle, "Select a triangle to remove it");
 		v1x.setValue(0f);
 		v1y.setValue(0f);
 		v1z.setValue(0f);
@@ -469,8 +526,10 @@ public class CollEditPanel extends javax.swing.JPanel {
 			((DefaultTreeModel) meshTree.getModel()).reload(meshNodes.get(collIndex)[originalMesh]);
 			selectedMesh = originalMesh;
 			selectTriangle(selectedMesh, index);
+			//CHANGED ONLY WHEN SOMETHING WAS ADDED (census M.74): marked outside the guard, it threw with no
+			//collision loaded and called an untouched collision changed
+			coll.modified = true;
 		}
-		coll.modified = true;
     }//GEN-LAST:event_btnNewTriangleActionPerformed
 
     private void btnFillCoordsActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnFillCoordsActionPerformed
@@ -492,9 +551,9 @@ public class CollEditPanel extends javax.swing.JPanel {
 				meshNodes.get(collIndex)[selectedMesh].add(new DefaultMutableTreeNode("Triangle " + (index + 1)));
 				reloadMeshNode(selectedMesh);
 				selectTriangle(selectedMesh, index);
+				coll.modified = true;   //only when the quad was added (census M.74)
 			}
 		}
-		coll.modified = true;
     }//GEN-LAST:event_btnFillCoordsActionPerformed
 
     private void btnRemTriangleActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnRemTriangleActionPerformed
@@ -533,14 +592,27 @@ public class CollEditPanel extends javax.swing.JPanel {
 		});
 	}
 
+	/**
+	 * Writes what a coordinate field holds - 0 x, 1 y, 2 z of that vertex - into the selected triangle, and
+	 * only a number (census M.10). An empty field, a lone minus, half a number was written as 0 on every
+	 * keystroke, snapping the corner to the region's origin; now nothing is written, and the field shows
+	 * it was not taken.
+	 */
 	private void adjust(JFormattedTextField source, int axis, int vertex) {
-		if (axis == 0) {
-			adjustX(source, vertex);
-		} else if (axis == 1) {
-			adjustY(source, vertex);
-		} else {
-			adjustZ(source, vertex);
+		Float typed = ctrmap.humaninterface.Forms.typedFloat(source);
+		ctrmap.humaninterface.Forms.markTaken(source, typed != null || selectedTri == -1);
+		if (selectedTri == -1 || typed == null) {
+			return;
 		}
+		Triangle t = coll.meshes[selectedMesh].tris.get(selectedTri);
+		if (axis == 0) {
+			t.setX(vertex, typed);
+		} else if (axis == 1) {
+			t.setY(vertex, typed);
+		} else {
+			t.setZ(vertex, typed);
+		}
+		coll.modified = true;
 	}
 
 	/**
@@ -572,27 +644,6 @@ public class CollEditPanel extends javax.swing.JPanel {
 					new float[]{corner[0][1], corner[1][1], corner[2][1]}),
 			new Triangle(new float[]{corner[3][0], corner[1][0], corner[2][0]}, new float[]{y[3], y[1], y[2]},
 					new float[]{corner[3][1], corner[1][1], corner[2][1]})};
-	}
-
-	private void adjustX(JFormattedTextField source, int vertex) {
-		if (selectedTri != -1) {
-			coll.meshes[selectedMesh].tris.get(selectedTri).setX(vertex, ctrmap.humaninterface.Forms.getFloatFromDocument(source));
-			coll.modified = true;
-		}
-	}
-
-	private void adjustY(JFormattedTextField source, int vertex) {
-		if (selectedTri != -1) {
-			coll.meshes[selectedMesh].tris.get(selectedTri).setY(vertex, ctrmap.humaninterface.Forms.getFloatFromDocument(source));
-			coll.modified = true;
-		}
-	}
-
-	private void adjustZ(JFormattedTextField source, int vertex) {
-		if (selectedTri != -1) {
-			coll.meshes[selectedMesh].tris.get(selectedTri).setZ(vertex, ctrmap.humaninterface.Forms.getFloatFromDocument(source));
-			coll.modified = true;
-		}
 	}
 
 	public void buildTree() {

@@ -62,10 +62,40 @@ public class SourceDebrisTest {
 		List<String> wildcards = new ArrayList<>();
 		List<String> commentedOut = new ArrayList<>();
 		List<String> csharp = new ArrayList<>();
+		List<String> deadFlags = new ArrayList<>();
+		List<String> writeOnly = new ArrayList<>();
+		List<String> undisposed = new ArrayList<>();
+		java.util.Map<String, String> sources = new java.util.LinkedHashMap<>();
 		for (File f : files) {
-			String src = DialogSeamTest.read(f);
+			sources.put(f.getPath(), DialogSeamTest.read(f));
+		}
+		for (java.util.Map.Entry<String, String> one : sources.entrySet()) {
+			for (String array : writeOnlyArrays(one.getValue())) {
+				//READ ANYWHERE IS READ: a field another file reads through a reference is not write-only
+				java.util.regex.Pattern readElsewhere = java.util.regex.Pattern.compile("\\." + java.util.regex.Pattern.quote(array)
+						+ "\\b(?!\\s*\\[[^\\]]*\\]\\s*=[^=])");
+				boolean read = false;
+				for (java.util.Map.Entry<String, String> other : sources.entrySet()) {
+					read |= !other.getKey().equals(one.getKey()) && readElsewhere.matcher(other.getValue()).find();
+				}
+				if (!read) {
+					writeOnly.add(new File(one.getKey()).getName() + ": " + array);
+				}
+			}
+		}
+		for (File f : files) {
+			String src = sources.get(f.getPath());
 			for (int[] c : commentedOutCode(src)) {
 				commentedOut.add(f.getName() + ":" + c[0] + " (" + c[1] + " lines of code)");
+			}
+			String plain = SourceSeamTest.stripComments(src).replaceAll("\"(?:\\\\.|[^\"\\\\])*\"", "\"\"");
+			int made = plain.split("new\\s+(?:javax\\.swing\\.)?JDialog\\s*\\(", -1).length - 1;
+			int closed = plain.split("setDefaultCloseOperation\\s*\\(", -1).length - 1;
+			if (made > closed) {
+				undisposed.add(f.getName() + " (" + made + " made, " + closed + " told how to close)");
+			}
+			for (String flag : deadFlags(src)) {
+				deadFlags.add(f.getName() + ": " + flag);
 			}
 			for (int line : csharpDocs(src)) {
 				csharp.add(f.getName() + ":" + line);
@@ -104,6 +134,13 @@ public class SourceDebrisTest {
 		check(commentedOut.isEmpty(), "no comment is code put away"
 				+ (commentedOut.isEmpty() ? "" : " - these are: " + commentedOut + ". Delete it: the history keeps it,"
 				+ " and a reader takes code in a comment for something that still runs, or was meant to"));
+		check(undisposed.isEmpty(), "every dialog a file makes is told how to close"
+				+ (undisposed.isEmpty() ? "" : " - these are not: " + undisposed + ". Set DISPOSE_ON_CLOSE (census L.53): a dialog's title-bar X only hides it, and a hidden modal dialog is a window kept for the life of the program"));
+		check(writeOnly.isEmpty(), "no file fills an array it never reads"
+				+ (writeOnly.isEmpty() ? "" : " - these do: " + writeOnly + ". Delete it (census L.15): state written and"
+				+ " never read is a cost and a reader's false lead, and a fixed-size one an overflow waiting"));
+		check(deadFlags.isEmpty(), "no loop condition reads a flag nothing sets"
+				+ (deadFlags.isEmpty() ? "" : " - these do: " + deadFlags + ". Delete the flag and its operand (census L.26): a bail-out that exists and never fires is one somebody later trusts"));
 		check(csharp.isEmpty(), "no doc comment is C#'s '///', which javadoc does not read"
 				+ (csharp.isEmpty() ? "" : " - these are: " + csharp + ". Write it as a javadoc"));
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -253,8 +290,71 @@ public class SourceDebrisTest {
 		return out;
 	}
 
+	/**
+	 * The booleans declared false that a for or while condition reads negated and that nothing in the file ever
+	 * sets: a bail-out that exists and never fires (census L.26). Strings are blanked first: a control's text is not
+	 * code.
+	 */
+	static List<String> deadFlags(String src) {
+		String code = SourceSeamTest.stripComments(src).replaceAll("\"(?:\\\\.|[^\"\\\\])*\"", "\"\"");
+		List<String> out = new ArrayList<>();
+		java.util.regex.Matcher declared = java.util.regex.Pattern.compile("\\bboolean\\s+(\\w+)\\s*=\\s*false\\s*;").matcher(code);
+		while (declared.find()) {
+			String name = declared.group(1);
+			String q = java.util.regex.Pattern.quote(name);
+			boolean read = java.util.regex.Pattern.compile("\\b(?:for|while)\\s*\\([^)]*!\\s*" + q + "\\b").matcher(code).find();
+			java.util.regex.Matcher set = java.util.regex.Pattern.compile("\\b" + q + "\\s*(?:=[^=]|\\|=|&=)").matcher(code);
+			int sets = 0;
+			while (set.find()) {
+				sets++;
+			}
+			if (read && sets <= 1) {
+				out.add(name);
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * The arrays a file makes and only ever stores into: state written and never read (census L.15 - a 256-entry
+	 * table the command reader filled and nobody read, which a bytecode scan cannot see, since a store reads the
+	 * field first).
+	 */
+	static List<String> writeOnlyArrays(String src) {
+		String code = SourceSeamTest.stripComments(src).replaceAll("\"(?:\\\\.|[^\"\\\\])*\"", "\"\"");
+		List<String> out = new ArrayList<>();
+		java.util.regex.Matcher made = java.util.regex.Pattern.compile("\\w+\\s*\\[\\s*\\]\\s+(\\w+)\\s*=\\s*new\\b").matcher(code);
+		while (made.find()) {
+			String q = java.util.regex.Pattern.quote(made.group(1));
+			int uses = 0;
+			int stores = 0;
+			java.util.regex.Matcher use = java.util.regex.Pattern.compile("\\b" + q + "\\b").matcher(code);
+			while (use.find()) {
+				uses++;
+			}
+			java.util.regex.Matcher store = java.util.regex.Pattern.compile("\\b" + q + "\\s*\\[[^\\]]*\\]\\s*=[^=]").matcher(code);
+			while (store.find()) {
+				stores++;
+			}
+			if (stores > 0 && uses == stores + 1) {
+				out.add(made.group(1));
+			}
+		}
+		return out;
+	}
+
 	/** The known answers: every shape that counts is found, and every one that does not, is not. */
 	static void controls() {
+		check(writeOnlyArrays("class A { float[] lut = new float[4]; void a(int i) { lut[i++] = 1f; lut[0] = 2f; } }")
+				.equals(java.util.Arrays.asList("lut"))
+				&& writeOnlyArrays("class A { int[] a = new int[2]; int b() { a[0] = 1; return a[0]; } }").isEmpty()
+				&& writeOnlyArrays("class A { int[] a = new int[2]; void b(int[] x) { a[0] = 1; use(a); } }").isEmpty(),
+				"control: an array only ever stored into is found; one read back, or handed on, is not");
+		check(deadFlags("void a() { boolean broken = false; for (int i = 0; i < n & !broken; i++) { } }")
+				.equals(java.util.Arrays.asList("broken"))
+				&& deadFlags("void a() { boolean done = false; while (!done) { done = true; } }").isEmpty()
+				&& deadFlags("void a() { boolean seen = false; if (x) { seen = true; } }").isEmpty(),
+				"control: a loop condition reading a flag nothing sets is found; one the loop sets, and one no loop reads, are not");
 		check(commentedOutCode("/*\n a();\n b();\n c();\n*/\n").size() == 1
 				&& commentedOutCode("short t; //*35ms\nint a;\nint b;\nint c;\n").isEmpty()
 				&& commentedOutCode("/* this is prose; with one semicolon\n and more words\n*/\n").isEmpty()

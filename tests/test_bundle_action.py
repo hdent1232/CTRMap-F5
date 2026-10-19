@@ -44,6 +44,7 @@ sys.path.insert(0, HOOKS)
 import after_rules            # noqa: E402
 import bundle_rules           # noqa: E402
 import bundle_shell           # noqa: E402
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 import guard_command_rules    # noqa: E402
 import guard_held_writes      # noqa: E402
 import guard_write_rules      # noqa: E402
@@ -134,8 +135,8 @@ class ScratchProject(object):
         return path
 
     def git(self, *args):
-        return subprocess.run(["git"] + list(args), cwd=self.root, capture_output=True,
-                              text=True, timeout=60, creationflags=NO_WINDOW)
+        return bounded.run(["git"] + list(args), cwd=self.root, capture_output=True,
+                           text=True, timeout=60, creationflags=NO_WINDOW)
 
 
 # ----------------------------------------------------------------------------- the write
@@ -145,6 +146,33 @@ class AWriteIsJudgedAsItWouldLeaveTheTree(ScratchProject, unittest.TestCase):
 
     def ask(self, rel, before, after):
         return bundle_rules.ask_write(self.root, rel, before, after)
+
+    #: A SET rule: one asking a side, every changed file it watches at once. It records each call.
+    SET_RULE = ('AT_WRITE_SET = "set_in"' + LF + 'AT_SCOPE = r"^set/"' + LF + LF + "CALLS = []"
+                + LF + LF + LF + "def set_in(texts):" + LF
+                + "    CALLS.append(sorted(texts.items(), key=str))" + LF
+                + "    return sorted(rel for rel, text in texts.items()" + LF
+                + '                  if text and "SETMARK" in text)' + LF)
+
+    def test_a_SET_rule_is_asked_once_a_side_with_every_file_the_command_changed(self):
+        """Measured 2026-10-10: the install check is a question about a set of files, asked one
+        file at a time - twice for each of 61 files one command changed, and that dispatcher call
+        took 98 s. A set rule is asked once before and once after, whatever the count, with a file
+        the command created absent from the before side."""
+        self.write_file("tools/zzset_rule.py", self.SET_RULE)
+        sys.modules.pop("zzset_rule", None)
+        self.addCleanup(sys.modules.pop, "zzset_rule", None)
+        clean, marked = "x = 1" + LF, "x = 1  # SETMARK" + LF
+        worse = bundle_rules.ask_changes(self.root, {"set/a.py": (clean, marked),
+                                                     "set/b.py": (None, marked),
+                                                     "set/c.py": (clean, clean),
+                                                     "src/elsewhere.py": (clean, marked)})
+        self.assertEqual(worse.get("zzset_rule"), (0, 2, ["set/a.py", "set/b.py"]),
+                         "a set rule's growth was not refused: %r" % worse)
+        self.assertEqual(sys.modules["zzset_rule"].CALLS,
+                         [[("set/a.py", clean), ("set/b.py", None), ("set/c.py", clean)],
+                          [("set/a.py", marked), ("set/b.py", marked), ("set/c.py", clean)]],
+                         "a set rule was not asked once a side with the set it watches")
 
     def test_a_write_that_ADDS_a_finding_is_refused_and_one_that_keeps_or_removes_it_is_not(self):
         clean, dirty = "x = 1" + LF, "x = 1  # DEFECT" + LF
@@ -371,6 +399,76 @@ class ACommitIsAskedBeforeGitStartsAndNeverSkipsTheGate(ScratchProject, unittest
                 self.assertTrue(self.refused(spelled % self.good),
                                 "a commit that skips every git hook was let through")
 
+    def test_a_commit_git_would_run_NO_HOOK_for_because_none_is_EXECUTABLE_is_refused(self):
+        """MEASURED 2026-10-07 in the bundle's own repository: both git hooks tracked as 100644,
+        so git printed a hint and ran neither, and every commit of that session went in with no
+        gate asked. `core.hooksPath` naming the folder is not the gate running.
+
+        ASKED AS POSIX ON ANY MACHINE. This skipped on Windows, where Git runs a hook whatever its
+        mode, so its plant could never redden there - and the install drives every plant it
+        merges, so it refused DF Engine's install (measured 2026-10-07). The mode is the one
+        question that differs, and it is answered here by the test."""
+        hook = self.write_file(".githooks/commit-msg", "#!/bin/sh" + LF + "exit 0" + LF)
+        executable = [False]
+        real = os.access
+
+        def access(path, mode, *args, **kwargs):
+            if mode == os.X_OK and os.path.abspath(path) == os.path.abspath(hook):
+                return executable[0]
+            return real(path, mode, *args, **kwargs)
+        with mock.patch.object(bundle_rules, "MODES_MATTER", True), \
+                mock.patch.object(bundle_rules.os, "access", access):
+            said = " ".join(str(f) for _n, f in self.refused('git commit -F "%s"' % self.good))
+            self.assertIn("not executable", said,
+                          "a commit git would run no hook for was let through: %s" % said)
+            executable[0] = True
+            self.assertEqual(guard_command_rules.hooks_path_problem(self.root), "",
+                             "a gate git will run was still refused")
+        executable[0] = False
+        with mock.patch.object(bundle_rules, "MODES_MATTER", False), \
+                mock.patch.object(bundle_rules.os, "access", access):
+            self.assertEqual(guard_command_rules.hooks_path_problem(self.root), "",
+                             "a hook Git for Windows runs whatever its mode was refused")
+
+    def test_a_hook_git_RECORDS_without_the_executable_bit_is_refused_on_every_system(self):
+        """Measured 2026-10-07 by the CTRMap session: four hooks across two repositories committed
+        from Windows, recorded 100644 - Git for Windows ran them, and every Linux and macOS clone,
+        every cloud session among them, checked them out unrunnable and skipped the gate. A clone
+        takes its mode from the index, so the index is asked on every system - here AS WINDOWS,
+        where the disk's bit says nothing. And a mode git could not be asked is UNKNOWN."""
+        self.write_file(".githooks/commit-msg", "#!/bin/sh" + LF + "exit 0" + LF)
+        self.git("config", "core.fileMode", "false")
+        self.git("add", "--", ".githooks/commit-msg")
+        self.git("update-index", "--chmod=-x", "--", ".githooks/commit-msg")
+        with mock.patch.object(bundle_rules, "MODES_MATTER", False), \
+                mock.patch.object(bundle_rules.os, "access", lambda *a, **k: True):
+            said = guard_command_rules.hooks_path_problem(self.root)
+            self.assertIn("recorded by git as 100644", said,
+                          "INDEX: a hook every clone checks out unrunnable was let through: %r"
+                          % said)
+            self.git("update-index", "--chmod=+x", "--", ".githooks/commit-msg")
+            self.assertEqual(guard_command_rules.hooks_path_problem(self.root), "",
+                             "INDEX: a hook git records as executable was still refused")
+
+    def test_a_hook_mode_git_could_not_be_asked_is_UNKNOWN_never_executable(self):
+        """A QUERY THAT CANNOT READ ITS SUBJECT MUST NOT REPORT IT ABSENT - here, as Windows, where
+        the index is the only answer there is."""
+        self.write_file(".githooks/commit-msg", "#!/bin/sh" + LF + "exit 0" + LF)
+        self.git("add", "--", ".githooks/commit-msg")
+        #THE CALL THE CODE MAKES: bundle_rules asks git through bounded.run, and a fake of subprocess.run
+        #intercepted nothing - the real git answered and this was red on the bundle's own tree (2026-10-10)
+        real = bundle_rules.bounded.run
+
+        def unaskable(argv, *args, **kwargs):
+            if "ls-files" in argv:
+                raise OSError("git is not there")
+            return real(argv, *args, **kwargs)
+        with mock.patch.object(bundle_rules, "MODES_MATTER", False), \
+                mock.patch.object(bundle_rules.bounded, "run", unaskable):
+            said = guard_command_rules.hooks_path_problem(self.root)
+        self.assertIn("UNKNOWN", said,
+                      "INDEX: a mode git could not be asked was read as executable: %r" % said)
+
     def test_an_ABBREVIATED_no_verify_is_still_no_verify(self):
         """git accepts any unambiguous prefix of a long option. `--no-ver` is ambiguous with
         `--no-verbose` and git refuses it itself."""
@@ -570,6 +668,57 @@ class TheGuardStackCannotBeSwitchedOffByACommand(ScratchProject, unittest.TestCa
                 self.assertEqual(self.stack(command), [],
                                  "a command that only reads or runs the stack was refused")
 
+    def owner_home(self):
+        """A home with a Claude folder in it, in a temp folder, as `~`, `$HOME` and Python find it."""
+        home = tempfile.mkdtemp(prefix="vb-home-")
+        self.addCleanup(shutil.rmtree, home, True)
+        os.makedirs(os.path.join(home, ".claude", "projects", "p"))
+        patcher = mock.patch.dict(os.environ, {"HOME": home, "USERPROFILE": home})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        os.environ.pop("CLAUDE_CONFIG_DIR", None)           # put back when the patch stops
+        return home.replace(chr(92), "/")
+
+    def test_a_command_writing_the_OWNERS_CLAUDE_FOLDER_is_refused(self):
+        """MEASURED 2026-10-07 against the dispatcher with every guard wired: `echo '{}' >>
+        ~/.claude/projects/<p>/<session>.jsonl` went through - a forged row in the record where the
+        owner's yes is read - and so did every other write to the owner's settings and rules."""
+        home = self.owner_home()
+        record = home + "/.claude/projects/p/s.jsonl"
+        for command in ("echo '{}' >> ~/.claude/projects/p/s.jsonl",
+                        "echo '{}' >> %s" % record,
+                        'echo x > "$HOME/.claude/settings.json"',
+                        "cd ~ && echo x > .claude/settings.json",
+                        "cd ~ && cp /tmp/x .claude/settings.json",
+                        "cp /tmp/x ~/.claude.json",
+                        "sed -i s/a/b/ ~/.claude/CLAUDE.md",
+                        "rm -rf ~/.claude/projects/p",
+                        'python3 -c "open(\'%s\', \'a\').write(\'x\')"' % record,
+                        "tee -a ${HOME}/.claude/projects/p/s.jsonl < /tmp/x"):
+            with self.subTest(command):
+                self.assertTrue(self.stack(command),
+                                "a command writing the owner's Claude folder was allowed")
+        for command in ("cat ~/.claude/projects/p/s.jsonl",
+                        "grep -c x $HOME/.claude/projects/p/s.jsonl", "ls -la ~/.claude",
+                        "tail -5 %s" % record,
+                        "python3 - <<'EOF'" + LF + "for line in open('%s'): pass" % record + LF
+                        + "EOF"):
+            with self.subTest(command):
+                self.assertEqual(self.stack(command), [],
+                                 "a command that only reads the owner's Claude folder was refused")
+
+    def test_making_the_gates_hooks_RUNNABLE_is_let_through_and_taking_it_away_is_not(self):
+        """The remedy `hooks_path_problem` names must run: a refusal whose fix is refused is a
+        lock-out (CTRMap, 2026-09-26)."""
+        for command in ("chmod +x .githooks/pre-commit", "chmod 755 .githooks/pre-commit",
+                        "git update-index --chmod=+x .githooks/pre-commit"):
+            with self.subTest(command):
+                self.assertEqual(self.stack(command), [], "the gate's own remedy was refused")
+        for command in ("chmod -x .githooks/pre-commit", "chmod 644 .githooks/pre-commit",
+                        "chmod 000 .githooks/pre-commit"):
+            with self.subTest(command):
+                self.assertTrue(self.stack(command), "taking the gate's mode away was allowed")
+
     def test_a_command_writing_INSIDE_THE_GIT_FOLDER_is_refused_as_the_Write_tool_is(self):
         """MEASURED 2026-10-06 in a fresh install: `guard_write_rules` refused a Write into `.git` -
         only git writes there, `.git/config` repoints the hooks and `.git/info/exclude` hides a file
@@ -629,8 +778,10 @@ class TheGuardStackCannotBeSwitchedOffByACommand(ScratchProject, unittest.TestCa
         other = tempfile.mkdtemp(prefix="other-repo-")
         self.addCleanup(shutil.rmtree, other, True)
         os.makedirs(os.path.join(other, ".githooks"))
+        # A WRITE, NOT THE REMEDY: `chmod +x` is let through anywhere now, as the gate's own fix,
+        # and asked nothing about where it runs - measured 2026-10-07, this plant stayed green.
         payload = {"tool_name": "Bash", "cwd": other,
-                   "tool_input": {"command": "chmod +x .githooks/commit-msg"}}
+                   "tool_input": {"command": "chmod -x .githooks/commit-msg"}}
         self.assertEqual([f for n, f in guard_command_rules.problems(payload, self.root)
                           if n == "stack"], [], "another repository's hooks were judged as ours")
 
@@ -656,14 +807,45 @@ class ACommitIsJudgedInTheRepositoryItLandsIn(ScratchProject, unittest.TestCase)
         self.bare = self.write_file("msg-bare.txt", "a change" + LF)
         self.other = tempfile.mkdtemp(prefix="bundle-other-")
         self.addCleanup(shutil.rmtree, self.other, True)
-        subprocess.run(["git", "init", "-q", self.other], capture_output=True, timeout=60,
-                       creationflags=NO_WINDOW)
+        bounded.run(["git", "init", "-q", self.other], capture_output=True, timeout=60,
+                    creationflags=NO_WINDOW)
 
-    def refused(self, command, cwd=None):
-        payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+    def refused(self, command, cwd=None, tool="Bash"):
+        payload = {"tool_name": tool, "tool_input": {"command": command}}
         if cwd:
             payload["cwd"] = cwd
         return guard_command_rules.problems(payload, self.root)
+
+    def test_a_message_file_is_read_where_the_SHELL_hands_it_to_git(self):
+        """Measured 2026-10-07 on Windows: `git commit -F /c/Users/<you>/msg.txt` from Bash was
+        refused as a message file that "does not exist yet" - Git for Windows' shell hands git
+        `C:/Users/<you>/msg.txt`, and this read Python's `C:\\c\\Users\\...`. PowerShell hands git
+        the path as typed, and there it is not there."""
+        spelled = "/vb-msg-7f3e.txt"
+        with mock.patch.object(bundle_shell, "WINDOWS", True), \
+                mock.patch.object(bundle_shell, "msys_path",
+                                  lambda path: self.good if path == spelled else None):
+            command = "git commit -F %s" % spelled
+            self.assertEqual(self.refused(command, tool="Bash"), [],
+                             "a message file Git Bash hands to git was read as not there")
+            self.assertIn("message", [n for n, _f in self.refused(command, tool="PowerShell")],
+                          "a message file PowerShell cannot open was read as if it could")
+
+    def test_a_cd_is_placed_where_the_SHELL_running_it_puts_it(self):
+        """Measured 2026-10-07 on Windows: this read `/c/...` as a drive whatever the shell, and
+        PowerShell reads it as `C:\\c\\...` and FAILS the cd - so a PowerShell `cd /c/<another
+        repository>; git commit --no-verify` committed HERE, past the gate, while this placed it
+        in the other repository. Asked as Windows on any machine, with Git for Windows' shell
+        putting the path in the other repository."""
+        nowhere = "/vb-other-repo-7f3e"
+        with mock.patch.object(bundle_shell, "WINDOWS", True), \
+                mock.patch.object(bundle_shell, "msys_path",
+                                  lambda path: self.other if path == nowhere else None):
+            skip = 'cd %s; git commit --no-verify -F "%s"' % (nowhere, self.bare)
+            self.assertEqual(self.refused(skip, tool="Bash"), [],
+                             "a Bash cd its shell puts in another repository was judged here")
+            self.assertIn("gate", [n for n, _f in self.refused(skip, tool="PowerShell")],
+                          "a PowerShell cd that fails let a commit skip the gate HERE")
 
     def test_a_commit_in_ANOTHER_repository_is_not_this_projects_to_judge(self):
         skip = 'git commit --no-verify -F "%s"' % self.bare
@@ -677,6 +859,50 @@ class ACommitIsJudgedInTheRepositoryItLandsIn(ScratchProject, unittest.TestCase)
                                  "another repository's commit was judged by this one's rules")
         self.assertEqual(self.refused('git -C "%s" config core.hooksPath x' % self.other), [],
                          "another repository's configuration was refused by this one")
+
+    def test_a_commit_in_ANOTHER_repository_that_carries_this_gate_runs_it_or_is_refused(self):
+        """Measured 2026-10-09: the bundle's own clones had no `core.hooksPath`, a merge commit made
+        in one went in with no gate asked, and a plant it emptied was found only at a project's
+        install, after the push. Another repository's rules are its own; whether its gate RUNS is
+        what a repository carrying a stamping `commit-msg` has already said."""
+        hook = os.path.join(self.other, ".githooks", "commit-msg")
+        os.makedirs(os.path.dirname(hook))
+        with io.open(hook, "w", encoding="utf-8", newline=LF) as handle:
+            handle.write("#!/bin/sh" + LF + 'exec python -B tools/gate_stamps.py stamp "$1"' + LF)
+        os.chmod(hook, 0o755)
+
+        def other(*args):
+            return bounded.run(["git", "-C", self.other] + list(args), capture_output=True,
+                               timeout=60, creationflags=NO_WINDOW)
+        acts = (('git -C "%s" commit -F "%s"' % (self.other, self.bare), None),
+                ('cd "%s" && git commit -F "%s"' % (self.other, self.bare), None),
+                ('git commit -F "%s"' % self.bare, self.other),
+                ('git -C "%s" merge topic' % self.other, None),
+                ('git -C "%s" pull' % self.other, None))
+        # UNSET, and SET TO A FOLDER THAT IS NOT THE GATE: "is the key set" is the cheap answer,
+        # and git runs none of the gate's hooks under either.
+        for value in (None, ".git/hooks"):
+            if value:
+                other("config", "core.hooksPath", value)
+            for command, cwd in acts:
+                with self.subTest(hooks=value, command=command):
+                    self.assertIn("gate", [n for n, _f in self.refused(command, cwd)],
+                                  "a commit went into another repository carrying this gate "
+                                  "with the gate off")
+        self.assertEqual(self.refused('git -C "%s" config core.hooksPath .githooks'
+                                      % self.other), [], "the remedy the refusal names was refused")
+        other("config", "core.hooksPath", ".githooks")
+        for command, cwd in acts:
+            with self.subTest(hooks=".githooks", command=command):
+                self.assertEqual(self.refused(command, cwd), [],
+                                 "a commit in a repository whose own gate runs was refused")
+        # NOT EVERY HOOKS FOLDER IS THIS GATE: one whose commit-msg stamps nothing is that
+        # repository's business, gated or not.
+        with io.open(hook, "w", encoding="utf-8", newline=LF) as handle:
+            handle.write("#!/bin/sh" + LF + "exit 0" + LF)
+        other("config", "--unset", "core.hooksPath")
+        self.assertEqual(self.refused(acts[0][0]), [],
+                         "a repository with hooks of its own, not this gate, was judged by it")
 
     def test_a_commit_in_a_LINKED_WORKTREE_is_judged_by_that_worktrees_own_rules(self):
         tree = os.path.join(self.other, "wt")
@@ -751,6 +977,175 @@ class ACommitIsJudgedInTheRepositoryItLandsIn(ScratchProject, unittest.TestCase)
                          "a commit that could be placed was said not to have been")
         self.assertEqual(self.refused('cd $SOMEWHERE && git commit -F "%s"' % self.good), [],
                          "saying where is a note on a refusal, never a refusal of its own")
+
+
+class AWriteIsJudgedInTheCheckoutItLandsIn(ScratchProject, unittest.TestCase):
+    """`bundle_rules.landing`, and the three hooks that judge a tree over it: a write, a command's
+    write and a held change are each judged by the checkout of this repository they land in.
+
+    Measured 2026-10-06 on the project this came from, in a session working in a linked worktree
+    the harness made: the write hooks judged the worktree's files against the MAIN
+    tree's modules and rules - a correct test refused, a write making thirty claims stale let
+    through - and the main tree's `git status` cannot see that folder, so every command's write in
+    it was judged by nobody while another session's held change refused the worktree's own acts.
+    Commits had been judged this way since 2026-09-24; writes had not.
+    """
+
+    #: Each checkout's rule refuses a DIFFERENT word, so a verdict says whose rules were asked:
+    #: a word only one of them refuses is an example where the answer moves.
+    MAIN_WORD, TREE_WORD = "DEFECT", "WORKTREE_BAD"
+
+    def setUp(self):
+        ScratchProject.setUp(self)
+        self.git("init", "-q")
+        self.git("config", "user.email", "scratch@example.com")
+        self.git("config", "user.name", "scratch")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "scratch")
+        self.other = tempfile.mkdtemp(prefix="bundle-wt-")
+        self.addCleanup(shutil.rmtree, self.other, True)
+        self.inside = self.worktree(os.path.join(self.root, ".claude", "worktrees", "wt"), "in")
+        self.outside = self.worktree(os.path.join(self.other, "wt"), "out")
+
+    def worktree(self, tree, branch):
+        """A linked worktree whose stub rule refuses `TREE_WORD` instead - committed there, so
+        the rule's own change is that checkout's HEAD and not a change it judges."""
+        self.assertEqual(self.git("worktree", "add", "-q", "-b", branch, tree).returncode, 0)
+        self.addCleanup(self.git, "worktree", "remove", "--force", tree)
+        stub = STUBS["zzstub_file.py"]
+        self.assertEqual(stub.count('"%s"' % self.MAIN_WORD), 1,
+                         "the stub's word moved - the rewrite below would change nothing")
+        with io.open(os.path.join(tree, "tools", "zzstub_file.py"), "w", encoding="utf-8",
+                     newline=LF) as handle:
+            handle.write(stub.replace('"%s"' % self.MAIN_WORD, '"%s"' % self.TREE_WORD))
+        done = bounded.run(["git", "commit", "-q", "-am", "this checkout's own rule"], cwd=tree,
+                           capture_output=True, text=True, timeout=60, creationflags=NO_WINDOW)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return tree
+
+    @staticmethod
+    def spellings(path):
+        """One file, three spellings: a guard keyed on a path is one spelling from blind."""
+        head, name = os.path.split(path)
+        out = [path, os.path.join(head, "..", os.path.basename(head), name)]
+        if len(path) > 1 and path[1] == ":":
+            out.append(path[0].swapcase() + path[1:])
+        return out
+
+    @staticmethod
+    def write(path, text):
+        return {"tool_name": "Write", "tool_input": {"file_path": path, "content": text}}
+
+    @staticmethod
+    def bash(command, cwd):
+        return {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": cwd}
+
+    def test_a_write_is_judged_by_the_rules_of_the_checkout_it_lands_in(self):
+        main_bad, tree_bad = "x = 1  # %s" % self.MAIN_WORD + LF, "x = 1  # %s" % self.TREE_WORD + LF
+        here = os.path.join(self.root, "src", "b.py")
+        self.assertEqual(guard_write_rules.verdict(self.write(here, main_bad), self.root)[0], 2,
+                         "the control: this tree's own rule refuses its own word here")
+        self.assertEqual(guard_write_rules.verdict(self.write(here, tree_bad), self.root)[0], 0,
+                         "the control: this tree's rule lets the worktree's word through")
+        for tree in (self.inside, self.outside):
+            for spelled in self.spellings(os.path.join(tree, "src", "b.py")):
+                with self.subTest(tree=tree, spelled=spelled):
+                    self.assertEqual(guard_write_rules.verdict(self.write(spelled, main_bad),
+                                                               self.root)[0], 0,
+                                     "a worktree's write was judged by the MAIN tree's rules")
+                    code, said = guard_write_rules.verdict(self.write(spelled, tree_bad),
+                                                           self.root)
+                    self.assertEqual(code, 2, "a write landing in a worktree was not asked that "
+                                              "worktree's own rules")
+                    self.assertIn("zzstub_file", said)
+
+    def test_a_commands_write_in_a_worktree_is_judged_and_held_by_that_worktree(self):
+        for tree in (self.inside, self.outside):
+            with self.subTest(tree=tree):
+                with io.open(os.path.join(tree, "src", "c.py"), "w", encoding="utf-8",
+                             newline=LF) as handle:
+                    handle.write("y = 1  # %s" % self.TREE_WORD + LF)
+                self.assertEqual(after_rules.verdict(self.bash("cp x src/c.py", self.root),
+                                                     self.root)[0], 0,
+                                 "the control: from the main tree the worktree is not seen")
+                code, said = after_rules.verdict(self.bash("cp x src/c.py", tree), self.root)
+                self.assertEqual(code, 2, "a command's write in a worktree was judged by nobody")
+                self.assertIn("src/c.py", said)
+                self.assertEqual(guard_held_writes.verdict(self.bash("python build.py", tree),
+                                                           self.root)[0], 2,
+                                 "a change held in a worktree did not hold the next act there")
+                self.assertEqual(guard_held_writes.verdict(self.bash("python build.py",
+                                                                     self.root), self.root)[0],
+                                 0, "a worktree's held change refused an act in the main tree")
+
+    def test_a_change_held_in_the_main_tree_does_not_hold_a_worktree_session(self):
+        self.write_file("src/d.py", "z = 1  # %s" % self.MAIN_WORD + LF)
+        self.assertEqual(after_rules.verdict(self.bash("cp x src/d.py", self.root),
+                                             self.root)[0], 2,
+                         "the control: the main tree's own change is held there")
+        self.assertEqual(guard_held_writes.verdict(self.bash("python build.py", self.root),
+                                                   self.root)[0], 2,
+                         "the control: the main tree's next act is refused")
+        for tree in (self.inside, self.outside):
+            with self.subTest(tree=tree):
+                self.assertEqual(guard_held_writes.verdict(self.bash("python build.py", tree),
+                                                           self.root)[0], 0,
+                                 "another session's held change in the main tree refused a "
+                                 "worktree's own act")
+                self.assertEqual(guard_held_writes.verdict(self.write(
+                    os.path.join(tree, "src", "e.py"), "e = 1" + LF), self.root)[0], 0,
+                    "a write into a worktree was held by the main tree's change")
+
+    def test_a_READ_in_a_worktree_is_refused_under_that_worktrees_own_lock(self):
+        """THE READ HALF OF THE SAME CLASS. A mutation run in a worktree writes the worktree's
+        `.mutation-in-flight`, and the read guard read only the project's. Measured 2026-10-07 on
+        the project this came from: a plant drive running in a worktree while the same session
+        read that worktree's modules, each read unguarded."""
+        import guard_mutation_read
+        for tree in (self.inside, self.outside):
+            with self.subTest(tree=tree):
+                module = os.path.join(tree, "src", "a.py")
+                read = {"tool_name": "Read", "tool_input": {"file_path": module}}
+                run_there = self.bash("cat src/a.py", tree)
+                self.assertFalse(guard_mutation_read.judged(read, self.root)[0],
+                                 "the control: with no lock anywhere a read must pass")
+                with io.open(os.path.join(tree, guard_mutation_read.LOCK), "w", encoding="utf-8",
+                             newline=LF) as handle:
+                    handle.write("src/a.py" + LF)
+                try:
+                    for spelled in self.spellings(module):
+                        self.assertTrue(guard_mutation_read.judged(
+                            {"tool_name": "Read", "tool_input": {"file_path": spelled}},
+                            self.root)[0], "a Read of a module a worktree's mutation run holds "
+                                           "was let through: %s" % spelled)
+                    self.assertTrue(guard_mutation_read.judged(run_there, self.root)[0],
+                                    "a command reading a module a worktree's mutation run holds "
+                                    "was let through")
+                    self.assertFalse(guard_mutation_read.judged(self.bash("cat src/a.py",
+                                                                          self.root),
+                                                                self.root)[0],
+                                     "the worktree's lock refused a read of the MAIN tree's file")
+                finally:
+                    os.remove(os.path.join(tree, guard_mutation_read.LOCK))
+
+    def test_a_FORGED_git_file_does_not_make_a_folder_a_checkout_no_rule_judges(self):
+        """THE CHEAPEST WAY PAST a guard that honours where a file lands is a file saying it lands
+        elsewhere. A `.git` file is one line, and one naming a real worktree's git folder makes git
+        report the folder holding it as that worktree - measured before this was written."""
+        gitdir = bounded.run(["git", "rev-parse", "--absolute-git-dir"], cwd=self.inside,
+                             capture_output=True, text=True, timeout=60,
+                             creationflags=NO_WINDOW).stdout.strip()
+        self.write_file("src/sub/.git", "gitdir: %s" % gitdir + LF)
+        sub = os.path.join(self.root, "src", "sub")
+        top = bounded.run(["git", "rev-parse", "--show-toplevel"], cwd=sub, capture_output=True,
+                          text=True, timeout=60, creationflags=NO_WINDOW).stdout.strip()
+        self.assertEqual(os.path.normcase(os.path.realpath(top)),
+                         os.path.normcase(os.path.realpath(sub)),
+                         "the premise: git reads the forged file as a checkout of its own")
+        code, _said = guard_write_rules.verdict(self.write(
+            os.path.join(sub, "x.py"), "x = 1  # %s" % self.MAIN_WORD + LF), self.root)
+        self.assertEqual(code, 2, "a forged .git file made a folder of this tree a checkout no "
+                                  "rule judges")
 
 
 class GitBehindAWrapperIsStillGit(ScratchProject, unittest.TestCase):
@@ -834,8 +1229,8 @@ class WhatOnlyTheChangedTreeCanAnswerIsAskedTheMomentAfter(unittest.TestCase):
     def test_the_tree_state_moves_when_a_file_changes_and_not_otherwise(self):
         folder = tempfile.mkdtemp(prefix="after-state-")
         self.addCleanup(shutil.rmtree, folder, True)
-        subprocess.run(["git", "init", "-q"], cwd=folder, capture_output=True, timeout=60,
-                       creationflags=NO_WINDOW)
+        bounded.run(["git", "init", "-q"], cwd=folder, capture_output=True, timeout=60,
+                    creationflags=NO_WINDOW)
         path = os.path.join(folder, "a.txt")
         with io.open(path, "w", encoding="utf-8") as handle:
             handle.write("one")
@@ -1287,10 +1682,10 @@ class AJudgeUnderMutationJudgesNothing(ScratchProject, unittest.TestCase):
         env.pop(bundle_rules.PLANTED, None)
         if planted is not None:
             env[bundle_rules.PLANTED] = planted
-        done = subprocess.run([sys.executable, "-B", os.path.join(self.hooks, name)],
-                              input=json.dumps(payload), capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", timeout=300, cwd=self.root,
-                              creationflags=NO_WINDOW, env=env)
+        done = bounded.run([sys.executable, "-B", os.path.join(self.hooks, name)],
+                           input=json.dumps(payload), capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=300, cwd=self.root,
+                           creationflags=NO_WINDOW, env=env)
         return done.returncode, done.stderr
 
     def test_the_plants_OWN_test_judges_the_planted_code_and_no_other_is_excused(self):
@@ -1358,6 +1753,13 @@ class AJudgeUnderMutationJudgesNothing(ScratchProject, unittest.TestCase):
                          2, "the change beside the planted judge was never judged once it was back")
 
     def test_the_moment_after_SAYS_it_did_not_judge(self):
+        """Its OWN reading of the lock, alone. `bundle_plant` now loads a planted judge as git's
+        index holds it, and the true judge reads the lock itself - so with the loader in place this
+        reading is never the one that decides, and its plant could not redden. The loader is
+        stubbed out here, as in a project whose hooks predate it, so this reading is what is left."""
+        with io.open(os.path.join(self.hooks, "bundle_plant.py"), "w", encoding="utf-8",
+                     newline=LF) as handle:
+            handle.write("def begin(path, name):" + LF + "    return None" + LF)
         path, original = self.plant_the_judge()
         self.write_file("src/b.py", "x = 1  # DEFECT" + LF)
         code, said = self.run_hook("after_rules.py", self.shell("python src/run.py"))
@@ -1679,6 +2081,41 @@ def named_in(rel, text):
                          "a write to tests/test_named.py, which the held finding names by its "
                          "test id, was refused")
 
+    #: A rule whose finding names a file under a DOT-folder, as `bundle_install` names
+    #: `.claude/bundle-install.json` - in the Windows spelling the finding used when measured.
+    DOTTED = '''AT_WRITE = "dotted_in"
+AT_SCOPE = r"^named/"
+
+
+def dotted_in(rel, text):
+    if "BREAK" not in text:
+        return []
+    return ["%s diverges: declare it in .dotted\\\\held.json, or see .dotted/other.json" % rel]
+'''
+
+    def test_a_file_under_a_DOT_FOLDER_a_held_finding_names_is_writable_as_its_repair(self):
+        """Measured 2026-10-10 by the DF Engine worktree session: a held `bundle_install` finding
+        named `.claude\\bundle-install.json`, every word of a finding was stripped of `.:-` at
+        both ends, the path became `claude/bundle-install.json`, which does not exist - so the
+        refusal named no file a repair may write, and the Edit of the very file the finding named
+        was refused. Every path under `.claude/` or `.githooks/` was closed the same way."""
+        self.write_file("tools/zzstub_dotted.py", self.DOTTED)
+        sys.modules.pop("zzstub_dotted", None)
+        self.addCleanup(sys.modules.pop, "zzstub_dotted", None)
+        self.write_file(".dotted/held.json", "y" + LF)
+        self.write_file(".dotted/other.json", "y" + LF)
+        self.commit("the rule, and the dot-folder files its finding names")
+        self.write_file("named/x.py", "BREAK" + LF)
+        judged = bundle_rules.judge_unread(self.root)
+        self.assertEqual(sorted(judged["held"]), ["named/x.py"])
+        for rel in (".dotted/held.json", ".dotted/other.json"):
+            with self.subTest(rel=rel):
+                self.assertIn(rel, judged["named"],
+                              "DOT: a dot-folder file the held finding names opened nothing: %r"
+                              % judged["named"])
+                self.assertFalse(self.refused(self.edit(rel)),
+                                 "DOT: the write the finding names as the repair was refused")
+
     def test_a_file_NO_held_finding_names_is_still_refused(self):
         """The cheapest way past a hold: a write somewhere else."""
         judged = self.hold_a_change_whose_finding_names_two_files()
@@ -1797,8 +2234,8 @@ def named_in(rel, text):
         folder = self.bare_folder("held-first-")
         with io.open(os.path.join(folder, "broken.py"), "w", encoding="utf-8") as handle:
             handle.write("def (:" + LF)
-        subprocess.run(["git", "init", "-q"], cwd=folder, capture_output=True, timeout=60,
-                       creationflags=NO_WINDOW)
+        bounded.run(["git", "init", "-q"], cwd=folder, capture_output=True, timeout=60,
+                    creationflags=NO_WINDOW)
         judged = bundle_rules.judge_unread(folder, found=[])
         self.assertEqual((judged["held"], judged["blind"]), ({}, ""),
                          "a repository with nothing committed held its own starting files")
@@ -1845,6 +2282,51 @@ def named_in(rel, text):
             "file_path": os.path.join(self.root, ".git", "config"), "content": "x"}]}}
         self.assertEqual(guard_write_rules.verdict(nested, self.root)[0], 2,
                          "a write into .git nested in a batching tool's input went through")
+
+
+
+class AStackIsJudgedInTheCheckoutTheCommandRunsIn(ScratchProject, unittest.TestCase):
+    """`guard_command_rules.stack_write` asks the stack of the checkout a command RUNS in.
+
+    Measured 2026-10-08 on the project this came from, in a session working in a linked worktree
+    the harness made: `python tools/dev/plants.py add <file>` - the one door a plant enters the
+    ledger by - was refused as naming the guard stack. The rule asked the MAIN checkout's stack,
+    found the worktree's copy of the tool in none of it, so the excuse for running a stack tool
+    never applied while its name still matched. A worktree's stack is its own, and a write into
+    it is refused there exactly as in the main checkout - both halves asked, in both checkouts."""
+
+    def setUp(self):
+        ScratchProject.setUp(self)
+        self.write_file("tools/zz_gate_tool.py", "print('the gate ran')" + LF)
+        self.write_file(".githooks/pre-commit",
+                        "#!/bin/sh" + LF + "python tools/zz_gate_tool.py" + LF)
+        self.git("init", "-q")
+        self.git("config", "user.email", "scratch@example.com")
+        self.git("config", "user.name", "scratch")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "scratch")
+        self.tree = os.path.join(self.root, ".claude", "worktrees", "wt")
+        self.assertEqual(self.git("worktree", "add", "-q", "-b", "wt", self.tree).returncode, 0)
+        self.addCleanup(self.git, "worktree", "remove", "--force", self.tree)
+
+    def stack_findings(self, command, cwd):
+        payload = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": cwd}
+        return [found for rule, findings in guard_command_rules.problems(payload, self.root)
+                if rule == "stack" for found in findings]
+
+    def test_running_the_gates_own_tool_is_not_a_write_in_either_checkout(self):
+        command = "python -B tools/zz_gate_tool.py add plants.json"
+        self.assertEqual(self.stack_findings(command, self.root), [],
+                         "the control: the gate's own tool, run in the main checkout")
+        self.assertEqual(self.stack_findings(command, self.tree), [],
+                         "the gate's own tool, run in a linked worktree, was refused as a write")
+
+    def test_a_write_into_the_hooks_is_refused_in_either_checkout(self):
+        command = "echo exit 0 > .githooks/pre-commit"
+        self.assertNotEqual(self.stack_findings(command, self.root), [],
+                            "the control: a write into the main checkout's git hooks")
+        self.assertNotEqual(self.stack_findings(command, self.tree), [],
+                            "a write into a linked worktree's git hooks went through")
 
 
 if __name__ == "__main__":

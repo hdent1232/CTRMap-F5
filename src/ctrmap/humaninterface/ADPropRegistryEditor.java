@@ -1,19 +1,14 @@
 package ctrmap.humaninterface;
 
 import ctrmap.Workspace;
-import ctrmap.formats.containers.BM;
-import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.h3d.model.H3DModel;
 import ctrmap.formats.h3d.texturing.H3DTexture;
 import ctrmap.formats.propdata.ADPropRegistry;
-import ctrmap.gamedef.ArchiveType;
-import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import javax.swing.DefaultListModel;
 import javax.swing.JFormattedTextField;
-import javax.swing.event.ListSelectionEvent;
 import javax.swing.text.NumberFormatter;
 
 /**
@@ -79,7 +74,7 @@ public class ADPropRegistryEditor extends ctrmap.humaninterface.FormPanel {
 			}
 		}
 		entryCountLabel.setText("Entry count: " + model.getSize());
-		entryList.addListSelectionListener((ListSelectionEvent e) -> {
+		ctrmap.util.Selections.onSettled(entryList, () -> {
 			if (entryList.getSelectedValue() == null || entryList.getSelectedIndex() == -1) {
 				return;
 			}
@@ -88,18 +83,9 @@ public class ADPropRegistryEditor extends ctrmap.humaninterface.FormPanel {
 		});
 	}
 
+	/** The preview of BuildingModels entry {@code model}, or null for one with no model (F095) - through the registry's one decode (census M.58). */
 	public H3DModel getH3DModel(int model) {
-		File bchFile = Workspace.getWorkspaceFile(ArchiveType.BUILDING_MODELS, model);
-		if (bchFile.exists()) {
-			BCHFile mdlBch = new BCHFile(new BM(bchFile, Workspace.session()).getFile(0));
-			if (mdlBch.models.isEmpty()) {
-				return null;   //a BCH with no model: there is nothing to preview, and get(0) threw (F095)
-			}
-			mdlBch.models.get(0).setMaterialTextures(mdlBch.textures);
-			mdlBch.models.get(0).setMaterialTextures(propTextures);
-			return mdlBch.models.get(0);
-		}
-		return null;
+		return ADPropRegistry.buildingModel(Workspace.session(), model, propTextures);
 	}
 
 	public void showEntry(int id) {
@@ -472,6 +458,11 @@ public class ADPropRegistryEditor extends ctrmap.humaninterface.FormPanel {
 
     private void btnRemEntryActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnRemEntryActionPerformed
 		int index = entryList.getSelectedIndex();
+		//NOTHING SELECTED REMOVES NOTHING (census H.49): -1 threw out of this listener and the button looked dead
+		if (index < 0 || index >= dict.size()) {
+			return;
+		}
+		e = null;   //and the entry removed is no longer the one shown: moving the selection saved it back
 		reg.entries.remove(dict.get(index));
 		model.removeElementAt(index);
 		models.remove(index);

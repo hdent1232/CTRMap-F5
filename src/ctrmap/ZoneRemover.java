@@ -51,6 +51,7 @@ public class ZoneRemover {
 		if (stored == null) {
 			return 0;
 		}
+		WorkspaceUnit.touching(garcFile);   //copied first, so a kept removal can put it back (F209c)
 		GarcRebuilder.write(garcFile, garcFile, stored);
 		return zo.length - stored.size();
 	}
@@ -200,6 +201,7 @@ public class ZoneRemover {
 			}
 		}
 		if (!emptied.isEmpty()) {
+			WorkspaceUnit.touching(np.file);
 			GarcRebuilder.write(np.file, np.file, stored);
 			s.reloadGARC(ctrmap.gamedef.ArchiveType.NPC_REGISTRIES);
 			s.dropExtracted(ctrmap.gamedef.ArchiveType.NPC_REGISTRIES, emptied::contains);
@@ -212,7 +214,7 @@ public class ZoneRemover {
 	 */
 	public static List<String> referencesToAdded(WorkspaceSession s) {
 		GARC zo = s.getArchive(ctrmap.gamedef.ArchiveType.ZONE_DATA);
-		return referencesToAdded(zo == null ? 0 : zo.length, i -> ZoneTables.zoneNow(s, i));
+		return referencesToAdded(zo == null ? 0 : zo.length, i -> ZoneTables.zoneNow(s, i), ZoneRepurposeScanner.sharedReach(s));
 	}
 
 	/**
@@ -221,25 +223,28 @@ public class ZoneRemover {
 	 * checked. Human-readable, for the confirm dialog; empty = safe. An unreadable zone was skipped
 	 * ("the scan is advisory"), so a warp in it into an added zone was missing from the warning, and
 	 * the scan read the archive as of the last pack, without the user's unpacked edits (F225).
+	 *
+	 * <p>And where the scripts send the player (F225): each zone's own, and {@code shared}, the scripts no
+	 * zone owns. A map change into a removed zone dangles as a warp into one does.
 	 */
-	public static List<String> referencesToAdded(int zones, ZoneTables.ZoneBytes source) {
+	public static List<String> referencesToAdded(int zones, ZoneTables.ZoneBytes source, ZoneRepurposeScanner.SharedReach shared) {
 		List<String> out = new ArrayList<>();
 		for (int i = 0; i < Math.min(BASE_ZONES, zones); i++) {
 			byte[] z;
 			try {
 				z = source.zone(i);
 			} catch (IOException | RuntimeException unread) {
-				out.add("zone " + i + " could not be read (" + Ui.reason(unread) + "), so its warps are not checked");
+				out.add("zone " + i + " could not be read (" + Ui.reason(unread) + "), so its warps and where its script sends the player are not checked");
 				continue;
 			}
 			if (z == null) {
-				out.add("zone " + i + " could not be read, so its warps are not checked");
+				out.add("zone " + i + " could not be read, so its warps and where its script sends the player are not checked");
 				continue;
 			}
 			if (z.length < 12 || (z[0] & 0xFF) != 0x5A || (z[1] & 0xFF) != 0x4F) {
 				continue;
 			}
-			ZoneEntities ent;
+			ZoneEntities ent = null;
 			try {
 				byte[] block = ContainerBytes.subfile(z, 1);
 				if (block == null || block.length == 0) {
@@ -248,14 +253,39 @@ public class ZoneRemover {
 				ent = new ZoneEntities(block);
 			} catch (RuntimeException unread) {
 				out.add("zone " + i + "'s warps could not be read (" + Ui.reason(unread) + "), so they are not checked");
-				continue;
 			}
-			for (int w = 0; w < ent.warps.size(); w++) {
+			for (int w = 0; ent != null && w < ent.warps.size(); w++) {
 				int tz = ent.warps.get(w).targetZone;
 				if (tz >= BASE_ZONES && tz < 0x8000) {
 					out.add("zone " + i + " warp " + w + " -> added zone " + tz);
 				}
 			}
+			//AND WHERE ITS SCRIPT SENDS THE PLAYER (F225): a script's map change into a removed zone is as dangling.
+			//Asked whether or not the warps read - a zone whose warps did not read skipped its script unsaid
+			ctrmap.formats.scripts.ZoneScriptAnalyzer.MapChanges mc;
+			try {
+				mc = ctrmap.formats.scripts.ZoneScriptAnalyzer.mapChangesOfZone(z);
+			} catch (RuntimeException unread) {
+				out.add("zone " + i + "'s script could not be read (" + Ui.reason(unread) + "), so where it sends the player is not checked");
+				continue;
+			}
+			for (int tz : mc.zones) {
+				if (tz >= BASE_ZONES && tz < 0x8000) {
+					out.add("zone " + i + "'s script -> added zone " + tz);
+				}
+			}
+			if (mc.computed > 0) {
+				out.add("zone " + i + ": " + mc.computed + " script map change(s) whose destination is computed are not checked");
+			}
+		}
+		for (int k = 0; k < shared.zones.size(); k++) {
+			int tz = shared.zones.get(k);
+			if (tz >= BASE_ZONES && tz < 0x8000) {
+				out.add("shared script " + shared.from.get(k) + " -> added zone " + tz);
+			}
+		}
+		for (String u : shared.unread) {
+			out.add(u + ", so where it sends the player is not checked");
 		}
 		return out;
 	}

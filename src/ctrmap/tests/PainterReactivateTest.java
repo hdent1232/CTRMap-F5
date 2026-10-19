@@ -40,6 +40,7 @@ public class PainterReactivateTest {
 		try {
 			Workspace.install(new WorkspaceSession(ws, game, GameType.ORAS, null));
 			theRegionUnderneathIsReadThreeWays(ws);
+			theCellIsTheZonesOwnAndNothingIsPaintedWithNoZone(ws);
 			whatActivationDoes();
 			theFormAsksThese(root);
 		} finally {
@@ -110,6 +111,49 @@ public class PainterReactivateTest {
 				"nor a painting that started with no model to compare: " + why);
 	}
 
+	/**
+	 * The cell painted is the zone's OWN - the one its header's position names - and the painter refuses, in
+	 * words, to work with no zone or nothing to ask.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (MapPainter 920, negated; 905 and 471, dropped and swallowed - all
+	 * SURVIVED): nothing asked any of them. With 920 negated the painter took a shared matrix's FIRST occupied
+	 * cell for every zone on it - the neighbour's ground, and this zone's warps put in the neighbour's
+	 * territory, the very defect the own-cell rule fixed; with 905 or 471 gone, no zone, or no zone and no host,
+	 * crashed in no one's words or answered as though there were one.
+	 */
+	static void theCellIsTheZonesOwnAndNothingIsPaintedWithNoZone(File ws) throws Exception {
+		System.out.println("--- the cell painted is the zone's own, and no zone is refused in words");
+		Zone z = LoadedZoneTest.blank();   //matrix 0
+		z.header.X = 720;                   //the second cell across: 720 world units a cell
+		z.header.Y = 0;
+		LoadedZone lz = new LoadedZone();
+		lz.table(new Zone[]{z});
+		lz.open(0, z);
+		Files.write(entry(ws, ArchiveType.MAP_MATRIX, 0).toPath(), DiscardRevertsTest.matrix(3, 5));
+		int[] cell = ctrmap.MapPainter.firstRegionCell(lz);
+		check(cell != null && cell[0] == 5 && cell[1] == 1 && cell[2] == 0,
+				"a zone placed in the matrix's second cell paints that cell's region 5, not the first cell's 3: "
+						+ (cell == null ? "none" : java.util.Arrays.toString(cell)));
+		String said = "";
+		try {
+			said = "answered " + java.util.Arrays.toString(ctrmap.MapPainter.firstRegionCell(new LoadedZone()));
+		} catch (IllegalStateException refused) {
+			said = refused.getMessage();
+		} catch (RuntimeException crash) {
+			said = "crashed: " + crash;
+		}
+		check(said.contains("no zone is open"), "with no zone open there is no cell, said in words: " + said);
+		try {
+			said = "answered " + ctrmap.MapPainter.applyToZone(null, 0, null, null, null, null, false, null, null, null);
+		} catch (IllegalArgumentException refused) {
+			said = refused.getMessage();
+		} catch (Exception crash) {
+			said = "crashed: " + crash;
+		}
+		check(said.contains("must be handed the LoadedZone and a Host"),
+				"an apply handed no zone and nothing to ask is refused in words: " + said);
+	}
+
 	static void whatActivationDoes() {
 		System.out.println("--- what re-activating on the same zone does with the painting (F247)");
 		check(PaintForm.onActivate(Underneath.UNKNOWN, true) == OnActivate.KEEP,
@@ -134,9 +178,9 @@ public class PainterReactivateTest {
 				"activation on the same zone goes through underneath and onActivate");
 		String seed = PropEditFormGuardsTest.body(src, "void seed() {");
 		int reasons = seed.split("ctrmap\\.Ui\\.reason\\(unread\\)", -1).length - 1;
-		check(!seed.contains("catch (Exception ignore)") && reasons == 2,
-				"and the seed says when its region or its map could not be read, with the reason, instead of swallowing it ("
-				+ reasons + " of 2)");
+		check(!seed.contains("catch (Exception ignore)") && reasons == 3,   //its map, a region's terrain (census M.4), the region
+				"and the seed says when its map, its region's terrain or its region could not be read, with the reason, instead of swallowing it ("
+				+ reasons + " of 3)");
 	}
 
 	static void check(boolean ok, String what) {

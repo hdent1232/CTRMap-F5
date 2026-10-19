@@ -8,11 +8,7 @@ import java.io.IOException;
 import ctrmap.util.LittleEndianDataInputStream;
 import ctrmap.util.LittleEndianDataOutputStream;
 import ctrmap.formats.GameFiles;
-import java.io.OutputStream;
 import java.util.Arrays;
-import java.util.UUID;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * Extractor for the generic containers used in 3DS Pokemon games (6 and 7).
@@ -255,13 +251,18 @@ public abstract class AbstractGamefreakContainer {
 		return files;
 	}
 
-	public int getOffset(int fileNum) {
-		refreshTable();
-		return offsets[fileNum];
-	}
-
 	/**
-	 * One subfile, whole, or null - never part of one padded out with zeros.
+	 * One subfile, whole - never part of one padded out with zeros, and never null: a subfile
+	 * that cannot be read is refused, naming the container, the subfile and why.
+	 *
+	 * <p>IT ANSWERED NULL (census M.4), and 72 of its 80 callers handed that straight to a
+	 * parser - {@code new ByteArrayInputStream(null)} - so a truncated or locked container
+	 * became a NullPointerException with no word of the archive or the subfile, escaping
+	 * every {@code catch (IOException)} on the zone and matrix loads. Measured on the ORAS
+	 * dump: no retail container lacks a subfile any caller asks for (AD 228 of 228 hold 12,
+	 * GR 857 of 857 hold 7 or more, MM 431 of 431 hold 2, ZO 536 of 536 hold 5), so the null
+	 * meant damage everywhere it was answered. A caller to which absence IS an answer asks
+	 * {@link #hasFile} first.
 	 *
 	 * <p>IT USED TO ZERO-FILL AND CALL THAT SUCCESS. {@code skip} and {@code read} both
 	 * return how much they actually managed, and both results were dropped, so a file
@@ -275,17 +276,15 @@ public abstract class AbstractGamefreakContainer {
 		try (LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new FileInputStream(f))) {
 			//the table and the read in ONE open, so the bounds are the file's own (readTable)
 			if (!readTable(dis, f.length())) {
-				Logger.getLogger(AbstractGamefreakContainer.class.getName()).log(Level.SEVERE,
-					"reading " + f + " subfile " + fileNum + ": " + whyNot);
-				return null;
+				throw new IllegalStateException("Subfile " + fileNum + " of " + f.getName() + " could not be read: " + whyNot);
 			}
 			if (fileNum < 0 || fileNum + 1 >= offsets.length) {
-				return null;
+				throw new IllegalStateException(f.getName() + " has no subfile " + fileNum + " - it holds "
+					+ (offsets.length - 1) + ".");
 			}
+			//never negative: readTable just refused a table whose subfiles start out of order, and said why. A second
+			//refusal of the same thing here could never be reached (the 2026-10-14 shared sweep, both its mutants)
 			int want = offsets[fileNum + 1] - offsets[fileNum];
-			if (want < 0) {
-				return null;
-			}
 			byte[] b = new byte[want];
 			//BOTH OF THESE REFUSE SHORT DATA. skip() and read() answer how much they managed
 			//and both answers used to be dropped, which is how a truncated file became a
@@ -295,33 +294,31 @@ public abstract class AbstractGamefreakContainer {
 			dis.readFully(b);
 			return b;
 		} catch (IOException e) {
-			Logger.getLogger(AbstractGamefreakContainer.class.getName()).log(Level.SEVERE,
-				"reading " + f + " subfile " + fileNum, e);
-			return null;
+			throw new IllegalStateException("Subfile " + fileNum + " of " + f.getName() + " could not be read: "
+				+ ctrmap.util.Bytes.reason(e), e);
 		}
 	}
 
 	/**
-	 * One subfile written out to a fresh file in the handed scratch directory,
-	 * or null when it could not be written.
+	 * Whether this container holds a subfile {@code fileNum} - the question for a caller to
+	 * which an absent subfile is an answer, asked before {@link #getFile}, which refuses one.
 	 */
-	public File getIOFile(int fileNum){
+	public boolean hasFile(int fileNum) {
+		refreshTable();
+		return fileNum >= 0 && fileNum + 1 < offsets.length;
+	}
+
+	/**
+	 * One subfile written out to a fresh file in the handed scratch directory. One that cannot be read, or written
+	 * there, throws, naming it: it answered null, which both callers took for a file - the texture merge handed it to
+	 * the converter as its donor and the export copied it (F209d).
+	 */
+	public File getIOFile(int fileNum) throws IOException {
 		//getFile's null was written with os.write(null) - a NullPointerException this catch
-		//never saw - and the stream was closed only on success (F049): both answered here
-		byte[] b = getFile(fileNum);
-		if (b == null) {
-			return null;
-		}
-		File out = new File(files.scratch(), "agfc_extract_" + UUID.randomUUID().toString());
-		try (OutputStream os = new FileOutputStream(out)) {
-			os.write(b);
-			return out;
-		} catch (IOException ex) {
-			Logger.getLogger(AbstractGamefreakContainer.class.getName()).log(Level.SEVERE,
-				"extracting subfile " + fileNum + " of " + f + " to " + out, ex);
-			out.delete();
-			return null;
-		}
+		//never saw - and the stream was closed only on success (F049): both answered here.
+		//getFile answers bytes or throws naming the subfile - it never answers null now, so a
+		//refusal of null here could not be reached (the 2026-10-14 shared sweep, line 322)
+		return files.toScratch("agfc_extract_", getFile(fileNum));
 	}
 
 	public boolean checkStoreStatus(int num, byte[] data) {
@@ -356,6 +353,13 @@ public abstract class AbstractGamefreakContainer {
 	 * own name on the failure catch this and say so with the cause attached.
 	 */
 	public void storeFile(int num, byte[] data) {
+		//NOTHING IS NOT A SUBFILE (census L.2): a producer that answered null on a failure handed it straight here,
+		//where a padded container threw from inside the padding with no word and an unpadded one could compare
+		//two nulls equal and write nothing, as if it had
+		if (data == null) {
+			throw new IllegalStateException("could not write subfile " + num + " of " + f.getName()
+					+ ": there is nothing to store - what should have made it failed");
+		}
 		//the table as the file holds it NOW - another container may have rewritten it (F234)
 		refreshTable();
 		if (num < 0 || num >= len) {

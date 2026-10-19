@@ -7,7 +7,6 @@ import ctrmap.gamedef.GameProfile;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -70,23 +69,21 @@ public final class ItemText {
 		return game.staged(ArchiveType.GAMETEXT, idx);
 	}
 
-	/** Every line of the list, or an empty list when it cannot be read. */
-	public static List<String> read(GameFiles game, Which w) {
+	/** Every line of the list. @throws IOException naming the list when it is absent or does not read (census M.111) */
+	public static List<String> read(GameFiles game, Which w) throws IOException {
+		//REFUSED, NOT EMPTY (census M.111): an absent or unreadable text read as no lines, so Save wrote the record
+		//and skipped the name it could not find - an item with new behaviour under its old name, said to be saved
 		File f = fileFor(handed(game, "read"), w);
 		if (f == null || !f.isFile()) {
-			return new ArrayList<>();
+			throw new IOException("the item " + w + " text is not in this game's workspace, so the item editor cannot"
+					+ " save a name or description");
 		}
 		try {
 			return new GFMessageFile(Files.readAllBytes(f.toPath())).getLines();
-		} catch (IOException | RuntimeException ex) {
-			return new ArrayList<>();
+		} catch (RuntimeException undecoded) {
+			throw new IOException("the item " + w + " text (" + f.getName() + ") does not read: "
+					+ ctrmap.util.Bytes.reason(undecoded), undecoded);
 		}
-	}
-
-	/** One line, or null when the list cannot be read or does not go that far. */
-	public static String line(GameFiles game, Which w, int id) {
-		List<String> l = read(game, w);
-		return id >= 0 && id < l.size() ? l.get(id) : null;
 	}
 
 	/**
@@ -120,10 +117,5 @@ public final class ItemText {
 		msg.setLines(lines);
 		Files.write(f.toPath(), msg.write());
 		game.edited(f);
-	}
-
-	/** How many lines each list holds, for a caller checking they agree with the records. */
-	public static int count(GameFiles game, Which w) {
-		return read(game, w).size();
 	}
 }

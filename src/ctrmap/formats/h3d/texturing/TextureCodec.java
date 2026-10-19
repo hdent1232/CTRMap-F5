@@ -14,6 +14,38 @@ public class TextureCodec {
 	private static final int[][] etc1LUT = {{2, 8, -2, -8}, {5, 17, -5, -17}, {9, 29, -9, -29}, {13, 42, -13, -42}, {18, 60, -18, -60}, {24, 80, -24, -80}, {33, 106, -33, -106}, {47, 183, -47, -183}};
 
 	/**
+	 * How many bytes a {@code width} x {@code height} texture of {@code format} occupies where it is stored - what a
+	 * reader must read whole (census M.110): the texture read sized every buffer as four bytes a texel and took
+	 * whatever came, so a texture cut short decoded with a zero tail and was drawn as if it were whole.
+	 */
+	public static int storedSize(int width, int height, PICACommandReader.TextureFormat format) {
+		int texels = width * height;
+		switch (format) {
+			case rgba8:
+				return texels * 4;
+			case rgb8:
+				return texels * 3;
+			case rgba5551:
+			case rgb565:
+			case rgba4:
+			case la8:
+			case hilo8:
+				return texels * 2;
+			case l8:
+			case a8:
+			case la4:
+			case etc1a4:
+				return texels;
+			case l4:
+			case a4:
+			case etc1:
+				return texels / 2;
+			default:
+				return 0;   //dontCare: nothing is decoded, so nothing is read
+		}
+	}
+
+	/**
 	 * Decodes one PICA200 texture to 8-bit BGRA, 4 bytes per texel, rotated
 	 * 180 degrees from storage order (bottom-up and right-to-left - the row
 	 * order the renderer has always been handed; see {@link #flipToBgra}).

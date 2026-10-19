@@ -60,6 +60,7 @@ import sys
 LF = chr(10)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 ROOT = _tree_root.require(__file__)
 
 #: WHAT A CENSUS DOES NOT ASK TO HAVE OPENED - each kind with its reason. Everything else git
@@ -86,8 +87,8 @@ def listed(root=None):
     when git cannot answer: a tree nobody could list is not a tree with nothing in it."""
     root = root or ROOT
     try:
-        done = subprocess.run(["git", "ls-files", "-co", "--exclude-standard", "-z"], cwd=root,
-                              capture_output=True, timeout=60, creationflags=NO_WINDOW)
+        done = bounded.run(["git", "ls-files", "-co", "--exclude-standard", "-z"], cwd=root,
+                           capture_output=True, timeout=60, creationflags=NO_WINDOW)
     except (OSError, subprocess.SubprocessError):
         return None
     if done.returncode != 0:
@@ -406,6 +407,12 @@ def selftest():
 
 
 def main(argv):
+    #a word this does not read refuses the run, before anything runs (cli_words, 2026-10-10)
+    import _cli
+    unread_words = _cli.refused(argv[1:], flags=("--selftest", "--report"), valued=("--report",), most=1)
+    if unread_words:
+        print(unread_words)
+        return 2
     if "--selftest" in argv:
         return selftest()
     if len(argv) < 2:

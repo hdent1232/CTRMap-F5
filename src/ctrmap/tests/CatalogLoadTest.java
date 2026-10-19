@@ -30,6 +30,9 @@ public class CatalogLoadTest {
 		System.out.println("--- the shipped catalog reads every row whose box is a box, and names the rest (F067, F129)");
 		//the inverted rows are counted here from the files themselves, not taken from the loader
 		List<String> inverted = new ArrayList<>();
+		//and so are the rows whose box an earlier row of either file already holds (curated first, as loaded)
+		java.util.Map<String, String> boxAt = new java.util.HashMap<>();
+		List<String> sameBox = new ArrayList<>();
 		int rows = 0;
 		for (String res : new String[]{"ctrmap/resources/oras_buildings.tsv", "ctrmap/resources/oras_buildings_auto.tsv"}) {
 			String text = new String(java.nio.file.Files.readAllBytes(new File("src/" + res).toPath()), StandardCharsets.UTF_8);
@@ -44,15 +47,35 @@ public class CatalogLoadTest {
 				if (Integer.parseInt(f[6]) < Integer.parseInt(f[4]) || Integer.parseInt(f[7]) < Integer.parseInt(f[5])) {
 					inverted.add(res + " line " + lineNo);
 				}
+				String at = boxAt.putIfAbsent(f[2] + " " + f[4] + " " + f[5] + " " + f[6] + " " + f[7], res + " line " + lineNo);
+				if (at != null) {
+					sameBox.add(res + " line " + lineNo + " (" + f[1] + ") cuts what " + at + " does");
+				}
 			}
 		}
-		List<BuildingCatalog.Entry> all = BuildingCatalog.entries();
-		List<String> said = BuildingCatalog.loadProblems();
+		List<BuildingCatalog.Entry> all;
+		List<String> said;
+		try {
+			all = BuildingCatalog.entries();
+			said = BuildingCatalog.loadProblems();
+		} catch (IllegalArgumentException offered) {
+			//A ROW THE CATALOG SHOULD HAVE REFUSED, OFFERED: the load measures every box it keeps, so an inverted row
+			//let through throws there - which ended this suite with no check saying what it was watching
+			check(false, "the catalog keeps a row whose box ends before it starts out of what it offers - loading it"
+					+ " threw instead: " + ctrmap.util.Bytes.reason(offered));
+			System.out.println("FAILURES PRESENT (" + fails + ")");
+			System.exit(1);
+			return;
+		}
 		List<String> saidWhere = new ArrayList<>();
 		for (String s : said) {
 			saidWhere.add(s.substring(0, s.indexOf(':')));
 		}
-		check(rows == 48 + 3535, "control: the two shipped files hold 3,583 rows (48 curated, 3,535 harvested): " + rows);
+		//regenerated 2026-10-09 by the fixed harvester (F129, F251): 3,536 cuts verified, 16 of them not written
+		//because the curated table (15) or an earlier row (1) already offered their box
+		check(rows == 48 + 3520, "control: the two shipped files hold 3,568 rows (48 curated, 3,520 harvested): " + rows);
+		check(sameBox.isEmpty(), "no row cuts a box an earlier row already offers, so the palette never lists one"
+				+ " cut twice: " + sameBox.size() + " " + (sameBox.size() > 3 ? sameBox.subList(0, 3) + "..." : sameBox));
 		check(all.size() == rows - inverted.size() && saidWhere.equals(inverted),
 				"every row reads but the " + inverted.size() + " whose box ends before it starts, and those are named by"
 				+ " line: " + all.size() + " read, said " + saidWhere);
@@ -71,7 +94,15 @@ public class CatalogLoadTest {
 				+ "house\tFlat\t1\t2\t5\t3\t5\t3\t0\t-1\t-1\t-\t-1\t-1\n";
 		List<BuildingCatalog.Entry> boxed = new ArrayList<>();
 		List<String> boxProblems = new ArrayList<>();
-		BuildingCatalog.parse(new ByteArrayInputStream(box.getBytes(StandardCharsets.UTF_8)), "box.tsv", true, boxed, boxProblems);
+		try {
+			BuildingCatalog.parse(new ByteArrayInputStream(box.getBytes(StandardCharsets.UTF_8)), "box.tsv", true, boxed, boxProblems);
+		} catch (IllegalArgumentException offered) {
+			//THE SAME WORDS AS THE LOAD ABOVE, for the same defect: the shipped files hold no inverted row, so it is this
+			//row that an inverted box let through reaches - and its measure threw, ending the suite with nothing said
+			//(an-inverted-catalog-row-is-offered, NOT PROVEN 2026-10-14)
+			check(false, "the catalog keeps a row whose box ends before it starts out of what it offers - reading box.tsv"
+					+ " threw instead: " + ctrmap.util.Bytes.reason(offered));
+		}
 		check(boxed.size() == 1 && boxed.get(0).name.equals("Flat") && boxed.get(0).tilesW() == 1
 				&& boxProblems.size() == 1 && boxProblems.get(0).startsWith("box.tsv line 1") && boxProblems.get(0).contains("Inverted"),
 				"a row whose box ends before it starts is refused by its line, and a one-tile box reads: " + boxProblems);
@@ -97,6 +128,22 @@ public class CatalogLoadTest {
 		flat.computeTiles();
 		check(flat.tx1 >= flat.tx0 && flat.tilesW() == 1, "and the harvester never writes one: a flat piece on a tile line is "
 				+ flat.tx0 + ".." + flat.tx1);
+
+		System.out.println("--- a table a harvester writes ends its lines as the index holds them (LF)");
+		File written = new File(Scratch.dir("ctrmap_tablewriter"), "t.tsv");
+		try (java.io.PrintWriter w = ctrmap.tools.TableWriter.open(written.getPath())) {
+			w.println("# head");
+			w.println("a\tb");
+		}
+		File plain = new File(written.getParentFile(), "plain.tsv");
+		try (java.io.PrintWriter w = new java.io.PrintWriter(plain.getPath(), "UTF-8")) {
+			w.println("a");
+		}
+		//CONTROL: a plain PrintWriter writes this platform's separator, which on Windows is the CRLF this replaced
+		check(new String(java.nio.file.Files.readAllBytes(plain.toPath()), StandardCharsets.UTF_8).equals("a" + System.lineSeparator()),
+				"control: a plain PrintWriter ends a line with this platform's separator");
+		check(new String(java.nio.file.Files.readAllBytes(written.toPath()), StandardCharsets.UTF_8).equals("# head\na\tb\n"),
+				"and the harvesters' writer ends every line with LF, on this platform too");
 
 		System.out.println("--- a row that does not read is said by its line, and the rows after it still read (F067)");
 		String tsv = "# comment\n"
@@ -147,9 +194,91 @@ public class CatalogLoadTest {
 		aSmallThingIsFiledByItsBox(all);
 		aSearchFindsWhatAnEntryIs(all);
 		thePaletteListsTheCatalogUnderItsPlaces(all);
+		aCatalogFileMissingFromTheBuildIsSaid();
+		theCatalogsSkippedRowsAreSaidOnce();
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		System.exit(fails == 0 ? 0 : 1);
+	}
+
+	/**
+	 * The rows the building catalog skipped are said once a session, and nothing is said when there are none (F067;
+	 * the 2026-10-14 shared sweep, BuildingPaletteDialog 234, negate-if, SURVIVED: the shipped catalog reads whole, so
+	 * no suite had a row to say). The catalog's loaded state is set by reflection, and put back after.
+	 */
+	static void theCatalogsSkippedRowsAreSaidOnce() throws Exception {
+		System.out.println("--- the rows the building catalog skipped are said once, and none is never said (F067)");
+		java.lang.reflect.Field entries = BuildingCatalog.class.getDeclaredField("entries");
+		java.lang.reflect.Field problems = BuildingCatalog.class.getDeclaredField("problems");
+		java.lang.reflect.Field said = ctrmap.humaninterface.BuildingPaletteDialog.class.getDeclaredField("catalogProblemsSaid");
+		entries.setAccessible(true);
+		problems.setAccessible(true);
+		said.setAccessible(true);
+		Object keptEntries = entries.get(null), keptProblems = problems.get(null), keptSaid = said.get(null);
+		List<String> heard = ctrmap.Ui.record();
+		try {
+			entries.set(null, new ArrayList<BuildingCatalog.Entry>());
+			problems.set(null, new ArrayList<String>());
+			said.set(null, false);
+			ctrmap.humaninterface.BuildingPaletteDialog.sayCatalogProblems(null);
+			check(heard.isEmpty(), "CONTROL: a catalog that read whole says nothing: " + heard);
+			problems.set(null, java.util.Arrays.asList("oras_buildings.tsv line 3: not a number"));
+			ctrmap.humaninterface.BuildingPaletteDialog.sayCatalogProblems(null);
+			ctrmap.humaninterface.BuildingPaletteDialog.sayCatalogProblems(null);
+			check(heard.size() == 1 && heard.get(0).contains("skipped 1 row(s)") && heard.get(0).contains("line 3: not a number"),
+					"a catalog that skipped a row says so once, naming it, and not again: " + heard);
+		} finally {
+			ctrmap.Ui.stopRecording();
+			entries.set(null, keptEntries);
+			problems.set(null, keptProblems);
+			said.set(null, keptSaid);
+		}
+	}
+
+	/**
+	 * A catalog file missing from the build is said in the catalog's problems, never loaded as a catalog with nothing
+	 * in it.
+	 *
+	 * <p>Measured by the 2026-10-14 shared sweep (BuildingCatalog 137, drop-report, SURVIVED): no catalog file had ever
+	 * been missing. Dropped, the catalog opened without that file's buildings and said nothing. Asked through
+	 * reflection: the loader is the catalog's own, and the build always ships both files.
+	 */
+	static void aCatalogFileMissingFromTheBuildIsSaid() throws Exception {
+		System.out.println("--- a catalog file missing from the build is said, never loaded as an empty one");
+		java.lang.reflect.Method load = BuildingCatalog.class.getDeclaredMethod("load", String.class, boolean.class,
+				List.class, List.class);
+		load.setAccessible(true);
+		List<BuildingCatalog.Entry> shipped = new ArrayList<>();
+		List<String> shippedSaid = new ArrayList<>();
+		load.invoke(null, "ctrmap/resources/oras_buildings.tsv", false, shipped, shippedSaid);
+		check(!shipped.isEmpty() && shippedSaid.isEmpty(), "control: the shipped catalog file loads " + shipped.size()
+				+ " entries and says nothing: " + shippedSaid);
+		List<BuildingCatalog.Entry> none = new ArrayList<>();
+		List<String> said = new ArrayList<>();
+		load.invoke(null, "ctrmap/resources/no_such_catalog.tsv", true, none, said);
+		check(none.isEmpty() && said.equals(java.util.Collections.singletonList(
+				"ctrmap/resources/no_such_catalog.tsv is missing from this build")),
+				"a catalog file missing from the build is said, naming it: " + said);
+
+		//AND ONE THAT OPENED AND THEN FAILED (BuildingCatalog 143, drop-report, SURVIVED the same day): a close that
+		//fails is said too, naming the file
+		java.lang.reflect.Method readAll = BuildingCatalog.class.getDeclaredMethod("readAll", java.io.InputStream.class,
+				String.class, boolean.class, List.class, List.class);
+		readAll.setAccessible(true);
+		List<String> closedSaid = new ArrayList<>();
+		readAll.invoke(null, new ByteArrayInputStream(new byte[0]), "fine.tsv", true, new ArrayList<BuildingCatalog.Entry>(),
+				closedSaid);
+		check(closedSaid.isEmpty(), "control: an empty catalog file that closes says nothing: " + closedSaid);
+		List<String> failedSaid = new ArrayList<>();
+		readAll.invoke(null, new ByteArrayInputStream(new byte[0]) {
+			@Override
+			public void close() throws java.io.IOException {
+				throw new java.io.IOException("planted: the handle would not close");
+			}
+		}, "closing.tsv", true, new ArrayList<BuildingCatalog.Entry>(), failedSaid);
+		check(failedSaid.equals(java.util.Collections.singletonList(
+				"closing.tsv could not be read: java.io.IOException: planted: the handle would not close")),
+				"a catalog file whose read fails at its close is said, naming it: " + failedSaid);
 	}
 
 	/**
@@ -180,6 +309,26 @@ public class CatalogLoadTest {
 		}
 		check(terrainSaid.contains("line 3") && terrainSaid.contains("SAND"),
 				"a brush row that does not read refuses the table, naming its line - it is not dropped: " + terrainSaid);
+		//and each other way a row is wrong, by its own words (the 2026-10-14 shared sweep, TerrainCatalog 258, dropped,
+		//SURVIVED: the one bad table asked held a bad number, so a short row read past its end and said nothing of it)
+		String[][] rowsWrong = {
+			{"a row of 5 fields", "GRASS\t1\t2\t3\tmat\n", "line 1 (GRASS): 5 fields; a row has 6, or 10 with the cliff bands"},
+			{"a name given twice", "GRASS\t1\t2\t3\tmat\tctr_kusa\nGRASS\t1\t2\t3\tmat\tctr_kusa\n",
+				"line 2 (GRASS): the name is given twice"},
+			{"a brush this build has none of", "NOT_A_BRUSH\t1\t2\t3\tmat\tx\n", "line 1 (NOT_A_BRUSH): "}};
+		for (String[] w : rowsWrong) {
+			java.nio.file.Files.write(bad.toPath(), w[1].getBytes(StandardCharsets.UTF_8));
+			System.setProperty("terrain", bad.getAbsolutePath());
+			String said;
+			try {
+				said = "read " + ctrmap.formats.tilemap.TerrainCatalog.donors().keySet();
+			} catch (IllegalStateException ex) {
+				said = ex.getMessage();
+			} finally {
+				System.clearProperty("terrain");
+			}
+			check(said.contains(w[2]), w[0] + " refuses the table, naming its line and why: " + said);
+		}
 
 		//the shipped table, counted here from the file itself
 		int brushRows = 0, otherRows = 0;
@@ -228,6 +377,17 @@ public class CatalogLoadTest {
 		}
 		check(groundSaid.startsWith("line 2"), "a ground-material row whose opacity is not a number is refused by its line,"
 				+ " not skipped as if it were opaque: " + groundSaid);
+		//and a row of another width (the 2026-10-14 shared sweep, PaintedMaterials 306, dropped, SURVIVED: every row asked
+		//had its four fields, so a three-field row read field 3 past its end and said nothing of the line)
+		String groundShort;
+		try {
+			groundShort = "read " + ctrmap.formats.tilemap.PaintedMaterials.readSpriteTable(new ByteArrayInputStream(
+					"chip_a\t1\t2\t100\nchip_b\t1\t2\n".getBytes(StandardCharsets.UTF_8)));
+		} catch (java.io.IOException | RuntimeException ex) {
+			groundShort = ex.getMessage();
+		}
+		check("line 2: 3 fields, and a row has 4".equals(groundShort),
+				"a ground-material row of 3 fields is refused by its line, naming its width: " + groundShort);
 		int sprites = 0, groundRows = 0;
 		for (String line : new String(java.nio.file.Files.readAllBytes(
 				new File("src/ctrmap/resources/oras_ground_materials.tsv").toPath()), StandardCharsets.UTF_8).split("\n")) {
@@ -242,6 +402,28 @@ public class CatalogLoadTest {
 				+ " them below 95% opaque: " + groundRows + ", " + sprites);
 		check(ctrmap.formats.tilemap.PaintedMaterials.spriteMaterials().size() == sprites,
 				"and the painter reads every one of them as a sprite: " + ctrmap.formats.tilemap.PaintedMaterials.spriteMaterials().size());
+		//a table that cannot be opened, or is missing from the build, is refused in words - never an empty set, which
+		//is "no material is a sprite" and the black hole back (the 2026-10-14 shared sweep, PaintedMaterials 281,
+		//dropped, SURVIVED: the shipped table always opens)
+		String groundHead = "The ground-material table could not be read, so the painter cannot tell a sprite atlas from a"
+				+ " floor (painting with one draws a black hole): ";
+		Object[][] unread = {
+			{"a table whose open fails", (ctrmap.formats.tilemap.PaintedMaterials.TableSource) () -> {
+				throw new java.io.IOException("the disk went away");
+			}, "the disk went away"},
+			{"a table missing from the build", (ctrmap.formats.tilemap.PaintedMaterials.TableSource)
+				() -> ctrmap.resources.ResourceAccess.getStream("no_such_table.tsv"),
+				"ctrmap/resources/no_such_table.tsv is missing from this build"}};
+		for (Object[] u : unread) {
+			String said;
+			try {
+				said = "read " + ctrmap.formats.tilemap.PaintedMaterials.spriteMaterials(
+						(ctrmap.formats.tilemap.PaintedMaterials.TableSource) u[1]);
+			} catch (IllegalStateException ex) {
+				said = ex.getMessage();
+			}
+			check(said.equals(groundHead + u[2]), u[0] + " is refused, saying why: " + said);
+		}
 
 		//a read that fails part way is said, by every reader of a table
 		String groundCut;
@@ -467,6 +649,138 @@ public class CatalogLoadTest {
 				+ " order, and every entry under one of them: " + headings.size() + " headings over " + headed + " entries");
 		check(entries == curated && closed.get(1) instanceof BuildingCatalog.Entry && !((BuildingCatalog.Entry) closed.get(1)).auto,
 				"and only the curated heading starts open, its entries straight under it: " + entries + " entries listed");
+		//what each row says (the 2026-10-14 shared sweep, BuildingPaletteDialog 270, negate-if, SURVIVED: the list's
+		//renderer lived in the modal palette); every answer read, a throw too
+		List<String> misSaid = new ArrayList<>();
+		for (Object row : closed) {
+			String text;
+			try {
+				text = ctrmap.humaninterface.BuildingPaletteDialog.rowText(row);
+			} catch (RuntimeException threw) {
+				text = "threw " + threw;
+			}
+			boolean right = row instanceof ctrmap.humaninterface.BuildingPaletteDialog.Heading
+					? text.startsWith("<html><b>") && text.contains(ctrmap.Ui.html(((ctrmap.humaninterface.BuildingPaletteDialog.Heading) row).title))
+					: text.startsWith("<html>&nbsp;&nbsp;") && text.contains(ctrmap.Ui.html(((BuildingCatalog.Entry) row).name))
+						&& text.contains(" <small>(" + ((BuildingCatalog.Entry) row).tilesW() + "x" + ((BuildingCatalog.Entry) row).tilesH());
+			if (!right && misSaid.size() < 3) {
+				misSaid.add(text);
+			}
+		}
+		check(misSaid.isEmpty() && closed.size() > curated, "each of the " + closed.size() + " rows says itself: a heading in bold"
+				+ " with its place, an entry indented with its name and size - not: " + misSaid);
+		//which row a rebuild selects (the 2026-10-14 shared sweep, BuildingPaletteDialog 294, negate-if, SURVIVED)
+		String lastPlace = headings.get(headings.size() - 1);
+		int lastAt = -1;
+		for (int i = 0; i < closed.size(); i++) {
+			if (closed.get(i) instanceof ctrmap.humaninterface.BuildingPaletteDialog.Heading
+					&& ((ctrmap.humaninterface.BuildingPaletteDialog.Heading) closed.get(i)).title.equals(lastPlace)) {
+				lastAt = i;
+			}
+		}
+		int first = ctrmap.humaninterface.BuildingPaletteDialog.selectionAfter(closed, null);
+		int kept = ctrmap.humaninterface.BuildingPaletteDialog.selectionAfter(closed, lastPlace);
+		int absent = ctrmap.humaninterface.BuildingPaletteDialog.selectionAfter(closed, "no such place");
+		//what a selection previews (the 2026-10-14 shared sweep, BuildingPaletteDialog 362, negate-if, SURVIVED)
+		Object heading = closed.get(0), entry = closed.get(1);
+		String previews;
+		try {   //every answer read, a throw too
+			previews = (ctrmap.humaninterface.BuildingPaletteDialog.previewed(entry) == entry) + ", "
+					+ (ctrmap.humaninterface.BuildingPaletteDialog.previewed(heading) == null) + ", "
+					+ (ctrmap.humaninterface.BuildingPaletteDialog.previewed(null) == null);
+		} catch (RuntimeException threw) {
+			previews = "threw " + threw;
+		}
+		check(previews.equals("true, true, true"),
+				"a selected entry is previewed, and a heading or nothing previews nothing, the last preview staying up: " + previews);
+		//a preview shown where there is no 3D view - OpenGL could not start - says its note and draws nothing, with a
+		//model or without (the 2026-10-14 shared sweep, BuildingPaletteDialog 406, negate-if, SURVIVED)
+		javax.swing.JLabel info = new javax.swing.JLabel(" ");
+		ctrmap.humaninterface.BuildingPaletteDialog.Preview withModel = new ctrmap.humaninterface.BuildingPaletteDialog.Preview();
+		withModel.model = new byte[]{1};
+		withModel.note = "  a hut";
+		ctrmap.humaninterface.BuildingPaletteDialog.Preview noModel = new ctrmap.humaninterface.BuildingPaletteDialog.Preview();
+		noModel.note = "  Could not cut this piece";
+		String showSaid;
+		try {
+			ctrmap.humaninterface.BuildingPaletteDialog.show(withModel, null, info);
+			String shownFirst = info.getText();
+			ctrmap.humaninterface.BuildingPaletteDialog.show(noModel, null, info);
+			showSaid = shownFirst + " / " + info.getText();
+		} catch (RuntimeException threw) {
+			showSaid = "threw " + threw;
+		}
+		check(showSaid.equals("<html>  a hut</html> / <html>  Could not cut this piece</html>"),
+				"a preview shown with no 3D view says its note and draws nothing, with a model or without: " + showSaid);
+		//Place on the map with a heading chosen keeps the palette open; with a building, it is the pick (the 2026-10-14
+		//shared sweep, BuildingPaletteDialog 421, negate-if, SURVIVED) - every answer read, a throw too
+		String placed;
+		try {
+			ctrmap.humaninterface.BuildingPaletteDialog.Pick p = ctrmap.humaninterface.BuildingPaletteDialog.pickOf(entry, true);
+			placed = ctrmap.humaninterface.BuildingPaletteDialog.staysOpen(heading) + ", "
+					+ ctrmap.humaninterface.BuildingPaletteDialog.staysOpen(entry) + ", "
+					+ (p != null && p.entry == entry && p.passengers) + ", "
+					+ (ctrmap.humaninterface.BuildingPaletteDialog.pickOf(null, true) == null);
+		} catch (RuntimeException threw) {
+			placed = "threw " + threw;
+		}
+		check(placed.equals("true, false, true, true"), "Place on the map keeps the palette open for a heading and picks a"
+				+ " building, with its passengers when asked: " + placed);
+		//and what the palette DOES with those answers (the 2026-10-16 assembly, BuildingPaletteDialog 469 and 388,
+		//negate-if, SURVIVED: the answers were asked and the ifs obeying them were left in the modal palette): a heading
+		//placed leaves it open, answering nothing; a building is the answer and closes it; rebuilt rows select the row
+		//selectionAfter names, and none when it names none
+		ctrmap.humaninterface.BuildingPaletteDialog.Pick[] answered = {null};
+		int[] closes = {0};
+		String acted;
+		try {
+			ctrmap.humaninterface.BuildingPaletteDialog.placeChosen(heading, true, answered, () -> closes[0]++);
+			acted = (answered[0] == null) + "/" + closes[0];
+			ctrmap.humaninterface.BuildingPaletteDialog.placeChosen(entry, false, answered, () -> closes[0]++);
+			acted += ", " + (answered[0] != null && answered[0].entry == entry && !answered[0].passengers) + "/" + closes[0];
+		} catch (RuntimeException threw) {
+			acted = "threw " + threw;
+		}
+		check(acted.equals("true/0, true/1"), "Place on the map with a heading leaves the palette open answering nothing,"
+				+ " and with a building answers it and closes: " + acted);
+		javax.swing.DefaultListModel<Object> rowModel = new javax.swing.DefaultListModel<>();
+		javax.swing.JList<Object> rowList = new javax.swing.JList<>(rowModel);
+		String selected;
+		try {
+			ctrmap.humaninterface.BuildingPaletteDialog.fill(rowModel, rowList, closed, lastPlace);
+			selected = rowList.getSelectedIndex() + "/" + rowModel.size();
+			ctrmap.humaninterface.BuildingPaletteDialog.fill(rowModel, rowList, closed, null);
+			selected += ", " + rowList.getSelectedIndex();
+			ctrmap.humaninterface.BuildingPaletteDialog.fill(rowModel, rowList, new ArrayList<Object>(), null);
+			selected += ", " + rowList.getSelectedIndex() + "/" + rowModel.size();
+		} catch (RuntimeException threw) {
+			selected = "threw " + threw;
+		}
+		check(selected.equals(kept + "/" + closed.size() + ", " + first + ", -1/0"), "rebuilt rows select the heading"
+				+ " kept, else the first building, and nothing in no rows (expected " + kept + "/" + closed.size() + ", "
+				+ first + ", -1/0): " + selected);
+		//what a click on a row does (the 2026-10-14 shared sweep, BuildingPaletteDialog 434, negate-if, SURVIVED)
+		String clicks;
+		try {
+			clicks = ctrmap.humaninterface.BuildingPaletteDialog.onClick(heading, 1) + ", "
+					+ ctrmap.humaninterface.BuildingPaletteDialog.onClick(heading, 2) + ", "
+					+ ctrmap.humaninterface.BuildingPaletteDialog.onClick(entry, 2) + ", "
+					+ ctrmap.humaninterface.BuildingPaletteDialog.onClick(entry, 1);
+		} catch (RuntimeException threw) {
+			clicks = "threw " + threw;
+		}
+		check(clicks.equals("TOGGLE, NONE, CHOOSE, NONE"), "a heading clicked once opens or closes and a double click's"
+				+ " second press does nothing; a building double-clicked is chosen, clicked once is not: " + clicks);
+		//a heading clicked, and clicked again (the 2026-10-14 shared sweep, BuildingPaletteDialog 306, negate-if, SURVIVED)
+		java.util.Set<String> clicked = new java.util.HashSet<>();
+		ctrmap.humaninterface.BuildingPaletteDialog.flip(clicked, lastPlace);
+		boolean once = clicked.equals(java.util.Collections.singleton(lastPlace));
+		ctrmap.humaninterface.BuildingPaletteDialog.flip(clicked, lastPlace);
+		check(once && clicked.isEmpty(), "a heading clicked turns from the default, and clicked again turns back: once "
+				+ once + ", twice " + clicked);
+		check(first == 1 && kept == lastAt && lastAt > 1 && absent == -1, "a rebuild selects the first entry (row " + first
+				+ "), or the heading just clicked (" + lastPlace + " at row " + kept + " of " + lastAt + "), and nothing for a"
+				+ " heading not there (" + absent + ")");
 		//the place with the most entries, so a heading that opened onto a few would show
 		java.util.Map<String, Integer> perPlace = new java.util.HashMap<>();
 		for (BuildingCatalog.Entry e : all) {

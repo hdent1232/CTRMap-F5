@@ -155,8 +155,15 @@ public enum TilePalette {
 
 	/** The paintable brushes (VOID is the default background, not a brush swatch). */
 	public static TilePalette[] brushes() {
-		return new TilePalette[]{GRASS, TALL_GRASS, PATH, SAND, WATER, ROCK,
-			CAVE, DEEP_SAND, ICE, LEDGE_S, LEDGE_E, LEDGE_W, BIKE_RAIL, WATERFALL, DOOR,
-			INDOOR, WALKWAY, STAIRS_Z, STAIRS_E, STAIRS_W};
+		//EVERY TILE BUT VOID, IN THE ORDER DECLARED (census L.3): this was a second, hand-kept list of twenty of the
+		//enum's constants, so a brush added to the enum was silently missing from the painter until someone also
+		//remembered the list. VOID is what painting nothing leaves, not something to paint with
+		java.util.List<TilePalette> out = new java.util.ArrayList<>();
+		for (TilePalette t : values()) {
+			if (t != VOID) {
+				out.add(t);
+			}
+		}
+		return out.toArray(new TilePalette[0]);
 	}
 }

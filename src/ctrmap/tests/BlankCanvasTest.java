@@ -42,11 +42,57 @@ public class BlankCanvasTest {
 			aMapNothingCouldBeEmptiedOnLeavesNothing();
 			theReportNamesEveryRegion();
 			theActionRunsTheOneUnitAndSaysWhatItDid();
+			theAnsweringBlankIsUsedOnlyWhereAHalfCannotHurt(new File(args.length > 0 ? args[0] : "src"));
 		} finally {
 			Workspace.reset();
 		}
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		System.exit(fails == 0 ? 0 : 1);
+	}
+
+	/**
+	 * Census H.59: inside a unit a region is blanked by the form that throws when a write fails part-way, so the
+	 * unit puts the half back and the reason is said. The answering form - false for both "cannot rebuild" and
+	 * "half-written", the reason thrown away - was called by Repair shared maps, which then called the half-written
+	 * region "kept", and by Resize map, which said only that it "could not be blanked". It is left to the one
+	 * caller that cannot be undone and need not be: the append's never-visited spares.
+	 */
+	static void theAnsweringBlankIsUsedOnlyWhereAHalfCannotHurt(File src) throws Exception {
+		System.out.println("--- only the append's spares are blanked by the form that drops the reason (census H.59)");
+		java.util.List<String> callers = new java.util.ArrayList<>();
+		java.util.List<File> files = new java.util.ArrayList<>();
+		java.util.ArrayDeque<File> walk = new java.util.ArrayDeque<>(java.util.Collections.singleton(new File(src, "ctrmap")));
+		while (!walk.isEmpty()) {
+			File f = walk.pop();
+			File[] in = f.listFiles();
+			if (in != null) {
+				for (File c : in) {
+					if (c.isDirectory() && !c.getName().equals("tests")) {
+						walk.push(c);
+					} else if (c.getName().endsWith(".java")) {
+						files.add(c);
+					}
+				}
+			}
+		}
+		String spares = null;
+		for (File f : files) {
+			String text = SourceSeamTest.stripComments(new String(java.nio.file.Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8));
+			if (f.getName().equals("GeometryForker.java")) {
+				spares = CollisionReadTest.body(text, "public static void forkAppendedZones(");
+			}
+			int at = -1;
+			while ((at = text.indexOf("RegionFactory.blankRegionFiles(", at + 1)) >= 0) {
+				boolean inSpares = spares != null && f.getName().equals("GeometryForker.java")
+						&& text.indexOf(spares) <= at && at < text.indexOf(spares) + spares.length();
+				if (!inSpares) {
+					callers.add(f.getName() + " at " + at);
+				}
+			}
+		}
+		check(files.size() > 200 && spares != null && spares.contains("RegionFactory.blankRegionFiles("),
+				"control: the walk reads " + files.size() + " production files and finds the append's spares calling it");
+		check(callers.isEmpty(), "no other caller blanks a region by the form that drops the reason: " + callers);
 	}
 
 	static void aRegionWithNoModelIsLeftAndSaidSo() throws Exception {
@@ -97,10 +143,15 @@ public class BlankCanvasTest {
 		String src = new String(Files.readAllBytes(new File("src/ctrmap/CtrmapMainframe.java").toPath()),
 				StandardCharsets.UTF_8);
 		String action = CollisionReadTest.body(src, "private void blankCanvasAction()");
-		check(action != null && action.contains("JOptionPane.showConfirmDialog") && action.indexOf("private static void", 1) < 0,
+		check(action != null && action.contains("ctrmap.Ui.form(") && action.indexOf("private static void", 1) < 0,
 				"control: the action's body is found, whole and alone");
-		check(action != null && action.contains("GeometryForker.blankCanvas(") && !action.contains("blankRegionFiles(")
-				&& !action.contains("ensurePrivate("), "the action runs blankCanvas, not a loop of its own");
+		//THROUGH THE KEPT SEAM (F209c): the window calls WorkspaceOps.blankCanvas, which runs the one unit and keeps it
+		String ops = new String(Files.readAllBytes(new File("src/ctrmap/WorkspaceOps.java").toPath()), StandardCharsets.UTF_8);
+		String seam = CollisionReadTest.body(ops, "public static GeometryForker.Canvas blankCanvas(");
+		check(action != null && action.contains("WorkspaceOps.blankCanvas(") && seam != null
+				&& seam.contains("GeometryForker.blankCanvas(") && !action.contains("blankRegionFiles(")
+				&& !action.contains("ensurePrivate(") && !seam.contains("blankRegionFiles(") && !seam.contains("ensurePrivate("),
+				"the action runs blankCanvas, not a loop of its own");
 		check(action != null && action.contains("canvas.report()"), "the action tells the user what blankCanvas did");
 	}
 

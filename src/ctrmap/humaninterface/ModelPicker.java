@@ -77,11 +77,7 @@ public final class ModelPicker extends JPanel {
 			buildEntries();
 			rebuild();
 		});
-		list.addListSelectionListener((javax.swing.event.ListSelectionEvent e) -> {
-			if (!e.getValueIsAdjusting()) {
-				updatePreview();
-			}
-		});
+		ctrmap.util.Selections.onSettled(list, this::updatePreview);
 		buildEntries();
 		rebuild();
 		for (int k = 0; k < visibleEntries.size(); k++) {

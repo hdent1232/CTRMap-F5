@@ -57,11 +57,109 @@ public class GlUnavailableTest {
 		theMapViewStandsWithoutGl();
 		everyWayIntoGlAsksFirst(root);
 		onlyHeadlessSetsTheSwitch(root);
+		libShipsNativesForEveryPlatformTheLaunchersStart(root.getAbsoluteFile().getParentFile().getParentFile());
 		if (fails == 0 && skips > 0) {
 			System.out.println("PASS WITH " + skips + " SKIP(S)");
 		}
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		System.exit(fails == 0 ? 0 : 1);
+	}
+
+	/**
+	 * lib/ ships JOGL's natives for every platform the portable zip tells a user to run it on, both jars'
+	 * natives for each, all of one release (F077). Measured 2026-10-08: lib/ held JOGL 2.3.2 with Windows
+	 * natives only while README offered run.sh for macOS and Linux - there the library did not load, and
+	 * 2.3.2's Linux natives, tried, crashed the JVM on a modern Mesa. JOGL went to 2.6.0 on every platform
+	 * on 2026-10-10. The families are read from README's launcher line, not listed here, and the rule is
+	 * asked of a broken scratch lib/ both ways before this one.
+	 */
+	static void libShipsNativesForEveryPlatformTheLaunchersStart(File repo) throws Exception {
+		System.out.println("--- lib/ ships JOGL's natives for every platform a launcher starts, all one release");
+		String launchers = null;
+		for (String line : new String(java.nio.file.Files.readAllBytes(new File(repo, "README.md").toPath()),
+				java.nio.charset.StandardCharsets.UTF_8).split("\n")) {
+			if (line.contains("run.sh") && line.contains("run.bat")) {
+				launchers = line;
+			}
+		}
+		check(launchers != null, "control: README has the line naming run.bat and run.sh");
+		if (launchers == null) {
+			return;
+		}
+		java.util.Map<String, String> families = new java.util.LinkedHashMap<>();
+		families.put("Windows", "windows-");
+		families.put("macOS", "macosx-");
+		families.put("Linux", "linux-");
+		List<String> wanted = new ArrayList<>();
+		for (java.util.Map.Entry<String, String> f : families.entrySet()) {
+			if (launchers.contains(f.getKey())) {
+				wanted.add(f.getValue());
+			}
+		}
+		check(wanted.size() == 3, "control: README offers the editor on Windows, macOS and Linux: " + wanted);
+
+		File broken = Scratch.dir("gl-lib-broken");
+		File skewed = Scratch.dir("gl-lib-skewed");
+		for (File dir : new File[]{broken, skewed}) {
+			for (String jar : new String[]{"jogl-all", "gluegen-rt"}) {
+				fakeJar(new File(dir, jar + ".jar"), "2.6.0");
+				for (String p : new String[]{"windows-amd64", "linux-amd64", "macosx-universal"}) {
+					if (!(dir == broken && jar.equals("gluegen-rt") && p.equals("linux-amd64"))) {
+						fakeJar(new File(dir, jar + "-natives-" + p + ".jar"), dir == skewed && p.equals("macosx-universal") ? "2.3.2" : "2.6.0");
+					}
+				}
+			}
+		}
+		List<String> said = libProblems(broken, wanted);
+		check(said.toString().contains("gluegen-rt has no linux- natives"), "control: a lib/ missing one platform's natives is refused: " + said);
+		said = libProblems(skewed, wanted);
+		check(said.toString().contains("more than one release"), "control: a lib/ mixing releases is refused: " + said);
+		said = libProblems(new File(repo, "lib"), wanted);
+		check(said.isEmpty(), "this lib/ ships both jars' natives for every platform README offers, of one release: " + said);
+	}
+
+	/** What is wrong with a lib/ for the platform families {@code wanted}, each a natives-jar prefix. */
+	static List<String> libProblems(File lib, List<String> wanted) throws Exception {
+		List<String> out = new ArrayList<>();
+		Set<String> versions = new TreeSet<>();
+		File[] jars = lib.listFiles((d, n) -> n.endsWith(".jar"));
+		if (jars == null || jars.length == 0) {
+			out.add(lib + " holds no jar");
+			return out;
+		}
+		for (File j : jars) {
+			try (java.util.jar.JarFile jf = new java.util.jar.JarFile(j)) {
+				String v = jf.getManifest() == null ? null : jf.getManifest().getMainAttributes().getValue("Implementation-Version");
+				versions.add(v == null ? "UNKNOWN (" + j.getName() + " says no version)" : v);
+			}
+		}
+		if (versions.size() != 1) {
+			out.add("lib/ holds more than one release: " + versions);
+		}
+		for (String jar : new String[]{"jogl-all", "gluegen-rt"}) {
+			if (!new File(lib, jar + ".jar").isFile()) {
+				out.add("no " + jar + ".jar");
+			}
+			for (String family : wanted) {
+				boolean has = false;
+				for (File j : jars) {
+					has |= j.getName().startsWith(jar + "-natives-" + family);
+				}
+				if (!has) {
+					out.add(jar + " has no " + family + " natives");
+				}
+			}
+		}
+		return out;
+	}
+
+	static void fakeJar(File f, String version) throws Exception {
+		java.util.jar.Manifest m = new java.util.jar.Manifest();
+		m.getMainAttributes().put(java.util.jar.Attributes.Name.MANIFEST_VERSION, "1.0");
+		m.getMainAttributes().put(java.util.jar.Attributes.Name.IMPLEMENTATION_VERSION, version);
+		try (java.util.jar.JarOutputStream out = new java.util.jar.JarOutputStream(new java.io.FileOutputStream(f), m)) {
+			out.flush();
+		}
 	}
 
 	static void check(boolean ok, String what) {
@@ -87,6 +185,17 @@ public class GlUnavailableTest {
 		}
 		check(starts == GlSupport.available(), "and it is what JOGL answers when this suite asks it: "
 				+ (starts ? "starts" : "does not start") + ", GlSupport says " + (GlSupport.available() ? "starts" : "does not"));
+		//ASKED, NOT ASSUMED (the 2026-10-14 shared sweep, GlSupport 36, negate-if, SURVIVED): where OpenGL starts, an
+		//answer of "starts" given without asking JOGL reads exactly like one that asked - so the asking is read too
+		boolean asked;
+		try {
+			java.lang.reflect.Field f = GlSupport.class.getDeclaredField("asked");
+			f.setAccessible(true);
+			asked = f.getBoolean(null);
+		} catch (ReflectiveOperationException unreadable) {
+			asked = false;
+		}
+		check(asked, "and JOGL was asked by the first question, its answer kept - not answered without asking");
 	}
 
 	static void aModelPreviewStandsWithoutGl() {

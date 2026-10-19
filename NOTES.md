@@ -1,4 +1,4 @@
-**CTRMap-F5 1.0.3 — a file the editor could not read stops being mistaken for an empty one.**
+**CTRMap-F5 1.0.4 — the audit and the census closed, undo across the editor, and JOGL 2.6.0.**
 
 A world editor for Pokémon Omega Ruby, Alpha Sapphire, X and Y. Build towns that were never in
 the game, then play them.
@@ -7,66 +7,33 @@ the game, then play them.
 
 | | |
 |---|---|
-| **`CTRMap-F5-1.0.3-windows-x64.zip`** | Unzip, double-click `CTRMap-F5.exe`. **No Java needed.** Start here if you're not sure. |
-| **`CTRMap-F5-1.0.3-portable.zip`** | 5 MB instead of 27, but needs Java 8+. `run.bat` on Windows, `run.sh` on macOS/Linux. |
+| **`CTRMap-F5-1.0.4-windows-x64.zip`** | Unzip, double-click `CTRMap-F5.exe`. **No Java needed.** Start here if you're not sure. |
+| **`CTRMap-F5-1.0.4-portable.zip`** | Smaller, but needs Java 8+. `run.bat` on Windows, `run.sh` on macOS/Linux. |
 
-Already have 1.0.0, 1.0.1 or 1.0.2? Help > Check for updates will offer this one and replace the
-copy you have.
+Already have 1.0.3 or earlier? Help > Check for updates will offer this one and replace the copy
+you have.
 
-This release has no new features. It is six fixes, and every one of them is a case where the
-editor carried on quietly with the wrong bytes.
+### What is in it
 
-### Fixed
+- **The 2026-10-06 audit:** 251 of its 255 findings fixed, 3 partly, and 1 shown not to be a defect.
+- **The whole-app census of 2026-09-13:** all 280 confirmed defects are now closed — 95 of them in
+  this release, the rest in the releases before it.
+- **Undo and redo reach more of the editor:** zone edits, game data, text, workspace operations and
+  the tileset each keep a history you can step back through.
+- **A shared map shows which part of it a zone is**, with that zone's actions in one row, and the
+  zone preview no longer moves its camera on its own.
+- **Painted terrain closes up:** one side wall of every painted ramp was invisible from the ramp
+  itself, a ramp's side cliff stood a full step above its own foot, two lanes of a ramp whose feet
+  differed left a gap between them, and walls painted onto an existing route could show sky where
+  they changed depth or turned an inside corner. All of these are fixed and measured.
+- **JOGL 2.6.0**, the 3D library, with its native parts for Windows, Linux (x64 and ARM64) and
+  macOS — each checked against the checksums JogAmp publishes.
 
-**Your workspace.**
+### Nightlies
 
-- **A failed extraction left an empty file behind, and every later read handed that file back as
-  the entry.** The output file was created — which truncates it — before the archive was asked for
-  a single byte, and the guard that decides whether to extract is "does this file already exist".
-  So one failure poisoned that entry for the life of the workspace, and 103 places read the result
-  as real data. Forking a region copies such a file into a new zone and packs it into your
-  FieldData: what you see is **a zone with no ground and no message anywhere.** The bytes go to a
-  `.part` file now and are moved into place only once whole; a failure deletes it and says so,
-  because "could not extract" and "this entry is empty" had to stop being the same answer.
-- **A pack that stopped part way lost the compression setting for the slot it was appending.**
-  `packArchives` stops at the first archive it cannot rewrite — an emulator or a virus scanner
-  holding the file open — and the overrides for that append had already been consumed. You clear
-  the cause, pack again, and the appended slot falls back to guessing from the previous entry: a
-  region stored raw in a slot the game inflates, or compressed in one it reads raw. **A map the
-  game cannot load, out of a pack that reported success.** The settings are put back when a pack
-  throws.
+From this release on, work can also go out as a **nightly** (`1.x.y-nightly.N`), published as a
+GitHub pre-release before it has been through the project's full mutation sweep. Help > Check for
+updates never offers a nightly — you get one only by downloading it from the Releases page — and a
+copy running a nightly is offered the next core release like everyone else.
 
-**Archives, and what "I could not read that" means.**
-
-- **A file that is not an archive at all opened as an archive with nothing in it.** A missing or
-  half-copied game file produced an empty table and no complaint — and an empty archive is a real
-  thing a dump can contain, so "I could not read this" and "this holds nothing" were the same
-  answer. It refuses now and names the file.
-- **Deploy treated two archives it could not fully read as identical.** Identical there means
-  *already shipped, skip it* — so an archive that had been cut short was precisely the one Deploy
-  decided not to ship. It refuses to call them the same when either one was not read whole.
-- **Partly-successful reads were treated as complete ones**, at twelve places across the two files
-  every write goes through, including the entry copy in a repack and the whole-container rebuild
-  buffer. `read` and `skip` report how much they actually managed, and those answers were being
-  dropped.
-- **An archive that runs out mid-table stays readable up to the cut.** The entries before it are
-  whole and are handed over; the ones past it refuse instead of returning zeros, and the archive
-  refuses to be packed back at all — writing 155 of 436 entries back destroys the other 281.
-
-### How this was checked
-
-Verified against a real dump by the headless battery (`test.ps1`); at 1.0.3 every suite in it but
-one passed. The one that did not is an internal gate on the mutation baseline: it refuses a baseline that was measured while
-other work was still queued, which is the honest state of this repository today. The sweep behind
-1.0.3 is clean — it broke 202 lines on purpose and every one of them was caught by a suite, with
-no survivors.
-
-Every fix above also ships with a recorded defect that puts it back: 210 of them, re-applied one
-at a time, each required to make its own suite fail. If a fix here is ever undone, something goes
-red.
-
-(The suite and defect counts are this repository's current ones and keep rising as work lands
-after a release; the sweep figure is the one measured for 1.0.3 itself.)
-
-What the suites cannot check is the game: load a map you have edited in an emulator before you
-build on top of it.
+Report anything odd on the issue tracker (Help > Support/Issue tracker).

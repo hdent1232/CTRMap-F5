@@ -73,25 +73,48 @@ public class ADPropRegistry {
 		read();
 		if (loadModels) {
 			for (ADPropRegistryEntry entry : entries.values()) {
-				File model = files.staged(ArchiveType.BUILDING_MODELS, entry.model);
-				if (model == null || !model.isFile()) {
-					//refused in words, where the container base would have died on a
-					//null offset table: a registry naming a model the game does not hold
-					throw new IllegalStateException("prop reference " + entry.reference + " names BuildingModels entry "
-							+ entry.model + ", which the handed game has not staged (" + model + ")");
+				H3DModel model;
+				try {
+					model = buildingModel(files, entry.model, textures);
+				} catch (IllegalStateException notStaged) {
+					throw new IllegalStateException("prop reference " + entry.reference + " names " + ctrmap.util.Bytes.reason(notStaged), notStaged);
 				}
-				BCHFile bch = new BCHFile(new BM(model, files).getFile(0));
-				if (!bch.models.isEmpty()){
-					bch.models.get(0).setMaterialTextures(bch.textures);
-					if (textures != null){
-						bch.models.get(0).setMaterialTextures(textures);
-					}
-					bch.models.get(0).makeAllBOs();
-					models.put(entry.reference, bch.models.get(0));
+				if (model != null) {
+					model.makeAllBOs();
+					models.put(entry.reference, model);
 				}
 			}
 		}
 		savedModels = new HashMap<>(models);
+	}
+
+	/**
+	 * BuildingModels entry {@code index} of {@code files}, as a model textured with its own textures and then
+	 * {@code areaTextures} when there are any - or null for a BCH that holds no model. Its buffers are not made:
+	 * a viewport makes them, a preview does not need them.
+	 *
+	 * <p>THE ONE DECODE (census M.58). The registry editor's preview, the prop form's failsafe and the one
+	 * that draws a newly registered prop each did this themselves, from the global workspace: one without the
+	 * empty-model guard (get(0) threw), one printing its failure to a console nobody has.
+	 *
+	 * @throws IllegalStateException naming the entry, when the game has not staged it
+	 */
+	public static H3DModel buildingModel(GameFiles files, int index, List<H3DTexture> areaTextures) {
+		File staged = handed(files).staged(ArchiveType.BUILDING_MODELS, index);
+		if (staged == null || !staged.isFile()) {
+			//refused in words, where the container base would have died on a null offset table
+			throw new IllegalStateException("BuildingModels entry " + index + ", which the game has not staged (" + staged + ")");
+		}
+		BCHFile bch = new BCHFile(new BM(staged, files).getFile(0));
+		if (bch.models.isEmpty()) {
+			return null;
+		}
+		H3DModel model = bch.models.get(0);
+		model.setMaterialTextures(bch.textures);
+		if (areaTextures != null) {
+			model.setMaterialTextures(areaTextures);
+		}
+		return model;
 	}
 
 	/**
@@ -217,13 +240,13 @@ public class ADPropRegistry {
 	}
 
 	/**
-	 * Adds {@code entry} under the lowest free reference from {@code preferredReference} up, and
-	 * answers it. Every addition goes through here: the registry editor's New entry put each one
-	 * under the fixed key -1, so a second click replaced the first in the registry while the list
-	 * went on showing both (F084), and two other callers searched for a free reference by hand.
-	 * It does not mark the registry modified; a caller that stages the bytes itself does not want it.
+	 * The reference {@link #register} gives an entry asked for at {@code preferredReference}: the
+	 * lowest free one from there up. The one place a free reference is found - PropRegistration
+	 * asks it before it writes anything, where it once kept a copy of this loop and its refusal.
+	 *
+	 * @throws IllegalStateException when none is free below 0x10000: references are 16-bit
 	 */
-	public int register(ADPropRegistryEntry entry, int preferredReference) {
+	public int freeReference(int preferredReference) {
 		int ref = Math.max(0, preferredReference);
 		while (entries.containsKey(ref)) {
 			ref++;
@@ -232,6 +255,18 @@ public class ADPropRegistry {
 			throw new IllegalStateException("no prop reference is free from " + preferredReference
 					+ " up: references are 16-bit");
 		}
+		return ref;
+	}
+
+	/**
+	 * Adds {@code entry} under {@link #freeReference}, and answers it. Every addition goes through
+	 * here: the registry editor's New entry put each one under the fixed key -1, so a second click
+	 * replaced the first in the registry while the list went on showing both (F084), and two other
+	 * callers searched for a free reference by hand.
+	 * It does not mark the registry modified; a caller that stages the bytes itself does not want it.
+	 */
+	public int register(ADPropRegistryEntry entry, int preferredReference) {
+		int ref = freeReference(preferredReference);
 		entry.reference = ref;
 		entries.put(ref, entry);
 		return ref;

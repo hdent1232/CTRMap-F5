@@ -75,6 +75,20 @@ public class ItemEditDialog {
 			+ " attempt.";
 
 	/**
+	 * Shows item {@code id}'s record in {@code form}, or - where the table refused it, past its end or not a whole
+	 * record - says so and shows nothing to edit or save: SAID, NOT ZEROED (census M.134). Out of the editor so a suite
+	 * reaches it (the 2026-10-14 shared sweep, ItemEditDialog 240, negate-if, SURVIVED).
+	 */
+	public static void showRecord(RecordEditPanel form, byte[] rec, int id) {
+		if (rec != null) {
+			form.setRecord(rec);
+		} else {
+			form.showUnreadable("Item " + id + "'s record could not be read - it is past the end of the item"
+					+ " table, or not a whole record - so there is nothing here to edit or save.");
+		}
+	}
+
+	/**
 	 * The editor, as a panel for the Game Data tab.
 	 *
 	 * <p>It was a modal window. A feature lives in the part of the UI it belongs to,
@@ -85,7 +99,10 @@ public class ItemEditDialog {
 	 * @param onClose what to do when the user is finished with it; the host clears
 	 * @return the editor, or null when there is nothing to edit (it says why first)
 	 */
-	public static javax.swing.JComponent panel(java.awt.Component parent, Runnable onClose) {
+	public static javax.swing.JComponent panel(java.awt.Component parent, Runnable onClose, SaveHistory saves) {
+		if (saves == null) {
+			throw new IllegalArgumentException("the item editor must be handed the history its saves are kept in");
+		}
 		//Refuse before building anything: a headless suite proves the order.
 		if (!Workspace.isValid()) {
 			Ui.error(parent, "Load a workspace first.", "Item editor");
@@ -146,9 +163,9 @@ public class ItemEditDialog {
 		final JButton copyIcon = new JButton("Use another item's icon...");
 		final JButton saveIps = new JButton("Save code.ips...");
 		final JLabel iconState = new JLabel("no code.bin loaded");
-		iconSpin.setEnabled(false);
-		copyIcon.setEnabled(false);
-		saveIps.setEnabled(false);
+		ctrmap.Ui.offer(iconSpin, "Load code.bin first - item icons are kept in the game's executable");
+		ctrmap.Ui.offer(copyIcon, "Load code.bin first - item icons are kept in the game's executable");
+		ctrmap.Ui.offer(saveIps, "Load code.bin first - item icons are kept in the game's executable");
 
 		JPanel tierNote = new JPanel(new BorderLayout());
 		tierNote.add(new JLabel("<html><b>Two kinds of change here, and no third.</b><br>"
@@ -210,15 +227,13 @@ public class ItemEditDialog {
 		// ---- bottom ---------------------------------------------------------
 		final JLabel dirtyLabel = new JLabel(" ");
 		dirtyLabel.setForeground(new Color(0x99, 0x55, 0x00));
-		final JButton undo = new JButton("Undo");
-		final JButton redo = new JButton("Redo");
 		JButton revert = new JButton("Revert to pre-edit copy");
 		revert.setToolTipText("Puts this item's record back to the copy CTRMap took of the item"
 				+ " archive before the first edit in this workspace.");
 		JButton save = new JButton("Save item");
 		JButton close = new JButton("Close");
 		JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-		for (JButton b : new JButton[]{undo, redo, revert, save, close}) {
+		for (JButton b : new JButton[]{revert, save, close}) {
 			buttons.add(b);
 		}
 		JPanel south = new JPanel(new BorderLayout());
@@ -228,15 +243,14 @@ public class ItemEditDialog {
 
 		// ---- wiring: the widgets show the session, the session writes the game --
 		final Runnable refresh = () -> {
-			undo.setEnabled(form.canUndo());
-			redo.setEnabled(form.canRedo());
 			dirtyLabel.setText(st.dirty ? "  Unsaved changes to item " + st.id : " ");
 		};
 
 		final Runnable load = () -> {
 			st.loading = true;
+			st.shown = new Object();   //another load: another document, not an edit of the last
 			try {
-				form.setRecord(s.record(st.id));
+				showRecord(form, s.record(st.id), st.id);
 				nameField.setText(s.name(st.id));
 				descField.setText(s.description(st.id));
 				if (st.icons != null && st.id < st.icons.length) {
@@ -265,12 +279,9 @@ public class ItemEditDialog {
 			}
 		});
 
-		list.addListSelectionListener(e -> {
-			if (e.getValueIsAdjusting() || list.getSelectedValue() == null) {
-				return;
-			}
-			int id = idOf(list.getSelectedValue());
-			if (id < 0 || id == st.id) {
+		ctrmap.util.Selections.onSettled(list, () -> {
+			int id = switchTarget(list.getSelectedValue(), st.id);
+			if (id < 0) {
 				return;
 			}
 			if (st.dirty && !confirmDiscard(dlg)) {
@@ -292,14 +303,6 @@ public class ItemEditDialog {
 			}
 		}));
 
-		undo.addActionListener(e -> {
-			form.undo();
-			refresh.run();
-		});
-		redo.addActionListener(e -> {
-			form.redo();
-			refresh.run();
-		});
 
 		newItem.addActionListener(e -> {
 			if (s.free.isEmpty()) {
@@ -362,7 +365,15 @@ public class ItemEditDialog {
 		});
 
 		revert.addActionListener(e -> {
-			byte[] original = s.baselineRecord(st.id);
+			byte[] original;
+			try {
+				original = s.baselineRecord(st.id);
+			} catch (IllegalStateException unreadable) {
+				//a copy that is there and does not read is not "no copy" (census M.112): it is not retaken while it exists
+				Ui.error(dlg, Ui.reason(unreadable) + "\n\nIt is not taken again while it is there: put back a good one,"
+						+ " or remove it and the next save takes a fresh one.", "Revert");
+				return;
+			}
 			if (original == null) {
 				Ui.error(dlg, "This workspace holds no pre-edit copy of the item archive, so there"
 						+ " is nothing to revert to.\n\nThe copy is taken the first time you save"
@@ -378,18 +389,15 @@ public class ItemEditDialog {
 			//ONE UNIT (F082): the record and its text are staged together, and a failure part way
 			//puts both back - then the lists are read again from what was put back
 			try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Save item " + st.id, Workspace.session())) {
-				ctrmap.WorkspaceUnit.onRollback(() -> {
-					try {
-						s.reread();
-					} catch (java.io.IOException rereadFailed) {
-						throw new IllegalStateException("the item editor could not re-read the items after a save was"
-								+ " put back; close it and open it again: " + ctrmap.util.Bytes.reason(rereadFailed),
-								rereadFailed);
-					}
-				});
+				//put back with the files - by a failure, or by Undo - and put again by Redo: the lists re-read
+				Runnable reread = rereadOf(s);
+				ctrmap.WorkspaceUnit.inMemory(reread, reread);
+				if (form.record() == null) {
+					throw new IllegalStateException("item " + st.id + "'s record could not be read, so there is nothing to save");
+				}
 				EnumSet<ItemEditSession.Changed> changed
 						= s.save(st.id, form.record(), nameField.getText(), descField.getText());
-				unit.commit();
+				saves.keep(unit.commitKeeping());
 				if (changed.contains(ItemEditSession.Changed.NAME)) {
 					int row = rowFor(listModel, st.id);
 					if (row >= 0) {
@@ -409,7 +417,7 @@ public class ItemEditDialog {
 			}
 		});
 
-		saveIps.addActionListener(e -> saveIconPatch(dlg, st));
+		saveIps.addActionListener(e -> saveIconPatch(dlg, st, saves));
 
 		close.addActionListener(e -> {
 			if (st.dirty && !confirmDiscard(dlg)) {
@@ -422,7 +430,60 @@ public class ItemEditDialog {
 		load.run();
 		select(list, listModel, st.id);
 		dlg.setPreferredSize(new java.awt.Dimension(1040, 700));
-		return dlg;
+		//THE ITEM SHOWN IS A DOCUMENT (F209c): its record, name, description and icons, watched by the history of
+		//the tab this editor is shown in - one Undo for all of it, unsaved edits and saves alike
+		return SaveHistory.watching(dlg, () -> java.util.Collections.<UndoHistory.Document<?>>singletonList(
+				new UndoHistory.Document<Object[]>() {
+			private final Object loaded = st.shown;
+
+			@Override
+			public Object subject() {
+				return loaded;
+			}
+
+			@Override
+			public Object[] take() {
+				return new Object[]{st.id, form.record(), nameField.getText(), descField.getText(),
+					st.icons == null ? null : st.icons.clone()};
+			}
+
+			@Override
+			public void put(Object[] state) {
+				int id = (Integer) state[0];
+				if (id != st.id) {
+					st.id = id;
+					load.run();
+					select(list, listModel, id);
+				}
+				st.loading = true;
+				try {
+					if (state[1] != null) {
+						form.setRecord((byte[]) state[1]);
+					}
+					nameField.setText((String) state[2]);
+					descField.setText((String) state[3]);
+					st.icons = state[4] == null ? null : ((int[]) state[4]).clone();
+					if (st.icons != null && st.id < st.icons.length) {
+						iconSpin.setValue(Math.min(st.icons[st.id], ItemIconTable.MAX_ICON));
+					}
+					st.dirty = true;
+				} finally {
+					st.loading = false;
+				}
+				refresh.run();
+			}
+
+			@Override
+			public boolean same(Object[] a, Object[] b) {
+				return a[0].equals(b[0]) && Arrays.equals((byte[]) a[1], (byte[]) b[1]) && a[2].equals(b[2])
+						&& a[3].equals(b[3]) && Arrays.equals((int[]) a[4], (int[]) b[4]);
+			}
+
+			@Override
+			public String what() {
+				return "item " + st.id;
+			}
+		}));
 	}
 
 	/**
@@ -435,6 +496,8 @@ public class ItemEditDialog {
 		int id = 1;
 		boolean dirty;
 		boolean loading;
+		/** One per item loaded: what the item's document is keyed by, so a load is no edit. */
+		Object shown = new Object();
 		/** The icon table as the user's code.bin has it, or null until one is loaded. */
 		int[] stockIcons;
 		/** The same table with their changes. */
@@ -472,12 +535,12 @@ public class ItemEditDialog {
 	 * Writes the changed icon table out as an IPS - merged with any code.ips
 	 * already there, so one file still carries the zone-limit and shop patches.
 	 */
-	private static void saveIconPatch(java.awt.Component dlg, State st) {
+	private static void saveIconPatch(java.awt.Component dlg, State st, SaveHistory saves) {
 		if (st.code == null || st.icons == null) {
 			Ui.error(dlg, "Load your decompressed code.bin first.", "Item icons");
 			return;
 		}
-		saveIconPatch(dlg, st.codeFile, st.code, st.icons);
+		saveIconPatch(dlg, st.codeFile, st.code, st.icons, saves);
 	}
 
 	/**
@@ -485,7 +548,7 @@ public class ItemEditDialog {
 	 * {@code codeFile} gets these icons. Public so a suite can press it headless - the chooser is
 	 * answered through the Ui seam (F152).
 	 */
-	public static void saveIconPatch(java.awt.Component dlg, File codeFile, byte[] code, int[] icons) {
+	public static void saveIconPatch(java.awt.Component dlg, File codeFile, byte[] code, int[] icons, SaveHistory saves) {
 		try {
 			//NO "nothing to save" (F152): every icon put back to the game's own is still a change to a
 			//code.ips that carries an old edit, and saving it takes the icon table out of that file
@@ -499,7 +562,12 @@ public class ItemEditDialog {
 			File out = fc.getSelectedFile();
 			//ONE WRITER FOR THE ONE code.ips (F152): the patches already in it are kept and only the
 			//table this editor owns is replaced - there is no question to close by mistake
-			String note = ctrmap.formats.codepatch.CodeIps.save(out, ips, ItemIconTable.owned());
+			String note;
+			//ONE KEPT CHANGE (F209c): the code.ips is copied before it changes, and the save can be taken back
+			try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Save the item icons", Workspace.session())) {
+				note = ctrmap.formats.codepatch.CodeIps.save(out, ips, ItemIconTable.owned(), ctrmap.WorkspaceUnit::touching);
+				saves.keep(unit.commitKeeping());
+			}
 			info(dlg, "Saved " + out.getName() + note + ".\n\n"
 					+ "Install it like the zone patch:\n"
 					+ "  Azahar: load/mods/<titleid>/exefs/code.ips\n"
@@ -509,6 +577,23 @@ public class ItemEditDialog {
 		} catch (Exception ex) {
 			Ui.error(dlg, "Could not write the icon patch:\n" + ctrmap.util.Bytes.reason(ex), "Item icons");
 		}
+	}
+
+	/**
+	 * What reads the editor's lists again when a save is put back - by a failure, or by Undo - and put again by Redo. A
+	 * re-read that fails throws, saying so, rather than leave lists that no longer match the files. Out of the save so a
+	 * suite reaches it (the 2026-10-15 shared sweep, ItemEditDialog 393, drop-throw, SURVIVED: no suite failed one).
+	 */
+	public static Runnable rereadOf(ItemEditSession s) {
+		return () -> {
+			try {
+				s.reread();
+			} catch (java.io.IOException rereadFailed) {
+				throw new IllegalStateException("the item editor could not re-read the items after a save was"
+						+ " put back; close it and open it again: " + ctrmap.util.Bytes.reason(rereadFailed),
+						rereadFailed);
+			}
+		};
 	}
 
 	// ---- odds and ends -----------------------------------------------------
@@ -537,6 +622,16 @@ public class ItemEditDialog {
 			s.insert(0, " ");
 		}
 		return s.toString();
+	}
+
+	/**
+	 * The item a list row selected switches the editor to, or -1 for none: nothing selected, a row naming no item, or
+	 * the item already shown. Out of the editor so a suite reaches it (the 2026-10-14 shared sweep, ItemEditDialog 276,
+	 * negate-if, SURVIVED: its own null check repeated idOf's, and no suite selected a row).
+	 */
+	public static int switchTarget(String selected, int shown) {
+		int id = idOf(selected);
+		return id < 0 || id == shown ? -1 : id;
 	}
 
 	/** The item id a list row names. */

@@ -116,6 +116,33 @@ public class LivenessProbeTest {
 		check(said.contains("tasklist"),
 				"and so is a tasklist probe, which is not wrong - it is a second answer: "
 				+ firstReason(said));
+
+		//2026-10-11: test.ps1 asked Get-Process -Id whether its lock's battery was alive, and this
+		//checker - which reads every .ps1 - passed it: it knew only the spellings python had used
+		root = tree("powershell", "runner.ps1",
+				"if (Get-Process -Id $held -ErrorAction SilentlyContinue) { exit 1 }\n");
+		said = ask(checker, root);
+		check(said.contains("Get-Process") && said.contains("runner.ps1"),
+				"and so is PowerShell's Get-Process -Id: " + firstReason(said));
+		root = tree("powershell-net", "runner.ps1",
+				"$p = [System.Diagnostics.Process]::GetProcessById($held)\n");
+		said = ask(checker, root);
+		check(said.contains("Get-Process") && said.contains("runner.ps1"),
+				"and .NET's GetProcessById: " + firstReason(said));
+		root = tree("powershell-py", "probe.py",
+				"import subprocess\n"
+				+ "def running(pid):\n"
+				+ "    return subprocess.run(['powershell', '-Command', 'Get-Process -Id %d' % pid],\n"
+				+ "                          timeout=30).returncode == 0\n");
+		said = ask(checker, root);
+		check(said.contains("Get-Process") && said.contains("probe.py"),
+				"and the same probe run from python: " + firstReason(said));
+		root = tree("powershell-prose", "runner.ps1",
+				"# never ask Get-Process -Id whether a battery runs; ask battery_lock.py\n"
+				+ "Write-Host 'nothing to see'\n");
+		said = ask(checker, root);
+		check(said.contains("asked correctly"),
+				"while a comment about it is prose: " + firstReason(said));
 	}
 
 	/**

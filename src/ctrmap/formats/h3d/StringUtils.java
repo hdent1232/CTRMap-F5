@@ -1,7 +1,6 @@
 
 package ctrmap.formats.h3d;
 
-import ctrmap.util.LittleEndianDataInputStream;
 import java.io.IOException;
 
 /**
@@ -9,28 +8,12 @@ import java.io.IOException;
  *
  * <p>Seven copies of this loop lived in the BCH, area-animation and prop readers, with two
  * contracts: one refused a name that ran off the end of its file, the other six handed back
- * whatever bytes were there as the name. And the stream reader below looped forever on a string
- * nothing terminated, because a stream's end reads as -1, which is not 0. A string that does not
+ * whatever bytes were there as the name. And a stream reader looped forever on a string
+ * nothing terminated, because a stream's end reads as -1, which is not 0 - deleted since, with
+ * nothing in the program reading a string from a stream (F204). A string that does not
  * end inside its data is refused here, in words, by every reader.
  */
 public class StringUtils {
-
-	/**
-	 * The string a stream holds up to its NUL.
-	 *
-	 * @throws IOException when the stream ends before the NUL
-	 */
-	public static String readString(LittleEndianDataInputStream in) throws IOException {
-		StringBuilder sb = new StringBuilder();
-		int read;
-		while ((read = in.read()) != 0) {
-			if (read < 0) {
-				throw new IOException("A string runs off the end of the data after \"" + sb + "\": no NUL ends it.");
-			}
-			sb.append((char) read);
-		}
-		return sb.toString();
-	}
 
 	/** The string at {@code address} in {@code b}; see {@link #cString}. */
 	public static String readString(int address, byte[] b) throws IOException {

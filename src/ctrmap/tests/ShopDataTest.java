@@ -127,6 +127,11 @@ public class ShopDataTest {
 				() -> ShopData.write(elsewhere, shops), "different build");
 		fails += refused("a build whose anchor ends 0x100 later is refused on read",
 				() -> ShopData.read(elsewhere), "different build");
+		//MEASURED by the 2026-10-14 shared sweep (ShopData 109, dropped, SURVIVED): no file without the anchor was
+		//ever read - dropped, it was called a different build at 0xffffffff; swallowed, it was read
+		byte[] noAnchor = new byte[code.length];
+		fails += refused("a file with no anchor at all is refused as not holding the table",
+				() -> ShopData.read(noAnchor), "this file does not contain the ORAS shop table");
 		byte[] notItems = code.clone();
 		notItems[ShopData.FILE_OFFSET + 20] = (byte) 0xFF;
 		notItems[ShopData.FILE_OFFSET + 21] = (byte) 0xFF;

@@ -37,7 +37,6 @@ public final class Picking {
 			glu.gluProject(at.x, at.y, at.z, mvMatrix, 0, projMatrix, 0, view, 0, winPosArray[j], 0);
 			winPosArray[j][1] = parent.getHeight() - winPosArray[j][1];
 		}
-		List<Polygon> polys = new ArrayList<>();
 		for (int j = 0; j < winPosArray.length; j += 4) {
 			Polygon polygon = new Polygon();
 			List<Point> pts = new ArrayList<>();

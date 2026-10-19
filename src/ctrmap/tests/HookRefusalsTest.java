@@ -56,20 +56,28 @@ public class HookRefusalsTest {
 			return;
 		}
 
+		//FIVE GUARDS LIVED TWICE HERE (F167): a copy of this project's in .claude/hooks beside the
+		//bundle's in .claude/bundle-hooks, both asked on every call, and measured on 29 shared cases
+		//the copies disagreed on 7. The project's copies are gone; these sections drive the one copy
+		//that runs, as this project installed it - its ADAPT settings and its script list included.
+		File bundleHooks = new File(repo, ".claude/bundle-hooks");
+		check(bundleHooks.isDirectory(), "the bundle's hooks are installed at " + bundleHooks.getPath());
+
 		gameDataIsReadOnly(hooks);
 		aReadOfTheGameIsNotAWrite(hooks);
 		everyPushNeedsItsOwnApproval(hooks);
-		sourceIsNotEditedWhileARunHoldsTheLock(hooks);
-		aRunThatIsOverDoesNotRefuse(hooks);
+		sourceIsNotEditedWhileARunHoldsTheLock(bundleHooks);
+		aRunThatIsOverDoesNotRefuse(bundleHooks);
 		theStatusOfAPipelineBelongsToItsFilter(hooks);
-		aBackslashInAnInlineScriptIsRefused(hooks);
-		aHeredocFeedingPythonOrJavaIsRefused(hooks);
-		agentsMayNotEditAtTheSameTime(hooks);
-		aToDoToolIsNotAFanOut(hooks);
+		nothingStartsOnTheOwnersDesktop(hooks);
+		aBackslashInAnInlineScriptIsRefused(bundleHooks);
+		aHeredocFeedingPythonOrJavaIsRefused(bundleHooks);
+		aFanOutWaitsForTheOwnersYes(bundleHooks);
 		aForbiddenCommandIsRefused(hooks);
 		aPayloadOutsideTheCodePageIsStillJudged(hooks);
-		aSweepRunsWhereNothingCanKillIt(hooks);
-		theFileBeingMutatedIsNotRead(hooks);
+		aCrashedCheckStillRefusesWhatDoesNotRepairIt(hooks);
+		aSweepRunsWhereNothingCanKillIt(bundleHooks);
+		theFileBeingMutatedIsNotRead(bundleHooks);
 		everyShellReadingGuardIsHeldInEverySpelling(hooks);
 
 		System.out.println(fails == 0 ? "ALL PASS" : fails + " FAILED");
@@ -295,27 +303,27 @@ public class HookRefusalsTest {
 	 * fault is left on disk looking like an ordinary edit. Measured in F172: on the second line,
 	 * after a {@code cd}, both copies of this guard let it through.
 	 */
-	static void aSweepRunsWhereNothingCanKillIt(File hooks) throws Exception {
+	static void aSweepRunsWhereNothingCanKillIt(File bundleHooks) throws Exception {
 		System.out.println("--- a mutation sweep is never piped or run in the foreground");
-		File guard = new File(hooks, "guard_background_pipe.py");
-		check(guard.isFile(), "the guard is installed at " + guard.getPath());
-		check(refuses(guard, bash("python tools/mutate2.py x | tail -5")),
+		String guard = "guard_background_pipe.py";
+		check(new File(bundleHooks, guard).isFile(), "the guard is installed at " + bundleHooks.getPath());
+		File root = bundleProject(bundleHooks, "sweepguard");
+		check(bundleRefuses(root, guard, bash("python tools/mutate2.py x | tail -5")),
 				"a sweep piped into a filter is refused");
-		check(refuses(guard, bash("python tools/mutate2.py x")),
+		check(bundleRefuses(root, guard, bash("python tools/mutate2.py x")),
 				"and one in the foreground");
-		check(!refuses(guard, bash("python tools/mutate2.py --list")),
+		check(!bundleRefuses(root, guard, bash("python tools/mutate2.py --list")),
 				"while --list, which writes nothing, is not");
-		check(!refuses(guard, bash("python x.py | tail -5")),
+		check(!bundleRefuses(root, guard, bash("python x.py | tail -5")),
 				"and neither is an ordinary pipe in the foreground");
-		//F172's other half: the bundle's twin of this guard, run on every call too, read another
-		//project's list - `destructive_scripts.txt` beside it is how a project hands it this one's
-		File twin = new File(hooks.getParentFile().getParentFile(), ".claude/bundle-hooks/guard_background_pipe.py");
+		//F172: `destructive_scripts.txt` beside the guard is how this project hands it its sweep -
 		//IN THE FOREGROUND, so only the list can refuse it: backgrounded, a pipe into tail is refused
-		//for being a backgrounded pipe whatever runs - and this check passed with the list emptied
-		String said = runWhole(twin, payload("Bash", "command",
-				"cd src" + NL + "python tools/mutate2.py x | tail -5", ""));
-		check(said.contains("\"deny\"") && said.contains("mutat"),
-				"the bundle's pipe guard refuses this project's sweep on a second line too - said " + oneLine(said));
+		//for being a backgrounded pipe whatever runs, and that check passed with the list emptied
+		check(bundleRefuses(root, guard, bash("cd src" + NL + "python tools/mutate2.py x | tail -5")),
+				"this project's sweep is refused on a second line too");
+		check(bundleRefuses(root, guard, payload("Bash", "command",
+				"bash -c 'python tools/mutate2.py x | head -3'", ",\"run_in_background\":true")),
+				"and piped inside bash -c in the background");
 	}
 
 	/**
@@ -324,20 +332,21 @@ public class HookRefusalsTest {
 	 * {@code what=} lines, and the guard took the whole of it as the path - so a read of the
 	 * mutated file itself was allowed under every lock this project writes.
 	 */
-	static void theFileBeingMutatedIsNotRead(File hooks) throws Exception {
+	static void theFileBeingMutatedIsNotRead(File bundleHooks) throws Exception {
 		System.out.println("--- the file a mutation run holds is not read");
-		File guard = new File(hooks, "guard_mutation_read.py");
-		check(guard.isFile(), "the guard is installed at " + guard.getPath());
-		File root = Scratch.dir("mutationread");
+		String guard = "guard_mutation_read.py";
+		check(new File(bundleHooks, guard).isFile(), "the guard is installed at " + bundleHooks.getPath());
+		File root = bundleProject(bundleHooks, "mutationread");
 		Files.write(new File(root, ".mutation-in-flight").toPath(),
 				("src/ctrmap/A.java" + NL + "pid=" + pid() + NL + "what=a mutation sweep" + NL)
 						.getBytes(StandardCharsets.UTF_8));
-		java.util.Map<String, String> env = new java.util.HashMap<>();
-		env.put("CLAUDE_PROJECT_DIR", root.getAbsolutePath());
-		check(refusesIn(guard, bash("cat src/ctrmap/A.java"), root.getAbsolutePath(), env),
+		check(bundleRefuses(root, guard, bash("cat src/ctrmap/A.java")),
 				"a read of the mutated file is refused under the lock mutate2.py writes");
-		check(!refusesIn(guard, bash("cat src/ctrmap/B.java"), root.getAbsolutePath(), env),
+		check(!bundleRefuses(root, guard, bash("cat src/ctrmap/B.java")),
 				"while a read of another file is not");
+		//F167: this project's own copy of the guard let the Read tool through
+		check(bundleRefuses(root, guard, reads("Read", new File(root, "src/ctrmap/A.java").getAbsolutePath())),
+				"and the Read tool's read of it is refused too");
 	}
 
 	static void approve(File repo, String sha) throws Exception {
@@ -348,14 +357,17 @@ public class HookRefusalsTest {
 	}
 
 	/** An edit to source while a run holds the lock is refused; a read is not. */
-	static void sourceIsNotEditedWhileARunHoldsTheLock(File hooks) throws Exception {
+	static void sourceIsNotEditedWhileARunHoldsTheLock(File bundleHooks) throws Exception {
 		System.out.println("--- NEVER EDIT SOURCE WHILE THE SUITE IS RUNNING");
-		File guard = new File(hooks, "guard_suite_running.py");
-		check(guard.isFile(), "the guard is installed at " + guard.getPath());
-		File root = Scratch.dir("runlock");
-		File repo = new File(root, "CTRMap");
-		check(new File(repo, "src/ctrmap").mkdirs(), "built a scratch repository");
+		//THE LOCK IS THE WITNESS THAT HOLDS ON WINDOWS. The bundle's guard also watches the
+		//session's tasks and the machine's processes, but a battery started in the owner's terminal
+		//runs java naming build/classes, never this tree, and Windows reports no process's folder -
+		//so this project lists its runners' locks in bundle_runs.LOCKS, and that is asked here
+		String guard = "guard_suite_running.py";
+		check(new File(bundleHooks, guard).isFile(), "the guard is installed at " + bundleHooks.getPath());
+		File repo = bundleProject(bundleHooks, "runlock");
 		File source = new File(repo, "src/ctrmap/A.java");
+		check(source.getParentFile().mkdirs(), "built a scratch repository");
 		Files.write(source.toPath(), "class A {}\n".getBytes(StandardCharsets.UTF_8));
 		File lock = new File(repo, "build/.battery-running");
 		lock.getParentFile().mkdirs();
@@ -363,51 +375,46 @@ public class HookRefusalsTest {
 		String edit = writes("Edit", source.getAbsolutePath());
 		String read = reads("Read", source.getAbsolutePath());
 
-		check(ask(guard, "decide", edit, root.getAbsolutePath()).contains("ALLOW"),
-				"with no run in flight the edit is allowed");
+		check(!bundleRefuses(repo, guard, edit), "with no run in flight the edit is allowed");
 
 		//a process id certainly alive: this JVM's own
 		Files.write(lock.toPath(), ("started now\npid=" + pid() + "\nwhat=the battery\n")
 				.getBytes(StandardCharsets.UTF_8));
-		check(ask(guard, "decide", edit, root.getAbsolutePath()).contains("DENY"),
-				"a live run refuses an edit to source");
-		check(ask(guard, "decide", read, root.getAbsolutePath()).contains("ALLOW"),
-				"but never a read - the run itself is reading");
+		check(bundleRefuses(repo, guard, edit), "a live run refuses an edit to source");
+		check(!bundleRefuses(repo, guard, read), "but never a read - the run itself is reading");
 		//F176: a shell write to source, in every spelling - `cd .` on the line before it passed
-		check(refusesIn(guard, bash("rm src/ctrmap/A.java"), root.getAbsolutePath(), null),
+		check(bundleRefuses(repo, guard, bash("rm src/ctrmap/A.java")),
 				"a live run refuses a shell command that deletes source");
-		check(!refusesIn(guard, bash("cat src/ctrmap/A.java"), root.getAbsolutePath(), null),
+		check(!bundleRefuses(repo, guard, bash("cat src/ctrmap/A.java")),
 				"and not one that reads it");
 
 		check(lock.delete(), "released the battery lock");
 		File mutating = new File(repo, ".mutation-in-flight");
 		Files.write(mutating.toPath(), "src/ctrmap/A.java\n".getBytes(StandardCharsets.UTF_8));
-		check(ask(guard, "decide", edit, root.getAbsolutePath()).contains("DENY"),
-				"and a mutation in flight refuses it too");
+		check(bundleRefuses(repo, guard, edit), "and a mutation in flight refuses it too");
 		check(mutating.delete(), "released the mutation lock");
 	}
 
 	/**
 	 * A lock left behind by a crash must not refuse work forever.
 	 *
-	 * <p>The other half of the same rule: {@code build.ps1} ages its lock out at ninety minutes
-	 * because a red battery once left one behind and blocked the build for the fix. A guard
-	 * that cannot be released is a guard that gets deleted.
+	 * <p>The other half of the same rule: {@code build.ps1} ignores a lock no live battery holds -
+	 * asked of tools/guard/battery_lock.py, which reads it by this guard's rule - because a red
+	 * battery once left one behind and blocked the build for the fix. A guard that cannot be
+	 * released is a guard that gets deleted.
 	 */
-	static void aRunThatIsOverDoesNotRefuse(File hooks) throws Exception {
+	static void aRunThatIsOverDoesNotRefuse(File bundleHooks) throws Exception {
 		System.out.println("--- and a run that is over releases");
-		File guard = new File(hooks, "guard_suite_running.py");
-		File root = Scratch.dir("runlock-stale");
-		File repo = new File(root, "CTRMap");
-		check(new File(repo, "src/ctrmap").mkdirs(), "built a second scratch repository");
+		String guard = "guard_suite_running.py";
+		File repo = bundleProject(bundleHooks, "runlock-stale");
 		File source = new File(repo, "src/ctrmap/A.java");
+		check(source.getParentFile().mkdirs(), "built a second scratch repository");
 		Files.write(source.toPath(), "class A {}\n".getBytes(StandardCharsets.UTF_8));
 		File lock = new File(repo, "build/.battery-running");
 		lock.getParentFile().mkdirs();
 		//a process id nothing is using; the guard asks the operating system rather than guessing
 		Files.write(lock.toPath(), "started now\npid=999999\n".getBytes(StandardCharsets.UTF_8));
-		check(ask(guard, "decide", writes("Edit", source.getAbsolutePath()),
-				root.getAbsolutePath()).contains("ALLOW"),
+		check(!bundleRefuses(repo, guard, writes("Edit", source.getAbsolutePath())),
 				"a lock whose process is gone does not refuse");
 	}
 
@@ -458,19 +465,21 @@ public class HookRefusalsTest {
 	 * <p>The guard already refused a backslash in a heredoc body. It could not see the same
 	 * escaping layer one flag away.
 	 */
-	static void aBackslashInAnInlineScriptIsRefused(File hooks) throws Exception {
+	static void aBackslashInAnInlineScriptIsRefused(File bundleHooks) throws Exception {
 		System.out.println("--- a backslash in an inline script body");
-		File guard = new File(hooks, "guard_heredoc.py");
-		check(guard.isFile(), "the guard is installed at " + guard.getPath());
+		//THIS PROJECT'S SETTING, not the bundle's default: BODY_ESCAPES in the installed copy
+		String guard = "guard_heredoc.py";
+		check(new File(bundleHooks, guard).isFile(), "the guard is installed at " + bundleHooks.getPath());
+		File root = bundleProject(bundleHooks, "inlinebackslash");
 		String body = "import re; re.compile('" + BACKSLASH + "b(one|two)')";
-		check(refuses(guard, bash("python -c " + QUOTE + body + QUOTE)),
+		check(bundleRefuses(root, guard, bash("python -c " + QUOTE + body + QUOTE)),
 				"a backslash in an inline script body is refused");
-		check(refuses(guard, bash("pwsh -Command 'Write-Host " + QUOTE + "a" + BACKSLASH
+		check(bundleRefuses(root, guard, bash("pwsh -Command 'Write-Host " + QUOTE + "a" + BACKSLASH
 				+ "nb" + QUOTE + "'")),
 				"and so is one in a PowerShell -Command body");
-		check(!refuses(guard, bash("python -c " + QUOTE + "print(chr(92) + 'b')" + QUOTE)),
+		check(!bundleRefuses(root, guard, bash("python -c " + QUOTE + "print(chr(92) + 'b')" + QUOTE)),
 				"while the safe spelling is allowed - chr(92) has nothing to eat");
-		check(!refuses(guard, bash("python tools/guard/replant.py --selftest")),
+		check(!bundleRefuses(root, guard, bash("python tools/guard/replant.py --selftest")),
 				"and so is an ordinary script run");
 	}
 
@@ -479,18 +488,23 @@ public class HookRefusalsTest {
 	 * this guard allowed a short one by design (up to 20 lines) - one rule spelled two ways. A
 	 * heredoc whose command is a Python or Java interpreter is refused at any length.
 	 */
-	static void aHeredocFeedingPythonOrJavaIsRefused(File hooks) throws Exception {
+	static void aHeredocFeedingPythonOrJavaIsRefused(File bundleHooks) throws Exception {
 		System.out.println("--- a heredoc feeding Python or Java, at any length");
-		File guard = new File(hooks, "guard_heredoc.py");
-		check(refuses(guard, bash("python3 - <<'EOF'\nprint(1)\nEOF")),
+		//THIS PROJECT'S SETTING, not the bundle's default: NEVER_FED in the installed copy
+		String guard = "guard_heredoc.py";
+		File root = bundleProject(bundleHooks, "pyheredoc");
+		check(bundleRefuses(root, guard, bash("python3 - <<'EOF'\nprint(1)\nEOF")),
 				"a two-line Python heredoc is refused");
-		check(refuses(guard, bash("py -3 - <<EOF\nprint(1)\nEOF")), "and so is one to the py launcher");
-		check(refuses(guard, bash("jshell <<'EOF'\nSystem.out.println(1);\nEOF")), "and a jshell one");
-		check(!refuses(guard, bash("git commit -F - <<'EOF'\nfix: a thing\nEOF")),
+		check(bundleRefuses(root, guard, bash("py -3 - <<EOF\nprint(1)\nEOF")),
+				"and so is one to the py launcher");
+		check(bundleRefuses(root, guard, bash("jshell <<'EOF'\nSystem.out.println(1);\nEOF")),
+				"and a jshell one");
+		check(!bundleRefuses(root, guard, bash("git commit -F - <<'EOF'\nfix: a thing\nEOF")),
 				"while a commit message through a heredoc is not");
-		check(!refuses(guard, bash("grep -c x tools/a.py <<'EOF'\nx\nEOF")),
+		check(!bundleRefuses(root, guard, bash("grep -c x tools/a.py <<'EOF'\nx\nEOF")),
 				"nor a command whose argument merely ends in .py");
-		check(!refuses(guard, bash("python3 tools/guard/replant.py --selftest")), "nor running a script file");
+		check(!bundleRefuses(root, guard, bash("python3 tools/guard/replant.py --selftest")),
+				"nor running a script file");
 	}
 
 	/** A backslash, built so this file does not have to escape one to talk about one. */
@@ -540,8 +554,11 @@ public class HookRefusalsTest {
 		//AND THE SHARED SHELL READER, where shellin looks for it. Without it every call is refused
 		//as UNREADABLE - list or no list - and this check passed for that reason while a plant
 		//made a missing list permit everything (measured: the plant survived)
-		Files.copy(new File(hooks.getParentFile().getParentFile(), ".claude/bundle-hooks/bundle_shell.py")
-				.toPath(), new File(reader, "bundle_shell.py").toPath());
+		//...WITH ITS OWN IMPORTS. Copied alone it could not load once it imported bounded beside it
+		//(2026-10-10), and the guard refused as UNREADABLE again - the reason this check exists to
+		//tell apart - so the reader is copied the way the guard is, following what it imports.
+		copyWithImports(new File(hooks.getParentFile().getParentFile(), ".claude/bundle-hooks/bundle_shell.py"),
+				reader);
 		//...with the SIBLINGS every guard imports beside it, copied by copyWithImports above.
 		//Without them the copy could not load at all, and "the guard never answered" is a
 		//different finding from "the guard permitted everything" - a fixture that cannot ask the
@@ -604,97 +621,54 @@ public class HookRefusalsTest {
 	static final String NL = String.valueOf((char) 10);
 
 	/**
-	 * Agents editing a codebase at the same time is refused at ANY width.
+	 * EVERY FAN-OUT WAITS FOR THE OWNER'S TYPED YES. CLAUDE.md: "A fan-out needs the owner's
+	 * explicit yes, with the agent count and a token estimate stated first." This project's own copy
+	 * of the fan-out guard capped launches instead: one agent went through with no yes at all, and so
+	 * did a workflow whose width it could not read - measured on the cases both copies' tests ask,
+	 * the bundle's copy refused both (F167). That copy is gone; the bundle's asks the owner for every
+	 * launch but the review the owner declared ({@code _review}).
 	 *
-	 * <p>WHAT ACTUALLY FAILED, measured in DT Engine's own documents on 2026-09-20 rather than
-	 * argued. Eleven agent audit rounds produced <b>476 finding headlines and 1.8 MB of prose
-	 * over 41 distinct code locations</b>. Rounds 11 and 13 found ZERO locations the earlier
-	 * rounds had not; rounds 8, 10 and 12 found one each. Six files were named by ten or eleven
-	 * separate rounds, each one rebuilding the same context from scratch.
+	 * <p>WHY A CAP WAS NEVER THE POINT, measured in DT Engine's own documents on 2026-09-20: eleven
+	 * agent audit rounds produced <b>476 finding headlines over 41 distinct code locations</b>, rounds
+	 * 11 and 13 found nothing the earlier ones had not, and six agents owning disjoint files across a
+	 * shared contract failed exactly as sixty do. A launch the owner said yes to is the only kind.
 	 *
-	 * <p>The width cap never touched the part that broke.
-	 * {@code docs/layer5-integration-items.md} opens: <i>"Each agent owned a disjoint file set.
-	 * These are the changes they identified but could not make, because the change belongs in
-	 * another agent's file."</i> One agent corrected a check and renamed its output keys; the
-	 * consumer lived in another agent's file, so the corrected output never reached the
-	 * operator. Another entry records two agents fixing the same thing concurrently, caught by
-	 * luck.
-	 *
-	 * <p>SIX AGENTS OWNING DISJOINT FILES ACROSS A SHARED CONTRACT IS THE SAME DEFECT AS SIXTY,
-	 * so this is not a cap and narrowing does not help. Reading in parallel is a different
-	 * thing and stays allowed: a survey composes, a parallel rewrite does not.
+	 * <p>AND A LAUNCH IS WHAT ITS INPUT CARRIES, NOT WHAT ITS TOOL IS CALLED (F193): the harness's
+	 * to-do tools carry no launch, and are never asked for a yes.
 	 */
-	static void agentsMayNotEditAtTheSameTime(File hooks) throws Exception {
-		System.out.println("--- agents editing at the same time");
-		File guard = new File(hooks, "guard_fanout.py");
-		check(guard.isFile(), "the guard is installed at " + guard.getPath());
+	static void aFanOutWaitsForTheOwnersYes(File bundleHooks) throws Exception {
+		System.out.println("--- every fan-out waits for the owner's typed yes");
+		String guard = "guard_fanout.py";
+		check(new File(bundleHooks, guard).isFile(), "the guard is installed at " + bundleHooks.getPath());
+		File root = bundleProject(bundleHooks, "fanout");
 		String worktree = "await parallel(FILES.map(f => () => agent(`go`, "
 				+ "{isolation: 'worktree'})))";
 		String perFile = "const FILES = ['a/b/run.py', 'a/c/service.py']" + NL
 				+ "await parallel(FILES.map(f => () => agent(`fix ${f}`)))";
-		String survey = "const LENSES = ['correctness', 'security']" + NL
-				+ "await parallel(LENSES.map(l => () => agent(`review via ${l} and report`)))";
-
-		check(shape(guard, worktree, 3).contains("SHAPE"),
-				"a worktree per agent is parallel editing");
-		check(shape(guard, perFile, 3).contains("SHAPE"),
+		check(bundleRefuses(root, guard, payload("Workflow", "script", worktree, "")),
+				"a worktree per agent is refused");
+		check(bundleRefuses(root, guard, payload("Workflow", "script", perFile, "")),
 				"and so is one agent per source file with an edit verb");
-		check(shape(guard, survey, 3).contains("NONE"),
-				"while a fan-out of review lenses is not - a survey composes");
-		check(shape(guard, worktree, 1).contains("NONE"),
-				"and neither is a single agent, at any isolation");
-	}
-
-	/**
-	 * F193: the cap decides a launch by what its input carries. It decided by a word in the tool's
-	 * name, so the harness's to-do tools - TaskCreate, TaskUpdate, TaskGet - were refused as
-	 * fan-outs of unreadable width though they spawn nothing, and a second word list existed only
-	 * to undo the first. Each payload below is asked of spawns_workers: NONE, ONE agent or WIDE.
-	 */
-	static void aToDoToolIsNotAFanOut(File hooks) throws Exception {
-		System.out.println("--- a launch is what its input carries, not what its tool is called");
-		File guard = new File(hooks, "guard_fanout.py");
-		String[][] cases = {
-			{"TaskCreate", "{\"subject\": \"x\", \"description\": \"y\"}", "NONE",
+		check(bundleRefuses(root, guard, payload("Orchestrate", "script", perFile, "")),
+				"under any tool name - the script's shape is the launch");
+		check(bundleRefuses(root, guard, payload("Workflow", "name", "saved-review", "")),
+				"and a saved workflow launched by name, though it carries no script");
+		check(bundleRefuses(root, guard, payload("Agent", "prompt", "survey the parser",
+				",\"subagent_type\":\"Explore\",\"description\":\"d\"")),
+				"and one agent - this project's own copy let it through with no yes");
+		String[][] todo = {
+			{"TaskCreate", "{\"subject\": \"x\", \"description\": \"y\"}",
 				"a to-do tool that spawns nothing is not a fan-out (TaskCreate)"},
-			{"TaskUpdate", "{\"taskId\": \"1\", \"status\": \"completed\"}", "NONE",
-				"and neither is TaskUpdate"},
-			{"TaskGet", "{\"taskId\": \"1\"}", "NONE", "nor TaskGet"},
-			{"mcp__ccd_session__spawn_task", "{\"title\": \"t\", \"prompt\": \"p\", \"tldr\": \"x\"}", "NONE",
+			{"TaskUpdate", "{\"taskId\": \"1\", \"status\": \"completed\"}", "and neither is TaskUpdate"},
+			{"TaskGet", "{\"taskId\": \"1\"}", "nor TaskGet"},
+			{"mcp__ccd_session__spawn_task", "{\"title\": \"t\", \"prompt\": \"p\", \"tldr\": \"x\"}",
 				"nor a task suggestion, which carries a prompt but nothing that launches it"},
-			{"TaskStop", "{\"task_id\": \"b1\"}", "NONE", "nor the brake"},
-			{"Agent", "{\"description\": \"d\", \"prompt\": \"p\", \"subagent_type\": \"general\"}", "ONE",
-				"while an agent launch is one agent"},
-			{"Spawner", "{\"prompt\": \"p\", \"subagent_type\": \"general\"}", "ONE",
-				"under any name"},
-			{"Workflow", "{\"script\": \"agent('x')\"}", "WIDE", "and a workflow script is a wide fan-out"},
-			{"Orchestrate", "{\"scriptPath\": \"/tmp/w.js\"}", "WIDE", "under any name"},
-			{"Workflow", "{\"name\": \"saved-review\"}", "WIDE",
-				"and a saved workflow launched by name is one, though it carries no script"},
+			{"TaskStop", "{\"task_id\": \"b1\"}", "nor the brake"},
 		};
-		for (String[] c : cases) {
-			String said = spawns(guard, c[0], c[1]);
-			check(said.contains(c[2]), c[3] + " - said " + oneLine(said));
+		for (String[] c : todo) {
+			check(!bundleRefuses(root, guard, "{\"tool_name\": " + quoted(c[0]) + ", \"tool_input\": "
+					+ c[1] + "}"), c[2]);
 		}
-	}
-
-	/** Asks the guard's spawns_workers about one tool call: NONE, ONE or WIDE. */
-	static String spawns(File guard, String tool, String input) throws Exception {
-		File dir = Scratch.dir("fanoutspawn");
-		File ask = new File(dir, "ask.py");
-		Files.write(ask.toPath(),
-				("import importlib.util, json, sys\n"
-				+ "spec = importlib.util.spec_from_file_location('g', sys.argv[1])\n"
-				+ "g = importlib.util.module_from_spec(spec); spec.loader.exec_module(g)\n"
-				+ "fan, wide = g.spawns_workers(sys.argv[2], json.loads(sys.argv[3]))\n"
-				+ "print('WIDE' if fan and wide else 'ONE' if fan else 'NONE')\n")
-						.getBytes(StandardCharsets.UTF_8));
-		ProcessBuilder pb = new ProcessBuilder("python", ask.getAbsolutePath(), guard.getAbsolutePath(), tool, input);
-		pb.redirectErrorStream(true);
-		Process p = pb.start();
-		String said = CommitGuardTest.drain(p);
-		p.waitFor();
-		return said;
 	}
 
 	/**
@@ -719,6 +693,33 @@ public class HookRefusalsTest {
 				"and a payload the guard stack cannot read is refused, never waved through - said " + oneLine(said));
 	}
 
+	/**
+	 * F176 FOR THE DISPATCHER. guard_all reads shell text to let a crashed check's repair through -
+	 * a call that touches only the files the check broke in (OUTSTANDING 2026-09-22, paid for twice)
+	 * - so the refusal it keeps for every OTHER call must hold in every spelling: behind a
+	 * {@code cd .} line, handed to {@code bash -c}, behind a runner. A write dressed as a repair would
+	 * otherwise walk past a guard stack that could not run. Asked of a scratch project named as this
+	 * one is, whose wiring check really raises.
+	 */
+	static void aCrashedCheckStillRefusesWhatDoesNotRepairIt(File hooks) throws Exception {
+		System.out.println("--- a crashed check still refuses what does not repair it");
+		File project = new File(Scratch.dir("crashspelling"), "CTRMap");
+		File scratchHooks = new File(project, ".claude/hooks");
+		File checkerDir = new File(project, "tools/guard");
+		check((scratchHooks.mkdirs() || scratchHooks.isDirectory())
+				&& (checkerDir.mkdirs() || checkerDir.isDirectory()),
+				"built a scratch project whose wiring check raises");
+		copyWithImports(new File(hooks, "guard_all.py"), scratchHooks);
+		Files.write(new File(checkerDir, "hooks_wired.py").toPath(),
+				("def findings(root):" + NL + "    return undefined_name" + NL).getBytes(StandardCharsets.UTF_8));
+		File all = new File(scratchHooks, "guard_all.py");
+		String cwd = project.getAbsolutePath();
+		check(refusesIn(all, bash("echo x > notes.txt"), cwd, null),
+				"a write to a file the crashed check did not break in is refused");
+		check(!refusesIn(all, bash("git checkout -- tools/guard/hooks_wired.py"), cwd, null),
+				"while the git checkout of the file it broke in goes through");
+	}
+
 	/** Runs a hook as the harness does: the payload as UTF-8 on stdin, its answer on stdout. */
 	static String runWhole(File guard, String payload) throws Exception {
 		ProcessBuilder pb = new ProcessBuilder("python", guard.getAbsolutePath());
@@ -734,30 +735,83 @@ public class HookRefusalsTest {
 		return said;
 	}
 
-	/** Asks the guard whether a script has the parallel-edit shape. SHAPE or NONE. */
-	static String shape(File guard, String script, int width) throws Exception {
-		File dir = Scratch.dir("fanoutshape");
-		File ask = new File(dir, "ask.py");
-		Files.write(ask.toPath(),
-				("import importlib.util, io, sys\n"
-				+ "spec = importlib.util.spec_from_file_location('g', sys.argv[1])\n"
-				+ "g = importlib.util.module_from_spec(spec); spec.loader.exec_module(g)\n"
-				+ "script = io.open(sys.argv[2], encoding='utf-8').read()\n"
-				+ "print('SHAPE' if g.parallel_edit(script, int(sys.argv[3])) else 'NONE')\n")
-						.getBytes(StandardCharsets.UTF_8));
-		File body = new File(dir, "script.js");
-		Files.write(body.toPath(), script.getBytes(StandardCharsets.UTF_8));
-		ProcessBuilder pb = new ProcessBuilder("python", ask.getAbsolutePath(),
-				guard.getAbsolutePath(), body.getAbsolutePath(), String.valueOf(width));
+	/**
+	 * A scratch project holding a copy of the bundle's hooks AS THIS PROJECT INSTALLED THEM - its
+	 * ADAPT settings and its {@code destructive_scripts.txt} included - so a guard that reads its
+	 * project's root reads the scratch one, never this tree, and never this tree's locks. The copy is
+	 * the whole folder: a guard's siblings are part of what it is.
+	 */
+	static File bundleProject(File bundleHooks, String name) throws Exception {
+		File root = Scratch.dir(name);
+		File hooks = new File(root, ".claude/bundle-hooks");
+		check(hooks.mkdirs() || hooks.isDirectory(), "built a scratch project for " + name);
+		File[] files = bundleHooks.listFiles(File::isFile);
+		for (File file : files == null ? new File[0] : files) {
+			Files.copy(file.toPath(), new File(hooks, file.getName()).toPath(),
+					java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+		}
+		Files.copy(new File(bundleHooks.getParentFile(), "bundle-install.json").toPath(),
+				new File(root, ".claude/bundle-install.json").toPath(),
+				java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+		//A PROJECT HAS ITS RULES FILE, and the hooks find their project by it (F216) - and it is a
+		//repository, as every project is: several hooks ask git what the tree holds
+		Files.write(new File(root, "CLAUDE.md").toPath(), "# scratch".getBytes(StandardCharsets.UTF_8));
+		Files.write(new File(root, "transcript.jsonl").toPath(), new byte[0]);
+		check(git(root, "init", "-q"), "made the scratch project a repository");
+		return root;
+	}
+
+	/**
+	 * DENY or ALLOW from one of the bundle's guards in {@code root}, asked as the harness asks it:
+	 * the whole hook, the payload as UTF-8 on stdin with its working folder and transcript, the
+	 * answer in its exit code or its JSON. A guard that answers neither has not answered.
+	 */
+	static String bundleSays(File root, String guard, String payload) throws Exception {
+		String whole = "{\"cwd\": " + quoted(root.getAbsolutePath()) + ", \"transcript_path\": "
+				+ quoted(new File(root, "transcript.jsonl").getAbsolutePath())
+				+ ", \"hook_event_name\": \"PreToolUse\", \"session_id\": \"hookrefusals\", "
+				+ payload.trim().substring(1);
+		ProcessBuilder pb = new ProcessBuilder("python", "-B",
+				new File(root, ".claude/bundle-hooks/" + guard).getAbsolutePath());
+		pb.directory(root);
+		pb.environment().put("CLAUDE_PROJECT_DIR", root.getAbsolutePath());
+		pb.environment().put("PYTHONIOENCODING", "utf-8");
 		pb.redirectErrorStream(true);
 		Process p = pb.start();
-		String said = CommitGuardTest.drain(p);
-		p.waitFor();
-		if (!said.contains("SHAPE") && !said.contains("NONE")) {
-			System.out.println("  FAIL: the guard never answered - " + oneLine(said));
-			fails++;
+		try (java.io.OutputStream in = p.getOutputStream()) {
+			in.write(whole.getBytes(StandardCharsets.UTF_8));
 		}
-		return said;
+		String said = CommitGuardTest.drain(p);
+		int code = p.waitFor();
+		if (code == 2 || said.contains("\"deny\"")) {
+			return "DENY " + oneLine(said);
+		}
+		if (code == 0) {
+			return "ALLOW " + oneLine(said);
+		}
+		System.out.println("  FAIL: " + guard + " never answered (exit " + code + ") - " + oneLine(said));
+		fails++;
+		return "CRASH " + oneLine(said);
+	}
+
+	/** {@link #bundleSays}, and every refusal of a shell command held in every spelling (F176). */
+	static boolean bundleRefuses(File root, String guard, String payload) throws Exception {
+		boolean refused = bundleSays(root, guard, payload).startsWith("DENY");
+		String command = COMMANDS.get(payload);
+		if (refused && command != null) {
+			String shellQuoted = "'" + command.replace("'", "'\\''") + "'";
+			java.util.List<String[]> spellings = new java.util.ArrayList<>();
+			spellings.add(new String[]{"cd ." + NL + command, "behind a preceding line"});
+			spellings.add(new String[]{"bash -c " + shellQuoted, "handed to bash -c"});
+			if (!command.matches("(?s).*(&&|\\|\\||;|\\||\\n).*")) {
+				spellings.add(new String[]{"env " + command, "behind a runner"});
+			}
+			for (String[] spelling : spellings) {
+				check(bundleSays(root, guard, payload("Bash", "command", spelling[0], "")).startsWith("DENY"),
+						guard + " refuses " + oneLine(command) + " " + spelling[1] + " too");
+			}
+		}
+		return refused;
 	}
 
 	/**
@@ -857,6 +911,21 @@ public class HookRefusalsTest {
 		if (all) {
 			HELD.add(guard.getName());
 		}
+	}
+
+	/**
+	 * Nothing this session starts takes the owner's foreground: the editor's Java run bare is refused, and the same
+	 * run through tools/guard/hidden_desktop.py is not. Its refused case is what holds the guard to every spelling
+	 * (F176) - a shell reader with no case here was named by the scan and driven by nothing.
+	 */
+	static void nothingStartsOnTheOwnersDesktop(File hooks) throws Exception {
+		System.out.println("--- nothing starts on the owner's desktop");
+		File guard = new File(hooks, "guard_foreground.py");
+		check(guard.isFile(), "the guard is installed at " + guard.getPath());
+		check(refuses(guard, bash("java -cp build/classes ctrmap.CtrmapMainframe")),
+				"the editor's Java started bare is refused");
+		check(!refuses(guard, bash("python -B tools/guard/hidden_desktop.py --stream -- java -cp build/classes ctrmap.CtrmapMainframe")),
+				"and the same run on the hidden desktop is not");
 	}
 
 	/**

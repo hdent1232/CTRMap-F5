@@ -49,6 +49,9 @@ import javax.swing.SwingWorker;
  */
 public class TileMapPanel extends JPanel implements CM3DRenderable {
 
+	/** What this view draws its models with: the drawing left the format classes (F214). */
+	final ctrmap.render.ModelRenderer draw = new ctrmap.render.ModelRenderer();
+
 	private static final long serialVersionUID = 7357107275764622829L;
 	public static final String PROP_REPAINT = "imageUpdated";
 	private static final String ESC = "keyEscape";
@@ -149,6 +152,91 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		}
 		history.watch(ZoneDocuments.tiles(() -> this, shown));
 		mapReplaced = history::reset;
+	}
+
+	/**
+	 * This view stops showing the map it showed - a matrix load, a loose map, an unload: the history starts
+	 * again, and the whole tile cursor is forgotten, the hover with the pick (census M.18). The loads cleared
+	 * the pick alone and unload neither, so the tile under a pointer that had not moved still named a tile of
+	 * the old map, and a Fill pressed next anchored there. One door, so a fourth way cannot clear half.
+	 */
+	private void anotherMap() {
+		mapReplaced.run();
+		Selector.clear(this);
+	}
+
+	/**
+	 * Models this view no longer draws, waiting for a GL context to free their buffers (census M.95, M.96). GL
+	 * objects are not the garbage collector's: a model dropped without being destroyed strands a VBO and a
+	 * texture per mesh, and every zone load, unload and live repaint of a region dropped them - the 3D view
+	 * went black on a machine with RAM to spare. Freed at the top of renderCM3D, the one place a context is held.
+	 */
+	private final List<H3DModel> retired = new ArrayList<>();
+
+	private void retire(BCHFile[][]... grids) {
+		for (BCHFile[][] grid : grids) {
+			for (BCHFile[] column : grid == null ? new BCHFile[0][] : grid) {
+				for (BCHFile region : column == null ? new BCHFile[0] : column) {
+					retire(region);
+				}
+			}
+		}
+	}
+
+	private void retire(BCHFile region) {
+		if (region != null) {
+			synchronized (retired) {
+				retired.addAll(region.models);
+			}
+		}
+	}
+
+	/** The one writer of the region model grids: what they held is retired, not dropped (census M.96). */
+	private void setRegionModels(BCHFile[][] models, BCHFile[][] tallgrass) {
+		retire(this.models, this.tallgrass);
+		this.models = models;
+		this.tallgrass = tallgrass;
+	}
+
+	/** The one writer of a single region's model: the one it replaces is retired, not dropped (census M.95). */
+	private void setRegionModel(int x, int y, BCHFile model) {
+		retire(models[x][y]);
+		models[x][y] = model;
+	}
+
+	/** How many retired models are waiting for a GL context - for a suite, which has none. */
+	int retiredWaiting() {
+		synchronized (retired) {
+			return retired.size();
+		}
+	}
+
+	/**
+	 * A region's tall grass - its subfile 5, a BCH apart from the map model - ready to draw: textured with
+	 * {@code worldTextures} when there are any, placed at ({@code locX}, {@code locZ}), its buffers made; or null
+	 * when the region has none.
+	 *
+	 * <p>ONE BODY (census M.60). The matrix load and the loose-map load each did this, and the author's own fix
+	 * (a length test) landed on one of them; the loose copy bound no textures, placed nothing and made no
+	 * buffers, and kept a local it never used.
+	 */
+	static BCHFile tallGrassOf(GR region, List<H3DTexture> worldTextures, float locX, float locZ) {
+		byte[] tg = region.getFile(5);
+		if (!ctrmap.formats.h3d.BchSections.hasMagic(tg)) {
+			return null;
+		}
+		BCHFile tgbch = new BCHFile(tg);
+		if (tgbch.models.isEmpty()) {
+			return null;
+		}
+		H3DModel tgmdl = tgbch.models.get(0);
+		if (worldTextures != null) {
+			tgmdl.setMaterialTextures(worldTextures);
+		}
+		tgmdl.worldLocX = locX;
+		tgmdl.worldLocZ = locZ;
+		tgmdl.makeAllBOs();
+		return tgbch;
 	}
 
 	/** The regions whose collision the last load could not read, each with why - for {@link #collisionRefused}. */
@@ -287,25 +375,15 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		//tile is the same shape: a loose region is one 40x40 cell, so a coordinate
 		//from any matrix wider than one region is off it, and the tile inspector
 		//indexes with it.
-		mapReplaced.run();
-		Selector.unfocus(this);
+		anotherMap();
 		mode = ViewportMode.SINGLE;
 		width = 40;
 		height = 40;
 		remove(placeholder);
 		tilemaps = new Tilemap[1][1];
 		mainGR = file;
-		models = new BCHFile[1][1];
-		models[0][0] = new BCHFile(file.getFile(1));
-		tallgrass = new BCHFile[1][1];
-		byte[] tg = file.getFile(5);
-		if (ctrmap.formats.h3d.BchSections.hasMagic(tg)) {
-			BCHFile tgbch = new BCHFile(tg);
-			if (!tgbch.models.isEmpty()) {
-				H3DModel tgmdl = tgbch.models.get(0);
-				tallgrass[0][0] = tgbch;
-			}
-		}
+		setRegionModels(new BCHFile[][]{{new BCHFile(file.getFile(1))}},
+				new BCHFile[][]{{tallGrassOf(file, null, 0f, 0f)}});   //a loose map has no area textures, and sits at the origin
 		colls = new GRCollisionFile[1][1];
 		collisionRefusals.clear();
 		colls[0][0] = collisionOf(file, "This region", collisionRefusals);
@@ -382,7 +460,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			model.worldLocZ = cellY * 720f + 360f;
 		}
 		model.makeAllBOs();
-		models[cellX][cellY] = bch;
+		setRegionModel(cellX, cellY, bch);
 		scene.redraw();
 		repaint();
 	}
@@ -404,7 +482,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		//Open GR Mapfile) replaces tilemaps[0][0] over a different container without
 		//coming through here, so it clears the history and the picked tile itself,
 		//beside the textures it already dropped for the same reason.
-		mapReplaced.run();
+		anotherMap();
 		mode = ViewportMode.SINGLE;
 		loaded = false;
 		add(placeholder);
@@ -413,15 +491,13 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		revalidate();
 		mm = null;
 		tilemaps = null;
-		models = null;
-		tallgrass = null;
+		setRegionModels(null, null);
 		colls = null;
 	}
 
 	public boolean saveMatrix(boolean dialog) {
 		if (mm != null) {
-			boolean broken = false;
-			for (int i = 0; i < mm.height & !broken; i++) {
+			for (int i = 0; i < mm.height; i++) {
 				for (int j = 0; j < mm.width; j++) {
 					if (cell(tilemaps, j, i) == null) {
 						continue;
@@ -443,6 +519,8 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 									}
 
 									@Override
+									@ctrmap.util.WritesOut("the matrix's region tilemaps, which this panel has the zone's"
+										+ " history watch as its tiles documents")
 									protected Object doInBackground() {
 										for (int i = 0; i < mm.height; i++) {
 											for (int j = 0; j < mm.width; j++) {
@@ -498,12 +576,11 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	}
 
 	public void loadMatrix(MapMatrix matrix, ADPropRegistry reg, List<H3DTexture> worldTextures, List<H3DTexture> propTextures) {
-		mapReplaced.run(); //a different zone's tilemaps - old history is invalid
+		anotherMap(); //a different zone's tilemaps - old history is invalid
 		//AND THE PICKED TILE IS INVALID FOR EXACTLY THE SAME REASON, so it goes with the
 		//history. Nothing reset it before, so Selector.selTileX/selTileY kept naming a tile
 		//of the map being replaced, and picking a tile on a large zone then loading a
 		//smaller one threw on the EDT out of getRegionForTile.
-		Selector.unfocus(this);
 		LoadingDialog progress = LoadingDialog.makeDialog("Loading matrix");
 		final Tilemap.TileColors palette = tileColors();
 		SwingWorker<Regions, Void> worker = new SwingWorker<Regions, Void>() {
@@ -590,19 +667,8 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			for (int j = 0; j < mm.width; j++) {
 				if (mm.ids.get(j, i) != -1) {
 					r.tilemaps[j][i] = new Tilemap(mm.regions.get(j, i), colours);
-					byte[] tg = mm.regions.get(j, i).getFile(5);
-					if (ctrmap.formats.h3d.BchSections.hasMagic(tg)) {
-						BCHFile tgbch = new BCHFile(tg);
-						if (!tgbch.models.isEmpty()) {
-							H3DModel tgmdl = tgbch.models.get(0);
-							tgmdl.setMaterialTextures(worldTextures);
-							//GR overworld map BCH files have just 1 model, the tall grass is entirely separate BCH
-							tgmdl.worldLocX = j * 720f + 360f;
-							tgmdl.worldLocZ = i * 720f + 360f;
-							tgmdl.makeAllBOs();
-							r.tallgrass[j][i] = tgbch;
-						}
-					}
+					//GR overworld map BCH files have just 1 model, the tall grass is entirely separate BCH
+					r.tallgrass[j][i] = tallGrassOf(mm.regions.get(j, i), worldTextures, j * 720f + 360f, i * 720f + 360f);
 					BCHFile bch = new BCHFile(mm.regions.get(j, i).getFile(1));
 					if (!bch.models.isEmpty()) {
 						H3DModel model = bch.models.get(0);
@@ -658,8 +724,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		width = mm.width * 40;
 		height = mm.height * 40;
 		tilemaps = r.tilemaps;
-		models = r.models;
-		tallgrass = r.tallgrass;
+		setRegionModels(r.models, r.tallgrass);
 		colls = r.colls;
 		collision.unload();
 		collisionRefusals.clear();
@@ -753,6 +818,8 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	 * few lines up never had this problem, so the bug was invisible unless you
 	 * had opened a single region through File &gt; Open GR Mapfile.
 	 */
+	@ctrmap.util.WritesOut("the regions' tilemaps, which this panel has the zone's history watch as its tiles"
+		+ " documents")
 	public boolean saveTileMap(boolean dialog) {
 		if (loaded) {
 			if (mode == ViewportMode.MULTI) {
@@ -861,6 +928,12 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		//runs in that gap. The two sibling overrides below, uploadBuffers and
 		//deleteGLInstanceBuffers, have always opened with a test of this shape;
 		//the one that actually draws was the only one without.
+		synchronized (retired) {   //first, and before the test below: an unload leaves nothing to draw and its models to free
+			for (H3DModel old : retired) {
+				draw.destroy(gl, old);
+			}
+			retired.clear();
+		}
 		if (models == null || tallgrass == null || (mode == ViewportMode.MULTI && mm == null)) {
 			return;
 		}
@@ -868,19 +941,19 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			for (int i = 0; i < mm.height; i++) {
 				for (int j = 0; j < mm.width; j++) {
 					if (cell(models, j, i) != null) {
-						cell(models, j, i).render(gl);
+						draw.render(gl, cell(models, j, i));
 					}
 					if (cell(tallgrass, j, i) != null) {
-						cell(tallgrass, j, i).render(gl);
+						draw.render(gl, cell(tallgrass, j, i));
 					}
 				}
 			}
 		} else {
 			if (models[0][0] != null) {
-				models[0][0].render(gl);
+				draw.render(gl, models[0][0]);
 			}
 			if (tallgrass[0][0] != null) {
-				tallgrass[0][0].render(gl);
+				draw.render(gl, tallgrass[0][0]);
 			}
 		}
 	}
@@ -944,10 +1017,10 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			for (int i = 0; i < mm.height; i++) {
 				for (int j = 0; j < mm.width; j++) {
 					if (cell(models, j, i) != null) {
-						cell(models, j, i).models.get(0).uploadAllBOs(gl);
+						draw.upload(gl, cell(models, j, i).models.get(0));
 					}
 					if (cell(tallgrass, j, i) != null) {
-						cell(tallgrass, j, i).models.get(0).uploadAllBOs(gl);
+						draw.upload(gl, cell(tallgrass, j, i).models.get(0));
 					}
 				}
 			}
@@ -960,10 +1033,10 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			for (int i = 0; i < mm.height; i++) {
 				for (int j = 0; j < mm.width; j++) {
 					if (cell(models, j, i) != null) {
-						cell(models, j, i).models.get(0).destroyAllBOs(gl);
+						draw.destroy(gl, cell(models, j, i).models.get(0));
 					}
 					if (cell(tallgrass, j, i) != null) {
-						cell(tallgrass, j, i).models.get(0).destroyAllBOs(gl);
+						draw.destroy(gl, cell(tallgrass, j, i).models.get(0));
 					}
 				}
 			}

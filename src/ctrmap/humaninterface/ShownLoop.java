@@ -85,6 +85,7 @@ public final class ShownLoop {
 	}
 
 	/** Whether the loop is running now. */
+	@ctrmap.util.ForSuites("SEAM: a suite asks whether the render loop runs, to see it stops when its view is hidden")
 	public boolean running() {
 		return loop.isStarted();
 	}

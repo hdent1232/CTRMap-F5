@@ -61,8 +61,10 @@ public class InteriorWirerTest {
 					+ " it did - a read that lost them would check nothing and pass");
 			System.exit(1);
 		}
+		theWorkspaceReaderRefusesAZoneItHoldsNoFileFor();
 		aBuildingsFloorsAreFoundAndRewired();
 		everyFloorIsClonedAndItsStairsLeadToTheClones();
+		aFloorThatWillNotReadBackOrBeWrittenIsRefusedAndPutBack();
 		File garc = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs/a/0/1/3");
 		if (!garc.isFile()) {
 			Skip.section("no ZoneData archive at " + garc + " - the retail interiors were NOT checked");
@@ -212,6 +214,31 @@ public class InteriorWirerTest {
 	}
 
 	/**
+	 * The workspace's zone reader refuses a zone it holds no file for, in its own words.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (InteriorWirer 172, dropped and swallowed, SURVIVED): nothing asked the
+	 * production reader what it does for a zone with no file - dropped, a null file reached the zone reader;
+	 * swallowed, the floors walk was handed no entities at all. cloneAndWire reads a zone's area from the same file
+	 * first, so no public path reaches it today; the reader is asked directly, with no workspace loaded.
+	 */
+	static void theWorkspaceReaderRefusesAZoneItHoldsNoFileFor() {
+		System.out.println("--- the workspace's zone reader refuses a zone it holds no file for, by name");
+		String said;
+		try {
+			java.lang.reflect.Method reader = InteriorWirer.class.getDeclaredMethod("workspace");
+			reader.setAccessible(true);
+			InteriorWirer.Zones zones = (InteriorWirer.Zones) reader.invoke(null);
+			said = "answered " + zones.entities(99999);
+		} catch (java.io.IOException ex) {
+			said = ex.getMessage();
+		} catch (Exception ex) {
+			said = "threw " + ex;
+		}
+		check(said != null && said.contains("zone 99999 is not in the workspace"),
+				"a zone with no file is refused by name, not read as nothing: " + said);
+	}
+
+	/**
 	 * The floors are what the door's floor reaches by stairs, and each clone's warps lead to the door or
 	 * to the cloned floors (F015). Only the door's floor was cloned: a two-floor house's stairs led to the
 	 * retail upstairs, shared with the original house.
@@ -276,6 +303,58 @@ public class InteriorWirerTest {
 
 	static ZoneEntities read(ctrmap.WorkspaceSession ws, int zone) throws Exception {
 		return new ZoneEntities(subfile(MapResizeTest.bytes(ws, ctrmap.gamedef.ArchiveType.ZONE_DATA, zone), 1));
+	}
+
+	/**
+	 * A cloned floor whose area will not read back, and one whose rewired entities will not be written, are each
+	 * refused in words naming the zone, and every slot is put back as it was (the 2026-10-16 assembly, InteriorWirer
+	 * 224 and 237, dropped and swallowed, SURVIVED: no suite had a clone fail after it was written). The write fails
+	 * on an NPC whose uid is not its place, which assembleData refuses; it left as a bare IllegalStateException
+	 * naming no zone. The read-back cannot fail in a game - a donor whose area will not read is no floor - so the
+	 * reader is handed in, one that cannot read the ground floor's clone.
+	 */
+	static void aFloorThatWillNotReadBackOrBeWrittenIsRefusedAndPutBack() throws Exception {
+		System.out.println("--- a clone that will not read back or be written is refused, naming its zone, and put back");
+		ZoneEntities numbered = withWarps(1);
+		numbered.npcs.add(new ZoneEntities.NPC());
+		byte[] entities = numbered.assembleData();
+		entities[12] = 7;   //the NPC's uid, first in its record after the 12-byte header: 7, at place 0
+		byte[] header = new byte[ctrmap.MasterTable.ROW];
+		header[2] = 5;
+		byte[][] misnumbered = {zoneOf(1, withWarps()), zoneOf(5, withWarps(0, 2)),
+			MapResizeTest.container(0x5a4f, header, entities, HandedGameTest.amx()),
+			zoneOf(9, withWarps()), zoneOf(9, withWarps()), zoneOf(9, withWarps())};
+		String[] refused = new String[2];
+		boolean[] putBack = new boolean[2];
+		for (int k = 0; k < 2; k++) {
+			byte[][] zones = k == 0 ? misnumbered : new byte[][]{zoneOf(1, withWarps()), zoneOf(5, withWarps(0, 2)),
+				zoneOf(5, withWarps(1)), zoneOf(9, withWarps()), zoneOf(9, withWarps()), zoneOf(9, withWarps())};
+			ctrmap.WorkspaceSession ws = MapResizeTest.game("interior_refused_" + k, zones, new int[]{0, 0, 0, 0, 0, 0},
+					new byte[][]{MapResizeTest.matrix(0)}, MapResizeTest.region("region zero"));
+			byte[] three = MapResizeTest.bytes(ws, ctrmap.gamedef.ArchiveType.ZONE_DATA, 3);
+			byte[] four = MapResizeTest.bytes(ws, ctrmap.gamedef.ArchiveType.ZONE_DATA, 4);
+			java.util.List<Integer> slots = new java.util.ArrayList<>(java.util.Arrays.asList(3, 4, 5));
+			boolean unreadable = k == 1;
+			java.util.function.IntUnaryOperator areaOf = zone -> unreadable && zone == 3 ? -1 : InteriorWirer.zoneArea(zone);
+			java.lang.reflect.Method wire = InteriorWirer.class.getDeclaredMethod("cloneAndWire", int.class, int.class,
+					int.class, List.class, java.util.function.IntUnaryOperator.class);
+			wire.setAccessible(true);
+			try {
+				wire.invoke(null, 0, 4, 1, slots, areaOf);
+				refused[k] = "nothing refused";
+			} catch (java.lang.reflect.InvocationTargetException ex) {
+				Throwable t = ex.getCause();
+				refused[k] = t.getClass().getSimpleName() + ": " + t.getMessage();
+			}
+			putBack[k] = java.util.Arrays.equals(three, MapResizeTest.bytes(ws, ctrmap.gamedef.ArchiveType.ZONE_DATA, 3))
+					&& java.util.Arrays.equals(four, MapResizeTest.bytes(ws, ctrmap.gamedef.ArchiveType.ZONE_DATA, 4));
+		}
+		check(refused[0].startsWith("IOException: Could not write the rewired interior (zone 4)") && refused[0].contains("uid 7")
+				&& putBack[0], "a rewired floor that will not be written is refused naming its zone and why, and both"
+				+ " clones are put back: " + refused[0] + (putBack[0] ? "" : " - a slot was left written"));
+		check(refused[1].startsWith("IOException: the cloned floor (zone 3)'s area could not be read back") && putBack[1],
+				"a clone whose area will not read back is refused naming its zone, and both clones are put back: "
+				+ refused[1] + (putBack[1] ? "" : " - a slot was left written"));
 	}
 
 	/**

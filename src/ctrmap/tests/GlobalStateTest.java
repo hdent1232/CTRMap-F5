@@ -412,12 +412,12 @@ public class GlobalStateTest {
 			"ctrmap/humaninterface/Selector hilightTileX hilightTileY selTileX selTileY selecting",
 		},
 		{"the process", "settings, the holder of the open session, logging, the dialog sink, each thread's"
-			+ " open unit, a pack's warnings (drained by the pack that made them), the update lock, a"
+			+ " open unit and the units nested in it, a pack's warnings (drained by the pack that made them), the update lock, a"
 			+ " said-once flag and whether OpenGL starts (natives that failed to load cannot load later):"
 			+ " one of each per running program, whichever game is open",
 			"ctrmap/ErrorSink SAYING fileHandler logFile",
 			"ctrmap/formats/garc/GARC packWarnings",
-			"ctrmap/WorkspaceUnit OPEN",
+			"ctrmap/WorkspaceUnit NESTED OPEN",
 			"ctrmap/Ui dialogsEnabled parent sink",
 			"ctrmap/Workspace ESPICA_PATH GAMEDIR_PATH TILESET_DEFAULT TILESET_PATH WORKSPACE_PATH current prefs snapshotProblemShown",
 			"ctrmap/humaninterface/BuildingPaletteDialog catalogProblemsSaid",
@@ -486,6 +486,7 @@ public class GlobalStateTest {
 			"ctrmap/formats/tilemap/TerrainCatalog NOT_BRUSHES",
 			"ctrmap/setup/DumpCheck REQUIRED",
 			"ctrmap/formats/zone/ZoneEntities$GroundHeight NONE",
+			"ctrmap/ScriptFlags FLAG_NATIVES",
 		},
 	};
 

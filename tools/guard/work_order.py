@@ -21,6 +21,10 @@ The escape is `--anyway "<reason>"`. It is not a flag that hides the problem: th
 printed, and the caller is expected to put it somewhere a human will read. A decision that is
 visible in the output is a different thing from a rule nobody applied.
 
+And a third, for the sweep (`require_frozen`), which --anyway does NOT reach: the commit the sweep
+serves must not be refused for something the sweep cannot change - a pre-commit check that fails,
+or an owed plant no tree here can drive (`release_blockers`). Only the owner's override passes it.
+
     python tools/guard/work_order.py            # check; exit 1 when a measurement must not start
     python tools/guard/work_order.py --list     # just print the open items
 """
@@ -34,6 +38,7 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console window for 
 LF = chr(10)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 ROOT = _tree_root.require(__file__)
 LEDGER = os.path.join(ROOT, "OUTSTANDING.md")
 
@@ -75,8 +80,8 @@ def dirty_files():
     """Tracked files with uncommitted changes, or None when git could not be asked or did not answer
     (not on PATH, timed out, not a repository): a git that cannot say is not a clean tree (F192)."""
     try:
-        done = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT,
-                              capture_output=True, text=True, timeout=60, creationflags=NO_WINDOW)
+        done = bounded.run(["git", "status", "--porcelain"], cwd=ROOT,
+                           capture_output=True, text=True, timeout=60, creationflags=NO_WINDOW)
     except (OSError, subprocess.TimeoutExpired):
         return None
     if done.returncode != 0:
@@ -146,6 +151,114 @@ def unproven_plants():
     return []
 
 
+#: THE COMMIT A SWEEP SERVES IS ASKED BEFORE THE SWEEP (2026-10-18). Days of mutation sweeps for 1.0.4 ran while
+#: its release commit could never land: the bundle drifted under the install check, and of the 1,578 plants two
+#: past-the-gate commits owed, some were in no ledger any more and one planted into a deleted hook. Each refused
+#: the commit whatever the sweep found, and each was found only after it. The owner: "WHY THE FUCK DID YOU JUST HAVE
+#: ME WASTE SEVERAL DAYS IN REAL LIFE DOING SHIT LIKE SWEEPING KNOWING THERE WAS SHIT YOU STILL DIDNT DO". Every one
+#: of those sweeps started with --anyway, so --anyway does not reach this list: only the owner's override does.
+RELEASE_OVERRIDE = "ALLOW_RELEASE_BLOCKED_SWEEP"
+
+#: A command the pre-commit hook runs, as the hook spells it: `"$PY" -B tools/x.py || exit 1`, `exec "$PY" ...`.
+_HOOK_RUN = re.compile(r'^\s*(?:exec\s+)?"\$PY"\s+(?:-B\s+)?(tools/\S+\.py)((?:\s+--?[\w-]+)*)\s*(?:\|\||$)', re.M)
+
+
+def precommit_checks(hook=None):
+    """[[tool, arg...]] the pre-commit hook runs, read from the hook itself rather than typed here - None when the
+    hook cannot be read or names nothing: an unread hook is not one that asks nothing."""
+    try:
+        with io.open(hook or os.path.join(ROOT, ".githooks", "pre-commit"), encoding="utf-8") as handle:
+            text = handle.read()
+    except OSError:
+        return None
+    found = [[m.group(1)] + m.group(2).split() for m in _HOOK_RUN.finditer(text)]
+    return found or None
+
+
+def failing_checks(checks=None):
+    """Each pre-commit check that refuses this tree, said with its last line."""
+    checks = precommit_checks() if checks is None else checks
+    if checks is None:
+        return ["the pre-commit hook cannot be read, so what the commit asks is UNKNOWN - which is not the same as"
+                " nothing"]
+    out = []
+    for argv in checks:
+        try:
+            done = bounded.run([sys.executable, "-B"] + argv, cwd=ROOT, capture_output=True, text=True,
+                               errors="replace", timeout=600, creationflags=NO_WINDOW)
+        except (OSError, subprocess.SubprocessError) as exc:
+            out.append("`%s` could not be asked (%s), so whether it refuses the commit is UNKNOWN"
+                       % (" ".join(argv), exc))
+            continue
+        if done.returncode != 0:
+            said = [l.strip() for l in ((done.stdout or "") + (done.stderr or "")).splitlines() if l.strip()]
+            out.append("`%s` refuses the commit: %s" % (" ".join(argv), (said[-1] if said else
+                                                                         "exit %d" % done.returncode)[:200]))
+    return out
+
+
+def undrivable_owed(root=None):
+    """The plants the gate's owed record names that no tree here can drive - an id or key no ledger holds, or a
+    plant whose file is gone. The commit refuses each one, whatever a measurement finds."""
+    import json
+    root = root or ROOT
+    record_path = os.path.join(root, "tools", "guard", "gate_owed.json")
+    if not os.path.isfile(record_path):
+        return []
+    try:
+        with io.open(record_path, encoding="utf-8") as handle:
+            record = json.load(handle)
+        with io.open(os.path.join(root, "tools", "guard", "plants.json"), encoding="utf-8") as handle:
+            own = {p.get("id"): p for p in json.load(handle).get("plants") or []}
+        with io.open(os.path.join(root, "tests", "plants.json"), encoding="utf-8") as handle:
+            bundle = json.load(handle).get("plants") or {}
+    except (OSError, ValueError, AttributeError) as exc:
+        return ["the owed record or a plant ledger cannot be read (%s), so whether every owed plant can be driven"
+                " is UNKNOWN" % exc]
+    try:
+        #the gate's own answer: a plant the PARENT's ledger retired is not owed, and nothing could drive it
+        import commit_guard
+        retired = commit_guard.retired_at_parent() if root == ROOT else set()
+    except Exception as exc:                      # noqa: BLE001 - CannotAsk, or a git that would not answer
+        return ["which owed plants the parent retired cannot be read (%s), so whether every owed plant can be"
+                " driven is UNKNOWN" % exc]
+    gone = []
+    for key, held, where in ([(p.get("id"), own.get(p.get("id")), "the project's ledger")
+                              for p in record.get("plants") or [] if p.get("id") not in retired]
+                             + [(k, bundle.get(k), "the bundle's ledger") for k in record.get("bundle_plants") or []]):
+        if not isinstance(held, dict):
+            gone.append("%s - in no plant of %s" % (key, where))
+        elif held.get("file") and not os.path.exists(os.path.join(root, held["file"])):
+            gone.append("%s - its file %s is gone" % (key, held["file"]))
+    owed = len([p for p in record.get("plants") or [] if p.get("id") not in retired]) + len(record.get("bundle_plants") or [])
+    out = []
+    if owed:
+        #A PLANT THAT WILL NOT REDDEN IS FOUND ONLY BY DRIVING IT. Of the 1,578 owed on 2026-10-18, 63 had rotted, 5
+        #skip here, one hangs and one is an equivalent mutant - none visible to a reading of the ledger, each refusing
+        #the commit whatever a sweep found. So the debt is driven before the sweep, never after it.
+        out.append("%d plant(s) are owed by a commit made past the gate, and the commit refuses until each is driven"
+                   " red against its tree - drive them first (tools/guard/drive_owed.py --workers 8): a plant that"
+                   " will not redden is found only by driving it" % owed)
+    if gone:
+        out += (["%d owed plant(s) can be driven by no tree here, so the commit is refused whatever this measures:"
+                 % len(gone)] + ["    " + g for g in gone[:8]] + (["    (+%d more)" % (len(gone) - 8)] if len(gone) > 8 else []))
+    return out
+
+
+def release_blockers():
+    """Why the commit a measurement serves would be refused whatever the measurement finds. Empty: none."""
+    return failing_checks() + undrivable_owed()
+
+
+def _owner_allows_release_blocked():
+    """The owner's own override, read where every override is read (bundle_env) - never --anyway."""
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import bundle_hooks
+    sys.path.insert(0, bundle_hooks.path(ROOT))
+    import bundle_env
+    return bundle_env.allowed(RELEASE_OVERRIDE)
+
+
 def blockers():
     """Why a long measurement must not start now. Empty means it may."""
     why = []
@@ -181,6 +294,19 @@ def require_frozen(what, argv):
         if not anyway.strip():
             sys.stderr.write("REFUSING %s: --anyway must be followed by a reason." % what + LF)
             raise SystemExit(1)
+    blocked = release_blockers()
+    if blocked:
+        if not _owner_allows_release_blocked():
+            sys.stderr.write("REFUSING %s: the commit it serves is refused whatever it measures, so it would be"
+                             " hours or days spent before a decision that needs none of them." % what + LF)
+            for line in blocked:
+                sys.stderr.write("  " + line + LF)
+            sys.stderr.write(LF + "  Clear these first, or put them to the owner. --anyway does not reach this list:"
+                             " every sweep that wasted days on 1.0.4 was started with it." + LF)
+            raise SystemExit(1)
+        print("RELEASE BLOCKERS OVERRIDDEN BY THE OWNER for %s:" % what)
+        for line in blocked:
+            print("  " + line)
     why = blockers()
     if not why:
         return None
@@ -242,6 +368,13 @@ def gate(what, anyway):
 
 
 if __name__ == "__main__":
+    #a word this does not read refuses the run, before anything runs (cli_words, 2026-10-10)
+    import _cli
+    unread_words = _cli.refused(sys.argv[1:], flags=("--gate", "--anyway", "--list"),
+                                valued=("--gate", "--anyway"), most=0)
+    if unread_words:
+        print(unread_words)
+        raise SystemExit(2)
     if "--gate" in sys.argv:
         i = sys.argv.index("--gate")
         what = sys.argv[i + 1] if i + 1 < len(sys.argv) else "this measurement"

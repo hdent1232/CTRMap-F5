@@ -410,9 +410,11 @@ public class WorkspaceRepointTest {
 		freshBackupOf(own);
 		//the wizard's constructor and step machine are private because nothing
 		//but the app should drive it; SetupWizardTest reaches them the same way
-		Constructor<SetupWizard> ctor = SetupWizard.class.getDeclaredConstructor(Frame.class);
+		Constructor<SetupWizard> ctor = SetupWizard.class.getDeclaredConstructor(Frame.class,
+				java.util.function.ToIntFunction.class);
 		ctor.setAccessible(true);
-		SetupWizard w = ctor.newInstance((Frame) null);
+		SetupWizard w = ctor.newInstance((Frame) null,
+				(java.util.function.ToIntFunction<ctrmap.WorkspaceSession>) session -> 0);
 		//doFinish writes the wizard's "do not show this again" preference, which
 		//belongs to whoever owns this machine and not to a test run
 		Preferences prefs = Preferences.userRoot().node("ctrmap.setup");
@@ -450,7 +452,11 @@ public class WorkspaceRepointTest {
 	/** Retakes the pristine backup so it belongs to the given game folder. */
 	static void freshBackupOf(String gameDir) {
 		Workspace.GAMEDIR_PATH = gameDir;
-		Workspace.discardSnapshot();
+		try {
+			Workspace.discardSnapshot();
+		} catch (java.io.IOException kept) {
+			throw new IllegalStateException("the suite's backup could not be taken again: " + kept, kept);
+		}
 		Workspace.snapshotOriginals();
 	}
 

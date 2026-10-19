@@ -81,7 +81,7 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 				allowExtended.setSelected(mm.hasLOD == 1);
 				if (loadedZone.count() > 0) {
 					for (int i = 0; i < loadedZone.count(); i++) {
-						zoneRefDropdown.addItem(i + " - " + LocationNames.getLocName(ctrmap.Workspace.session(), loadedZone.at(i).header.parentMap));
+						zoneRefDropdown.addItem(LocationNames.zoneLabel(ctrmap.Workspace.session(), loadedZone.at(i).header.parentMap, i));
 					}
 				}
 				for (int i = 0; i < mm.cambounds.size(); i++) {
@@ -448,25 +448,22 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 	//user got was a form left in an inconsistent state with nothing said. With no
 	//matrix there is no extended matrix, which is what the else arm of each of
 	//these tests already means, so nothing changes for a matrix that is open.
+	/** Why the LOD and Multizone controls are grey, or null when this matrix has LOD (census L.59). */
+	private String noLod() {
+		return mm != null && mm.hasLOD == 1 ? null
+				: "This matrix has no LOD - tick \"Allow LOD and Multizone\" to turn on the Multizone tool and chunk LOD";
+	}
+
 	private void enableChunkUI(boolean yesno) {
 		chunkId.setEnabled(yesno);
-		if (mm != null && mm.hasLOD == 1) {
-			chunkLod.setEnabled(yesno);
-		} else {
-			chunkLod.setEnabled(false);
-		}
+		ctrmap.Ui.offer(chunkLod, noLod() != null ? noLod() : yesno ? null : "Choose the Chunk tool to edit a chunk");
 	}
 
 	private void enableMZUI(boolean yesno) {
-		if (mm != null && mm.hasLOD == 1) {
-			btnMzTool.setEnabled(true);
-			zoneRefDropdown.setEnabled(yesno);
-			btnFillChunk.setEnabled(yesno);
-		} else {
-			btnMzTool.setEnabled(false);
-			zoneRefDropdown.setEnabled(false);
-			btnFillChunk.setEnabled(false);
-		}
+		String why = noLod() != null ? noLod() : yesno ? null : "Choose the Multizone tool to set a chunk's zone";
+		ctrmap.Ui.offer(btnMzTool, noLod());
+		ctrmap.Ui.offer(zoneRefDropdown, why);
+		ctrmap.Ui.offer(btnFillChunk, why);
 	}
 
 	private void enableCamUI(boolean yesno) {

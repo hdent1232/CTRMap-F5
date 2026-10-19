@@ -270,6 +270,19 @@ public class DuplicateWorkTest {
 			"GFMessageFile is the one GameText codec, read and write. Location names were read by a second,"
 			+ " legacy decoder that named the text variables differently from the text editor and appended"
 			+ " the digits 9792 where a female sign belonged (F089)."},
+		{"reading a game text file's lines", "GFMessageFile\\s*\\.\\s*getStrings\\s*\\(",
+			"GameTextLines.java,NPCEditForm.java,BuildingHarvester.java,PokeData.java",
+			"GameTextLines is the one reader of a text file's lines: it answers them, or says which file could not"
+			+ " be read and why (census M.55). Five editors read their names through private copies that answered no"
+			+ " lines and said nothing for any failure, so names became bare numbers. NPCEditForm reads one story"
+			+ " text it shows whole, BuildingHarvester is a measuring tool that should throw, and PokeData reads the"
+			+ " dump's own archive in the format layer; an editor's names go through Workspace.textLines."},
+		{"writing to the console", "System\\s*\\.\\s*out\\s*\\.\\s*print",
+			"Ui.java,Updater.java,CtrmapMainframe.java,BuildingHarvester.java,GroundMaterialAudit.java,TerrainDonorHarvester.java",
+			"the editor's launcher has no console, so what a window prints reaches nobody (census L.27: the zone loader"
+			+ " printed every zone's name, and the stamp's 'see log' went to stdout, which no log holds). Ui is the"
+			+ " output seam, the updater's apply writes apply.log through stdout (and the window's apply fallback with it),"
+			+ " and the three tools are run from a console; anything else says it through Ui or the logger."},
 		{"saying why something failed", "\\.getMessage\\s*\\(\\s*\\)",
 			"Bytes.java",
 			"Bytes.reason is the one place that asks an exception for its message: the message, or the"
@@ -297,6 +310,20 @@ public class DuplicateWorkTest {
 			"ZoneHeader.SIZE is the one definition. Six classes each wrote their own 0x38 (F205); the"
 			+ " master table, both forkers, the cloner, the integrity check and the zone-limit patch now"
 			+ " alias it, so a correction lands everywhere at once."},
+		{"naming a zone to the user", "getLocName\\([^;]*?\\)\\s*\\+\\s*\" - \"|\" - \"\\s*\\+\\s*(?:[\\w.]+\\.)?getLocName\\(",
+			"LocationNames.java",
+			"LocationNames.zoneLabel is the one \"Location - N\" (census L.36). The Zone Loader spelled it three"
+			+ " times and the warp-target, matrix zone-ref and encounter pickers spelled it backwards, so one zone"
+			+ " had two names in two dropdowns. Anything listing a zone calls it."},
+		{"repainting a region's whole picture", "\\.updateImage\\(\\)",
+			"TileMapPanel.java",
+			"Tilemap.setTileData paints the tile it sets (census L.39); the whole picture is repainted only when the"
+			+ " colours change, by the map panel's updateAll. The Set tool repainted all 1,600 tiles per drag event"
+			+ " for the one it changed, and the fill repainted every region of the map."},
+		{"deleting a folder tree", "\\.listFiles\\(\\)[\\s\\S]{0,300}?\\bdelete\\w*\\((?:[a-z]\\w*)\\)|Files\\.walk\\([\\s\\S]{0,300}?Files\\.delete",
+			"Bytes.java",
+			"Bytes.deleteTree is the one, and it says whether the tree went. The updater and the workspace session each"
+			+ " held a byte-identical copy that dropped every failed delete, and the harvester grew a third (2026-10-12)."},
 		{"preparing map geometry for drawing", "\\.makeAllBOs\\(\\)",
 			"H3DModel.java,NPCRegistry.java,ADPropRegistry.java,CustomH3DPreview.java,"
 			+ "MapPreview3D.java,PropEditForm.java,TileMapPanel.java",
@@ -313,6 +340,9 @@ public class DuplicateWorkTest {
 			"the same again, for donor terrain"},
 		{"GroundMaterialAudit.java",
 			"a one-shot audit the owner runs to check ground materials across the dump"},
+		{"TableWriter.java",
+			"the writer those three research tools write their tracked tables with, LF on every machine;"
+			+ " reached only from them, so unreached exactly as they are"},
 		{"BchModelVerifier.java",
 			"the acceptance oracle for BchModelAppender output: three suites run it over the "
 			+ "857-model corpus and BchModelAppender names it as the rule its writes must "
@@ -327,9 +357,13 @@ public class DuplicateWorkTest {
 
 	/**
 	 * How many may be unreached. It may fall and may not rise quietly. TIGHTENED 7 -> 6 on 2026-10-08,
-	 * measured by this suite: TerrainHarvester went, its two catalogues read by nothing (F119).
+	 * measured by this suite: TerrainHarvester went, its two catalogues read by nothing (F119). RAISED
+	 * 6 -> 7 on 2026-10-09 for TableWriter: the three research tools above wrote their tracked tables
+	 * CRLF on Windows (six suites failed reading such files that day), and the one writer they share
+	 * is reached only from them - putting it in one of them would add two edges between tools that
+	 * share nothing else.
 	 */
-	private static final int UNREACHED_CEILING = 6;
+	private static final int UNREACHED_CEILING = 7;
 	/** The snapshot of classes that predate the rule. */
 	private static final String LIST = "tools/guard/classes.txt";
 
@@ -349,6 +383,7 @@ public class DuplicateWorkTest {
 		aCapabilityHasOneImplementation(root);
 		aNewClassSaysWhatItIsNot(root, new File(repo, LIST));
 		everyClassIsReachedBySomething(root);
+		everyNestedTypeIsNamedBySomething(root);
 		everySuiteClassIsRunOrUsed(root);
 		everyResourceIsLoadedBySomething(root);
 		everyToolsOutputIsRead(root);
@@ -605,6 +640,55 @@ public class DuplicateWorkTest {
 		check(stranded.isEmpty(), live.size() + " of " + src.size() + " test-package class(es) are run by test.ps1 or"
 				+ " used by one that is" + (stranded.isEmpty() ? "" : " - these are not: " + stranded + ". Register it,"
 				+ " call it from a suite that is registered, move it beside the tool that runs it, or delete it"));
+	}
+
+	/**
+	 * Every nested class, interface or enum is named somewhere besides its own declaration (census L.24). The walk
+	 * below goes file by file, so a nested type nothing names is never asked about: an empty private class kept
+	 * alive only by the type of a dead field survived it, and outlived the field.
+	 */
+	static void everyNestedTypeIsNamedBySomething(File root) throws Exception {
+		System.out.println("--- every nested type is named by something besides its declaration (census L.24)");
+		Pattern decl = Pattern.compile("\\b(?:class|interface|enum)\\s+([A-Z]\\w*)");
+		java.util.function.BiFunction<Map<String, String>, String, List<String>> unnamed = (files, all) -> {
+			List<String> out = new ArrayList<>();
+			for (Map.Entry<String, String> f : files.entrySet()) {
+				Matcher m = decl.matcher(f.getValue());
+				while (m.find()) {
+					String name = m.group(1);
+					if (name.equals(f.getKey())) {
+						continue;
+					}
+					Matcher uses = Pattern.compile("(?<![\\w$])" + Pattern.quote(name) + "(?![\\w$])").matcher(all);
+					int n = 0;
+					while (uses.find()) {
+						n++;
+					}
+					if (n <= 1) {
+						out.add(f.getKey() + "." + name);
+					}
+				}
+			}
+			return out;
+		};
+		Map<String, String> planted = new HashMap<>();
+		planted.put("A", "class A { static class Used {} Used u; private static class Dead {} }");
+		check(unnamed.apply(planted, planted.get("A")).equals(java.util.Collections.singletonList("A.Dead")),
+				"control: a nested class nothing names is found, and one that is named is not");
+		Map<String, String> src = new HashMap<>();
+		StringBuilder all = new StringBuilder();
+		for (File f : DialogSeamTest.javaSources(new File(root, "ctrmap"))) {
+			if (f.getParentFile() != null && f.getParentFile().getName().equals("tests")) {
+				continue;
+			}
+			String body = SourceSeamTest.stripComments(new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8))
+					.replaceAll("\"(?:\\\\.|[^\"\\\\])*\"", "\"\"");
+			src.put(f.getName().substring(0, f.getName().length() - ".java".length()), body);
+			all.append(body).append('\n');
+		}
+		List<String> found = unnamed.apply(src, all.toString());
+		check(src.size() > 100 && found.isEmpty(), "no nested type in the " + src.size() + " production files is named only where it"
+				+ " is declared" + (found.isEmpty() ? "" : " - these are: " + found + ". Delete it, or use it"));
 	}
 
 	/**

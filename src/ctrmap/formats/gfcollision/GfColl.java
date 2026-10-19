@@ -163,6 +163,7 @@ public class GfColl {
 	}
 
 	/** Reassembles the EXACT parsed bytes - the parse-completeness gate. */
+	@ctrmap.util.ForSuites("ORACLE: reassembles the exact bytes the reader parsed; GfCollTest holds the reader to every retail collision file with it - the parse-completeness gate")
 	public byte[] emitVerbatim() {
 		int termAt = 0x320 + totalVerts() * 16;
 		byte[] out = new byte[termAt + 16 + tailPad];

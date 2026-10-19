@@ -61,8 +61,7 @@ public class SetTool extends AbstractTool {
 			}
 			int lx = Selector.hilightTileX % 40, ly = Selector.hilightTileY % 40;
 			if (!Arrays.equals(tm.getTileData(lx, ly), actTileData)) {
-				tm.setTileData(lx, ly, actTileData);
-				tm.updateImage();
+				tm.setTileData(lx, ly, actTileData);   //which paints the tile (census L.39)
 				host.map().perfScale(host.map().tilemapScale, Selector.hilightTileX / 40, Selector.hilightTileY / 40);
 			}
 		}

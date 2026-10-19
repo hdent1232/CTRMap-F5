@@ -91,6 +91,7 @@ public class PawnSubroutine {
 		//in source order: a HashMap reshuffled every vanilla casetbl on the way back
 		Map<Integer, Integer> cases = new LinkedHashMap<>();
 		int defaultCaseJmp = 0;
+		boolean sawDefault = false;
 		while (asm.hasNextLine() && !(line = asm.nextLine()).equals("}")) {
 			if (line.length() == 0) {
 				continue;
@@ -105,10 +106,22 @@ public class PawnSubroutine {
 			String value = line.substring(0, arrow).trim();
 			try {
 				int target = Integer.parseInt(line.substring(arrow + 2).trim().replaceAll("0x", ""), 16);
+				//AN ARM GIVEN TWICE IS AN ERROR, like every other malformed arm (census H.63): the second replaced
+				//the first, and the table assembled one case short with nothing said
 				if (value.equals("*")) {
+					if (sawDefault) {
+						asm.error("the casetbl at 0x" + Integer.toHexString(ptr).toUpperCase() + " has two defaults (\"* =>\")"
+								+ " - the second would replace the first");
+					}
+					sawDefault = true;
 					defaultCaseJmp = target;
 				} else {
-					cases.put(Integer.parseInt(value), target);
+					int key = Integer.parseInt(value);
+					if (cases.containsKey(key)) {
+						asm.error("the casetbl at 0x" + Integer.toHexString(ptr).toUpperCase() + " has case " + key
+								+ " twice - the second would replace the first");
+					}
+					cases.put(key, target);
 				}
 			} catch (NumberFormatException e) {
 				asm.error(notACase);

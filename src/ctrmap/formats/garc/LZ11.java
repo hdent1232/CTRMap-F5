@@ -164,14 +164,9 @@ public class LZ11 {
 	 * to bytes not yet written, or bytes that run out), and no genuine entry
 	 * faults at all. The bound keeps this a header check rather than the
 	 * 42-second trial decode of the whole dump.
-	 */
-	public static boolean prefixDecodes(byte[] data, int maxInput) {
-		return prefixDecodes(data, maxInput, data.length);
-	}
-
-	/**
-	 * The same check when {@code data} holds only the stream's first bytes and the stream itself
-	 * is {@code stored} bytes long - what an archive's parse reads to sniff an entry it has not
+	 *
+	 * <p>{@code data} may hold only the stream's first bytes, the stream itself
+	 * being {@code stored} bytes long - what an archive's parse reads to sniff an entry it has not
 	 * read whole (F055). Every "ran out" decision is about the stream, so it asks {@code stored};
 	 * only bytes below the bound are read, and {@code data} must hold all of those.
 	 */

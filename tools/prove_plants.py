@@ -20,6 +20,9 @@ Nothing is reported as proven unless the plant actually reddened.
     python -B tools/prove_plants.py --retire r.json    {key: reason} - plants whose test now
                                                        runs and passes, because what they name
                                                        can no longer happen; driven first
+    python -B tools/prove_plants.py --withdraw w.json  {key: reason} - plants whose named TEST is
+                                                       gone from the tree; the commit names each
+                                                       on a `Withdraws:` line
     python -B tools/prove_plants.py --merge-from DIR   the same, for another ledger's plants whose
                                                        test file is installed here (a bundle's)
     python -B tools/prove_plants.py --recount          write the ceilings from the counts
@@ -65,6 +68,7 @@ LEDGER = os.path.join(HERE, "tests", "plants.json")
 LF = chr(10)
 sys.path.insert(0, os.path.join(HERE, "tools"))
 import bundle_hooks     # noqa: E402 - where THIS project keeps the bundle's hooks (`_hooks_at`)
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 sys.path.insert(0, bundle_hooks.path(HERE))
 import bundle_rules     # noqa: E402 - the lock's one door: taken, counted, released
 
@@ -169,6 +173,38 @@ TEST_TIMEOUT = 300
 #: _FailedTest.name)` - never the word anywhere in the output, where a failure message can print it.
 _UNRESOLVED = re.compile(r"^(?:FAIL|ERROR): \S+ \(unittest\.loader\._FailedTest\.", re.M)
 
+#: unittest's mark where it cut a repr short - `{'2010-12-31', '2009-03-31'[66 chars]-31'}`. What
+#: survives the cut of a SET's repr depends on the order the set iterates in, and that follows the
+#: per-process string-hash seed, which nothing pins.
+ELIDED = re.compile(r"\[\d+ chars\]")
+
+#: The fixed seeds an elided failure is driven again under - fixed, so a refusal reproduces.
+SEEDS = ("0", "1", "2")
+
+
+def hash_order_problem(must_say, said, again):
+    """Why a failure that SAID `must_say` does not prove it, or None. `again(seed)` is the same
+    verdict, driven under a pinned string-hash seed.
+
+    A FAILURE CUT SHORT CAN SAY IT BY CHANCE. Measured on the project this came from, 2026-10-06:
+    `add` watched a plant redden with its `must_say`, and the commit gate then refused the same
+    plant twice. The test compared a set with a frozenset, unittest printed the repr cut in the
+    middle, and whether the expected item survived the cut depended on the order the set iterated
+    in, which is a coin toss per process. So when the failure is ELIDED, it is driven again under
+    each of `SEEDS` and must say it every time. Its limit, said: a failure showing only the FIRST
+    differing element of a list built from a set depends on the order too, is not elided, and is
+    not seen here.
+    """
+    if not must_say or not ELIDED.search(said or ""):
+        return None
+    for seed in SEEDS:
+        if not again(seed)[0]:
+            return ("its failure is ELIDED ([N chars]) and %r is in it under one hash order and "
+                    "not under PYTHONHASHSEED=%s - the expectation depends on the order a set "
+                    "iterates in. Compare like types, a set with a set, so unittest lists every "
+                    "item" % (must_say, seed))
+    return None
+
 
 #: What a hang is, said once.
 HUNG = ("HUNG after %ds - a hang is never a kill; it is a defect in the suite, not evidence about the "
@@ -210,7 +246,7 @@ def verdict(code, said, must_say=None, ran=None, unresolved=False):
     return True, last
 
 
-def named_test_fails(test_id, must_say=None, folder=None):
+def named_test_fails(test_id, must_say=None, folder=None, seed=None):
     """(reddened?, what it said) for ONE test, run in its own process.
 
     A TEST ID THAT DOES NOT RESOLVE IS NOT A FAILING TEST. `unittest` reports an unknown name as
@@ -225,11 +261,14 @@ def named_test_fails(test_id, must_say=None, folder=None):
     import shutil
     import tempfile
     sandbox = tempfile.mkdtemp(prefix="plant-data-")
+    env = sandboxed_env(sandbox)
+    if seed is not None:
+        env["PYTHONHASHSEED"] = seed
     try:
-        done = subprocess.run([sys.executable, "-B", "-m", "unittest", test_id],
-                              cwd=folder or os.path.join(HERE, "tests"), capture_output=True,
-                              text=True, timeout=TEST_TIMEOUT, creationflags=NO_WINDOW,
-                              env=sandboxed_env(sandbox))
+        done = bounded.run([sys.executable, "-B", "-m", "unittest", test_id],
+                           cwd=folder or os.path.join(HERE, "tests"), capture_output=True,
+                           text=True, timeout=TEST_TIMEOUT, creationflags=NO_WINDOW,
+                           env=env)
     except subprocess.TimeoutExpired:
         return verdict(None, "", must_say, "Ran 1 test")
     finally:
@@ -247,7 +286,15 @@ def named_test_fails(test_id, must_say=None, folder=None):
     # A VERDICT NEEDS A RUN. A child that dies before unittest's summary - `os._exit`, a crash, an
     # interpreter that never started - exits non-zero with no test having failed anything: the
     # "Ran 1 test" line is unittest's `ran` marker, asked by the one verdict every runner shares.
-    return verdict(done.returncode, said, must_say, "Ran 1 test", bool(_UNRESOLVED.search(said)))
+    reddened, last = verdict(done.returncode, said, must_say, "Ran 1 test",
+                             bool(_UNRESOLVED.search(said)))
+    if not reddened:
+        return reddened, last
+    why = None if seed is not None else hash_order_problem(
+        must_say, said, lambda pinned: named_test_fails(test_id, must_say, folder, pinned))
+    if why:
+        return False, why
+    return True, last
 
 
 def still_builds(path, planted):
@@ -321,8 +368,8 @@ def not_restorable(root, rel):
     staging is enough, and a commit gate driving its plants is driving staged files.
     """
     def git(*argv):
-        return subprocess.run(["git"] + list(argv), cwd=root, capture_output=True, timeout=60,
-                              creationflags=NO_WINDOW)
+        return bounded.run(["git"] + list(argv), cwd=root, capture_output=True, timeout=60,
+                           creationflags=NO_WINDOW)
     try:
         tracked = git("ls-files", "--error-unmatch", "--", rel)
         differs = git("diff", "--quiet", "--", rel) if tracked.returncode == 0 else None
@@ -515,15 +562,17 @@ def declared_command(key, config, root=None):
     return out
 
 
-def _declared_child(argv, root=None):
+def _declared_child(argv, root=None, seed=None):
     """(exit code, None when it HUNG; everything it said) for one declared command, sandboxed."""
     import shutil
     import tempfile
     sandbox = tempfile.mkdtemp(prefix="plant-data-")
+    env = sandboxed_env(sandbox)
+    if seed is not None:
+        env["PYTHONHASHSEED"] = seed
     try:
-        done = subprocess.run(argv, cwd=root or HERE, capture_output=True, text=True,
-                              timeout=TEST_TIMEOUT, creationflags=NO_WINDOW,
-                              env=sandboxed_env(sandbox))
+        done = bounded.run(argv, cwd=root or HERE, capture_output=True, text=True,
+                           timeout=TEST_TIMEOUT, creationflags=NO_WINDOW, env=env)
         return done.returncode, (done.stdout or "") + (done.stderr or "")
     except subprocess.TimeoutExpired:
         return None, "HUNG after %ds" % TEST_TIMEOUT
@@ -535,11 +584,18 @@ def _declared_child(argv, root=None):
 
 def run_declared(config, root=None):
     """A `run(key, must_say)` over the project's declared runner - the same verdicts as Python's."""
-    def run(key, must_say=None):
-        code, said = _declared_child(declared_command(key, config, root), root)
+    def run(key, must_say=None, seed=None):
+        code, said = _declared_child(declared_command(key, config, root), root, seed)
         unresolved = config.get("unresolved")
-        return verdict(code, said, must_say, config.get("ran"),
-                       code == 127 or bool(unresolved and unresolved in said))
+        reddened, last = verdict(code, said, must_say, config.get("ran"),
+                                 code == 127 or bool(unresolved and unresolved in said))
+        if not reddened:
+            return reddened, last
+        why = None if seed is not None else hash_order_problem(
+            must_say, said, lambda pinned: run(key, must_say, pinned))
+        if why:
+            return False, why
+        return True, last
     return run
 
 
@@ -556,19 +612,146 @@ def build_declared(config, root=None):
     return rebuild
 
 
+# ----------------------------------------------------------------------------- platforms
+
+# A PLANT ON A TEST THAT RUNS ON ONE PLATFORM ONLY. Measured 2026-10-07: four plants recorded on
+# Linux, on tests that skip unless `/proc` is there, went to a Windows project with this bundle -
+# and its install refused them as "the defect was planted and the test still PASSED", over a test
+# that had never run. A skip is not a pass and it is not a kill. Such a plant says which platform
+# it is proven on (`platform`, a prefix of `sys.platform`): there it must redden like any other,
+# and anywhere else its test must SKIP, by a condition that reads the platform.
+
+#: The platforms a plant may be declared for - prefixes of `sys.platform`.
+PLATFORMS = ("linux", "darwin", "win32", "cygwin", "freebsd", "openbsd", "netbsd", "aix")
+
+#: unittest's summary line for the one test it ran, skipped - the whole line, not a word in a
+#: failure message, which can say anything.
+SKIPPED = re.compile(r"^OK \(skipped=1\)\s*$", re.M)
+
+#: What a skip's condition must read for it to be a skip BY PLATFORM.
+PLATFORM_READS = ("sys.platform", "os.name", "platform.system")
+
+#: The detail a plant declared for another platform is accepted with - read by `add` for its label.
+SKIPPED_HERE = "skipped here on %s, as declared for %s - it is proven on that platform only"
+
+
+def platform_skip(text, cls, method):
+    """The skip decorator on test `cls.method` (or on its class) whose condition reads the
+    platform, unparsed - or None. `@unittest.skip("...")` skips EVERYWHERE, and a plant declared
+    for another platform on such a test would be accepted on every machine and proven on none."""
+    import ast
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return None
+    for node in tree.body:
+        if not (isinstance(node, ast.ClassDef) and node.name == cls):
+            continue
+        decorators = list(node.decorator_list)
+        for item in node.body:
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == method:
+                decorators += item.decorator_list
+        for decorator in decorators:
+            said = ast.unparse(decorator)
+            if "skip" in said and any(read in said for read in PLATFORM_READS):
+                return said
+    return None
+
+
+def test_platform_skip(key, root=None):
+    """`platform_skip` for the test a plant key names, read from its file under `root`."""
+    parts = str(key).split("::")
+    if len(parts) < 3:
+        return None
+    for rel in test_files(key):
+        try:
+            with io.open(os.path.join(root or HERE, *rel.split("/")), encoding="utf-8",
+                         errors="replace") as handle:
+                return platform_skip(handle.read(), parts[1], parts[2])
+        except OSError:
+            continue
+    return None
+
+
+def platform_verdict(entry, reddened, said, skips=None, here=None):
+    """(proven?, detail) when the plant's `platform` or its test's SKIP has something to say about
+    a run - None when neither does and the run's own verdict stands.
+
+    Declared for THIS platform, or for none: a skip is refused - never read as the pass it exits
+    like. Declared for ANOTHER: the test must have skipped (one that ran here makes the declaration
+    false), and by a condition that reads the platform (`skips`) - a declaration is how a plant is
+    excused from reddening here, so it is the cheapest way past this ledger, and it is honoured only
+    where the test cannot run. A platform nobody knows is refused at every drive, not only at
+    `add`, because a ledger is a record a merge copies in from elsewhere."""
+    here = here or sys.platform
+    declared = entry.get("platform")
+    if declared and declared not in PLATFORMS:
+        return False, ("declared for %r, which is not a platform (%s)"
+                       % (declared, ", ".join(PLATFORMS)))
+    skipped = not reddened and bool(SKIPPED.search(str(said)))
+    if not declared or here.startswith(declared):
+        if not skipped:
+            return None
+        return False, ("its test SKIPPED here on %s, so nothing was asked - a skip is not a pass "
+                       "and not a kill. A guard whose test runs on one platform only is declared "
+                       "with `platform` and proven there" % here)
+    if not skipped:
+        return False, ("declared for %s, and its test %s here on %s - a platform is declared only "
+                       "for a plant whose test cannot run here"
+                       % (declared, "FAILED" if reddened else "RAN AND PASSED", here))
+    if not skips:
+        return False, ("declared for %s, and its test skipped here on %s by no condition that reads "
+                       "the platform - a test that skips everywhere is proven nowhere"
+                       % (declared, here))
+    return True, SKIPPED_HERE % (here, declared)
+
+
+def verdict_label(reddened, detail):
+    """The word a driven plant is listed under - `red`, `PASSED`, or `skip` for a declared skip,
+    which printed as `red` would claim a run nobody watched. One spelling for every lister."""
+    if reddened and str(detail).startswith(SKIPPED_HERE.split(" %s")[0]):
+        return "skip"
+    return "red" if reddened else "PASSED"
+
+
+def red_with_nothing_planted(keys, run=None):
+    """([test], [test]): the Python tests these plant keys name that FAIL with nothing planted, and those that
+    could not be run to a verdict. Each distinct test runs once.
+
+    A TEST THAT IS RED ALREADY MAKES EVERY PLANT ON IT RED FOR FREE. Measured 2026-10-10: a test faked a call
+    its code had stopped making, went red on the bundle's own tree, and the commit gate drove its held plant
+    "red" and let the commit through - it never ran the test with nothing planted."""
+    run = run or (lambda test_id: named_test_fails(test_id))
+    tests = sorted({"::".join(key.split("::")[:3]) for key in keys if key.split("::")[0].endswith(".py")})
+    red, unknown = [], []
+    for test in tests:
+        reddened, _said = run(unittest_id(test))
+        if reddened is None:
+            unknown.append(test)
+        elif reddened:
+            red.append(test)
+    return red, unknown
+
+
 def drive_plant(key, entry, root=None):
     """(reddened?, detail) for ONE plant, by whichever runner its test needs. The one door.
 
     A key the declared runner owns goes to it, whatever its language: a pytest file is `.py` and
-    `unittest` cannot run it."""
+    `unittest` cannot run it. A plant on a test that runs on one platform only answers through
+    `platform_verdict` - and only `unittest` reports a skip, so only its plants may declare one."""
     config = declared_tests(os.path.join(root, ".claude", "bundle-install.json") if root
                             else None)
     owned = config is not None and "::".join(key.split("::")[:2]) in declared_classes(config, root)
     if key.split("::")[0].endswith(".py") and not owned:
-        return apply_and_run(entry, unittest_id(key), root)
+        reddened, said = apply_and_run(entry, unittest_id(key), root)
+        return platform_verdict(entry, reddened, said, test_platform_skip(key, root)) or (
+            reddened, said)
     if config is None:
         return False, ("%s is not a Python test, and this project declares no `_tests` runner "
                        "that could run it" % key.split("::")[0])
+    if entry.get("platform"):
+        return False, ("%s is run by the project's declared runner, which reports no skip - a "
+                       "plant on it cannot be declared for a platform" % key.split("::")[0])
     return apply_and_run(entry, key, root, run=run_declared(config, root),
                          rebuild=build_declared(config, root))
 
@@ -771,6 +954,36 @@ def ceiling_rises(before, after):
     return out
 
 
+def change_problems(before, after):
+    """Everything a write leaving the ledger reading `after` where it read `before` may not do -
+    the ONE question both the write rule and `--owed` ask, so neither can ask half of it."""
+    return ceiling_rises(before, after) + departures(before, after)
+
+
+#: The two records a plant may leave `plants` into, each written by one act of this tool.
+LEFT = ("retired", "withdrawn")
+
+
+def departures(before, after):
+    """Every plant `before` held live that `after` neither holds nor records as retired or
+    withdrawn - asked of ANY write, as `ceiling_rises` is.
+
+    THE CHEAPEST WAY PAST `--retire` AND `--withdraw` IS NEITHER. Each refuses a plant that still
+    proves something - one that still reddens, one whose test is still in the tree - and a hand
+    edit deleting the plant from `plants` asked nothing at all: no ceiling moves when a class keeps
+    another plant of the same site, so no ratchet saw it go. A plant leaves through a record that
+    says why, and the commit asks that record again (`tools/commit_gate.py`).
+    """
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        return []
+    kept = set(after.get("plants") or {})
+    for record in LEFT:
+        kept |= set(after.get(record) or {})
+    return ["the plant %s leaves the ledger unrecorded - a plant goes only by `--retire` (driven, "
+            "its test running to a pass) or `--withdraw` (its test gone from the tree)" % key
+            for key in sorted(set(before.get("plants") or {}) - kept)]
+
+
 #: ASKED AT THE WRITE OF THE LEDGER. `guard_write_rules` asks it before an Edit or Write lands,
 #: and `after_rules` the moment a command's write shows - this tool's own write included, which
 #: passes it because `recount` keeps the same rule. A change rule, because the question is what
@@ -789,7 +1002,7 @@ def ledger_change_problems(rel, before, after, root=None):
         will = json.loads(after)
     except ValueError:
         return ["%s would not be JSON - this tool writes it, whole" % rel]
-    return ["%s: %s" % (rel, line) for line in ceiling_rises(held, will)]
+    return ["%s: %s" % (rel, line) for line in change_problems(held, will)]
 
 
 def adopt(ledger, classes=None, committed=None):
@@ -873,12 +1086,17 @@ def add(entries, drive=None, root=None, replace=False):
         if len(str(entry.get("why") or "")) < MIN_REASON:
             failed.append("%s: `why` is under %d characters - a label, not a reason"
                           % (key, MIN_REASON))
+        if "platform" in entry and entry["platform"] not in PLATFORMS:
+            failed.append("%s: platform must be one of %s" % (key, list(PLATFORMS)))
     if failed:
         return 1, failed
     drive = drive or (lambda key, entry: drive_plant(key, entry, root))
+    elsewhere = []
     for key, entry in sorted(entries.items()):
         reddened, detail = drive(key, entry)
-        out.append("  %-6s %s" % ("red" if reddened else "PASSED", key))
+        out.append("  %-6s %s" % (verdict_label(reddened, detail), key))
+        if verdict_label(reddened, detail) == "skip":
+            elsewhere.append(key)
         if not reddened:
             failed.append("%s: %s" % (key, str(detail).strip()[:200]))
     if failed:
@@ -890,6 +1108,10 @@ def add(entries, drive=None, root=None, replace=False):
     if problems:
         return 1, out + ["REFUSING to record:"] + ["   " + line for line in problems]
     write(ledger)
+    if elsewhere:
+        return 0, out + ["recorded %d plant(s); %d reddened its named test here, and %d - "
+                         "declared for another platform - skipped here, as declared"
+                         % (len(entries), len(entries) - len(elsewhere), len(elsewhere))]
     return 0, out + ["recorded %d plant(s); every one reddened its named test" % len(entries)]
 
 
@@ -929,13 +1151,19 @@ def retire(reasons, drive=None, root=None, classes=None):
     drive = drive or (lambda key, entry: drive_plant(key, entry, root))
     for key in sorted(reasons):
         reddened, detail = drive(key, held[key])
-        out.append("  %-6s %s" % ("red" if reddened else "PASSED", key))
-        if reddened:
+        out.append("  %-6s %s" % (verdict_label(reddened, detail), key))
+        if verdict_label(reddened, detail) == "skip":
+            failed.append("%s is declared for another platform and its test skipped here - it "
+                          "can be retired only where that test runs" % key)
+        elif reddened:
             failed.append("%s still reddens its test - it proves something, and retiring it "
                           "would drop a working guard" % key)
         elif str(detail).strip() != "OK":
             failed.append("%s did not redden, but its test did not simply pass either (%s) - "
-                          "re-anchor it with `--reanchor`" % (key, str(detail).strip()[:160]))
+                          "re-anchor it with `--reanchor`%s" % (
+                              key, str(detail).strip()[:160],
+                              "" if test_exists(key, root) else
+                              ", or, since the test it names is gone, `--withdraw` it"))
     if failed:
         return 1, out + ["REFUSING to retire:"] + ["   " + line for line in failed]
     before = json.loads(json.dumps(ledger))
@@ -950,6 +1178,159 @@ def retire(reasons, drive=None, root=None, classes=None):
     write(ledger)
     return 0, out + ["retired %d plant(s); each was driven and its test ran and passed"
                      % len(reasons)]
+
+
+def test_files(key):
+    """Where, relative to the project root, the test file a plant key names can be: a bare name is
+    a suite in `tests/` - where `guard_classes` and `named_test_fails` look - or, for a project's
+    declared runner, a file at the root; a path is the declared runner's own (`declared_classes`
+    keys those by path)."""
+    name = str(key).split("::")[0]
+    return [name] if "/" in name else ["tests/" + name, name]
+
+
+#: Bases that define no test of their own - a class deriving only from these has the tests in
+#: its own body. Any OTHER base this file does not define could be where the test lives.
+EMPTY_BASES = ("TestCase", "IsolatedAsyncioTestCase", "object")
+
+
+def _defines_test(text, cls, method):
+    """True when the class `cls` in this Python source has `method` - on its own body or on a
+    base the file defines - False when it is PROVEN absent, None when it cannot be told."""
+    import ast
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return None
+    classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
+    if cls not in classes:
+        bound = any(isinstance(node, (ast.Import, ast.ImportFrom))
+                    and any((alias.asname or alias.name).split(".")[-1] == cls
+                            for alias in node.names)
+                    for node in ast.walk(tree))
+        return None if bound else False
+
+    def has(name, seen):
+        if name in seen:
+            return False
+        seen.add(name)
+        unknown = False
+        for child in classes[name].body:
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and child.name == method:
+                return True
+            if isinstance(child, ast.Assign) and any(
+                    isinstance(target, ast.Name) and target.id == method
+                    for target in child.targets):
+                return True
+        for base in classes[name].bases:
+            named = base.id if isinstance(base, ast.Name) else getattr(base, "attr", None)
+            if isinstance(base, ast.Name) and named in classes:
+                found = has(named, seen)
+                if found:
+                    return True
+                unknown = unknown or found is None
+            elif named not in EMPTY_BASES:
+                unknown = True                      # defined elsewhere: it may hold the test
+        return None if unknown else False
+    return has(cls, set())
+
+
+def test_exists(key, root=None, read=None):
+    """False only when the test `key` names is PROVEN gone from the tree; True otherwise.
+
+    `read(rel)` is a file's text, or None when the file is not there - the disk under `root` by
+    default; the commit gate hands in git's index, so it asks the tree the commit would record.
+
+    A QUERY THAT CANNOT READ ITS SUBJECT MUST NOT REPORT IT ABSENT. A test file that does not
+    parse, a class imported from elsewhere, a base defined in another file, a file a declared
+    runner owns: none of them can say a test is gone, so each answers that it is still here. The
+    cheapest way past `--withdraw` is otherwise to break a test file's syntax, and every plant on
+    it reads as orphaned. A Python suite this ledger reads whole (`natively_seen`) is read down to
+    the method, on the class or a base the file defines; anything else is there while its file is.
+    """
+    if read is None:
+        def read(rel):
+            try:
+                with io.open(os.path.join(root or HERE, *rel.split("/")), encoding="utf-8",
+                             errors="replace") as handle:
+                    return handle.read()
+            except OSError:
+                return None
+    parts = str(key).split("::")
+    for rel in test_files(key):
+        text = read(rel)
+        if text is None:
+            continue
+        if len(parts) < 3 or not natively_seen(rel, text):
+            return True
+        return _defines_test(text, parts[1], parts[2]) is not False
+    return False
+
+
+#: The line a commit carries for each plant it withdraws, flush left - written by `withdraw` for
+#: the commit to carry, and read by `tools/commit_gate.py`. One spelling, here.
+WITHDRAWS = "Withdraws:"
+
+
+def withdraw(reasons, exists=None, root=None, classes=None):
+    """(exit code, lines). Plants whose named TEST is gone from the tree, moved to `withdrawn`.
+
+    A GUARD THAT WAS DELETED LEFT ITS PLANTS BEHIND. Measured on the project this came from,
+    2026-10-06: two review pages were replaced by pages drawn from the engine, the tests that drove
+    the old pages went with them, and their plants named tests that no longer existed. Such a plant
+    cannot be driven, re-anchored or retired (`--retire` needs its test to RUN and pass), so the
+    only ways forward were a dead test kept alive under a name that is no longer true, or a ledger
+    that refused every commit touching the page.
+
+    NOT A WAY TO DROP A GUARD THAT EXISTS. Refused while the test is still in the tree
+    (`test_exists`, which answers "still here" whenever it cannot tell); the reason must be
+    MIN_RETIRE_REASON long and say what took the test's place, or why what it held is gone; a class
+    still in the suite left without a site it had is refused by `recount`, like any other loss.
+    The commit then names each plant on a flush-left `Withdraws: <key> -- <reason>` line and
+    changes the test file it named (`tools/commit_gate.py`), where `git log` keeps the argument.
+    """
+    exists = exists or (lambda key: test_exists(key, root))
+    ledger = load()
+    held = ledger.get("plants") or {}
+    failed = []
+    for key, why in sorted(reasons.items()):
+        if key not in held:
+            failed.append("%s is not in the ledger" % key)
+        elif len(str(why or "").strip()) < MIN_RETIRE_REASON:
+            failed.append("%s: the reason is %d characters, and withdrawing needs %d - say what "
+                          "took the test's place, or why what it held is gone"
+                          % (key, len(str(why or "").strip()), MIN_RETIRE_REASON))
+        elif exists(key):
+            failed.append("%s: its test is still in the tree - a plant on a test that exists is "
+                          "re-anchored, or retired once driven, never withdrawn" % key)
+    if failed:
+        return 1, ["REFUSING to withdraw:"] + ["   " + line for line in failed]
+    before = json.loads(json.dumps(ledger))
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    for key, why in sorted(reasons.items()):
+        entry = dict(ledger["plants"].pop(key))
+        entry["withdrawn"] = {"at": stamp, "why": str(why).strip()}
+        ledger.setdefault("withdrawn", {})[key] = entry
+    # AN EXCUSE FOR A CLASS THAT IS GONE excuses whatever takes the name next, which
+    # `ratchet_problems` refuses - so it leaves with the last of the class's plants.
+    classes = guard_classes() if classes is None else classes
+    planted = set(sites_by_class(ledger))
+    dropped = []
+    for excuses in ("single_site", "unevadable"):
+        for cls in sorted(ledger.get(excuses) or {}):
+            if cls not in classes and cls not in planted and any(
+                    "::".join(key.split("::")[:2]) == cls for key in reasons):
+                ledger[excuses].pop(cls)
+                dropped.append("   its %s excuse for %s went with it: the class is gone"
+                               % (excuses, cls))
+    ledger, problems = recount(ledger, before, classes)
+    if problems:
+        return 1, ["REFUSING to withdraw:"] + ["   " + line for line in problems]
+    write(ledger)
+    return 0, (["withdrew %d plant(s); the test each named is gone from the tree" % len(reasons)]
+               + dropped + ["The commit that carries this names each one, flush left:"]
+               + ["%s %s -- %s" % (WITHDRAWS, key, str(why).strip())
+                  for key, why in sorted(reasons.items())])
 
 
 def reanchored(theirs, installed, relocated, held, declared_apart=()):
@@ -970,8 +1351,37 @@ def reanchored(theirs, installed, relocated, held, declared_apart=()):
         entry = dict(entry)
         entry["file"] = relocated.get(entry.get("file"), entry.get("file"))
         mine = held[key]
-        if any(entry.get(field) != mine.get(field) for field in ("file", "old", "new")):
+        # A CHANGED must_say IS A CHANGED PROOF - what the test must say when it reddens - so it arrives
+        # as a re-anchor does, driven red before it is recorded
+        if any(entry.get(field) != mine.get(field) for field in ("file", "old", "new", "must_say")):
             out[key] = entry
+    return out
+
+
+#: The words of a plant that prove nothing - its reason and its site's name - which arrive undriven.
+WORDS = ("why", "site")
+
+
+def reworded(theirs, installed, relocated, held, declared_apart=()):
+    """{key: {field: words}} for plants this project holds exactly as the other ledger plants them - the
+    same file, old, new and must_say - whose `why` or `site` the other ledger has since reworded.
+
+    A REWORD NEVER ARRIVED. Measured 2026-10-10 on CTRMap: the bundle took a users folder out of two
+    plants' reasons (a name elided as three dots, made `<you>`), and CTRMap's merged ledger kept the old
+    words - its SourceSeamTest refused both lines and its battery stayed red - because a merge carried
+    a plant's anchor and never its words. A reason proves nothing, so it arrives without a drive.
+    """
+    out = {}
+    for key, entry in sorted(theirs.items()):
+        if key.split("::")[0] not in installed or key not in held or entry.get("file") in declared_apart:
+            continue
+        mine = held[key]
+        if relocated.get(entry.get("file"), entry.get("file")) != mine.get("file") \
+                or any(entry.get(field) != mine.get(field) for field in ("old", "new", "must_say")):
+            continue
+        changed = {field: entry[field] for field in WORDS if field in entry and entry[field] != mine.get(field)}
+        if changed:
+            out[key] = changed
     return out
 
 
@@ -995,11 +1405,12 @@ def hook_relocations(theirs, hooks, relocated=None):
 
 def merge_from(other_root):
     """(exit code, lines): adopt another ledger's plants for the tests installed here - its new
-    plants, its re-anchors, and its retirements."""
+    plants, its re-anchors, its retirements and its withdrawals."""
     try:
         other = read_json(os.path.join(other_root, "tests", "plants.json"))
         theirs = other.get("plants") or {}
         their_retired = other.get("retired") or {}
+        their_withdrawn = other.get("withdrawn") or {}
     except (OSError, ValueError, AttributeError) as bad:
         return 1, ["REFUSING: the other ledger cannot be read (%s) - a subject that cannot be "
                    "read is not an empty one" % bad]
@@ -1011,8 +1422,8 @@ def merge_from(other_root):
             return 1, ["REFUSING: %s cannot be read (%s)" % (DECLARATIONS, bad)]
     relocated = {rel: entry["at"] for rel, entry in declared.items()
                  if isinstance(entry, dict) and entry.get("at")}
-    relocated.update(hook_relocations(dict(their_retired, **theirs), bundle_hooks.folder(HERE),
-                                      relocated))
+    relocated.update(hook_relocations(dict(their_withdrawn, **dict(their_retired, **theirs)),
+                                      bundle_hooks.folder(HERE), relocated))
     apart = {rel for rel, entry in declared.items()
              if isinstance(entry, dict) and ("diverged" in entry or "not_installed" in entry)}
     installed = set(os.listdir(os.path.join(HERE, "tests")))
@@ -1020,7 +1431,9 @@ def merge_from(other_root):
     adopting = adoptable(theirs, installed, relocated, held, apart)
     moved = reanchored(theirs, installed, relocated, held, apart)
     retiring = retired_there(their_retired, installed, relocated, held, apart)
-    if not adopting and not moved and not retiring:
+    withdrawing = withdrawn_there(their_withdrawn, relocated, held, apart)
+    rewording = reworded(theirs, installed, relocated, held, apart)
+    if not adopting and not moved and not retiring and not withdrawing and not rewording:
         return 0, ["nothing to merge: every plant for an installed test is already recorded, "
                    "as the other ledger records it"]
     # NEW PLANTS FIRST. Every write is recounted, and a re-anchor cannot lower what is owed while an
@@ -1039,8 +1452,49 @@ def merge_from(other_root):
             return code, out
     if retiring:
         code, lines = retire(retiring)
-        return code, out + ["  - %s" % key for key in retiring] + lines
+        out += ["  - %s" % key for key in retiring] + lines
+        if code:
+            return code, out
+    if rewording:
+        ledger = load()
+        for key, words in rewording.items():
+            ledger["plants"][key].update(words)
+        write(ledger)
+        out += ["  = %s" % key for key in rewording] + [
+            "reworded %d plant(s) as the other ledger words them - their reasons, not their proof" % len(rewording)]
+    if withdrawing:
+        code, lines = withdraw(withdrawing)
+        return code, out + ["  x %s" % key for key in withdrawing] + lines
     return 0, out
+
+
+def withdrawn_there(their_withdrawn, relocated, held, declared_apart=()):
+    """{key: reason} for the plants this project holds LIVE that the other ledger has WITHDRAWN -
+    the same plant: its file (where this project keeps it), its old text and its new.
+
+    NOT ASKED WHETHER THE TEST FILE IS INSTALLED, as `retired_there` is. A retired plant's test is
+    still there; a withdrawn one's is gone, and when the bundle deleted the whole FILE an update
+    deletes it here too - so asking for it would skip exactly the plants this exists to carry, and
+    the project would hold them live, naming nothing, until a commit touching the file refused it.
+    A test file the project declared apart keeps its own tests, and its plants are its own.
+    `withdraw` still asks this tree whether each test is gone, and refuses the merge if not.
+    """
+    out = {}
+    for key, entry in sorted(their_withdrawn.items()):
+        if key not in held or not isinstance(entry, dict):
+            continue
+        if entry.get("file") in declared_apart or any(
+                rel in declared_apart for rel in test_files(key)):
+            continue
+        planted = relocated.get(entry.get("file"), entry.get("file"))
+        mine = held[key]
+        if (planted, entry.get("old"), entry.get("new")) != (mine.get("file"), mine.get("old"),
+                                                              mine.get("new")):
+            continue
+        why = str((entry.get("withdrawn") or {}).get("why") or "").strip()
+        if why:
+            out[key] = "Withdrawn where this plant was written: " + why
+    return out
 
 
 def retired_there(their_retired, installed, relocated, held, declared_apart=()):
@@ -1073,36 +1527,40 @@ def retired_there(their_retired, installed, relocated, held, declared_apart=()):
 #: Every flag this reads. An unknown one is REFUSED: `--reanchor`, typed before it existed, fell
 #: through to the default - driving every plant in the ledger - with nothing saying the argument
 #: had been ignored. An argument nothing reads is not a request that was honoured.
-FLAGS = ("--add", "--reanchor", "--retire", "--merge-from", "--recount", "--only", "--owed",
-         "--adopt", "--all")
+FLAGS = ("--add", "--reanchor", "--retire", "--withdraw", "--merge-from", "--recount", "--only",
+         "--owed", "--adopt", "--all")
 
 
 def value_of(argv, flag):
-    """The value FLAG was given, or None when it has none: it is the last argument, or another flag
-    stands in its place. `--merge-from` and `--only` read argv[i + 1] bare, so given last they crashed
-    with IndexError, and `--merge-from --only x` took a flag for a folder (F197)."""
-    at = argv.index(flag)
-    if at + 1 >= len(argv) or argv[at + 1].startswith("--"):
-        return None
-    return argv[at + 1]
+    """The value FLAG was given. cli_words.refused, asked first in main, refuses a valued flag given
+    last or with another flag in its place - `--merge-from` and `--only` read argv[i + 1] bare, so
+    given last they crashed with IndexError, and `--merge-from --only x` took a flag for a folder
+    (F197) - so there is always one here, and this keeps no second copy of that check."""
+    return argv[argv.index(flag) + 1]
 
 
 def committed_ledger():
     """The ledger's text at HEAD, '' when HEAD has none, None when git could not say."""
     rel = os.path.relpath(LEDGER, HERE).replace(os.sep, "/")
     try:
-        done = subprocess.run(["git", "show", "HEAD:" + rel], cwd=HERE, capture_output=True,
-                              text=True, timeout=60, creationflags=NO_WINDOW)
+        done = bounded.run(["git", "show", "HEAD:" + rel], cwd=HERE, capture_output=True,
+                           text=True, timeout=60, creationflags=NO_WINDOW)
     except (OSError, subprocess.SubprocessError):
         return None
     return done.stdout if done.returncode == 0 else ""
 
 
+#: The flags whose value is the next word. Every other word that is not a flag is one nothing reads.
+VALUED = ("--add", "--reanchor", "--retire", "--withdraw", "--merge-from", "--only")
+
+
 def main(argv):
-    unknown = [a for a in argv[1:] if a.startswith("--") and a not in FLAGS]
-    if unknown:
-        print("REFUSING: %s is not a flag this reads (%s) - an ignored argument runs the "
-              "default, which drives every plant" % (", ".join(unknown), ", ".join(FLAGS)))
+    # A WORD NOTHING READS RUNS THE DEFAULT, whatever it is spelt with: only `--` words were asked
+    # here, so `-h`, or a bare word, drove every plant. cli_words.py says what that cost.
+    import cli_words      # a word this does not read refuses the run, before anything runs
+    why = cli_words.refused(argv[1:], flags=FLAGS, valued=VALUED, most=0)
+    if why:
+        print(why)
         return 2
     # NOTHING IS `--all` BY OMISSION. Measured 2026-09-27 on the project this came from: its copy
     # run with no argument, meant as a quick look, started a drive of every held plant - about 75
@@ -1115,34 +1573,25 @@ def main(argv):
     for flag in ("--add", "--reanchor"):
         if flag in argv:
             try:
-                given = value_of(argv, flag)
-                if given is None:
-                    raise ValueError("no file was given")
-                entries = read_json(given)
+                entries = read_json(value_of(argv, flag))
             except (OSError, ValueError) as bad:
                 print("REFUSING: %s takes a JSON file of {key: plant} (%s)" % (flag, bad))
                 return 1
             code, lines = add(entries, replace=(flag == "--reanchor"))
             print(LF.join(lines))
             return code
-    if "--retire" in argv:
-        try:
-            given = value_of(argv, "--retire")
-            if given is None:
-                raise ValueError("no file was given")
-            reasons = read_json(given)
-        except (OSError, ValueError) as bad:
-            print("REFUSING: --retire takes a JSON file of {key: reason} (%s)" % bad)
-            return 1
-        code, lines = retire(reasons)
-        print(LF.join(lines))
-        return code
+    for flag, act in (("--retire", retire), ("--withdraw", withdraw)):
+        if flag in argv:
+            try:
+                reasons = read_json(value_of(argv, flag))
+            except (OSError, ValueError) as bad:
+                print("REFUSING: %s takes a JSON file of {key: reason} (%s)" % (flag, bad))
+                return 1
+            code, lines = act(reasons)
+            print(LF.join(lines))
+            return code
     if "--merge-from" in argv:
-        given = value_of(argv, "--merge-from")
-        if given is None:
-            print("REFUSING: --merge-from takes the folder of another project's ledger, and none was given")
-            return 1
-        code, lines = merge_from(given)
+        code, lines = merge_from(value_of(argv, "--merge-from"))
         print(LF.join(lines))
         return code
     ledger = load()
@@ -1171,10 +1620,6 @@ def main(argv):
     only = None
     if "--only" in argv:
         only = value_of(argv, "--only")
-        if only is None:
-            print("REFUSING: --only takes part of a test id, and none was given - without one this "
-                  "would drive every plant")
-            return 1
     # `--owed`: THE RATCHETS ONLY, no plant driven - milliseconds, so a commit can afford it every
     # time. Driving every plant is the expensive half and belongs where time is budgeted; the
     # commit gate drives each NEW plant itself (`tools/commit_gate.py`).
@@ -1205,7 +1650,7 @@ def main(argv):
             continue
         reddened, detail = drive_plant(key, entry)
         driven += 1
-        print("  %-6s %s" % ("red" if reddened else "PASSED", key))
+        print("  %-6s %s" % (verdict_label(reddened, detail), key))
         if not reddened:
             print("         %s" % detail)
             problems.append("%s did NOT redden - %s" % (key, detail))
@@ -1230,7 +1675,7 @@ def main(argv):
             held = json.loads(committed)
         except ValueError:
             held = None
-        problems.extend("since HEAD: %s" % line for line in ceiling_rises(held, ledger))
+        problems.extend("since HEAD: %s" % line for line in change_problems(held, ledger))
     for key, matches in stale_anchors(ledger):
         problems.append("%s: its anchor matches %d time(s), not once - re-anchor it in the same "
                         "change with `--reanchor`, driven red" % (key, matches))

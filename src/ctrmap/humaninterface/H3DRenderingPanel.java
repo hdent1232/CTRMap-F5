@@ -11,10 +11,7 @@ import com.jogamp.opengl.glu.GLU;
 import ctrmap.Workspace;
 import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.vectors.Vec3f;
-import java.awt.Color;
-import java.awt.Graphics;
 import java.awt.event.MouseEvent;
-import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
 import ctrmap.formats.MapObject;
@@ -125,9 +122,6 @@ public class H3DRenderingPanel extends GLJPanel implements GLEventListener {
 	}
 
 	public void cycleSelection(MouseEvent e) { //this method would largely benefit from abstractization of the edit forms as it has two unnecessary copy-pasted ifs. On the other hand, I actually like this way more than constant type casting like ((form.getObjectClass()) form.objects.get(i)). Too imprecise for reading, in a SPICA kind of way.
-		BufferedImage out = new BufferedImage(1920, 1080, BufferedImage.TYPE_INT_RGB);
-		Graphics g = out.getGraphics();
-		g.setColor(Color.BLUE);
 		CM3DComponents.forEach((t) -> {
 			t.doSelectionLoop(e, this, mvMatrix, projMatrix, view, new Vec3f(translateX, translateY, translateZ));
 		});

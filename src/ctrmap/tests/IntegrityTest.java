@@ -53,11 +53,62 @@ public class IntegrityTest {
 		}
 	}
 
+	/**
+	 * A master zone table the check cannot read is said, with why - never a deep check that comes back clean.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (WorkspaceIntegrity 194, its report dropped, SURVIVED): nothing handed
+	 * the check a table it could not read. Dropped, a deep check of a game whose master table is two rows and a
+	 * byte came back with nothing to say about the one table every zone's area and map are read from.
+	 */
+	static void aMasterTableThatCannotBeReadIsSaid() throws Exception {
+		System.out.println("--- a master zone table the check cannot read is said, with why");
+		Workspace.reset();
+		try {
+			byte[] torn = java.util.Arrays.copyOf(rowsOnArea0(2), 2 * ctrmap.MasterTable.ROW + 1);
+			List<String> bad = WorkspaceIntegrity.check(handBuilt("torn", 0, 0, torn), true);
+			check(bad.toString().contains("the master zone table could not be read: ") && bad.size() == 1,
+					"a master table of two rows and a byte is reported as unreadable, with why, and nothing else: " + bad);
+		} finally {
+			Workspace.reset();
+		}
+	}
+
 	/** Two zones on map 0 with master rows on area 0; zone 1's own header names {@code headerArea1}. */
 	static ctrmap.WorkspaceSession handBuilt(String name, int headerArea0, int headerArea1) throws Exception {
+		return handBuilt(name, headerArea0, headerArea1, rowsOnArea0(2));
+	}
+
+	/** The same, with {@code master} as the master zone table's bytes. */
+	static ctrmap.WorkspaceSession handBuilt(String name, int headerArea0, int headerArea1, byte[] master) throws Exception {
+		return handBuiltFrom(name, zoneOn(headerArea0), zoneOn(headerArea1), master);
+	}
+
+	/**
+	 * A header check that could read no zone's header says it verified nothing - never a pass that read nothing
+	 * coming back as if every header agreed.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (WorkspaceIntegrity 259, its report dropped, SURVIVED): the blindness
+	 * check below covers the matrix pass and never this one. Dropped, a game whose 2 ZoneData entries are no zone
+	 * containers had its headers "checked" and nothing said.
+	 */
+	static void aHeaderCheckThatReadNothingSaysSo() throws Exception {
+		System.out.println("--- a header check that could read no zone's header says it verified nothing");
+		Workspace.reset();
+		try {
+			byte[] notAZone = "XX not a zone container".getBytes("US-ASCII");
+			List<String> bad = WorkspaceIntegrity.check(handBuiltFrom("headless", notAZone, notAZone, rowsOnArea0(2)), true);
+			check(bad.toString().contains("the header check could not read any of the 2 zones, so nothing was verified"),
+					"two ZoneData entries that are no zone containers: the header check says it read none of the 2: " + bad);
+		} finally {
+			Workspace.reset();
+		}
+	}
+
+	/** Two ZoneData entries as given, then the master zone table and the encounter pack. */
+	static ctrmap.WorkspaceSession handBuiltFrom(String name, byte[] zone0, byte[] zone1, byte[] master) throws Exception {
 		File root = Scratch.dir("ctrmap_integrity_" + name);
 		File zo = new File(root, "zonedata");
-		HandedGameTest.writeGarc(zo, zoneOn(headerArea0), zoneOn(headerArea1), rowsOnArea0(2), "EN".getBytes("US-ASCII"));
+		HandedGameTest.writeGarc(zo, zone0, zone1, master, "EN".getBytes("US-ASCII"));
 		File ad = new File(root, "areas");
 		HandedGameTest.writeGarc(ad, new byte[]{1}, new byte[]{2});
 		File np = new File(root, "registries");
@@ -89,6 +140,8 @@ public class IntegrityTest {
 	public static void main(String[] args) throws Exception {
 		//needs no dump: a game written by hand
 		aZoneWhoseHeaderAndRowDisagreeIsNamed();
+		aMasterTableThatCannotBeReadIsSaid();
+		aHeaderCheckThatReadNothingSaysSo();
 		String root = args.length > 0 ? args[0] : "../RomFS_original_garcs";
 		File gamedir = new File(root);
 		if (!gamedir.isDirectory()) {

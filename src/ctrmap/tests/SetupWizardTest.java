@@ -13,6 +13,7 @@ import javax.imageio.ImageIO;
 import javax.swing.JButton;
 import javax.swing.JDialog;
 import javax.swing.JTextField;
+import javax.swing.SwingUtilities;
 
 /**
  * Drives the setup wizard through its steps WITHOUT ever showing it, and checks
@@ -50,9 +51,41 @@ public class SetupWizardTest {
 		String dump = args[0];
 		File shots = args.length > 1 ? new File(args[1]) : null;
 
-		Constructor<SetupWizard> ctor = SetupWizard.class.getDeclaredConstructor(Frame.class);
+		//DRIVEN ON THE EVENT THREAD, as a user drives it (2026-10-14). The wizard's text fields re-check through
+		//invokeLater, and this suite set them from the main thread: the event thread could run a queued re-check
+		//between a setText's remove and its insert, read the field empty, and land after the direct re-check this
+		//suite made - so Next was read in a state no user can reach. MEASURED: 1 run in 100 failed that way, under
+		//a machine of 5 sweep workers, and the mutation sweep read 3 of those failures as kills of lines this
+		//suite never runs (Ips 48, MapResizer 336, and AbstractGamefreakContainer 287, which no input reaches).
+		Exception[] thrown = {null};
+		SwingUtilities.invokeAndWait(() -> {
+			try {
+				drive(dump, shots);
+			} catch (Exception e) {
+				thrown[0] = e;
+			}
+		});
+		if (thrown[0] != null) {
+			throw thrown[0];
+		}
+		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT (" + failures + ")");
+		if (failures > 0) {
+			System.exit(1);
+		}
+	}
+
+	/** Every step of the wizard, on the event thread; the re-checks its fields queue run only after it returns. */
+	private static void drive(String dump, File shots) throws Exception {
+		if (!SwingUtilities.isEventDispatchThread()) {
+			throw new IllegalStateException("the wizard is driven on the event thread, as a user drives it");
+		}
+		//THE WIZARD IS HANDED what tells the editor a workspace opened (F007); a suite that drives no window
+		//hands one that answers no zones
+		Constructor<SetupWizard> ctor = SetupWizard.class.getDeclaredConstructor(Frame.class,
+				java.util.function.ToIntFunction.class);
 		ctor.setAccessible(true);
-		SetupWizard w = ctor.newInstance((Frame) null);
+		SetupWizard w = ctor.newInstance((Frame) null,
+				(java.util.function.ToIntFunction<ctrmap.WorkspaceSession>) session -> 0);
 		//pack() creates the peer but does NOT show the window - nothing appears
 		//on screen at any point in this test
 		w.pack();
@@ -123,10 +156,42 @@ public class SetupWizardTest {
 		shot(w, shots, "wizard-5-finish");
 
 		w.dispose();
-		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT (" + failures + ")");
-		if (failures > 0) {
-			System.exit(1);
+		aGameThatThrowsWhileOpeningIsRefusedWithItsReason();
+	}
+
+	/**
+	 * A game that throws while it is opened is refused with the reason it gave, never with the advice for a game that
+	 * held no maps (the 2026-10-16 assembly, SetupWizard 643, drop-report, SURVIVED: no suite had the opening throw).
+	 * Dropped, the user was told to unpack their whole game again for a fault that had named itself. The game folder
+	 * and working folder are empty scratch folders: nothing of the real game is opened.
+	 */
+	private static void aGameThatThrowsWhileOpeningIsRefusedWithItsReason() throws Exception {
+		Constructor<SetupWizard> ctor = SetupWizard.class.getDeclaredConstructor(Frame.class,
+				java.util.function.ToIntFunction.class);
+		ctor.setAccessible(true);
+		SetupWizard w = ctor.newInstance((Frame) null, (java.util.function.ToIntFunction<ctrmap.WorkspaceSession>) session -> {
+			throw new IllegalStateException("the zone table is damaged");
+		});
+		ctrmap.WorkspaceSession was = ctrmap.Workspace.session();
+		String gameDir = ctrmap.Workspace.GAMEDIR_PATH;
+		String wsDir = ctrmap.Workspace.WORKSPACE_PATH;
+		java.util.List<String> said = ctrmap.Ui.record();
+		try {
+			ctrmap.Workspace.GAMEDIR_PATH = Scratch.dir("ctrmap_throwing_game").getAbsolutePath();
+			ctrmap.Workspace.WORKSPACE_PATH = Scratch.dir("ctrmap_throwing_game_ws").getAbsolutePath();
+			Method complete = SetupWizard.class.getDeclaredMethod("completeSetup");
+			complete.setAccessible(true);
+			complete.invoke(w);
+		} finally {
+			ctrmap.Ui.stopRecording();
+			ctrmap.Workspace.GAMEDIR_PATH = gameDir;
+			ctrmap.Workspace.WORKSPACE_PATH = wsDir;
+			ctrmap.Workspace.install(was);
+			w.dispose();
 		}
+		check("a game that throws while it is opened is refused with its reason, not the advice for one with no maps: "
+				+ said, said.size() == 1 && said.get(0).contains("the zone table is damaged")
+				&& !said.get(0).contains("found no maps"));
 	}
 
 	private static Object field(Object o, String name) throws Exception {

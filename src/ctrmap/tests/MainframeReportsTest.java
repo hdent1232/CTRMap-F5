@@ -65,6 +65,7 @@ public class MainframeReportsTest {
 		aGameThatCannotForkIsNotOfferedTheForkPrompt();
 		anAreaThatCannotBeCheckedIsAskedAbout();
 		theAreaReportSaysWhetherTheAreaWasForked();
+		independenceIsNeverMadeWithNoGameHanded();
 
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
@@ -89,6 +90,29 @@ public class MainframeReportsTest {
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * Making a zone independent is refused, in words, when no open game is handed to it - even when nothing is asked
+	 * for, so the refusal is about the game and not about what the forks would have touched.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (ZoneIndependence 37, dropped, SURVIVED): nothing called make with no game.
+	 * Dropped, it opened its unit keyed to no game and ran the forks against whichever game was current - the unit
+	 * snapshotting the edit list of a game it was not writing, the mistake its own javadoc names.
+	 */
+	static void independenceIsNeverMadeWithNoGameHanded() {
+		System.out.println("--- making a zone independent with no game handed to it is refused, in words");
+		String said;
+		try {
+			ctrmap.ZoneIndependence made = ctrmap.ZoneIndependence.make(null, 0, false, false);
+			said = made == null ? "it answered no result at all" : "it made zone 0 independent of nothing: " + made.report();
+		} catch (IllegalArgumentException refused) {
+			said = refused.getMessage();
+		} catch (Exception other) {
+			said = "it went on and failed: " + other;
+		}
+		check(said.startsWith(ctrmap.ZoneIndependence.TITLE + " must be handed the open game it writes"),
+				"with no game handed it is refused before any unit opens, saying why: " + said);
 	}
 
 	/**
@@ -134,7 +158,7 @@ public class MainframeReportsTest {
 		if (zone < 0) {
 			return;
 		}
-		ctrmap.ZoneIndependence done = ctrmap.ZoneIndependence.make(zone, false, true);
+		ctrmap.ZoneIndependence done = ctrmap.ZoneIndependence.make(ctrmap.Workspace.session(), zone, false, true);
 		check(done.area != null && done.area.forked, "zone " + zone + "'s area really is forked");
 		check(ctrmap.AreaForker.areaSharers(zone) == 0,
 				"and afterwards zone " + zone + " shares its area with nobody (" + ctrmap.AreaForker.areaSharers(zone) + ")");
@@ -438,12 +462,13 @@ public class MainframeReportsTest {
 	 */
 	static void aGameThatCannotForkIsNotOfferedTheForkPrompt() throws Exception {
 		File root = Scratch.dir("ctrmap_unmeasured_fork");
-		Sessions.bare(new File(root, "ws"), new File(root, "game"), GameType.SM);
+		zoneTenOnArea7(Sessions.bare(new File(root, "ws"), new File(root, "game"), GameType.SM), root);
 		try {
 			List<String> said = Ui.record();
 			ctrmap.AreaForker.ForkResult r;
 			try {
-				r = ctrmap.humaninterface.AreaForkPrompt.ensurePrivate(new ctrmap.LoadedZone(), null, 10, 7, "a test edit");
+				r = ctrmap.humaninterface.AreaForkPrompt.ensurePrivate(new ctrmap.LoadedZone(), null, 10, "a test edit",
+						FORKS, () -> { });
 			} finally {
 				Ui.stopRecording();
 			}
@@ -457,17 +482,41 @@ public class MainframeReportsTest {
 		}
 	}
 
+	/** The history the prompt keeps a fork in; neither contract here forks. */
+	static final ctrmap.humaninterface.SaveHistory FORKS = new ctrmap.humaninterface.SaveHistory(
+			() -> java.util.Collections.<Object>emptyList());
+
+	/**
+	 * Installs {@code s} with a ZoneData whose zone 10 is on area 7 - twelve zones, then a master table of 5 bytes,
+	 * which no game's reader takes, and an encounter pack - so the prompt has a zone to read its area from (F255).
+	 */
+	static void zoneTenOnArea7(ctrmap.WorkspaceSession s, File root) throws Exception {
+		byte[][] zo = new byte[14][];
+		for (int z = 0; z < 12; z++) {
+			zo[z] = AreaEditUndoTest.zone(z == 10 ? 7 : 0);
+		}
+		zo[12] = new byte[5];
+		zo[13] = MapResizeTest.container(0x454E, new byte[12][0]);
+		File f = new File(root, "zonedata");
+		HandedGameTest.writeGarc(f, zo);
+		ctrmap.WorkspaceSession zones = s.withArchive(ctrmap.gamedef.ArchiveType.ZONE_DATA, new ctrmap.formats.garc.GARC(f));
+		zones.workspaceDir().mkdirs();
+		zones.prepareDirectories();
+		Workspace.install(zones);
+	}
+
 	/**
 	 * An area whose sharing cannot be checked is ASKED about, not waved through (F211, census M.121).
 	 *
 	 * <p>The prompt answered "not shared" whenever the master table would not read, and the edit went
 	 * on to an area that 77% of retail zones share - the guard open exactly when it could not look.
-	 * An ORAS workspace with no game data behind it cannot read its master table: the user is told
-	 * that, closing the question cancels, and only "Edit this area anyway" hands the area back.
+	 * An ORAS workspace whose master table is not a row per zone cannot read it: the user is told
+	 * that, closing the question cancels, and only "Edit this area anyway" hands the area back - the
+	 * one zone 10's file names (F255).
 	 */
 	static void anAreaThatCannotBeCheckedIsAskedAbout() throws Exception {
 		File root = Scratch.dir("ctrmap_unchecked_area");
-		Sessions.bare(new File(root, "ws"), new File(root, "game"), GameType.ORAS);
+		zoneTenOnArea7(Sessions.bare(new File(root, "ws"), new File(root, "game"), GameType.ORAS), root);
 		try {
 			String sharers;
 			try {
@@ -475,12 +524,13 @@ public class MainframeReportsTest {
 			} catch (Exception ex) {
 				sharers = null;
 			}
-			check(sharers == null, "control: with no game data the master table cannot be read ("
+			check(sharers == null, "control: a master table of 5 bytes cannot be read ("
 					+ (sharers == null ? "it throws" : sharers) + ")");
 			List<String> said = Ui.record();
 			ctrmap.AreaForker.ForkResult closed;
 			try {
-				closed = ctrmap.humaninterface.AreaForkPrompt.ensurePrivate(new ctrmap.LoadedZone(), null, 10, 7, "a test edit");
+				closed = ctrmap.humaninterface.AreaForkPrompt.ensurePrivate(new ctrmap.LoadedZone(), null, 10, "a test edit",
+						FORKS, () -> { });
 			} finally {
 				Ui.stopRecording();
 			}
@@ -491,7 +541,8 @@ public class MainframeReportsTest {
 			said = Ui.record("Edit this area anyway");
 			ctrmap.AreaForker.ForkResult anyway;
 			try {
-				anyway = ctrmap.humaninterface.AreaForkPrompt.ensurePrivate(new ctrmap.LoadedZone(), null, 10, 7, "a test edit");
+				anyway = ctrmap.humaninterface.AreaForkPrompt.ensurePrivate(new ctrmap.LoadedZone(), null, 10, "a test edit",
+						FORKS, () -> { });
 			} finally {
 				Ui.stopRecording();
 			}
@@ -524,33 +575,34 @@ public class MainframeReportsTest {
 				@Override
 				public void run() {
 				}
-			});
+			}, new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		} else if ("maison".equals(which)) {
 			ctrmap.humaninterface.MaisonEditDialog.panel(null, new Runnable() {
 				@Override
 				public void run() {
 				}
-			}, (title, editor) -> { });
+			}, (title, editor) -> { }, new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		} else if ("shop".equals(which)) {
 			ctrmap.humaninterface.ShopEditDialog.panel(null, new Runnable() {
 				@Override
 				public void run() {
 				}
-			});
+			}, new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		} else if ("lighting".equals(which)) {
 			ctrmap.humaninterface.AreaLightingDialog.panel(null, new ctrmap.LoadedZone(), null,
 				new Runnable() {
 					@Override
 					public void run() {
 					}
-				}, () -> { });
+				}, () -> { }, new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()),
+				() -> { });
 		} else if ("encounters".equals(which)) {
 			ctrmap.humaninterface.EncounterEditDialog.panel(null, new ctrmap.LoadedZone(),
 				new Runnable() {
 					@Override
 					public void run() {
 					}
-				});
+				}, new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		} else {
 			throw new IllegalArgumentException("no editor named " + which);
 		}

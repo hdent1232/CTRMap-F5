@@ -4,6 +4,7 @@ import ctrmap.formats.codepatch.ZoneLimitPatch;
 import ctrmap.formats.codepatch.ZoneLimitPatch.Patch;
 import java.io.File;
 import java.nio.file.Files;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -99,7 +100,37 @@ public class ZoneLimitPatchTest {
 			check(verified >= 0 && appended > verified && built > appended,
 					"the dialog verifies code.bin, then appends, then builds the patch from it ("
 					+ verified + ", " + appended + ", " + built + ")");
+			//census M.46: the title the patch installs under is ZoneLimitPatch's one constant, never a copy of it
+			check(!body.contains(ZoneLimitPatch.TITLE_ID) && body.contains("ZoneLimitPatch.TITLE_ID"),
+					"the Add zones instruction names the patch's title through ZoneLimitPatch.TITLE_ID, not a copy");
+			int saidWhere = body.split("MAKE_IT_AGAIN", -1).length - 1;
+			check(saidWhere >= 3 && !body.contains("regenerate it before testing"),
+					"an append whose patch was not saved says where to make it again, both ways it can happen ("
+					+ saidWhere + " mentions)");
 		}
+
+		// 3d. MADE AGAIN for a game that already has its zones (census H.2): Add zones was the only producer and
+		// runs once per stock base, so a patch lost to a cancelled save or a failed write could never be made again
+		int slots = ZoneLimitPatch.masterIndex(1);
+		check(Arrays.equals(ZoneLimitPatch.forZoneCount(slots, stock),
+				ZoneLimitPatch.buildIPS(slots - ZoneLimitPatch.BASE_ZONES, stock)),
+				"the patch made again for a game holding " + slots + " slots is the one Add zones saved for it");
+		String none = refusal(() -> ZoneLimitPatch.forZoneCount(ZoneLimitPatch.BASE_ZONES, stock));
+		check(none != null && none.contains("no added zones"), "a stock game is refused, saying it needs none: " + none);
+		String odd = refusal(() -> ZoneLimitPatch.forZoneCount(ZoneLimitPatch.BASE_ZONES + 1, stock));
+		check(odd != null && odd.contains("no append leaves"), "a count no append leaves is refused: " + odd);
+		File frame = new File("src/ctrmap/CtrmapMainframe.java");
+		String deploy = frame.isFile() ? CollisionReadTest.body(SourceSeamTest.stripComments(new String(
+				Files.readAllBytes(frame.toPath()), java.nio.charset.StandardCharsets.UTF_8)), "private void deployModAction()") : null;
+		check(deploy != null && deploy.contains("mZonePnl.makeZoneLimitPatch()"),
+				"and the deploy dialog, which asks for the patch, makes it for the zones the game holds");
+
+		// 3e. SAVED WHERE THE USER PICKS, AND NOWHERE ON A CANCEL (the 2026-10-15 shared sweep, ZoneLoadingPanel 1543,
+		// negate-if, SURVIVED: no suite answered the save's chooser). Inverted, a file picked saved nothing and a cancel
+		// wrote code.ips into whatever folder the program runs in. The save is asked of a panel made without its
+		// constructor - it reads nothing of the panel but the parent it hands the chooser - with a patch of no records.
+		aZoneLimitPatchIsSavedWhereThePickedAndNowhereOnCancel();
+		aZoneLimitPatchIsMadeOnlyWithAWorkspace();
 
 		// 4. against the real code.bin: stock words must all match (verifier throws otherwise)
 		File codeFile = new File(args.length > 0 ? args[0] : DEFAULT_CODE);
@@ -181,6 +212,92 @@ public class ZoneLimitPatchTest {
 				return;
 			}
 		}
+	}
+
+	/** See section 3e of {@link #main}. */
+	static void aZoneLimitPatchIsSavedWhereThePickedAndNowhereOnCancel() throws Exception {
+		java.lang.reflect.Field theUnsafe = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe");
+		theUnsafe.setAccessible(true);
+		Object unsafe = theUnsafe.get(null);
+		Object panel = unsafe.getClass().getMethod("allocateInstance", Class.class).invoke(unsafe,
+				ctrmap.humaninterface.ZoneLoadingPanel.class);
+		java.lang.reflect.Method save = ctrmap.humaninterface.ZoneLoadingPanel.class.getDeclaredMethod("saveZoneLimitIps",
+				byte[].class);
+		save.setAccessible(true);
+		byte[] none = ctrmap.formats.codepatch.Ips.write(new java.util.ArrayList<>());
+		File picked = new File(Scratch.dir("ctrmap_zonelimit_save"), "code.ips");
+		Object answered;
+		ctrmap.Ui.record(picked);
+		try {
+			answered = save.invoke(panel, (Object) none);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(picked.equals(answered) && picked.isFile(), "the zone-limit patch is saved where the user picked: answered "
+				+ answered + ", " + (picked.isFile() ? "written" : "not written"));
+		File here = new File("code.ips").getAbsoluteFile();
+		if (here.exists()) {
+			Skip.section("a code.ips is already in " + here.getParent() + ", so a cancel that wrote one could not be told");
+			return;
+		}
+		ctrmap.Ui.record();
+		try {
+			answered = save.invoke(panel, (Object) none);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		boolean wrote = here.exists();
+		if (wrote) {
+			java.nio.file.Files.delete(here.toPath());   //this check's own: it was not there before the call
+		}
+		check(answered == null && !wrote, "a cancelled save answers no file and writes none: answered " + answered + ", "
+				+ (wrote ? "wrote " + here : "wrote nothing"));
+	}
+
+	/**
+	 * Make zone-limit patch with no workspace says to load one, and with ZoneData open goes on to ask for code.bin (the
+	 * 2026-10-15 shared sweep, ZoneLoadingPanel 1558, negate-if, SURVIVED: no suite pressed it). Inverted, a game with
+	 * its zones open was told to load a workspace, and one with none went on to count zones it has not got. The game
+	 * folder is a fresh scratch one, so no code.bin is remembered for it, the chooser is cancelled, and nothing is
+	 * remembered or forgotten in the user's settings.
+	 */
+	static void aZoneLimitPatchIsMadeOnlyWithAWorkspace() throws Exception {
+		java.lang.reflect.Field theUnsafe = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe");
+		theUnsafe.setAccessible(true);
+		Object unsafe = theUnsafe.get(null);
+		ctrmap.humaninterface.ZoneLoadingPanel panel = (ctrmap.humaninterface.ZoneLoadingPanel) unsafe.getClass()
+				.getMethod("allocateInstance", Class.class).invoke(unsafe, ctrmap.humaninterface.ZoneLoadingPanel.class);
+		ctrmap.WorkspaceSession was = ctrmap.Workspace.session();
+		String gameDir = ctrmap.Workspace.GAMEDIR_PATH;
+		List<String> none;
+		List<String> open;
+		File answeredNone;
+		File answeredOpen;
+		try {
+			ctrmap.Workspace.GAMEDIR_PATH = Scratch.dir("ctrmap_zonelimit_game").getAbsolutePath();
+			ctrmap.Workspace.install(null);
+			none = ctrmap.Ui.record();
+			try {
+				answeredNone = panel.makeZoneLimitPatch();
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
+			MapResizeTest.game("zonelimit");
+			open = ctrmap.Ui.record();
+			try {
+				answeredOpen = panel.makeZoneLimitPatch();
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
+		} finally {
+			ctrmap.Workspace.GAMEDIR_PATH = gameDir;
+			ctrmap.Workspace.install(was);
+		}
+		check(answeredNone == null && none.contains("Make zone-limit patch: Load a workspace first."),
+				"with no workspace, Make zone-limit patch says to load one: " + none);
+		check(answeredOpen == null && !open.toString().contains("Load a workspace first.")
+				&& open.toString().contains("Pick your DECOMPRESSED code.bin"),
+				"and with ZoneData open it goes on to ask for code.bin: " + open);
 	}
 
 	private static void checkEq(int exp, int got, String what) {

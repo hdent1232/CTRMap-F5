@@ -74,6 +74,7 @@ public class OpenEditors {
 	}
 
 	/** How many editors are in the set; the guard checks the count it was built with. */
+	@ctrmap.util.ForSuites("SEAM: a suite counts the editors the set was built with, to see none is dropped from a save")
 	public int size() {
 		return editors.size();
 	}

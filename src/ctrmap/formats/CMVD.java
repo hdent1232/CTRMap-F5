@@ -1,6 +1,5 @@
 package ctrmap.formats;
 
-import com.jogamp.opengl.GL2;
 import ctrmap.formats.h3d.model.OhanaMeshUtils;
 import ctrmap.formats.vectors.Vec3f;
 import java.awt.Color;
@@ -82,24 +81,6 @@ public class CMVD {
 
 	public void makeBox(){
 		OhanaMeshUtils.makeBox(boxVectors, minVector, maxVector);
-	}
-	
-	public void render(GL2 gl) {
-		gl.glPushMatrix();
-		gl.glTranslatef(worldLocX, worldLocY, worldLocZ);
-		gl.glScalef(scale, scale, scale);
-		gl.glDisable(GL2.GL_TEXTURE_2D);
-		gl.glBegin(GL2.GL_TRIANGLES);
-		for (int i = 0; i < faces.size(); i++) {
-			int[] face = faces.get(i);
-			for (int j = 0; j < 3; j++) {
-				CMVDVertex v = vertices.get(face[j]);
-				gl.glColor3ub((byte) v.col.getRed(), (byte) v.col.getGreen(), (byte) v.col.getBlue());
-				gl.glVertex3f(v.x, v.y, v.z);
-			}
-		}
-		gl.glEnd();
-		gl.glPopMatrix();
 	}
 
 	public static class CMVDVertex {

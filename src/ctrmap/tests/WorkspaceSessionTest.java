@@ -93,6 +93,8 @@ public class WorkspaceSessionTest {
 			File noGame = Scratch.dir("ctrmap_session_nogame");
 			stagedCompressionBelongsToItsWorkspace(noGame);
 			aReloadReopensWhatItNames(Scratch.dir("ctrmap_session_reload"));
+			aReloadKeepsEachArchivesOwnCompressionRule(Scratch.dir("ctrmap_session_reload_sniff"));
+			aForgottenFlagTakesOnlyItself(Scratch.dir("ctrmap_session_pending"));
 		} finally {
 			Workspace.reset();
 		}
@@ -115,6 +117,162 @@ public class WorkspaceSessionTest {
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * Forgetting one added entry's compression flag - a kept change taken back - takes that flag and no other, and
+	 * an archive left with none holds nothing for the pack.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (WorkspaceSession 773, negated, SURVIVED): nothing forgot one flag of two.
+	 * Inverted, taking back one appended zone dropped the whole archive's flags - the other appended zone's
+	 * compression unknown to the next pack, which then stores it as it guesses - and an archive left with none kept
+	 * an empty map the pack would take as flags.
+	 */
+	static void aForgottenFlagTakesOnlyItself(File dir) throws Exception {
+		System.out.println("--- forgetting one added entry's compression flag takes that one and no other");
+		WorkspaceSession s = new WorkspaceSession(new File(dir, "ws"), new File(dir, "game"), GameType.ORAS,
+				new java.util.EnumMap<ArchiveType, GARC>(ArchiveType.class));
+		s.registerPendingCompression(ArchiveType.ZONE_DATA, 600, true);
+		s.registerPendingCompression(ArchiveType.ZONE_DATA, 601, false);
+		s.forgetPendingCompression(ArchiveType.ZONE_DATA, 600);
+		java.util.Map<Integer, Boolean> left = s.consumePendingCompression(ArchiveType.ZONE_DATA);
+		check(left != null && left.size() == 1 && Boolean.FALSE.equals(left.get(601)),
+				"one of two appended zones taken back: the other's flag is still there for the pack: " + left);
+		s.registerPendingCompression(ArchiveType.FIELD_DATA, 9, true);
+		s.forgetPendingCompression(ArchiveType.FIELD_DATA, 9);
+		check(!s.hasPendingCompression(ArchiveType.FIELD_DATA) && s.consumePendingCompression(ArchiveType.FIELD_DATA) == null,
+				"and an archive whose only flag is taken back holds nothing for the pack");
+
+		//measured by the 2026-10-12 sweep (WorkspaceSession 854, negated, SURVIVED): no suite asked the session itself
+		//for an edited entry. Inverted, it answered "no edit" for every archive that has a folder, so every reader
+		//handed the session read the archive's entry instead of the owner's staged edit - the edit invisible
+		File staged = new File(s.getExtractionDirectory(ArchiveType.ZONE_DATA), "3");
+		staged.getParentFile().mkdirs();
+		Files.write(staged.toPath(), "an edited zone".getBytes(StandardCharsets.US_ASCII));
+		File untouched = new File(staged.getParentFile(), "4");
+		Files.write(untouched.toPath(), "extracted, never edited".getBytes(StandardCharsets.US_ASCII));
+		s.edited(staged);
+		File asked = s.editedEntry(ArchiveType.ZONE_DATA, 3);
+		check(asked != null && asked.getAbsoluteFile().equals(staged.getAbsoluteFile())
+				&& s.editedEntry(ArchiveType.ZONE_DATA, 4) == null,
+				"an entry the owner edited is answered as their edit, and one extracted but never edited is not: " + asked);
+
+		//measured by the 2026-10-12 sweep (WorkspaceSession 977, negated, SURVIVED): nothing asked the session itself
+		//to drop extracted copies. Inverted, it returned before dropping any - a zone removal left the copy of the
+		//entry it removed, still marked as an edit, to be packed back as a zone the archive no longer has - and an
+		//archive nothing was ever extracted from failed on a null pointer
+		s.dropExtracted(ArchiveType.ZONE_DATA, n -> n == 3);
+		check(!staged.exists() && !s.isPersisted(staged) && untouched.isFile(),
+				"dropping entry 3's extracted copy deletes it and its edited mark, and leaves entry 4's");
+		String quiet;
+		try {
+			s.dropExtracted(ArchiveType.TRAINER_DATA, n -> true);
+			quiet = "nothing to drop, and nothing said";
+		} catch (RuntimeException crashed) {
+			quiet = "crashed: " + crashed;
+		}
+		check(quiet.startsWith("nothing to drop"), "and an archive nothing was extracted from has nothing to drop: " + quiet);
+
+		//measured by the 2026-10-12 sweep (WorkspaceSession 997, dropped, SURVIVED): no copy that could not be deleted
+		//was ever asked. Dropped, a removal answered done while the copy of a zone the archive no longer has stayed
+		//in the workspace, to be read - and edited - as that zone. Asked on Windows, where a file held open cannot be
+		//deleted
+		if (!System.getProperty("os.name", "").toLowerCase().contains("win")) {
+			Skip.section("a copy held open so it cannot be deleted is asked only on Windows - NOT asked here");
+			return;
+		}
+		File heldCopy = new File(staged.getParentFile(), "7");
+		Files.write(heldCopy.toPath(), "a removed zone's copy, held open".getBytes(StandardCharsets.US_ASCII));
+		String refusal;
+		try (java.io.FileInputStream hold = new java.io.FileInputStream(heldCopy)) {
+			try {
+				s.dropExtracted(ArchiveType.ZONE_DATA, n -> n == 7);
+				refusal = "it answered done";
+			} catch (java.io.IOException refused) {
+				refusal = refused.getMessage();
+			}
+		}
+		check(heldCopy.isFile() && refusal.contains("could not be deleted") && refusal.contains(heldCopy.getPath()),
+				"a copy that cannot be deleted is refused, naming it, never answered as dropped: " + refusal);
+
+		//measured by the 2026-10-12 sweep (WorkspaceSession 1147, swallowed, SURVIVED): the drop-throw died to a source
+		//check, and nothing asked a backup that will not go. Swallowed, discardSnapshot returned as if it had gone,
+		//and a switch to another game folder went ahead on the first game's backup - what every "ship only what
+		//changed" diff is taken against
+		File snapshot = WorkspaceSession.originalSnapshotDir(new File(dir, "ws"));
+		File heldBackup = new File(snapshot, "a" + File.separator + "0" + File.separator + "1" + File.separator + "3");
+		heldBackup.getParentFile().mkdirs();
+		Files.write(heldBackup.toPath(), "the first game's ZoneData, held open".getBytes(StandardCharsets.US_ASCII));
+		String kept;
+		try (java.io.FileInputStream hold = new java.io.FileInputStream(heldBackup)) {
+			try {
+				WorkspaceSession.discardSnapshot(new File(dir, "ws"));
+				kept = "it answered gone";
+			} catch (java.io.IOException refused) {
+				kept = refused.getMessage();
+			}
+		}
+		check(heldBackup.isFile() && kept.contains("the old backup could not be removed") && kept.contains(snapshot.getPath()),
+				"a backup that will not go is refused, naming it, never answered as gone: " + kept);
+	}
+
+	/**
+	 * A reload reopens each archive under its own compression rule: one whose entries are raw records - trainer
+	 * data, where any record may start with 0x11 - is never read as LZ11 after a reload, and one that sniffs still
+	 * does.
+	 *
+	 * <p>Measured by the 2026-10-12 sweep (WorkspaceSession 646, negated, SURVIVED): no suite reloaded an archive
+	 * whose rule is not to sniff. Inverted, the reload asked another archive's row - AreaData's, which sniffs - so
+	 * after a pack or a restore, trainer data was reopened sniffing, and a raw record that looks like LZ11 came back
+	 * "decompressed": corruption on read, of every such record, for the rest of the session.
+	 */
+	static void aReloadKeepsEachArchivesOwnCompressionRule(File dir) throws Exception {
+		System.out.println("--- a reload reopens each archive under its own compression rule");
+		byte[] plain = new byte[96];
+		for (int i = 0; i < plain.length; i++) {
+			plain[i] = (byte) (i % 7);
+		}
+		byte[] lz = ctrmap.formats.garc.LZ11.compress(plain);
+		java.util.EnumMap<ArchiveType, GARC> open = new java.util.EnumMap<>(ArchiveType.class);
+		File raw = new File(dir, "trdata");
+		HandedGameTest.writeGarc(raw, lz);
+		open.put(ArchiveType.TRAINER_DATA, new GARC(raw, false));
+		File sniffed = new File(dir, "areadata");
+		HandedGameTest.writeGarc(sniffed, lz);
+		open.put(ArchiveType.AREA_DATA, new GARC(sniffed));
+		WorkspaceSession s = new WorkspaceSession(new File(dir, "ws"), new File(dir, "game"), GameType.ORAS, open);
+		check(lz[0] == 0x11 && java.util.Arrays.equals(s.getArchive(ArchiveType.TRAINER_DATA).getDecompressedEntry(0), lz)
+				&& java.util.Arrays.equals(s.getArchive(ArchiveType.AREA_DATA).getDecompressedEntry(0), plain),
+				"CONTROL: one LZ11 entry reads raw from the trainer archive and decompressed from the area archive");
+		GARC beforeTrainer = s.getArchive(ArchiveType.TRAINER_DATA);
+		s.reloadGARC(ArchiveType.TRAINER_DATA);
+		s.reloadGARC(ArchiveType.AREA_DATA);
+		check(s.getArchive(ArchiveType.TRAINER_DATA) != beforeTrainer
+				&& java.util.Arrays.equals(s.getArchive(ArchiveType.TRAINER_DATA).getDecompressedEntry(0), lz),
+				"reloaded, the trainer archive still reads its record raw, never as LZ11");
+		check(java.util.Arrays.equals(s.getArchive(ArchiveType.AREA_DATA).getDecompressedEntry(0), plain),
+				"and the area archive still decompresses its own");
+
+		//measured by the 2026-10-12 sweep (WorkspaceSession 751, dropped, SURVIVED): nothing packed an archive the
+		//session does not hold. Dropped, the pack was counted as begun - so a change kept before it would count as
+		//in the game - and then failed on a null pointer that named no archive
+		WorkspaceSession bare = new WorkspaceSession(new File(dir, "ws2"), new File(dir, "game2"), GameType.ORAS,
+				new java.util.EnumMap<ArchiveType, GARC>(java.util.Collections.singletonMap(ArchiveType.AREA_DATA, new GARC(sniffed))));
+		int packsBefore = bare.packs();
+		Object said;
+		try {
+			bare.packOne(ArchiveType.TRAINER_DATA);
+			said = "it returned as if it had packed";
+		} catch (java.io.IOException refused) {
+			said = refused;
+		} catch (RuntimeException crashed) {
+			said = "crashed: " + crashed;
+		}
+		check(said instanceof java.io.IOException
+				&& ((Exception) said).getMessage().contains("the TRAINER_DATA archive is not open")
+				&& bare.packs() == packsBefore,
+				"packing an archive the session does not hold is refused, naming it, and no pack is counted: " + said
+				+ " (packs " + packsBefore + " -> " + bare.packs() + ")");
 	}
 
 	/**
@@ -164,6 +322,9 @@ public class WorkspaceSessionTest {
 		System.out.println("--- a session opened on the dump owns its state; Workspace's statics know nothing of it");
 		File ws = Scratch.dir("ctrmap_session_ws");
 		WorkspaceSession s = WorkspaceSession.open(ws, dump);
+		//WHAT THE OPEN LEFT, read before anything below marks an edit: an edit is written through to the list
+		//as it is made (F034), so the folder holds that list afterwards, and the open is judged on its own
+		String[] afterOpen = ws.list();
 
 		check(s.game() == GameType.ORAS, "the game is detected from the folder (" + s.game() + ")");
 		//the isOA()/isXY() gates that used to be checked here are gone: what a
@@ -190,6 +351,9 @@ public class WorkspaceSessionTest {
 		s.addPersist(edited);
 		check(s.persistPaths().size() == 1 && s.persistPaths().contains(edited.getAbsolutePath()),
 				"marking a file edited records it once (" + s.persistPaths() + ")");
+		File list = WorkspaceSession.persistFile(ws);
+		check(list.isFile() && new String(java.nio.file.Files.readAllBytes(list.toPath()), "UTF-8").contains("5"),
+				"and writes it through to the workspace's list as it is made, so a crash cannot forget it (F034)");
 
 		//the statics: untouched. This is the line between an instance and a facade.
 		check(!Workspace.isValid(), "Workspace does not consider itself valid");
@@ -206,9 +370,10 @@ public class WorkspaceSessionTest {
 				+ " rather than handing out ORAS's");
 		check(Workspace.persistPaths().isEmpty(), "Workspace has nothing marked edited");
 
-		String[] left = ws.list();
+		String[] left = afterOpen;
 		check(left != null && left.length == 0,
-				"opening a session wrote nothing into the workspace folder (it holds " + (left == null ? "?" : left.length) + " entries)");
+				"opening a session wrote nothing into the workspace folder (it holds " + (left == null ? "?" : left.length)
+				+ " entries: " + (left == null ? "unlistable" : java.util.Arrays.toString(left)) + ")");
 	}
 
 	// ------------------------------------------------------- 2. two sessions

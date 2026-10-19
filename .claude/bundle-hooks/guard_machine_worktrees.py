@@ -81,7 +81,7 @@ alive = bundle_shell.alive
 UNREADABLE = "unreadable"
 
 
-def sweep_pid():
+def sweep_pid(with_started=False):
     """The pid of the bounded run that owns the worktrees, None when no run holds the lock - or
     UNREADABLE when the lock is there and cannot be read.
 
@@ -95,7 +95,10 @@ def sweep_pid():
             held = json.load(handle)
     except (IOError, OSError, ValueError):
         return UNREADABLE
-    return held.get("pid") if isinstance(held, dict) else UNREADABLE
+    if not isinstance(held, dict):
+        return UNREADABLE
+    # WITH THE START TIME THE LOCK RECORDED: a pid alone is a number the OS reuses (bundle_shell.alive).
+    return (held.get("pid"), held.get("started_epoch")) if with_started else held.get("pid")
 
 
 def touches_a_worktree(command):
@@ -165,14 +168,15 @@ def main():
     by_command = touches_a_worktree(command) and not is_read_only(command)
     if not by_command and not written:
         return 0
-    pid = sweep_pid()
+    held = sweep_pid(with_started=True)               # ONE read: the pid and the start time from one write
+    pid, started = held if isinstance(held, tuple) else (held, None)
     if pid == UNREADABLE:
         sys.stderr.write(refusal("(unknown - %s exists and cannot be read; if no run is in "
-                                 "flight, remove it)" % os.path.relpath(RUN_LOCK, ROOT),
+                                 "flight, remove it)" % bundle_shell.relative(RUN_LOCK, ROOT),
                                  command if by_command else "writes " + ", ".join(written))
                          + "\n")
         return 2
-    if pid is None or not alive(pid):
+    if pid is None or not alive(pid, started):
         return 0
     sys.stderr.write(refusal(pid, command if by_command else "writes " + ", ".join(written))
                      + "\n")

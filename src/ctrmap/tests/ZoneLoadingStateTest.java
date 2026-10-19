@@ -108,6 +108,7 @@ public class ZoneLoadingStateTest {
 		theZoneButtonsRefuseWhatTheyCannotDo();
 		theZoneTabRefusesToBeBuiltWithoutTheEditors();
 		aDeclineThatCannotBeSavedIsSaidOutLoudOnce();
+		declinesThatCannotBeReadAreSaidOnce();
 		aDeclineIsItsGamesNotTheMachines();
 
 		if (!dump.isDirectory()) {
@@ -116,7 +117,7 @@ public class ZoneLoadingStateTest {
 			ScratchGame.open(dump);
 			LocationNames.loadFromGarc(Workspace.session());
 			LoadedZone lz = new LoadedZone();
-			ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+			ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 			TestWindow.mZonePnl(pnl);
 			TestWindow.mNPCEditForm(new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, TestWindow.mTileMapPanel(), pane -> { }, UndoHistoryTest.overOneNumber(new int[]{0})));
 			TestWindow.mWarpEditForm(new WarpEditForm(lz, REDRAW, CENTRE));
@@ -132,6 +133,7 @@ public class ZoneLoadingStateTest {
 			theWindowsOwnZoneViewsTakeThePropEditorDownToo(lz);
 			aWorkspaceThatFailedToOpenClosesTheZone(pnl, lz);
 			aSharedMapIsOfferedAForkAndADeclineIsRemembered(pnl, lz);
+			addingZonesWithItsFormClosedAddsNothing(pnl, lz);
 			//LAST: it replaces the zone table with one that cannot be read
 			aZoneTableThatCannotBeReadLeavesNoZones(pnl, lz);
 		}
@@ -164,7 +166,7 @@ public class ZoneLoadingStateTest {
 	/** What building a Zone tab with these two says, or that it said nothing. */
 	static String refusal(ctrmap.humaninterface.OpenEditors editors, ctrmap.humaninterface.ZoneEditors views) {
 		try {
-			new ZoneLoadingPanel(new LoadedZone(), TOOLS, editors, views, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+			new ZoneLoadingPanel(new LoadedZone(), TOOLS, editors, views, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		} catch (IllegalArgumentException refused) {
 			return String.valueOf(refused.getMessage());
 		}
@@ -184,7 +186,7 @@ public class ZoneLoadingStateTest {
 	static void aFreshPanelHoldsNoZone() {
 		System.out.println("--- a panel that has never been given a game");
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		check(lz.count() == 0, "no zone table");
 		check(lz.open() == null, "no open zone");
 		check(lz.index() == -1, "and the index is -1, not 0 - nothing is open (got " + lz.index() + ")");
@@ -208,7 +210,7 @@ public class ZoneLoadingStateTest {
 	 */
 	static void theDropdownTablesAgreeWithThemselves() throws Exception {
 		System.out.println("--- the weather and map-type tables agree with themselves");
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		WorkspaceSession was = Workspace.session();
 
 		openAs(GameType.XY);
@@ -275,7 +277,7 @@ public class ZoneLoadingStateTest {
 	static void theZoneButtonsRefuseWhatTheyCannotDo() throws Exception {
 		System.out.println("--- the Clone and Add buttons refuse before they flush anything");
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 		WorkspaceSession was = Workspace.session();
 
 		openAs(GameType.ORAS);
@@ -339,7 +341,7 @@ public class ZoneLoadingStateTest {
 		System.out.println("--- rebuilding the list fills it from the archive and opens nothing");
 		lz.open(42, zoneAt(SHARED_ZONE));         //as if a zone had been open before
 		long t0 = System.currentTimeMillis();
-		pnl.loadEverything();
+		Edt.run(pnl::loadEverything);
 		long ms = System.currentTimeMillis() - t0;
 
 		int entries = Workspace.getArchive(ArchiveType.ZONE_DATA).length;
@@ -416,18 +418,17 @@ public class ZoneLoadingStateTest {
 	 * boots, and the difference is a flag the player meets three towns later.
 	 *
 	 * <p>Driven on real zones with real headers, and asserted on the bytes the
-	 * container holds afterwards. It found one, which is pinned here as it
-	 * behaves and reported rather than fixed: 52 retail zones do NOT come back
-	 * unchanged, because one header field is six bits wide and its editor is a
-	 * checkbox.
+	 * container holds afterwards. It found one, pinned here as it behaved until
+	 * it was fixed: 52 retail zones did NOT come back unchanged, because one
+	 * header field is six bits wide and its editor is a checkbox. They do now.
 	 */
 	static void aLoadedZoneIsWrittenBackUnchanged(ZoneLoadingPanel pnl, LoadedZone lz) throws Exception {
 		System.out.println("--- a zone opened and saved with nothing typed, against the bytes");
 		//"Is parent map" is a checkbox over a SIX-BIT field: the header packs
 		//parentMap in the low 10 bits of the u16 at 0x1C and OLvalue in the
-		//rest, and the form reads it as OLvalue == 1 and writes back 1 or 0.
-		//Retail uses 2 as well, so opening one of those zones and saving zeroes
-		//it. Measured, PINNED, and reported - not fixed here.
+		//rest, and the form reads it as OLvalue == 1. Retail uses 2 as well, and
+		//saving one of those zones zeroed it until the form wrote the field back
+		//only when the box was changed - asserted below, on the bytes.
 		TreeSet<Integer> wideOL = new TreeSet<>();
 		TreeSet<Integer> values = new TreeSet<>();
 		for (int i = 0; i < lz.count(); i++) {
@@ -471,7 +472,11 @@ public class ZoneLoadingStateTest {
 		check(checkedZones == 9, "opened and saved " + checkedZones + " zones the form can represent");
 		check(changed == 0, "and not one header byte moved " + firstChange);
 
-		//and one it cannot: exactly one byte, and exactly this byte
+		//AND ONE IT CANNOT, BYTE FOR BYTE TOO. It lost exactly one byte - the high half of the packed parentMap
+		//word at 0x1C, OLvalue 2 written back as 0 - and was pinned here as it behaved, until the form stopped
+		//writing the checkbox back unless the user changed it (shownParent, beside the town map's and the
+		//transition's). Measured 2026-10-09: nothing moved and OLvalue 2 kept, so the pin went red; it holds
+		//the fixed behaviour now.
 		int victim = wideOL.first();
 		Zone z = zoneAt(victim);
 		int wasOL = z.header.OLvalue;
@@ -487,14 +492,14 @@ public class ZoneLoadingStateTest {
 				moved.add(k);
 			}
 		}
-		check(before.length == after.length && moved.size() == 1 && moved.get(0) == 0x1D,
-				"zone " + victim + " (OLvalue " + wasOL + ") loses exactly one byte, the high half of"
-				+ " the packed parentMap word at 0x1C: moved " + moved);
+		check(before.length == after.length && moved.isEmpty(),
+				"zone " + victim + " (OLvalue " + wasOL + ") comes back byte for byte, the packed parentMap word"
+				+ " at 0x1C included: moved " + moved);
 		ctrmap.formats.zone.ZoneHeader reread
 				= new ctrmap.formats.zone.ZoneHeader(after, Workspace.game());
-		check(reread.OLvalue == 0,
-				"OLvalue " + wasOL + " is written back as " + reread.OLvalue
-				+ " - PINNED as it behaves, not as it should");
+		check(reread.OLvalue == wasOL,
+				"OLvalue " + wasOL + " is written back as " + reread.OLvalue + " - the value the checkbox cannot show"
+				+ " is kept while nobody ticks it");
 		check(reread.parentMap == wasParent,
 				"and the location id sharing that word is untouched (" + wasParent + ")");
 
@@ -525,7 +530,7 @@ public class ZoneLoadingStateTest {
 			throws Exception {
 		System.out.println("--- a zone opened from a file writes nobody else's table slot");
 		File master = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA,
-			ctrmap.ZoneTables.masterIndex(Workspace.getArchive(ArchiveType.ZONE_DATA)));
+			ctrmap.ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA)));
 		byte[] before = java.nio.file.Files.readAllBytes(master.toPath());
 		
 		//the user picks zone 3 from the dropdown...
@@ -811,7 +816,7 @@ public class ZoneLoadingStateTest {
 			check(said.size() == 1 && said.get(0).startsWith("Shared map: This zone SHARES its map with "
 					+ sharers + " other zone(s):"),
 					"a shared zone is offered a private copy, and told how many: " + line(said));
-			check(said.size() == 1 && said.get(0).contains("  - zone "),
+			check(said.size() == 1 && java.util.regex.Pattern.compile("\n  - .+ - [0-9]+").matcher(said.get(0)).find(),   //LocationNames.zoneLabel (census L.36)
 					"and which ones, by index and name, rather than just a count");
 			check(said.size() == 1 && said.get(0).contains("Editing the map here would change those zones too"),
 					"and why it matters");
@@ -852,6 +857,49 @@ public class ZoneLoadingStateTest {
 	 * so the write is refused while the declines it holds still read.
 	 */
 	static void aDeclineThatCannotBeSavedIsSaidOutLoudOnce() throws Exception {
+		aDeclineThatCannotBeSavedIsSaidOutLoudOnce0();
+	}
+
+	/**
+	 * Declines that cannot be READ are said, and said once per panel (the 2026-10-15 shared sweep, ZoneLoadingPanel
+	 * 1723, negate-if, SURVIVED: no suite had a store that would not read). Inverted, they were said only once they
+	 * had been - never - and the offers came back with no word why. The store's own name is taken by a folder, the
+	 * lever that refuses the read on any machine; the panel is asked twice.
+	 */
+	static void declinesThatCannotBeReadAreSaidOnce() throws Exception {
+		System.out.println("--- declines the workspace cannot read are reported, once");
+		String wasPath = Workspace.WORKSPACE_PATH;
+		String wasGame = Workspace.GAMEDIR_PATH;
+		File base = Scratch.dir("ctrmap_fork_declines_unread");
+		List<String> said;
+		Object first;
+		Object second;
+		try {
+			File ws = new File(base, "ws");
+			check(new File(ws, ctrmap.ForkDeclines.FILE).mkdirs(), "the store's own name taken by a folder");
+			Workspace.WORKSPACE_PATH = ws.getAbsolutePath();
+			Workspace.GAMEDIR_PATH = new File(base, "game").getAbsolutePath();
+			ZoneLoadingPanel pnl = new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
+			Method declined = ZoneLoadingPanel.class.getDeclaredMethod("forkDeclined");
+			declined.setAccessible(true);
+			said = Ui.record();
+			try {
+				first = declined.invoke(pnl);
+				second = declined.invoke(pnl);
+			} finally {
+				Ui.stopRecording();
+			}
+		} finally {
+			Workspace.WORKSPACE_PATH = wasPath;
+			Workspace.GAMEDIR_PATH = wasGame;
+		}
+		check(said.size() == 1 && said.get(0).contains("could not be read"),
+				"declines that cannot be read are said, once for two asks: " + line(said));
+		check(((java.util.Set<?>) first).isEmpty() && ((java.util.Set<?>) second).isEmpty(),
+				"and read as none declined, so the offers are asked again: " + first + ", " + second);
+	}
+
+	static void aDeclineThatCannotBeSavedIsSaidOutLoudOnce0() throws Exception {
 		System.out.println("--- a decline the workspace cannot keep is reported, once");
 		String wasPath = Workspace.WORKSPACE_PATH;
 		String wasGame = Workspace.GAMEDIR_PATH;
@@ -863,7 +911,7 @@ public class ZoneLoadingStateTest {
 			Workspace.WORKSPACE_PATH = ws.getAbsolutePath();
 			Workspace.GAMEDIR_PATH = game;
 			ctrmap.ForkDeclines.write(ws, game, new TreeSet<>(Arrays.asList(3, 4, 5)));
-			ZoneLoadingPanel pnl = new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}));
+			ZoneLoadingPanel pnl = new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS, ZONE_EDITORS, NAVI, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 
 			List<String> said = Ui.record();
 			try {
@@ -926,6 +974,19 @@ public class ZoneLoadingStateTest {
 					"the same workspace pointed at another game holds none of them - its zone 7 is another zone: "
 					+ ctrmap.ForkDeclines.read(ws, gameB));
 			check(ctrmap.ForkDeclines.read(other, gameA).isEmpty(), "and another workspace on the same game holds none either");
+			//NO GAME, NO WRITE: the final 2026-10-12 sweep dropped this refusal and every suite stayed green - and
+			//without it the declines were kept under the key of whatever folder the program was started in
+			String noGame;
+			try {
+				ctrmap.ForkDeclines.write(other, "", declined);
+				noGame = "written";
+			} catch (java.io.IOException ex) {
+				noGame = ex.getMessage();
+			} catch (RuntimeException ex) {
+				noGame = "threw " + ex;   //a failure of the write, said as one rather than ending the suite
+			}
+			check(noGame.contains("no workspace or no game folder") && !ctrmap.ForkDeclines.file(other).exists(),
+					"a decline with no game folder named is refused, and nothing is written: " + noGame);
 			Workspace.WORKSPACE_PATH = ws.getAbsolutePath();
 			Workspace.GAMEDIR_PATH = gameA;
 			Workspace.cleanAll();
@@ -960,6 +1021,22 @@ public class ZoneLoadingStateTest {
 			Workspace.WORKSPACE_PATH = wasPath;
 			Workspace.GAMEDIR_PATH = wasGame;
 		}
+	}
+
+	/**
+	 * Add new zones, its form closed, adds nothing and asks nothing more (the 2026-10-16 assembly,
+	 * ZoneLoadingPanel 2032, negate-if, SURVIVED: every press of the button a suite made was refused
+	 * before the form). Inverted, a closed form went on to the append's confirmation, and OK on the
+	 * form stopped there. Over the real game, so the button reaches its form.
+	 */
+	static void addingZonesWithItsFormClosedAddsNothing(ZoneLoadingPanel pnl, LoadedZone lz) throws Exception {
+		System.out.println("--- Add new zones, its form closed, adds nothing and asks nothing more");
+		int before = lz.count();
+		List<String> said = press(pnl, "btnAddZoneActionPerformed");
+		check(before > 0 && lz.count() == before && said.size() == 1
+				&& said.get(0).startsWith("Add new zones (lift zone limit)"),
+				"Add new zones with its form closed adds nothing and asks nothing more: " + before + " zones, now "
+				+ lz.count() + ", " + said);
 	}
 
 	/**
@@ -1009,7 +1086,7 @@ public class ZoneLoadingStateTest {
 				"an archive holding nothing reports "
 				+ Workspace.getArchive(ArchiveType.ZONE_DATA).length + " entries");
 
-		pnl.loadEverything();
+		Edt.run(pnl::loadEverything);
 		check(pnl.getLoadedZoneCount() == 0,
 				"and the dropdown is left empty rather than holding the last game's zones (got "
 				+ pnl.getLoadedZoneCount() + ")");
@@ -1177,9 +1254,10 @@ public class ZoneLoadingStateTest {
 	 *
 	 * <p>So this builds the list the window builds, gives the window a prop form
 	 * that is holding propdata, and asks that list for "no zone is open". The
-	 * entity entries clear the three forms this suite already built; the map
-	 * view, matrix, camera, script and scene entries clear to nothing, as their
-	 * own lines say.
+	 * entity entries clear the three forms this suite already built, the camera
+	 * and script entries the camera form and script editor it is given (F222);
+	 * the map view, matrix and scene entries clear to nothing, as their own
+	 * lines say.
 	 *
 	 * <p>The map view the form is handed is the window's, which is null in this
 	 * suite: the form reads it only when it WRITES props, and nothing here
@@ -1195,6 +1273,16 @@ public class ZoneLoadingStateTest {
 			form.loadDataFile(held, null, null);
 			check(form.loaded && form.props == held, "the prop editor is showing a zone's props first");
 
+			//THE CAMERAS GO WITH THE ZONE TOO (F222): the window's camera entry unloads its form now, where it
+			//cleared nothing, so the window is given one that is showing a zone's cameras
+			ctrmap.humaninterface.CameraEditForm cameras = new ctrmap.humaninterface.CameraEditForm(REDRAW,
+					UndoHistoryTest.overOneNumber(new int[]{0}));
+			cameras.loaded = true;
+			TestWindow.mCamEditForm(cameras);
+			//and the script editor, which the same commit made the script entry unload
+			ctrmap.humaninterface.ScriptEditor script = new ctrmap.humaninterface.ScriptEditor(new RecordingZoneSaver());
+			script.loaded = true;
+			TestWindow.mScriptPnl(script);
 			Method build = CtrmapMainframe.class.getDeclaredMethod(
 					"buildZoneEditors", ctrmap.humaninterface.Scene3D.class);
 			build.setAccessible(true);
@@ -1203,6 +1291,9 @@ public class ZoneLoadingStateTest {
 			views.clear();
 
 			check(!form.loaded, "the window's list, told no zone is open, takes the prop editor down with it");
+			check(!cameras.loaded, "and the camera form with it, so no closed zone's cameras look live (F222)");
+			check(!script.loaded && script.script == null,
+					"and the script editor, so no closed zone's script stays editable with every edit lost (F222)");
 			check(form.props == null && form.prop == null && form.reg == null,
 					"leaving it no propdata, no record and no registry for the next zone to be written over");
 		} finally {
@@ -1222,6 +1313,8 @@ public class ZoneLoadingStateTest {
 				System.out.println("  note: the prop preview could not be stopped (" + ex + ")");
 			}
 			TestWindow.mPropEditForm(null);
+			TestWindow.mCamEditForm(null);
+			TestWindow.mScriptPnl(null);
 		}
 	}
 }

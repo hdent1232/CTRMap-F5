@@ -73,10 +73,14 @@ public final class CodeIps {
 	/**
 	 * Saves {@code ours} into the code.ips at {@code out}, keeping the patches already there.
 	 *
+	 * @param aboutToWrite told the file before its first byte changes, so a change the caller keeps can put it
+	 *        back (F209c) - the caller's WorkspaceUnit, which this format package may not reach itself
 	 * @return a note for the user: what happened to the patches already there
 	 */
-	public static String save(File out, byte[] ours, int[][] owned) throws IOException {
+	public static String save(File out, byte[] ours, int[][] owned, java.util.function.Consumer<File> aboutToWrite)
+			throws IOException {
 		byte[] existing = out.isFile() ? Files.readAllBytes(out.toPath()) : null;
+		aboutToWrite.accept(out);
 		ctrmap.util.Bytes.replaceFile(out, merged(existing, ours, owned));
 		return existing == null ? "" : " (the patches already in it were kept)";
 	}
@@ -89,10 +93,12 @@ public final class CodeIps {
 	 * other one - what removing the added zones needs, where deleting the file, as the user used to
 	 * be told to, took the shop and icon patches with it.
 	 *
+	 * @param aboutToWrite told the file before its first byte changes, as {@link #save} is
 	 * @return how many patched bytes are left in it
 	 */
-	public static int strip(File file, int[][] owned) throws IOException {
+	public static int strip(File file, int[][] owned, java.util.function.Consumer<File> aboutToWrite) throws IOException {
 		byte[] left = merged(Files.readAllBytes(file.toPath()), EMPTY, owned);
+		aboutToWrite.accept(file);
 		ctrmap.util.Bytes.replaceFile(file, left);
 		int n = 0;
 		for (int[] rec : Ips.parse(left)) {

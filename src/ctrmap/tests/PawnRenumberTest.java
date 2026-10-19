@@ -219,9 +219,9 @@ public class PawnRenumberTest {
 		aim(jump, retn);
 		s.setInstructionListeners();
 		int cell = jump.argumentCells[0];
-		check(!jump.setArgsFromString("=> 0x" + Integer.toHexString(retn.pointer - 2)) && jump.argumentCells[0] == cell,
+		check(!jump.takeArgs("=> 0x" + Integer.toHexString(retn.pointer - 2)).isEmpty() && jump.argumentCells[0] == cell,
 				"a target inside nothing is refused and the jump keeps its target (" + jump.argumentCells[0] + ")");
-		check(jump.setArgsFromString("=> 0x" + Integer.toHexString(zero.pointer)) && jump.pointer + jump.argumentCells[0] == zero.pointer,
+		check(jump.takeArgs("=> 0x" + Integer.toHexString(zero.pointer)).isEmpty() && jump.pointer + jump.argumentCells[0] == zero.pointer,
 				"one that is an instruction is taken");
 		check(s.whyNotRenumberable().isEmpty(), "and the script can still be renumbered: '" + s.whyNotRenumberable() + "'");
 	}

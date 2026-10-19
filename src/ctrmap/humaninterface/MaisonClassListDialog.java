@@ -3,12 +3,9 @@ package ctrmap.humaninterface;
 import ctrmap.Workspace;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.maison.MaisonClassList;
-import ctrmap.formats.text.GFMessageFile;
 import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
-import java.io.File;
-import java.nio.file.Files;
 import java.util.List;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
@@ -63,6 +60,16 @@ public class MaisonClassListDialog {
 	}
 
 	/**
+	 * The Save button's work for one class table: what changed, written as one change and kept in
+	 * {@code saves}, the editor re-read through {@code reread} when it is taken back or put again (F209c).
+	 * Public so a suite can press it headless.
+	 */
+	public static java.util.List<Integer> saveTable(String name, ctrmap.WorkspaceSession ws, ctrmap.RecordPool pool,
+			MaisonClassList[] rows, Runnable reread, SaveHistory saves) throws java.io.IOException {
+		return MaisonEditDialog.savePool(name, ws, pool, rows, MaisonClassList::write, reread, saves);
+	}
+
+	/**
 	 * The editor, as a panel for the Game Data tab.
 	 *
 	 * <p>It was a modal window. A feature lives in the part of the UI it belongs to,
@@ -73,12 +80,17 @@ public class MaisonClassListDialog {
 	 * @param onClose what to do when the user is finished with it; the host clears
 	 * @return the editor, or null when there is nothing to edit (it says why first)
 	 */
-	public static javax.swing.JComponent panel(java.awt.Component parent, Runnable onClose) {
+	public static javax.swing.JComponent panel(java.awt.Component parent, Runnable onClose, SaveHistory saves) {
+		if (saves == null) {
+			throw new IllegalArgumentException("the class-assignment editor must be handed the history its saves are kept in");
+		}
 		if (Workspace.getArchive(TABLES[0]) == null) {
 			ctrmap.Ui.error(parent, "This dump has no facility class tables.", "Class assignments");
 			return null;
 		}
-		String[] classNames = text(Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.TRAINER_CLASS_NAMES));
+		java.util.List<String> unread = new java.util.ArrayList<>();
+		String[] classNames = Workspace.textLines(Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.TRAINER_CLASS_NAMES), unread);
+		ctrmap.Ui.saidUnread(parent, unread, "Class assignments");
 		final String[] tableNames = tableNames();
 		final JComboBox<String> tableBox = new JComboBox<>(tableNames);
 		final ListModel model = new ListModel(classNames, tableNames);
@@ -140,7 +152,7 @@ public class MaisonClassListDialog {
 				if (jt.isEditing()) {
 					jt.getCellEditor().stopCellEditing();
 				}
-				model.save();
+				model.save(saves);
 				ctrmap.Ui.message(dlg, "Saved " + tableNames[model.tableIndex]
 						+ ".\nDeploy to emulator to apply.", "Class assignments", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
@@ -154,22 +166,61 @@ public class MaisonClassListDialog {
 			onClose.run();
 		});
 
-		return dlg;
+		//THE LISTS EDITED IN MEMORY ARE A DOCUMENT (F209c): watched under the tab's Undo while this editor is shown
+		return SaveHistory.watching(dlg, () -> java.util.Collections.<UndoHistory.Document<?>>singletonList(lists(model)));
+	}
+
+	/**
+	 * The class table the editor shows, as its rows' records: one document per table read, put back into that
+	 * table, read again first when another one is shown.
+	 */
+	private static UndoHistory.Document<byte[][]> lists(final ListModel model) {
+		final ctrmap.RecordPool pool = model.pool;
+		final int index = model.tableIndex;
+		return new UndoHistory.Document<byte[][]>() {
+			@Override
+			public Object subject() {
+				return pool;
+			}
+
+			@Override
+			public byte[][] take() {
+				byte[][] out = new byte[model.lists.length][];
+				for (int i = 0; i < out.length; i++) {
+					out[i] = model.lists[i] == null ? null : model.lists[i].write();
+				}
+				return out;
+			}
+
+			@Override
+			public void put(byte[][] state) {
+				if (model.pool != pool) {
+					model.loadTable(index);
+				}
+				MaisonClassList[] back = new MaisonClassList[state.length];
+				for (int i = 0; i < state.length; i++) {
+					back[i] = state[i] == null ? null : MaisonClassList.read(state[i]);
+				}
+				model.lists = back;
+				model.dirty = true;
+				model.fireTableDataChanged();
+			}
+
+			@Override
+			public boolean same(byte[][] a, byte[][] b) {
+				return java.util.Arrays.deepEquals(a, b);
+			}
+
+			@Override
+			public String what() {
+				return "the class lists of " + model.tableNames[index];
+			}
+		};
 	}
 
 	private static boolean confirmDiscard(java.awt.Component c) {
 		return ctrmap.Ui.confirm(c, "Discard unsaved changes to this table?", "Class assignments",
 				JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE) == JOptionPane.YES_OPTION;
-	}
-
-	private static String[] text(int entry) {
-		try {
-			File f = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT, entry);
-			List<String> lines = GFMessageFile.getStrings(Files.readAllBytes(f.toPath()));
-			return lines.toArray(new String[0]);
-		} catch (Exception ex) {
-			return new String[0];
-		}
 	}
 
 	private static class ListModel extends AbstractTableModel {
@@ -220,12 +271,11 @@ public class MaisonClassListDialog {
 			return true;
 		}
 
-		void save() throws Exception {
-			//ONLY WHAT CHANGED, never a row that could not be read, as one unit (F102)
-			try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Save " + tableNames[tableIndex], Workspace.session())) {
-				pool.save(lists, MaisonClassList::write);
-				unit.commit();
-			}
+		void save(SaveHistory saves) throws Exception {
+			//ONLY WHAT CHANGED, never a row that could not be read, as one unit (F102) - and kept, so it can be
+			//taken back (F209c)
+			final int shown = tableIndex;
+			saveTable("Save " + tableNames[tableIndex], Workspace.session(), pool, lists, () -> loadTable(shown), saves);
 			dirty = false;
 		}
 

@@ -55,6 +55,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 if __name__ == "__main__":
     sys.dont_write_bytecode = True     # run from its folder, a tool leaves no bytecode there
@@ -63,7 +64,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bundle_shell      # noqa: E402  - the command, found by shape, at any depth
 import time
 
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
+import bounded         # noqa: E402  - a deadline ends the child's whole tree
 ROOT = _tree_root.require(__file__)
 STATE = os.path.join(ROOT, ".sweep")
 EXERCISED = os.path.join(ROOT, "tests", "exercised_by.json")
@@ -174,7 +177,7 @@ def last_product():
             except OSError:
                 continue
             if at > newest:
-                newest, name = at, os.path.relpath(path, ROOT).replace(os.sep, "/")
+                newest, name = at, bundle_shell.relative(path, ROOT)
     if name is None:
         return 0.0, None
     return max(0.0, time.time() - newest), name
@@ -268,6 +271,11 @@ def refusal(seconds, name, bound):
         "      python tools/dev/progress.py            # what it thinks it is doing",
         "      tail docs/.sweep-forever.log            # what it last did",
         "      powershell tools/dev/start_sweep_forever.ps1",
+        "  or, where the machine is the bundle's own sweep:",
+        "      python -B tools/sweep.py status         # what it has weighed",
+        "      python -B tools/sweep.py run            # weigh what HEAD changed; a pass that",
+        "                                              # leaves nothing unweighed says so",
+        "      python -B tools/sweep.py stop           # stop it on purpose",
         "",
         "  git, the suite, `safe.py`, `plants.py` and everything that starts or inspects the",
         "  runner still run. To stop it ON PURPOSE, write .sweep/idle-on-purpose.json with a",
@@ -392,7 +400,38 @@ def decide(command):
     bound = bound_seconds()
     if seconds < bound:
         return 0, ""
+    if finished_at_head():
+        return 0, ""
     return 2, refusal(seconds, name, bound)
+
+
+#: What `tools/sweep.py` writes when a pass leaves no site in its scope without a verdict.
+COMPLETE = "complete.json"
+
+
+def finished_at_head():
+    """True when the sweep recorded a FINISHED pass at the commit HEAD names now.
+
+    A FINISHED MACHINE IS NOT A STALLED ONE. A sweep that has weighed every site at HEAD has
+    nothing to produce until HEAD moves, and this refused every command from the end of such a
+    run - so a project that ran the bundle's sweep once was refused for the rest of its life
+    unless it stopped the machine. Asked only when this is about to refuse, because it asks git.
+    UNKNOWN - git cannot be asked, the record cannot be read, it names another commit - is not
+    finished: idle stays idle, and a commit since the pass is work the machine has not done."""
+    try:
+        with io.open(os.path.join(STATE, COMPLETE), encoding="utf-8") as handle:
+            held = json.load(handle)
+    except (IOError, OSError, ValueError):
+        return False
+    head = held.get("head") if isinstance(held, dict) else None
+    if not isinstance(head, str) or not head:
+        return False
+    try:
+        done = bounded.run(["git", "-C", ROOT, "rev-parse", "HEAD"], capture_output=True,
+                           text=True, timeout=30, creationflags=NO_WINDOW)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.returncode == 0 and done.stdout.strip() == head
 
 
 def main():
