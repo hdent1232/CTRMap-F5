@@ -1,4 +1,4 @@
-**CTRMap-F5 1.0.4 — the audit and the census closed, undo across the editor, and JOGL 2.6.0.**
+**CTRMap-F5 1.0.5 — an emergency fix for 1.0.4: the zone list can no longer be lost, the launch warning ends, and the freeze is gone.**
 
 A world editor for Pokémon Omega Ruby, Alpha Sapphire, X and Y. Build towns that were never in
 the game, then play them.
@@ -7,33 +7,46 @@ the game, then play them.
 
 | | |
 |---|---|
-| **`CTRMap-F5-1.0.4-windows-x64.zip`** | Unzip, double-click `CTRMap-F5.exe`. **No Java needed.** Start here if you're not sure. |
-| **`CTRMap-F5-1.0.4-portable.zip`** | Smaller, but needs Java 8+. `run.bat` on Windows, `run.sh` on macOS/Linux. |
+| **`CTRMap-F5-1.0.5-windows-x64.zip`** | Unzip, double-click `CTRMap-F5.exe`. **No Java needed.** Start here if you're not sure. |
+| **`CTRMap-F5-1.0.5-portable.zip`** | Smaller, but needs Java 8+. `run.bat` on Windows, `run.sh` on macOS/Linux. |
 
-Already have 1.0.3 or earlier? Help > Check for updates will offer this one and replace the copy
-you have.
+On 1.0.4? Help > Check for updates offers this one and replaces the copy you have. The Help menu
+works even when 1.0.4 has left you on a zone tool with no way back to the zone list.
 
-### What is in it
+### What is fixed
 
-- **The 2026-10-06 audit:** 251 of its 255 findings fixed, 3 partly, and 1 shown not to be a defect.
-- **The whole-app census of 2026-09-13:** all 280 confirmed defects are now closed — 95 of them in
-  this release, the rest in the releases before it.
-- **Undo and redo reach more of the editor:** zone edits, game data, text, workspace operations and
-  the tileset each keep a history you can step back through.
-- **A shared map shows which part of it a zone is**, with that zone's actions in one row, and the
-  zone preview no longer moves its camera on its own.
-- **Painted terrain closes up:** one side wall of every painted ramp was invisible from the ramp
-  itself, a ramp's side cliff stood a full step above its own foot, two lanes of a ramp whose feet
-  differed left a gap between them, and walls painted onto an existing route could show sky where
-  they changed depth or turned an inside corner. All of these are fixed and measured.
-- **JOGL 2.6.0**, the 3D library, with its native parts for Windows, Linux (x64 and ARM64) and
-  macOS — each checked against the checksums JogAmp publishes.
+- **You could be locked out of loading any zone.** In 1.0.4 a zone tool (Connect zones, Clone
+  zone and others) covered the zone list, the only way to open a zone, and the way back was a flat
+  button that looked like a caption, with nothing in the menus. Every view the editor swaps now has
+  a plain **Back to ...** button above it, **Esc** does the same, and **Zone list** is on the zone
+  actions bar and in the Zone menu, so the list is always one click away.
+- **"Zones added by an earlier version still share another zone's resources ... An area fork is
+  already staged and not yet packed" on every launch.** The repair that runs when a workspace
+  opens picked its new ids from the end of what was already packed, found an unpacked change
+  there, and gave up - on every launch, with nothing saying how to end it. Every append now counts
+  past what is already staged, so the repair finishes. **The first launch of 1.0.5 packs your
+  workspace** when it repairs it, as any repair does, and that includes any change you made and
+  never packed.
+- **A long freeze every time the zone list was filled**: on opening, and after every clone, add,
+  undo or repair. The zone browser was rebuilt once per zone, 540 times; it is now built once.
+  Measured through the editor's own window on the same workspace and game: the worst freeze was
+  15.7 seconds in 1.0.4 (24 ms in 1.0.3), and the zone list is full 8 seconds after launch in
+  1.0.5, against 22 in 1.0.4 and 16 in 1.0.3.
+- **Messages no longer send you to the zone dropdown** that 1.0.4 removed. Twelve of them now
+  name the zone list.
+- **The downloads unpack correctly on macOS and Linux.** Every path inside the 1.0.4 zips was
+  written with a Windows backslash (`lib\jogl-all.jar`), which unpacks off Windows as one oddly
+  named file instead of a folder. A macOS or Linux copy that updated itself to 1.0.4 may have been
+  left with the old 3D libraries: if it will not start, download the portable zip again and unpack
+  it over it.
 
-### Nightlies
+### What is new
 
-From this release on, work can also go out as a **nightly** (`1.x.y-nightly.N`), published as a
-GitHub pre-release before it has been through the project's full mutation sweep. Help > Check for
-updates never offers a nightly — you get one only by downloading it from the Releases page — and a
-copy running a nightly is offered the next core release like everyone else.
+- **Re-link zone** (zone actions bar, and Zone > Re-link zone): a zone that was made independent
+  can go back to sharing its map, area, story text or script with the vanilla zones it shared them
+  with as shipped - one at a time, or **All back to as shipped** - or share another zone's. It is
+  one change Undo can take back, and the private copy a zone leaves behind stays in the game,
+  unused, so you can re-link back to it.
+- **Connect zones through a warp is gone.** It was not the feature that was asked for.
 
 Report anything odd on the issue tracker (Help > Support/Issue tracker).
