@@ -317,7 +317,7 @@ public class GeometryForker {
 		}
 		File fdDir = Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA);
 		File mmDir = Workspace.getExtractionDirectory(ArchiveType.MAP_MATRIX);
-		int nextRegion = gr.length;
+		int nextRegion = nextFreeRegion(Workspace.session(), gr);
 		int nextMatrix = nextFreeMatrix(Workspace.session(), mm);
 		//EVERY ZONE THE APPEND CREATES, PADDING INCLUDED. This ran to newRealZones,
 		//so the spares that round an append up to a multiple of four kept the DONOR's
@@ -369,20 +369,24 @@ public class GeometryForker {
 
 
 	/**
-	 * THE NEXT FREE MAP-MATRIX SLOT, and the one refusal that goes with it (census H.11). A matrix
-	 * appended to the workspace sits at {@code mm.length} until a pack makes the archive longer, so
-	 * every allocator of that slot must first ask whether something already staged there. Four took
-	 * {@code mm.length} for themselves; three asked, and the append's own fork did not - so a map fork
-	 * left unpacked was overwritten by the next Add zone, and both zones then pointed at one matrix.
-	 * Every allocator asks here, so a fifth cannot be written without the question.
+	 * THE NEXT FREE MAP-MATRIX SLOT (census H.11). A matrix appended to the workspace sits at
+	 * {@code mm.length} until a pack makes the archive longer, so every allocator of that slot must
+	 * count what is already staged there. Four took {@code mm.length} for themselves; three asked, and
+	 * the append's own fork did not - so a map fork left unpacked was overwritten by the next Add zone,
+	 * and both zones then pointed at one matrix. Every allocator asks here, so a fifth cannot be
+	 * written without the question.
+	 *
+	 * <p>IT ANSWERS PAST THE STAGED ONES rather than refusing (1.0.4): the refusal made the repair
+	 * that runs when a workspace opens refuse on every launch over a fork nobody had packed. See
+	 * {@link ctrmap.WorkspaceSession#reach}, which the region allocators ask too.
 	 */
 	public static int nextFreeMatrix(ctrmap.WorkspaceSession ws, GARC mm) throws IOException {
-		int next = mm.length;
-		if (ws != null && ws.isPendingArtifact(new File(ws.getExtractionDirectory(ArchiveType.MAP_MATRIX), String.valueOf(next)))) {
-			throw new IOException("A map append is already staged and not yet packed (matrix " + next
-					+ "). Pack the workspace first.");
-		}
-		return next;
+		return ws == null ? mm.length : ws.reach(ArchiveType.MAP_MATRIX, mm.length);
+	}
+
+	/** The next free FieldData region: past every region already staged after the packed end (see nextFreeMatrix). */
+	public static int nextFreeRegion(ctrmap.WorkspaceSession ws, GARC gr) {
+		return ws == null ? gr.length : ws.reach(ArchiveType.FIELD_DATA, gr.length);
 	}
 
 	/**
@@ -528,13 +532,12 @@ public class GeometryForker {
 	 * fixes the workspaces that already have them, which no amount of fixing the
 	 * appender can reach.
 	 *
-	 * <p>ONE PASS, NOT ONE CALL PER ZONE. {@link #ensurePrivate} takes its new
-	 * matrix number from {@code mm.length} and refuses when that slot is already
-	 * staged, so it can only run ONCE between packs - a second call in the same
-	 * cycle would ask for the same matrix number and be told an append is pending.
-	 * A workspace with three spares therefore cannot be repaired by three of those.
-	 * This threads the region and matrix counters the way the appender does, so
-	 * every spare is staged together and one pack carries all of them.
+	 * <p>ONE PASS, NOT ONE CALL PER ZONE: one unit, so a spare that cannot be forked
+	 * puts back the ones before it, and one pack carries all of them. (Separate calls
+	 * also used to refuse - each took its matrix from the packed {@code mm.length} and
+	 * refused a slot already staged - until every allocator asked
+	 * {@link ctrmap.WorkspaceSession#reach}.) This threads the region and matrix
+	 * counters the way the appender does.
 	 *
 	 * <p>IT BLANKS ONLY WHAT NOBODY HAS TOUCHED, and that is decidable rather than
 	 * guessed at. An untouched spare is byte-identical to its donor's ZO except for
@@ -603,7 +606,7 @@ public class GeometryForker {
 			
 			File fdDir = Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA);
 			File mmDir = Workspace.getExtractionDirectory(ArchiveType.MAP_MATRIX);
-			int nextRegion = gr.length;
+			int nextRegion = nextFreeRegion(Workspace.session(), gr);
 			int nextMatrix;
 			try {
 				nextMatrix = nextFreeMatrix(Workspace.session(), mm);
@@ -847,7 +850,7 @@ public class GeometryForker {
 		//points to, or a zone header and master row that disagree. Inside a caller's unit this joins it.
 		try (WorkspaceUnit unit = WorkspaceUnit.begin("Fork geometry", Workspace.session())) {
 			//an existing zone keeps its own cells and leaves its neighbours' alone
-			plan = forkArchives(zoBytes, gr.length, newMatrix, zoneIndex, false, gr, mm, fdDir, mmDir);
+			plan = forkArchives(zoBytes, nextFreeRegion(Workspace.session(), gr), newMatrix, zoneIndex, false, gr, mm, fdDir, mmDir);
 
 			// repoint the ZO container header, in place
 			WorkspaceUnit.write(zoneFile, plan.newZoBytes);

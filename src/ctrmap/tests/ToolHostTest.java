@@ -15,7 +15,6 @@ import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
-import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JToolBar;
 import javax.swing.KeyStroke;
@@ -48,6 +47,9 @@ public class ToolHostTest {
 
 	static int fails = 0;
 
+	/** The homes whose way back this suite has seen on screen as a real button and pressed: "Back to X" names X. */
+	static final java.util.Set<String> pressedHome = new java.util.TreeSet<>();
+
 	public static void main(String[] args) throws Exception {
 		File src = new File(args.length > 0 ? args[0] : "src");
 		SwingUtilities.invokeAndWait(() -> {
@@ -62,6 +64,7 @@ public class ToolHostTest {
 		});
 		theWindowSwapsNoViewOfItsOwn(src);
 		noMessageSendsTheUserToTheHiddenDropdown(src);
+		everyHostTheWindowBuildsWasAsked(src);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		System.exit(fails == 0 ? 0 : 1);
 	}
@@ -142,12 +145,39 @@ public class ToolHostTest {
 		check(b.getText().equals(says), what + ": it says where it goes - '" + b.getText() + "'");
 		String flat = looksLikeAButton(b);
 		check(flat == null, what + ": it looks like a button" + (flat == null ? "" : " - " + flat));
-		check(onScreen(b, root), what + ": it is on screen at " + b.getBounds());
+		boolean seen = onScreen(b, root);
+		check(seen, what + ": it is on screen at " + b.getBounds());
+		if (b.getText().equals(says) && flat == null && seen) {
+			pressedHome.add(says.substring(ctrmap.humaninterface.ToolHost.BACK.length()));
+		}
 		return b;
 	}
 
+	/**
+	 * EVERY HOST THE WINDOW BUILDS, FROM THE SOURCE, NOT A LIST. The cases above lay out three tabs by hand; a fourth
+	 * swapped view added to the window tomorrow would have no case, and this suite would stay green over a way back
+	 * nobody looked at - 1.0.4's trap in a new place. So the window's own source says which homes it hosts, and each
+	 * must be one whose way back a case above saw on screen as a button: N of N.
+	 */
+	static void everyHostTheWindowBuildsWasAsked(File src) throws Exception {
+		System.out.println("--- every view the window hosts has had its way back seen and pressed here");
+		Matcher m = Pattern.compile("new\\s+(?:ctrmap\\.humaninterface\\.)?ToolHost\\(\\s*\"([^\"]+)\"")
+				.matcher(code(new File(src, "ctrmap/CtrmapMainframe.java")));
+		java.util.Set<String> built = new java.util.TreeSet<>();
+		while (m.find()) {
+			built.add(m.group(1));
+		}
+		check(!built.isEmpty(), "control: the window's source names the homes it hosts (" + built + ")");
+		java.util.Set<String> asked = new java.util.TreeSet<>(built);
+		asked.retainAll(pressedHome);
+		java.util.Set<String> missed = new java.util.TreeSet<>(built);
+		missed.removeAll(pressedHome);
+		check(missed.isEmpty(), "every host the window builds has had its way back seen and pressed: " + asked.size()
+				+ " of " + built.size() + " " + built + (missed.isEmpty() ? "" : " - never asked: " + missed));
+	}
+
 	static void theZoneListComesBackFromATool() throws Exception {
-		System.out.println("--- the zone list comes back from a tool, five ways, and is seen to");
+		System.out.println("--- the zone list comes back from a tool, four ways, and is seen to");
 		ctrmap.LoadedZone owner = new ctrmap.LoadedZone();
 		ctrmap.humaninterface.tools.ToolSelection tools = new ctrmap.humaninterface.tools.ToolSelection();
 		ctrmap.humaninterface.ZoneLoadingPanel panel = MainframeShapeTest.realZonePanel(owner, tools);
@@ -159,12 +189,11 @@ public class ToolHostTest {
 				"control: with no tool open the zone list and '" + load.getText() + "' are on screen");
 		check(waysBack(root).isEmpty(), "control: and no way back is shown, there being nowhere to go back from");
 
-		String[] ways = {"its Back button", "Esc", "the tool's own close", "Zone list on the zone actions bar",
-			"Zone > Zone list in the menus"};
+		String[] ways = {"its Back button", "Esc", "Zone list on the zone actions bar", "Zone > Zone list in the menus"};
 		for (String way : ways) {
 			JPanel tool = new JPanel();
 			tool.add(new javax.swing.JLabel("a zone tool"));
-			TestWindow.inZoneColumn("Connect zones", tool);
+			TestWindow.inZoneColumn("Re-link zone", tool);
 			layOut(root);
 			check(!onScreen(load, root), way + " - control: with a tool open the zone list's Load button is NOT on screen");
 			JButton back = theWayBack(root, "Back to the zone list", way);
@@ -176,9 +205,6 @@ public class ToolHostTest {
 					break;
 				case "Esc":
 					escape(back);
-					break;
-				case "the tool's own close":
-					TestWindow.closeZoneColumnTool();
 					break;
 				case "Zone list on the zone actions bar":
 					press(TestWindow.buildZoneActionsBar(), "Zone list", way);

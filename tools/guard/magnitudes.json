@@ -25,8 +25,8 @@
   "why": null
  },
  "ledger.plants": {
-  "previous": 2246,
-  "value": 2246,
+  "previous": 2275,
+  "value": 2276,
   "why": "the round since afa1204, all of it one uncommitted change: 1,007 plants added and 3 left since HEAD's 1,242 (measured 2026-10-18 by id against git show HEAD:tools/guard/plants.json). By the date their whys give: 151 the 2026-09-13 census, 109 on 2026-10-12 (census tail, sweep survivors), 217 on 2026-10-14 and 157 on 2026-10-15 (the shared 8-run sweep's survivors guarded), 53 on 2026-10-16, 16 on 2026-10-18 (painted ramps and the seal probe), smaller days 75, undated 229. 1,674 was recorded mid-round; the climb from it is the 2026-10-14 to 2026-10-18 guarding."
  }
 }

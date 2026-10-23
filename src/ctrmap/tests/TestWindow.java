@@ -306,12 +306,6 @@ final class TestWindow {
 		invoke(M_inZoneColumn, a0, a1);
 	}
 
-	private static final Method M_closeZoneColumnTool = method("closeZoneColumnTool", void.class);
-
-	static void closeZoneColumnTool() {
-		invoke(M_closeZoneColumnTool);
-	}
-
 	private static final Method M_deployAfterPack = method("deployAfterPack", void.class, java.io.File.class, java.io.File.class);
 
 	static void deployAfterPack(java.io.File a0, java.io.File a1) {

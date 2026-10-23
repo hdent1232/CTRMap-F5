@@ -129,8 +129,13 @@ Remove-Item -Recurse -Force $shipDir -ErrorAction SilentlyContinue
 Copy-Item -Recurse lib "$stage\lib"
 Copy-Item run.bat, run.sh, README.md, LICENSE, QUICKSTART.md "$stage\"
 
+# THE ZIPS ARE WRITTEN BY THE JDK'S jar (2026-10-23), whose names always use "/". Compress-Archive in Windows
+# PowerShell 5.1 wrote every one with a backslash ("lib\jogl-all.jar", measured on both 1.0.4 zips), and off Windows
+# the updater unpacks that as one file beside an untouched lib\. tools\release_channel.py refuses such a zip, from
+# whatever made it, before it says how to publish.
 $zip = "dist\CTRMap-F5-$Version-portable.zip"
-Compress-Archive -Path "$stage\*" -DestinationPath $zip -CompressionLevel Optimal
+Invoke-Native { & "$jdk\bin\jar.exe" --create --file $zip --no-manifest -C $stage . }
+if ($LASTEXITCODE -ne 0) { throw "jar failed to write $zip (exit $LASTEXITCODE)" }
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
 "$hash  $(Split-Path -Leaf $zip)" | Set-Content "$zip.sha256" -Encoding ascii
 
@@ -175,7 +180,8 @@ Remove-Item -Recurse -Force $appIn
 # archive the FOLDER, not its contents, so extracting cannot spray 150 files
 # into whatever directory the user happened to be in
 $winZip = "dist\CTRMap-F5-$Version-windows-x64.zip"
-Compress-Archive -Path "dist\app\CTRMap-F5" -DestinationPath $winZip -CompressionLevel Optimal
+Invoke-Native { & "$jdk\bin\jar.exe" --create --file $winZip --no-manifest -C "dist\app" CTRMap-F5 }
+if ($LASTEXITCODE -ne 0) { throw "jar failed to write $winZip (exit $LASTEXITCODE)" }
 $winHash = (Get-FileHash $winZip -Algorithm SHA256).Hash.ToLower()
 "$winHash  $(Split-Path -Leaf $winZip)" | Set-Content "$winZip.sha256" -Encoding ascii
 

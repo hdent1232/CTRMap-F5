@@ -124,6 +124,7 @@ public class ZoneLoadingStateTest {
 			TestWindow.mTriggerEditForm(new TriggerEditForm(lz, REDRAW, CENTRE));
 
 			theListIsTheArchivesZonesAndNothingIsOpened(pnl, lz);
+			aRefillMirrorsTheBrowserOnce(pnl, lz);
 			everyRetailHeaderSurvivesTheDropdowns(pnl, lz);
 			aLoadedZoneIsWrittenBackUnchanged(pnl, lz);
 			aZoneFromAFileTouchesNobodysTableSlot(pnl, lz);
@@ -362,6 +363,46 @@ public class ZoneLoadingStateTest {
 				+ ((JComboBox<?>) field(pnl, "zoneList")).getSelectedIndex() + ")");
 		check(lz.at(SHARED_ZONE) != null && lz.at(entries - 3) != null,
 				"and both ends of the range really were read");
+		lz.close();
+	}
+
+	/**
+	 * A refill of the zone list mirrors the browser ONCE (1.0.4's lag).
+	 *
+	 * <p>The browser beside the panel mirrors the dropdown's rows, and its listener rebuilt and re-scrolled the whole
+	 * browser list on every row the refill added: 540 zones, about 146,000 rows inserted, a 15.5 s freeze of the
+	 * window measured on the owner's game - on opening a workspace and on every clone, add, undo and repair after
+	 * it. A count is asked, not a time: rows inserted into the browser during one refill, against the zone count.
+	 */
+	static void aRefillMirrorsTheBrowserOnce(ZoneLoadingPanel pnl, LoadedZone lz) throws Exception {
+		System.out.println("--- a refill of the zone list fills the browser once, not once per zone");
+		ctrmap.humaninterface.ZoneBrowserPane browser = new ctrmap.humaninterface.ZoneBrowserPane(lz, TOOLS);
+		Edt.run(() -> pnl.useBrowser(browser));
+		long[] inserted = {0};
+		browser.zoneRows().getModel().addListDataListener(new javax.swing.event.ListDataListener() {
+			@Override
+			public void intervalAdded(javax.swing.event.ListDataEvent e) {
+				inserted[0] += e.getIndex1() - e.getIndex0() + 1;
+			}
+
+			@Override
+			public void intervalRemoved(javax.swing.event.ListDataEvent e) {
+			}
+
+			@Override
+			public void contentsChanged(javax.swing.event.ListDataEvent e) {
+			}
+		});
+		long t0 = System.currentTimeMillis();
+		Edt.run(pnl::loadEverything);
+		long ms = System.currentTimeMillis() - t0;
+		int n = pnl.getLoadedZoneCount();
+		check(n > 0 && browser.zoneRows().getModel().getSize() == n,
+				"CONTROL: the browser holds every zone the refill listed (" + browser.zoneRows().getModel().getSize()
+				+ " of " + n + ")");
+		check(inserted[0] <= 2L * n,
+				"and got them in one pass: " + inserted[0] + " rows inserted for " + n + " zones (" + ms + " ms) - once per"
+				+ " zone added, it was about n*n/2");
 		lz.close();
 	}
 

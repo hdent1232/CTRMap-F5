@@ -103,10 +103,9 @@ public final class TextForker {
 			throw new IOException("The STORYTEXT extraction directory is unavailable.");
 		}
 		dir.mkdirs();
-		int firstText = st.length;
-		if (ws.isPendingArtifact(new File(dir, String.valueOf(firstText)))) {
-			throw new IOException("A story text append is already staged and not yet packed.");
-		}
+		//PAST WHAT IS STAGED (1.0.4): from the packed end, a text append left unpacked was this one's
+		//first slot, and the refusal it raised stopped the repair that runs when a workspace opens
+		int firstText = ws.reach(ArchiveType.STORYTEXT, st.length);
 		for (int i = 0; i < count; i++) {
 			int newText = firstText + i;
 			int oldText = u16(zos[i], i32(zos[i], 4) + ZoneResource.TEXT.headerOffset);

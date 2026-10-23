@@ -1035,8 +1035,11 @@ public class WorkflowGuardsTest {
 	 * ones - and the game reads the master. It runs on every open, by itself.
 	 *
 	 * <p>The text pass is made to fail the way it really can, with nothing added to the product
-	 * for the test: a story-text file already staged at the slot it would take, which it refuses
-	 * to overwrite. The area pass runs first, because the passes go in the enum's order.
+	 * for the test: the donor's story text cannot be read out of the workspace (a folder stands
+	 * where its file should be). The area pass runs first, because the passes go in the enum's
+	 * order. It used to be a text file staged at the slot the pass would take, which the pass
+	 * refused to overwrite - until 1.0.4's launch dialog made every allocator count past what is
+	 * staged, so that is no longer a failure at all.
 	 */
 	static void aRepairThatFailsHalfWayPutsEverythingBack(File dump) throws Exception {
 		System.out.println("--- a repair that fails half way puts back everything it wrote");
@@ -1057,13 +1060,17 @@ public class WorkflowGuardsTest {
 
 		File textDir = Workspace.getExtractionDirectory(ArchiveType.STORYTEXT);
 		textDir.mkdirs();
-		File staged = new File(textDir, String.valueOf(Workspace.session().getStoryTextGARC().length));
-		java.nio.file.Files.write(staged.toPath(), new byte[]{0});
-		Workspace.addPersist(staged);
+		//THE DONOR'S TEXT, UNREADABLE: a folder where the workspace keeps its file
+		File donorText = new File(textDir, String.valueOf(ctrmap.ZoneResource.TEXT.idIn(zoneBytes(broken.get(0)))));
+		byte[] donorTextWas = donorText.isFile() ? java.nio.file.Files.readAllBytes(donorText.toPath()) : null;
+		if (donorText.isFile()) {
+			check(donorText.delete(), "the donor's story text file made way for the folder");
+		}
+		check(donorText.mkdirs(), "CONTROL: a folder stands where the donor's story text " + donorText.getName() + " is kept");
 
 		ctrmap.GeometryForker.RepairReport rep = ctrmap.GeometryForker.repairSharedResources(
 			ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES);
-		check(rep.refusedBecause.contains("story text append is already staged"),
+		check(rep.refusedBecause.contains("could not be read out of the workspace"),
 				"the text pass refused, after the area pass had run: " + rep.refusedBecause);
 		check(java.util.Arrays.equals(java.nio.file.Files.readAllBytes(masterFile.toPath()), masterBefore),
 				"the master table is exactly as it was");
@@ -1083,9 +1090,11 @@ public class WorkflowGuardsTest {
 			}
 		}
 
-		//...and with the staged text gone the same repair runs, so the refusal was the cause
-		check(staged.delete(), "took the staged story text away again");
-		Workspace.session().persistPaths().remove(staged.getAbsolutePath());
+		//...and with the donor's text readable again the same repair runs, so the refusal was the cause
+		check(donorText.delete(), "took the folder away again");
+		if (donorTextWas != null) {
+			java.nio.file.Files.write(donorText.toPath(), donorTextWas);
+		}
 		ctrmap.GeometryForker.RepairReport again = ctrmap.GeometryForker.repairSharedResources(
 			ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES);
 		check(again.refusedBecause.isEmpty() && !again.forked.isEmpty(),
@@ -1324,7 +1333,7 @@ public class WorkflowGuardsTest {
 			return;
 		}
 		
-		String said = ctrmap.ZoneLinker.link(Workspace.session(), a, 0, b, 0, true);
+		String said = WarpLink.link(Workspace.session(), a, 0, b, 0, true);
 		check(said.contains(String.valueOf(a)) && said.contains(String.valueOf(b)),
 			"linking says which zones it joined: " + said);
 		pack();
@@ -1337,20 +1346,20 @@ public class WorkflowGuardsTest {
 			+ warpTarget(b, 0)[1] + ")");
 		
 		//IT SAYS WHAT IT WILL ABANDON, before the user decides rather than in game
-		java.util.List<String> second = ctrmap.ZoneLinker.wouldBreak(Workspace.session(), a, 0, c, 0);
+		java.util.List<String> second = WarpLink.wouldBreak(Workspace.session(), a, 0, c, 0);
 		check(!second.isEmpty(), "repointing a warp that already leads somewhere says what it"
 			+ " abandons " + second);
 		check(second.toString().contains("zone " + b), "and names where it used to go");
 		
 		//THE SECOND LINK, which starts from what the first one wrote
-		ctrmap.ZoneLinker.link(Workspace.session(), a, 0, c, 0, true);
+		WarpLink.link(Workspace.session(), a, 0, c, 0, true);
 		pack();
 		check(warpTarget(a, 0)[0] == c, "a second link after a pack takes ("
 			+ warpTarget(a, 0)[0] + ")");
 		
 		//TWO DOORS IN ONE BUILDING: the same zone on both ends
 		if (warpCount(a) >= 2) {
-			ctrmap.ZoneLinker.link(Workspace.session(), a, 0, a, 1, true);
+			WarpLink.link(Workspace.session(), a, 0, a, 1, true);
 			pack();
 			check(warpTarget(a, 0)[0] == a && warpTarget(a, 0)[1] == 1
 				&& warpTarget(a, 1)[0] == a && warpTarget(a, 1)[1] == 0,
@@ -1406,7 +1415,7 @@ public class WorkflowGuardsTest {
 	/** The reason a link was refused, or the empty string when it was not. */
 	static String refusedLink(int za, int wa, int zb, int wb) {
 		try {
-			ctrmap.ZoneLinker.link(Workspace.session(), za, wa, zb, wb, true);
+			WarpLink.link(Workspace.session(), za, wa, zb, wb, true);
 			return "";
 		} catch (Exception ex) {
 			return String.valueOf(ex.getMessage());

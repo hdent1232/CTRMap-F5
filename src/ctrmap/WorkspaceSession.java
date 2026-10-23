@@ -1021,6 +1021,32 @@ public final class WorkspaceSession implements GameFiles {
 		return f != null && persistPaths.contains(f.getAbsolutePath()) && f.exists();
 	}
 
+	/**
+	 * Where archive {@code t} reaches once what is staged is packed: its packed length, then every
+	 * entry staged straight after it and not packed yet. THE ONE ANSWER EVERY APPEND ASKS for its
+	 * first new index, so a new entry is never written over a staged one and never refused for one.
+	 *
+	 * <p>PAID FOR IN 1.0.4. Each allocator took the packed length and, finding a fork staged there,
+	 * refused with "pack the workspace first". At an action the user pressed that was an
+	 * instruction; in the repair that runs when a workspace opens it was a dialog on every launch -
+	 * the owner's workspace held an area fork staged on Sep 11 and never packed, the repair's first
+	 * new id was that slot, and nothing in the dialog said a pack would end it. Worse, the area
+	 * repair's empty-registry fillers started from the PACKED end too, so getting past the refusal
+	 * would have written an empty registry over the staged fork's. A staged entry past the end is
+	 * a real entry the next pack will add (an archive grows only at its tail, so they are
+	 * contiguous), and counting it is what the pack itself will do.
+	 *
+	 * @param packedLength how many entries the archive holds as packed - its {@code length}
+	 */
+	public int reach(ArchiveType t, int packedLength) {
+		File dir = getExtractionDirectory(t);
+		int n = packedLength;
+		while (dir != null && isPendingArtifact(new File(dir, String.valueOf(n)))) {
+			n++;
+		}
+		return n;
+	}
+
 	private boolean hasPersistedFiles(File dir) {
 		File[] files = dir.listFiles();
 		if (files == null) {

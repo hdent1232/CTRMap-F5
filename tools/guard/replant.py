@@ -546,6 +546,7 @@ def replant(p, java, pristine, gamedir, keep=None):
     plant's bill is read from."""
     path = os.path.join(ROOT, p["file"].replace("/", os.sep))
     raw, text, crlf = read(path)
+    was = os.stat(path)
     if text.count(p["find"]) != 1:
         print("  REFUSED %s: its substitution no longer matches %s exactly once"
               % (p["id"], p["file"]))
@@ -642,6 +643,13 @@ def replant(p, java, pristine, gamedir, keep=None):
             print("     The lock is LEFT IN PLACE naming it, because nothing else now knows.")
             ok = False
         else:
+            #THE TIME GOES BACK WITH THE BYTES. A fast-path plant never rebuilds build/classes, so a restore that
+            #left the file's modification time at NOW made the unchanged source newer than its class, and
+            #EdtReachTest - which refuses a source edited after the build - went red over a tree nobody had
+            #edited. PAID FOR TWICE: the 1.0.4 battery (PaintedCliffMesh.java, 2026-10-18) and the 1.0.5 one
+            #(GeometryForker.java, 2026-10-23). build.ps1 empties build/classes before every compile, so an
+            #older time can never keep a planted class.
+            os.utime(path, ns=(was.st_atime_ns, was.st_mtime_ns))
             stuck = release()
             if stuck:
                 print("     %s IS RESTORED and the lock could not come off: %s. Every judgement"

@@ -16,18 +16,30 @@ never be offered to the people running the nightly. Called 1.0.3-nightly.1, it r
 THE TAG IS NAMED IN THE PUSH (BatteryHygieneTest): --follow-tags carries only annotated tags, and every tag here is
 lightweight. BOTH builds go on the release, by the two suffixes Updater.Flavour selects on.
 
+NO BUILD WHOSE ZIP NAMES A PATH WITH A BACKSLASH IS PUBLISHED (2026-10-23). Compress-Archive in Windows PowerShell 5.1
+wrote every name with one: measured on the 1.0.4 zips, 160 of 160 in the Windows build and 10 of 16 in the portable
+one ("lib\\jogl-all.jar"). The updater unpacks with new File(dest, name), and off Windows that is ONE file named
+"lib\\jogl-all.jar" beside an untouched lib/ - and 1.0.4 changed those jars. The names are read raw (orig_filename):
+zipfile rewrites a backslash to "/" in every name it reports on Windows, so a check of namelist() passes there always.
+A build this cannot open is refused too: a zip that could not be read is not one that was clean.
+
 Usage: python -B tools/release_channel.py <version> <windows zip> <portable zip>"""
 import os
 import re
 import sys
+import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cli_words  # noqa: E402  - a word this does not read stops the run (2026-10-10)
 
 CORE = re.compile(r"^\d+\.\d+\.\d+$")
 NIGHTLY = re.compile(r"^\d+\.\d+\.\d+-nightly\.\d+$")
-#: Where each channel's commit and tag go on the remote.
-BRANCH = {"core": "master", "nightly": "HEAD:refs/heads/nightly"}
+#: Where each channel's commit and tag go on the remote. BOTH SEND HEAD - the commit `git tag` just named - never a
+#: local branch by name (2026-10-23): 1.0.5 was packaged on a working branch whose local master was 4 commits behind
+#: origin/master, so "git push origin master v1.0.5" would have sent that stale master (refused, or worse, a master
+#: that does not hold the tagged commit) beside a tag on the real one. A HEAD that is not ahead of the remote master
+#: is refused by git as a non-fast-forward, which is the right answer for a release cut from the wrong place.
+BRANCH = {"core": "HEAD:refs/heads/master", "nightly": "HEAD:refs/heads/nightly"}
 
 
 def channel(version):
@@ -51,10 +63,29 @@ def instructions(version, win_zip, zip_):
     return ["git tag v%s" % version, "git push origin %s v%s" % (BRANCH[kind], version), release]
 
 
+def unpublishable(zip_path):
+    """Why this build may not be published - its names that hold a backslash, or that it could not be read - or []."""
+    try:
+        with zipfile.ZipFile(zip_path) as z:
+            raw = [info.orig_filename for info in z.infolist()]
+    except (OSError, zipfile.BadZipFile) as unread:
+        return ["%s could not be read, so whether its names hold a backslash is unknown: %s" % (zip_path, unread)]
+    bad = [name for name in raw if chr(92) in name]
+    if bad:
+        return ["%s names %d of its %d paths with a backslash, which off Windows unpack as one file each: %s"
+                % (zip_path, len(bad), len(raw), bad[:3])]
+    return []
+
+
 def main(argv):
     unread = cli_words.refused(argv[1:], most=3)
     if unread or len(argv) != 4:
         print(unread or __doc__.splitlines()[-1])
+        return 2
+    refusals = unpublishable(argv[2]) + unpublishable(argv[3])
+    if refusals:
+        for why in refusals:
+            print("REFUSING: %s" % why)
         return 2
     try:
         for line in instructions(argv[1], argv[2], argv[3]):

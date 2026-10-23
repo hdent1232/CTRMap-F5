@@ -318,6 +318,7 @@ $suites = @(
     @{ n = "PackReport (warnings reach the user)"; c = "ctrmap.tests.PackReportTest"; a = @($pristine) },
     @{ n = "DoorPropGuards (a door names what it will draw)"; c = "ctrmap.tests.DoorPropGuardsTest"; a = @($pristine) },
     @{ n = "ForkGuards (area/geometry forks)"; c = "ctrmap.tests.ForkGuardsTest";     a = @($pristine, $gamedir) },
+    @{ n = "ZoneRelink (a zone re-linked to what it shipped sharing, header and master, kept)"; c = "ctrmap.tests.ZoneRelinkTest"; a = @($pristine, $gamedir) },
     @{ n = "TestWorldBuild (the in-game test world is a build product, and says what it was not built from)"; c = "ctrmap.tests.TestWorldBuildTest"; a = @($pristine, $gamedir) },
     @{ n = "PackRollback (a refused pack keeps its table)"; c = "ctrmap.tests.PackRollbackTest"; a = @($pristine) },
     @{ n = "PackScope (a pack writes what was edited)"; c = "ctrmap.tests.PackScopeTest"; a = @($pristine) },

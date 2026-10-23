@@ -84,8 +84,12 @@ public class ForkGuardsTest {
 		gappedAppendIsRefused();
 		aRegistryAlreadyPastTheNewAreaIdIsRefusedOutLoud();
 		anAppendThatRunsOutOfAreaIdsStagesNothing(dump);
-		anAppendAfterAnUnpackedMapForkIsRefused(dump);
-		anAppendAfterAnUnpackedAreaForkIsRefused(dump);
+		anAppendAfterAnUnpackedMapForkGoesPastIt(dump);
+		anAppendAfterAnUnpackedAreaForkGoesPastIt(dump);
+		theLaunchRepairGoesPastAnUnpackedAreaFork(dump);
+		aSecondTextForkBeforeAPackGoesPastTheFirst(dump);
+		aSecondAreaForkBeforeAPackGoesPastTheFirst(dump);
+		aResizeAfterAnUnpackedMapForkGoesPastIt(dump);
 		anAreaForkThatFailsAtTheMasterRowPutsEverythingBack(dump);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -193,15 +197,18 @@ public class ForkGuardsTest {
 	}
 
 	/**
-	 * Census H.11: an append made while a map fork is still unpacked is refused, and the fork is left as it was.
+	 * Census H.11: an append made while a map fork is still unpacked takes the slots PAST it, and the fork is left as
+	 * it was.
 	 *
 	 * <p>The append's map fork took {@code mm.length} for its first new matrix without asking whether a fork
 	 * already staged one there - its three sibling allocators asked - so Fork geometry followed by Add zone,
 	 * with no pack between, wrote the new zone's matrix over the forked zone's, and at pack both zones shared
-	 * one map: the very sharing the fork existed to end.
+	 * one map: the very sharing the fork existed to end. It was then REFUSED, which stopped the overwrite and,
+	 * in the repair that runs when a workspace opens, refused on every launch (1.0.4). Now every allocator
+	 * asks WorkspaceSession.reach, so the append goes past the staged matrix and regions, and both pack.
 	 */
-	static void anAppendAfterAnUnpackedMapForkIsRefused(File dump) throws Exception {
-		System.out.println("--- an append while a map fork is staged and unpacked is refused, and the fork is kept");
+	static void anAppendAfterAnUnpackedMapForkGoesPastIt(File dump) throws Exception {
+		System.out.println("--- an append while a map fork is staged and unpacked goes past it, and the fork is kept");
 		ScratchGame.open(dump, whole == null ? new File[0] : new File[]{whole});
 		if (Workspace.session().archiveFile(ArchiveType.STORYTEXT) == null
 				|| !Workspace.session().archiveFile(ArchiveType.STORYTEXT).isFile()) {
@@ -209,32 +216,74 @@ public class ForkGuardsTest {
 					+ " cannot reach its map fork here");
 			return;
 		}
+		int mmPacked = Workspace.getArchive(ArchiveType.MAP_MATRIX).length;
+		int grPacked = Workspace.getArchive(ArchiveType.FIELD_DATA).length;
 		GeometryForker.ForkResult fork = GeometryForker.ensurePrivate(SHARED_ZONE);
 		check(fork.forked, "CONTROL: zone " + SHARED_ZONE + " was given a map of its own, staged and not packed");
-		File staged = new File(Workspace.getExtractionDirectory(ArchiveType.MAP_MATRIX),
-				String.valueOf(Workspace.getArchive(ArchiveType.MAP_MATRIX).length));
+		File staged = new File(Workspace.getExtractionDirectory(ArchiveType.MAP_MATRIX), String.valueOf(mmPacked));
 		check(staged.isFile(), "CONTROL: the fork's matrix is staged at the archive's next slot (" + staged.getName() + ")");
 		byte[] before = staged.isFile() ? Files.readAllBytes(staged.toPath()) : new byte[0];
+		java.util.Map<File, byte[]> regionsBefore = stagedFrom(ArchiveType.FIELD_DATA, grPacked);
+		check(!regionsBefore.isEmpty(), "CONTROL: and its regions are staged past the packed end ("
+				+ regionsBefore.size() + ")");
+		int firstNew = ctrmap.ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA));
 		String refused = null;
 		try {
 			ctrmap.ZoneAppender.appendZones(1, 533, true);
 		} catch (IOException ex) {
 			refused = ex.getMessage();
 		}
-		check(refused != null && refused.contains("already staged and not yet packed"),
-				"an append made while a map fork is unpacked is refused: " + refused);
+		check(refused == null, "an append made while a map fork is unpacked is not refused: " + refused);
 		check(staged.isFile() && Arrays.equals(Files.readAllBytes(staged.toPath()), before),
 				"and the forked zone's staged matrix is exactly as the fork left it");
+		check(sameBytes(regionsBefore), "and so is every region the fork staged - the append's regions went past them");
+		int appended = refused == null ? appendedId(ctrmap.ZoneResource.MAP, firstNew) : -1;
+		check(appended > mmPacked, "and the appended zone's matrix is " + appended + ", past the fork's " + mmPacked);
 	}
 
 	/**
-	 * The area half of census H.11: an append made while an AREA fork is still unpacked is refused, and the fork is
-	 * left as it was. The append's area ids start at the archive's end, where an unpacked area fork already staged
-	 * one, and the refusal before any write was asserted by nothing: the 2026-10-12 sweep dropped it and turned it
-	 * into a return, and every suite stayed green.
+	 * A resource id an appended zone names, read from its STAGED header. Not from the master table: until a pack, the
+	 * archive still counts the old zones, and the staged file at that count is the first new zone, not the table.
 	 */
-	static void anAppendAfterAnUnpackedAreaForkIsRefused(File dump) throws Exception {
-		System.out.println("--- an append while an area fork is staged and unpacked is refused, and the fork is kept");
+	static int appendedId(ctrmap.ZoneResource res, int zone) throws IOException {
+		File f = new File(Workspace.getExtractionDirectory(ArchiveType.ZONE_DATA), String.valueOf(zone));
+		return f.isFile() ? res.idIn(Files.readAllBytes(f.toPath())) : -1;
+	}
+
+	/** Every file staged in {@code t}'s workspace folder from index {@code from} up, by its bytes now. */
+	static java.util.Map<File, byte[]> stagedFrom(ArchiveType t, int from) throws IOException {
+		java.util.Map<File, byte[]> out = new java.util.LinkedHashMap<>();
+		File dir = Workspace.getExtractionDirectory(t);
+		for (int i = from; Workspace.isPendingArtifact(new File(dir, String.valueOf(i))); i++) {
+			File f = new File(dir, String.valueOf(i));
+			out.put(f, Files.readAllBytes(f.toPath()));
+		}
+		return out;
+	}
+
+	/** Whether every file still holds the bytes it was read with. */
+	static boolean sameBytes(java.util.Map<File, byte[]> before) throws IOException {
+		for (java.util.Map.Entry<File, byte[]> e : before.entrySet()) {
+			if (!e.getKey().isFile() || !Arrays.equals(Files.readAllBytes(e.getKey().toPath()), e.getValue())) {
+				System.out.println("    changed: " + e.getKey().getName());
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * The area half of census H.11 - and the owner's launch dialog (1.0.4): an append made while an AREA fork is
+	 * still unpacked takes the ids PAST it, and the fork - its area AND its NPC registry - is left as it was.
+	 *
+	 * <p>The owner's workspace held an area fork staged on Sep 11 and never packed. The repair that runs when a
+	 * workspace opens forks areas through the same function the append does, took the archive's packed end as its
+	 * first id, found the fork there and refused - on every launch. Had it gone on, its empty-registry fillers
+	 * started from the packed end too and would have written an empty registry over the fork's. This stages that
+	 * state and asks the same function.
+	 */
+	static void anAppendAfterAnUnpackedAreaForkGoesPastIt(File dump) throws Exception {
+		System.out.println("--- an append while an area fork is staged and unpacked goes past it, and the fork is kept");
 		ScratchGame.open(dump, whole == null ? new File[0] : new File[]{whole});
 		if (Workspace.session().archiveFile(ArchiveType.STORYTEXT) == null
 				|| !Workspace.session().archiveFile(ArchiveType.STORYTEXT).isFile()) {
@@ -247,16 +296,195 @@ public class ForkGuardsTest {
 		check(fork.forked && staged.isFile() && Workspace.isPendingArtifact(staged),
 				"CONTROL: zone " + ZONES[0] + " was given an area of its own, staged at " + fork.newArea + " and not packed");
 		byte[] before = staged.isFile() ? Files.readAllBytes(staged.toPath()) : new byte[0];
+		File registry = new File(Workspace.getExtractionDirectory(ArchiveType.NPC_REGISTRIES), String.valueOf(fork.newArea));
+		check(registry.isFile() && Workspace.isPendingArtifact(registry),
+				"CONTROL: and its NPC registry is staged at " + fork.newArea + " too");
+		byte[] registryBefore = registry.isFile() ? Files.readAllBytes(registry.toPath()) : new byte[0];
+		int firstNew = ctrmap.ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA));
 		String refused = null;
 		try {
 			ctrmap.ZoneAppender.appendZones(1, 533, true);
 		} catch (IOException ex) {
 			refused = ex.getMessage();
 		}
-		check(refused != null && refused.contains("An area fork is already staged and not yet packed"),
-				"an append made while an area fork is unpacked is refused: " + refused);
+		check(refused == null, "an append made while an area fork is unpacked is not refused: " + refused);
 		check(staged.isFile() && Arrays.equals(Files.readAllBytes(staged.toPath()), before),
 				"and the forked zone's staged area is exactly as the fork left it");
+		check(registry.isFile() && Arrays.equals(Files.readAllBytes(registry.toPath()), registryBefore),
+				"and so is its staged NPC registry - no filler was written over it (" + registryBefore.length + " bytes)");
+		int appended = refused == null ? appendedId(ctrmap.ZoneResource.AREA, firstNew) : -1;
+		check(appended > fork.newArea, "and the appended zone's area is " + appended + ", past the fork's " + fork.newArea);
+	}
+
+	/**
+	 * THE OWNER'S LAUNCH DIALOG, as it happened (1.0.4): appended zones still sharing an area, and an area fork staged
+	 * and never packed. Every launch the repair said "CTRMap could not give them their own just now: An area fork is
+	 * already staged and not yet packed" and changed nothing. This builds that workspace and runs the launch repair.
+	 */
+	static void theLaunchRepairGoesPastAnUnpackedAreaFork(File dump) throws Exception {
+		System.out.println("--- the launch repair gives a sharing zone its own area past an unpacked fork (the 1.0.4 dialog)");
+		ScratchGame.open(dump, whole == null ? new File[0] : new File[]{whole});
+		if (Workspace.session().archiveFile(ArchiveType.STORYTEXT) == null
+				|| !Workspace.session().archiveFile(ArchiveType.STORYTEXT).isFile()) {
+			Skip.section("neither " + dump + " nor the whole game (" + whole + ") holds STORYTEXT, so zones cannot"
+					+ " be appended for the repair to find");
+			return;
+		}
+		ctrmap.WorkspaceSession s = Workspace.session();
+		int firstNew = ctrmap.ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA));
+		ctrmap.ZoneAppender.appendZones(1, 533, true);
+		pack();
+		//AN OLDER VERSION'S PADDING: the second appended zone back on its donor's area, in its header and the master row
+		int spare = firstNew + 1;
+		int donorArea = ctrmap.MasterTable.read(s).id(ctrmap.ZoneResource.AREA, 533);
+		try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("an older version's padding", s)) {
+			File zoFile = s.getWorkspaceFile(ArchiveType.ZONE_DATA, spare);
+			byte[] zo = Files.readAllBytes(zoFile.toPath());
+			ctrmap.ZoneResource.AREA.setIn(zo, donorArea);
+			ctrmap.WorkspaceUnit.write(zoFile, zo);
+			s.addPersist(zoFile);
+			ctrmap.MasterTable m = ctrmap.MasterTable.read(s);
+			m.set(ctrmap.ZoneResource.AREA, spare, donorArea);
+			m.write();
+			unit.commit();
+		}
+		check(!ctrmap.MasterTable.read(s).sharing(ctrmap.ZoneResource.AREA, spare).isEmpty(),
+				"CONTROL: appended zone " + spare + " shares area " + donorArea + " again, as an older version left it");
+		//THE FORK NOBODY PACKED: another zone's area forked, staged at the archive's end
+		AreaForker.ForkResult fork = AreaForker.forkArea(ZONES[1]);
+		File staged = new File(Workspace.getExtractionDirectory(ArchiveType.AREA_DATA), String.valueOf(fork.newArea));
+		File registry = new File(Workspace.getExtractionDirectory(ArchiveType.NPC_REGISTRIES), String.valueOf(fork.newArea));
+		check(fork.forked && Workspace.isPendingArtifact(staged) && Workspace.isPendingArtifact(registry),
+				"CONTROL: zone " + ZONES[1] + "'s area is forked to " + fork.newArea + ", staged and not packed");
+		byte[] areaBefore = staged.isFile() ? Files.readAllBytes(staged.toPath()) : new byte[0];
+		byte[] registryBefore = registry.isFile() ? Files.readAllBytes(registry.toPath()) : new byte[0];
+
+		List<String> said = Ui.record();
+		java.util.List<Runnable> packs = new java.util.ArrayList<>();
+		try {
+			ctrmap.PaddingZoneRepair.repairOnOpen(null, s, packs::add, kept -> { }, () -> { });
+		} finally {
+			Ui.stopRecording();
+		}
+		String refusal = "";
+		for (String one : said) {
+			if (one.contains("could not give them their own")) {
+				refusal = one;
+			}
+		}
+		check(refusal.isEmpty(), "the launch repair does not refuse over the unpacked fork: " + refusal.replace('\n', ' '));
+		int now = ctrmap.MasterTable.read(s).id(ctrmap.ZoneResource.AREA, spare);
+		check(now > fork.newArea, "and zone " + spare + " has an area of its own, " + now + ", past the fork's " + fork.newArea);
+		check(staged.isFile() && Arrays.equals(Files.readAllBytes(staged.toPath()), areaBefore)
+				&& registry.isFile() && Arrays.equals(Files.readAllBytes(registry.toPath()), registryBefore),
+				"and the unpacked fork's area and NPC registry are exactly as it left them");
+		//EVERY LAUNCH, NOT THIS ONE: the owner saw the dialog on every start. Every appended zone owns its area now, and
+		//the NEXT launch's repair has nothing to say
+		int zones = ctrmap.ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA));
+		int own = 0;
+		for (int z = firstNew; z < zones; z++) {
+			if (ctrmap.MasterTable.read(s).sharing(ctrmap.ZoneResource.AREA, z).isEmpty()) {
+				own++;
+			}
+		}
+		check(zones > firstNew && own == zones - firstNew, "every appended zone has an area of its own after the repair: "
+				+ own + " of " + (zones - firstNew));
+		List<String> again = Ui.record();
+		try {
+			ctrmap.PaddingZoneRepair.repairOnOpen(null, s, packs::add, kept -> { }, () -> { });
+		} finally {
+			Ui.stopRecording();
+		}
+		check(again.isEmpty(), "and the next launch's repair finds nothing to say: " + again);
+	}
+
+	/**
+	 * Story text, the third allocator the repair and the append share: a second text fork before a pack takes the slot
+	 * past the first, which it used to refuse - and, had it gone on, write over.
+	 */
+	static void aSecondTextForkBeforeAPackGoesPastTheFirst(File dump) throws Exception {
+		System.out.println("--- a second text fork before a pack goes past the first, which is kept");
+		ScratchGame.open(dump, whole == null ? new File[0] : new File[]{whole});
+		ctrmap.WorkspaceSession s = Workspace.session();
+		if (s.archiveFile(ArchiveType.STORYTEXT) == null || !s.archiveFile(ArchiveType.STORYTEXT).isFile()) {
+			Skip.section("neither " + dump + " nor the whole game (" + whole + ") holds STORYTEXT");
+			return;
+		}
+		int packed = s.getStoryTextGARC().length;
+		int[] zones = {ZONES[0], ZONES[1]};
+		byte[][] texts = new byte[2][];
+		String refused = null;
+		for (int k = 0; k < 2 && refused == null; k++) {
+			byte[][] zo = {Files.readAllBytes(s.getWorkspaceFile(ArchiveType.ZONE_DATA, zones[k]).toPath())};
+			try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("text fork " + k, s)) {
+				ctrmap.TextForker.forkAppendedTexts(s, zo, ctrmap.MasterTable.read(s), new int[]{zones[k]});
+				unit.commit();
+			} catch (IOException ex) {
+				refused = ex.getMessage();
+			}
+			File out = new File(s.getExtractionDirectory(ArchiveType.STORYTEXT), String.valueOf(packed + k));
+			texts[k] = out.isFile() ? Files.readAllBytes(out.toPath()) : null;
+		}
+		File first = new File(s.getExtractionDirectory(ArchiveType.STORYTEXT), String.valueOf(packed));
+		check(refused == null, "a second text fork before a pack is not refused: " + refused);
+		check(texts[1] != null, "it is staged at " + (packed + 1) + ", past the first's " + packed);
+		check(first.isFile() && texts[0] != null && Arrays.equals(Files.readAllBytes(first.toPath()), texts[0]),
+				"and the first fork's staged text is exactly as it left it");
+	}
+
+	/**
+	 * Fork area twice before a pack: the second takes the id past the first, which it used to refuse ("An area fork is
+	 * already pending. Pack the workspace before forking again"), and the first - area and registry - is kept.
+	 */
+	static void aSecondAreaForkBeforeAPackGoesPastTheFirst(File dump) throws Exception {
+		System.out.println("--- a second area fork before a pack goes past the first, which is kept");
+		ScratchGame.open(dump, whole == null ? new File[0] : new File[]{whole});
+		AreaForker.ForkResult first = AreaForker.forkArea(ZONES[0]);
+		File area = new File(Workspace.getExtractionDirectory(ArchiveType.AREA_DATA), String.valueOf(first.newArea));
+		File registry = new File(Workspace.getExtractionDirectory(ArchiveType.NPC_REGISTRIES), String.valueOf(first.newArea));
+		check(first.forked && Workspace.isPendingArtifact(area), "CONTROL: the first fork is staged at " + first.newArea);
+		byte[] areaBefore = area.isFile() ? Files.readAllBytes(area.toPath()) : new byte[0];
+		byte[] registryBefore = registry.isFile() ? Files.readAllBytes(registry.toPath()) : new byte[0];
+		AreaForker.ForkResult second = null;
+		String refused = null;
+		try {
+			second = AreaForker.forkArea(ZONES[1]);
+		} catch (IOException ex) {
+			refused = ex.getMessage();
+		}
+		check(refused == null && second != null && second.forked, "a second area fork before a pack is not refused: " + refused);
+		check(second != null && second.newArea > first.newArea,
+				"it takes " + (second == null ? "nothing" : String.valueOf(second.newArea)) + ", past the first's " + first.newArea);
+		check(Arrays.equals(Files.readAllBytes(area.toPath()), areaBefore)
+				&& Arrays.equals(Files.readAllBytes(registry.toPath()), registryBefore),
+				"and the first fork's staged area and NPC registry are exactly as it left them");
+	}
+
+	/**
+	 * Resize a map while another zone's map fork is unpacked: the resize's new matrix and regions go past the fork's,
+	 * which is kept - the region allocator in MapResizer took the packed end and asked nothing.
+	 */
+	static void aResizeAfterAnUnpackedMapForkGoesPastIt(File dump) throws Exception {
+		System.out.println("--- a resize while a map fork is staged and unpacked goes past it, and the fork is kept");
+		ScratchGame.open(dump, whole == null ? new File[0] : new File[]{whole});
+		int mmPacked = Workspace.getArchive(ArchiveType.MAP_MATRIX).length;
+		int grPacked = Workspace.getArchive(ArchiveType.FIELD_DATA).length;
+		GeometryForker.ForkResult fork = GeometryForker.ensurePrivate(SHARED_ZONE);
+		check(fork.forked, "CONTROL: zone " + SHARED_ZONE + " was given a map of its own, staged and not packed");
+		java.util.Map<File, byte[]> matrixBefore = stagedFrom(ArchiveType.MAP_MATRIX, mmPacked);
+		java.util.Map<File, byte[]> regionsBefore = stagedFrom(ArchiveType.FIELD_DATA, grPacked);
+		check(!matrixBefore.isEmpty() && !regionsBefore.isEmpty(), "CONTROL: its matrix and " + regionsBefore.size()
+				+ " region(s) are staged past the packed ends");
+		int[] size = ctrmap.MapResizer.currentSize(Workspace.session(), PRIVATE_ZONE);
+		String refused = null;
+		try {
+			ctrmap.MapResizer.resize(Workspace.session(), PRIVATE_ZONE, size[0] + 1, size[1]);
+		} catch (IOException ex) {
+			refused = ex.getMessage();
+		}
+		check(refused == null, "a resize while a map fork is unpacked is not refused: " + refused);
+		check(sameBytes(matrixBefore) && sameBytes(regionsBefore),
+				"and the fork's staged matrix and every region it staged are exactly as it left them");
 	}
 
 	/**

@@ -1597,14 +1597,14 @@
   {
    "id": "linking-a-zone-to-itself-loses-half-the-link",
    "why": "A two-way link writes both ends. When both ends are the SAME zone - two doors of one building, which is the ordinary case for an interior - the obvious implementation loads the zone once per side, writes the first half, then writes the second side from the copy it loaded BEFORE that write and throws the first half away. The result is a door that leads somewhere and a partner that does not lead back, which is the exact defect a two-way link exists to prevent, produced by the thing preventing it.",
-   "file": "src/ctrmap/ZoneLinker.java",
+   "file": "src/ctrmap/tests/WarpLink.java",
    "find": "\t\t\tLoaded back = zoneA == zoneB ? load(ws, zoneB) : b;\n",
    "replace": "\t\t\tLoaded back = b;\n",
    "suite": "ctrmap.tests.WorkflowGuardsTest",
    "args": [
     "${GAMEDIR}"
    ],
-   "must_say": "linking a zone to ITSELF writes both ends"
+   "must_say": "FAIL: linking a zone to ITSELF writes both ends"
   },
   {
    "id": "the-zone-preview-is-built-but-not-put-anywhere",
@@ -8032,14 +8032,14 @@
    "args": [
     "src"
    ],
-   "must_say": "FAIL: and Empty zone, Rename and Connect zones each reopen the open zone after writing"
+   "must_say": "FAIL: and Empty zone, Rename and Re-link zone each reopen the open zone after writing"
   },
   {
    "id": "connect-zones-keeps-the-first-end-alone",
    "why": "F227: a link wrote zone A and then zone B, so B failing left a one-way door; this plant commits the unit before either end is written, so 1 failure keeps the first end.",
-   "file": "src/ctrmap/ZoneLinker.java",
-   "find": "\t\ttry (WorkspaceUnit unit = WorkspaceUnit.begin(\"Connect zones\", ws)) {\n",
-   "replace": "\t\ttry (WorkspaceUnit unit = WorkspaceUnit.begin(\"Connect zones\", ws)) {\n\t\t\tunit.commit(); //PLANTED: kept whatever happens\n",
+   "file": "src/ctrmap/tests/WarpLink.java",
+   "find": "\t\ttry (WorkspaceUnit unit = WorkspaceUnit.begin(\"Link warps\", ws)) {\n",
+   "replace": "\t\ttry (WorkspaceUnit unit = WorkspaceUnit.begin(\"Link warps\", ws)) {\n\t\t\tunit.commit(); //PLANTED: kept whatever happens\n",
    "suite": "ctrmap.tests.ZoneLinkUnitTest",
    "args": [],
    "must_say": "FAIL: zone 0 is byte for byte as it was"
@@ -8288,8 +8288,8 @@
    "id": "a-single-fork-takes-the-end",
    "why": "F043: both forks share one allocator; this plant has the single-zone fork take AreaData's end again, past 2 ids given back.",
    "file": "src/ctrmap/AreaForker.java",
-   "find": "\t\tint newArea = takeAreaIds(MasterTable.read(Workspace.session()), ad.length,\n\t\t\t\tregistryEmpty(Workspace.session(), np), 1)[0];",
-   "replace": "\t\tint newArea = ad.length;",
+   "find": "\t\tint newArea = takeAreaIds(MasterTable.read(s), adReach, registryEmpty(s, np), 1)[0];",
+   "replace": "\t\tint newArea = adReach;",
    "suite": "ctrmap.tests.AreaIdBudgetTest",
    "args": [],
    "must_say": "FAIL: a single fork takes the lowest id given back"
@@ -15182,12 +15182,12 @@
   {
    "id": "workspace-link-is-not-kept",
    "why": "WorkspaceOps.link writes the workspace in a unit and hands it to the window's history: committed and not kept, it cannot be taken back. Measured planted: Connect linked zone 0 and zone 1 with nothing kept, and Undo read the zones again 0 times.",
-   "file": "src/ctrmap/WorkspaceOps.java",
-   "find": "\t\t\tString said = ZoneLinker.link(ws, za, wa, zb, wb, both);\n\t\t\tWorkspaceUnit.inMemory(reread, reread);\n\t\t\tops.keep(unit.commitKeeping());\n",
-   "replace": "\t\t\tString said = ZoneLinker.link(ws, za, wa, zb, wb, both);\n\t\t\tWorkspaceUnit.inMemory(reread, reread);\n\t\t\tunit.commit();\n",
+   "file": "src/ctrmap/tests/WarpLink.java",
+   "find": "\t\t\tString said = link(ws, za, wa, zb, wb, both);\n\t\t\tWorkspaceUnit.inMemory(reread, reread);\n\t\t\tops.keep(unit.commitKeeping());\n",
+   "replace": "\t\t\tString said = link(ws, za, wa, zb, wb, both);\n\t\t\tWorkspaceUnit.inMemory(reread, reread);\n\t\t\tunit.commit();\n",
    "suite": "ctrmap.tests.ZoneLinkUnitTest",
    "args": [],
-   "must_say": "FAIL: control: the form's Connect links zone 0 and zone 1, kept"
+   "must_say": "FAIL: control: the link joins zone 0 and zone 1, kept"
   },
   {
    "id": "workspace-resize-is-not-kept",
@@ -16909,7 +16909,7 @@
    "id": "the-appends-area-fork-does-not-ask-the-registry",
    "why": "Census M.43 (2026-09-13): Fork area refused an NPC registry archive already reaching past the new tail id - registry and AreaData out of step - and the append's area fork had no such check, so it wrote its registry over whatever sat at that id. This plant takes the question out of the append's fork again. Planted 2026-10-12, it turned 1 of the 28 checks AreaIdBudgetTest ran red, first: \"and Fork area and the append's fork both ask it\".",
    "file": "src/ctrmap/AreaForker.java",
-   "find": "\t\t\trequireInStep(newArea, ad.length, np.length);\n",
+   "find": "\t\t\trequireInStep(newArea, adReach, npReach);\n",
    "replace": "\t\t\t//PLANTED: the append's fork does not ask\n",
    "suite": "ctrmap.tests.AreaIdBudgetTest",
    "args": [],
@@ -18108,16 +18108,16 @@
   },
   {
    "id": "an-append-forks-areas-over-a-staged-area-fork",
-   "why": "The 2026-10-12 sweep over 7e3cdb9 (stopped) found AreaForker's refusal of an append over an unpacked area fork asserted by nothing: dropped, or turned into a return, every suite stayed green - and the append's first area id is the slot the fork staged, so the new zone's area would be written over the forked one's. This plant drops the refusal.",
+   "why": "The 2026-10-12 sweep over 7e3cdb9 (stopped) found AreaForker's refusal of an append over an unpacked area fork asserted by nothing: dropped, or turned into a return, every suite stayed green - and the append's first area id is the slot the fork staged, so the new zone's area would be written over the forked one's. RETARGETED (1.0.4's launch dialog): the refusal is gone - it made the repair that runs on every open refuse forever over the owner's fork staged on Sep 11 - and the append now counts its ids past what is staged. The claim is unchanged; this plant takes the batch's first id from the packed end again.",
    "file": "src/ctrmap/AreaForker.java",
-   "find": "\t\t\t\tthrow new IOException(\"An area fork is already staged and not yet packed.\");\n",
-   "replace": "\t\t\t\t;  //PLANTED: the refusal dropped\n",
+   "find": "\t\tint adReach = s.reach(ArchiveType.AREA_DATA, ad.length);\n\t\tint npReach = s.reach(ArchiveType.NPC_REGISTRIES, np.length);\n\t\tint[] ids = takeAreaIds(",
+   "replace": "\t\tint adReach = ad.length;\n\t\tint npReach = s.reach(ArchiveType.NPC_REGISTRIES, np.length);\n\t\tint[] ids = takeAreaIds(",
    "suite": "ctrmap.tests.ForkGuardsTest",
    "args": [
     "${PRISTINE}",
     "${GAMEDIR}"
    ],
-   "must_say": "FAIL: an append made while an area fork is unpacked is refused"
+   "must_say": "FAIL: and the forked zone's staged area is exactly as the fork left it"
   },
   {
    "id": "a-deploy-that-shipped-nothing-reads-as-shipped",
@@ -25595,10 +25595,10 @@
   },
   {
    "id": "the-window-swaps-a-view-itself-again",
-   "why": "The 3 views the 1.0.4 window swapped each did it with its own removeAll() and its own idea of a way back - one missing, two drawn flat - so nothing could say all 3 had one. This plant swaps the zone column back by hand in the window again.",
+   "why": "The 3 views the 1.0.4 window swapped each did it with its own removeAll() and its own idea of a way back - one missing, two drawn flat - so nothing could say all 3 had one. This plant has the window swap the zone column back by hand again. RE-ANCHORED (2026-10-23): closeZoneColumnTool, where it was planted, went with the warp connector - the host's own way back does its job - so it is planted in the Zone list action.",
    "file": "src/ctrmap/CtrmapMainframe.java",
-   "find": "\t\tif (zoneHost != null) {\n\t\t\tzoneHost.goHome();\n\t\t}\n",
-   "replace": "\t\tif (zoneHost != null) {\n\t\t\tzoneHost.removeAll();\n\t\t\tzoneHost.add(zoneHost.home(), BorderLayout.CENTER);\n\t\t}\n",
+   "find": "\tprivate void showZoneListAction() {\n\t\tselectTab(\"Zone Loader\");\n",
+   "replace": "\tprivate void showZoneListAction() {\n\t\tselectTab(\"Zone Loader\");\n\t\tif (zoneHost != null) {\n\t\t\tzoneHost.removeAll();\n\t\t\tzoneHost.add(zoneHost.home(), BorderLayout.CENTER);\n\t\t}\n",
    "suite": "ctrmap.tests.ToolHostTest",
    "args": [
     "src"
@@ -25640,6 +25640,298 @@
     "src"
    ],
    "must_say": "FAIL a tool that will not let go is asked, and stays"
+  },
+  {
+   "id": "the-reach-ignores-what-is-staged",
+   "why": "Every append now asks WorkspaceSession.reach for its first new index. Counting only the packed length put the next id on a staged fork's slot: 1.0.4 refused there, on every launch of the owner's workspace (1 fork, staged Sep 11), and before the refusal existed the append wrote over the fork. This plant stops reach counting staged entries.",
+   "file": "src/ctrmap/WorkspaceSession.java",
+   "find": "\t\twhile (dir != null && isPendingArtifact(new File(dir, String.valueOf(n)))) {\n",
+   "replace": "\t\twhile (false && dir != null && isPendingArtifact(new File(dir, String.valueOf(n)))) {\n",
+   "suite": "ctrmap.tests.ForkGuardsTest",
+   "args": [
+    "${PRISTINE}",
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: and the forked zone's staged matrix is exactly as the fork left it"
+  },
+  {
+   "id": "registry-fillers-start-at-the-packed-end",
+   "why": "The area batch fills every NPC-registry slot between the registry's end and the new id with an empty registry. Started at the PACKED end, with 1 unpacked fork staged, the first filler is that fork's registry - written empty. The 1.0.4 launch repair would have done this to the owner's Sep 11 fork had it got past its refusal. This plant starts the fillers at the packed end again.",
+   "file": "src/ctrmap/AreaForker.java",
+   "find": "\t\tint npReaches = npReach;\n",
+   "replace": "\t\tint npReaches = np.length;\n",
+   "suite": "ctrmap.tests.ForkGuardsTest",
+   "args": [
+    "${PRISTINE}",
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: and so is its staged NPC registry"
+  },
+  {
+   "id": "regions-are-taken-from-the-packed-end",
+   "why": "FieldData regions were appended at gr.length by 4 allocators with no question at all - safe only while the matrix refusal stopped a second map fork. With the refusal gone, a region allocator that counts from the packed end writes over the regions an unpacked map fork staged (18 of them in the suite's fork of zone 10). This plant takes regions from the packed end again.",
+   "file": "src/ctrmap/GeometryForker.java",
+   "find": "\t\treturn ws == null ? gr.length : ws.reach(ArchiveType.FIELD_DATA, gr.length);\n",
+   "replace": "\t\treturn gr.length;\n",
+   "suite": "ctrmap.tests.ForkGuardsTest",
+   "args": [
+    "${PRISTINE}",
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: and so is every region the fork staged"
+  },
+  {
+   "id": "the-matrix-is-taken-from-the-packed-end",
+   "why": "nextFreeMatrix is the one matrix allocator (census H.11, where 1 of 4 allocators did not ask and a map fork was overwritten by the next Add zone). It now answers past what is staged instead of refusing, which made the 1.0.4 launch repair refuse forever. This plant answers the packed end again.",
+   "file": "src/ctrmap/GeometryForker.java",
+   "find": "\t\treturn ws == null ? mm.length : ws.reach(ArchiveType.MAP_MATRIX, mm.length);\n",
+   "replace": "\t\treturn mm.length;\n",
+   "suite": "ctrmap.tests.ForkGuardsTest",
+   "args": [
+    "${PRISTINE}",
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: and the forked zone's staged matrix is exactly as the fork left it"
+  },
+  {
+   "id": "a-single-area-fork-takes-the-packed-end",
+   "why": "Fork area took its id from the packed end and refused 'An area fork is already pending. Pack the workspace before forking again' - so 2 forks in one sitting needed a pack between, and with the refusal gone the second would write over the first. This plant takes the single fork's id from the packed end again.",
+   "file": "src/ctrmap/AreaForker.java",
+   "find": "\t\tint adReach = s.reach(ArchiveType.AREA_DATA, ad.length);\n\t\tint npReach = s.reach(ArchiveType.NPC_REGISTRIES, np.length);\n\t\tint newArea = takeAreaIds(",
+   "replace": "\t\tint adReach = ad.length;\n\t\tint npReach = s.reach(ArchiveType.NPC_REGISTRIES, np.length);\n\t\tint newArea = takeAreaIds(",
+   "suite": "ctrmap.tests.ForkGuardsTest",
+   "args": [
+    "${PRISTINE}",
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: and the first fork's staged area and NPC registry are exactly as it left them"
+  },
+  {
+   "id": "story-text-is-taken-from-the-packed-end",
+   "why": "The story-text allocator is the third the append and the launch repair share. It refused 'A story text append is already staged and not yet packed', which would have stopped the 1.0.4 launch repair the same way the area one did; counting from the packed end without the refusal writes the second text over the first (slot 637 in the suite). This plant counts from the packed end again.",
+   "file": "src/ctrmap/TextForker.java",
+   "find": "\t\tint firstText = ws.reach(ArchiveType.STORYTEXT, st.length);\n",
+   "replace": "\t\tint firstText = st.length;\n",
+   "suite": "ctrmap.tests.ForkGuardsTest",
+   "args": [
+    "${PRISTINE}",
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: it is staged at"
+  },
+  {
+   "id": "a-resize-takes-regions-from-the-packed-end",
+   "why": "Resize map appended its new regions at gr.length and asked nothing, safe only while the matrix allocator refused an unpacked map fork. With that refusal gone (1.0.4's launch dialog), a resize after 1 unpacked map fork writes its regions over the fork's. This plant takes the resize's regions from the packed end again.",
+   "file": "src/ctrmap/MapResizer.java",
+   "find": "\t\tint firstNew = GeometryForker.nextFreeRegion(ws, gr);\n",
+   "replace": "\t\tint firstNew = gr.length;\n",
+   "suite": "ctrmap.tests.ForkGuardsTest",
+   "args": [
+    "${PRISTINE}",
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: and the fork's staged matrix and every region it staged are exactly as it left them"
+  },
+  {
+   "id": "the-browser-is-mirrored-once-per-row",
+   "why": "1.0.4's lag: the zone browser's listener rebuilt and re-scrolled the whole browser list on every row the zone list's refill added - 540 zones, about 146,000 rows inserted, a 15.5 s freeze of the window measured on the owner's game, on opening and on every clone, add, undo and repair. This plant lets the listener mirror during the refill again.",
+   "file": "src/ctrmap/humaninterface/ZoneLoadingPanel.java",
+   "find": "\t\tif (browser == null || mirroringHeld) {\n",
+   "replace": "\t\tif (browser == null) {\n",
+   "suite": "ctrmap.tests.ZoneLoadingStateTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "FAIL: and got them in one pass"
+  },
+  {
+   "id": "relink-writes-the-header-alone",
+   "why": "The game reads a zone's ids from the master table, the editor from its header; a re-link that writes 1 of the 2 leaves a zone the editor shows on one map and the game loads on another. This plant drops the master-table write from re-link.",
+   "file": "src/ctrmap/ZoneRelinker.java",
+   "find": "\t\tmaster.write();\n\t\tStringBuilder said",
+   "replace": "\t\tStringBuilder said",
+   "suite": "ctrmap.tests.ZoneRelinkTest",
+   "args": [
+    "${PRISTINE}",
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: re-linked, its header AND its master row name map"
+  },
+  {
+   "id": "relink-writes-the-master-alone",
+   "why": "The other half of the same pair: a re-link that writes the master row and not the header leaves the editor showing - and saving back - the zone on its old map. 2 writes, both or neither. This plant drops the header write.",
+   "file": "src/ctrmap/ZoneRelinker.java",
+   "find": "\t\tWorkspaceUnit.write(zoFile, zo);\n\t\tws.addPersist(zoFile);\n",
+   "replace": "",
+   "suite": "ctrmap.tests.ZoneRelinkTest",
+   "args": [
+    "${PRISTINE}",
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: re-linked, its header AND its master row name map"
+  },
+  {
+   "id": "relink-is-not-kept",
+   "why": "Undo everywhere is a standing rule of the owner's; a re-link written outside the workspace's history is 1 change Undo cannot take back. This plant commits the re-link without keeping it.",
+   "file": "src/ctrmap/WorkspaceOps.java",
+   "find": "\t\t\tString said = ZoneRelinker.relink(ws, zone, to);\n\t\t\tWorkspaceUnit.inMemory(reread, reread);\n\t\t\tops.keep(unit.commitKeeping());\n",
+   "replace": "\t\t\tString said = ZoneRelinker.relink(ws, zone, to);\n\t\t\tWorkspaceUnit.inMemory(reread, reread);\n\t\t\tunit.commit();\n",
+   "suite": "ctrmap.tests.ZoneRelinkTest",
+   "args": [
+    "${PRISTINE}",
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: Undo puts it back on its own map"
+  },
+  {
+   "id": "relink-takes-the-per-area-table-as-an-area",
+   "why": "Area 228 is the engine's per-area table, not an area; a zone pointed at it reads 1 table as its atmosphere, props and NPC models. This plant lets re-link point a zone at it.",
+   "file": "src/ctrmap/ZoneRelinker.java",
+   "find": "\t\tif (res == ZoneResource.AREA && id == AreaForker.AD_GLOBAL_TABLE) {\n",
+   "replace": "\t\tif (false && res == ZoneResource.AREA && id == AreaForker.AD_GLOBAL_TABLE) {\n",
+   "suite": "ctrmap.tests.ZoneRelinkTest",
+   "args": [
+    "${PRISTINE}",
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: AREA 228 is refused in words"
+  },
+  {
+   "id": "relink-points-past-the-archive",
+   "why": "An id past where an archive reaches names nothing; a zone re-linked to it loads past the end of the archive in game. This plant lets re-link take 1 such id.",
+   "file": "src/ctrmap/ZoneRelinker.java",
+   "find": "\t\t\tif (id >= reach) {\n",
+   "replace": "\t\t\tif (false && id >= reach) {\n",
+   "suite": "ctrmap.tests.ZoneRelinkTest",
+   "args": [
+    "${PRISTINE}",
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: and the zone's header and the master table are exactly as they were"
+  },
+  {
+   "id": "as-shipped-is-read-from-today",
+   "why": "The owner's case is a vanilla zone going back to the vanilla zones it shipped sharing with; 'as shipped' read from today's table instead of the pristine snapshot says every zone is already as shipped, and offers 0 ways back. This plant reads today's table.",
+   "file": "src/ctrmap/ZoneRelinker.java",
+   "find": "\t\tGARC g = new GARC(snap);\n\t\tint zones = ZoneTables.zoneCount(g, ws.profile());\n\t\treturn MasterTable.detached(g.getDecompressedEntry(zones), zones);\n",
+   "replace": "\t\treturn MasterTable.read(ws);\n",
+   "suite": "ctrmap.tests.ZoneRelinkTest",
+   "args": [
+    "${PRISTINE}",
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: the zone's links say its map is"
+  },
+  {
+   "id": "relink-leaves-the-open-zone-stale",
+   "why": "Re-link writes a zone's header through a container of its own; the open zone kept its old ids, and its next save would write them back over the re-link (F234, the same as Empty zone and Rename - this is the 3rd window action to need it, and all 4 resources a re-link can move would be undone by one save). This plant drops the reopen from the window's re-link.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\t\t\treopenIfWritten();\n\t\t\t\treturn said;\n",
+   "replace": "\t\t\t\treturn said;\n",
+   "suite": "ctrmap.tests.ZoneWrittenElsewhereTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: and Empty zone, Rename and Re-link zone each reopen the open zone after writing"
+  },
+  {
+   "id": "the-relink-panel-writes-nothing",
+   "why": "A button that says it re-linked and wrote nothing is the shape of 1.0.4's failures: green in every suite that asked whether the code compiled and the panel existed. This plant makes the panel's buttons report without calling the window's re-link.",
+   "file": "src/ctrmap/humaninterface/ZoneRelinkPanel.java",
+   "find": "\t\t\tctrmap.Ui.message(parent, relinker.relink(zone, to), \"Re-link zone\", JOptionPane.INFORMATION_MESSAGE);\n",
+   "replace": "\t\t\tctrmap.Ui.message(parent, \"re-linked\", \"Re-link zone\", JOptionPane.INFORMATION_MESSAGE);\n",
+   "suite": "ctrmap.tests.ZoneRelinkTest",
+   "args": [
+    "${PRISTINE}",
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: pressed, it re-links the map to"
+  },
+  {
+   "id": "all-back-to-as-shipped-takes-nothing-back",
+   "why": "'All back to as shipped' is the owner's case in 1 press - undo every unlink of a vanilla zone. This plant has it gather nothing to put back.",
+   "file": "src/ctrmap/humaninterface/ZoneRelinkPanel.java",
+   "find": "\t\t\t\t\tif (link.differsFromShipped()) {\n\t\t\t\t\t\tto.put(link.res, link.shipped);\n",
+   "replace": "\t\t\t\t\tif (false && link.differsFromShipped()) {\n\t\t\t\t\t\tto.put(link.res, link.shipped);\n",
+   "suite": "ctrmap.tests.ZoneRelinkTest",
+   "args": [
+    "${PRISTINE}",
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: and All back to as shipped puts the area back too"
+  },
+  {
+   "id": "a-release-zip-may-name-its-paths-with-backslashes",
+   "why": "MEASURED 2026-10-23 on the 1.0.4 zips: Compress-Archive in Windows PowerShell 5.1 named 160 of 160 paths in the Windows build and 10 of 16 in the portable one with a backslash. The updater unpacks with new File(dest, name), which off Windows is one file named lib\\jogl-all.jar beside an untouched lib/ - and 1.0.4 changed those 4 JOGL jars, so a macOS or Linux copy that updated was left on the old natives. This plant takes the refusal out of the one place that says how to publish.",
+   "file": "tools/release_channel.py",
+   "find": "    refusals = unpublishable(argv[2]) + unpublishable(argv[3])\n",
+   "replace": "    refusals = []  #PLANTED: every build published, whatever its names\n",
+   "suite": "ctrmap.tests.BatteryHygieneTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: a build whose zip names a path with a backslash is refused"
+  },
+  {
+   "id": "an-unreadable-build-is-published-as-clean",
+   "why": "A QUERY THAT CANNOT READ ITS SUBJECT MUST NOT REPORT IT ABSENT: a zip the channel tool cannot open has no names to hold a backslash, and an answer of none would print the publish commands for a file that may not exist - the 2 stand-in names the tool was always handed in its tests, W.zip and P.zip, were never files at all. This plant answers an unreadable build with no reasons to refuse it.",
+   "file": "tools/release_channel.py",
+   "find": "        return [\"%s could not be read, so whether its names hold a backslash is unknown: %s\" % (zip_path, unread)]\n",
+   "replace": "        return []  #PLANTED: could not look, so nothing found\n",
+   "suite": "ctrmap.tests.BatteryHygieneTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: a build that cannot be opened is refused, never published as clean"
+  },
+  {
+   "id": "the-packager-zips-with-compress-archive",
+   "why": "Both 1.0.4 zips were written by Compress-Archive, and 170 of their 176 paths carry a backslash - every path below a folder; the 6 without one are the portable build's top-level files. The channel tool refuses such a zip at publish, after a whole packaging run of several minutes; this says so at the packager. This plant puts Compress-Archive back for the portable build.",
+   "file": "package.ps1",
+   "find": "Invoke-Native { & \"$jdk\\bin\\jar.exe\" --create --file $zip --no-manifest -C $stage . }\n",
+   "replace": "Compress-Archive -Path \"$stage\\*\" -DestinationPath $zip -CompressionLevel Optimal\n",
+   "suite": "ctrmap.tests.BatteryHygieneTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: and the packager writes both zips with the JDK's jar"
+  },
+  {
+   "id": "a-core-release-pushes-the-local-master-by-name",
+   "why": "MEASURED 2026-10-23 cutting 1.0.5: the work was on a branch whose local master stood 4 commits behind origin/master (8ad6633 against 0240c1a), and the printed instruction was git push origin master v1.0.5 - which sends the LOCAL master, not the commit git tag had just named. Git refuses it as a non-fast-forward at best; where the local master is ahead on other work it publishes that work, and a tag on a commit master does not hold. This plant puts the core channel back to pushing master by name.",
+   "file": "tools/release_channel.py",
+   "find": "BRANCH = {\"core\": \"HEAD:refs/heads/master\", \"nightly\": \"HEAD:refs/heads/nightly\"}\n",
+   "replace": "BRANCH = {\"core\": \"master\", \"nightly\": \"HEAD:refs/heads/nightly\"}  #PLANTED\n",
+   "suite": "ctrmap.tests.BatteryHygieneTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: a core version sends HEAD, the tagged commit, never the local master by name"
+  },
+  {
+   "id": "a-swapped-view-the-suite-never-asks",
+   "why": "PAID FOR IN 1.0.4: the zone column's way back was never looked at as a person sees it, the release was public for 2 days, and anyone who opened one of its 3 swapped views could be locked out of loading a zone. ToolHostTest lays out the 3 hosts the window builds by hand; a 4th added tomorrow would have no case and the suite would stay green over it. This plant builds a 4th host in the window that no case presses.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\textrasHost = new ctrmap.humaninterface.ToolHost(\"Extras\", extras, true);\n",
+   "replace": "\t\textrasHost = new ctrmap.humaninterface.ToolHost(\"Extras\", extras, true);\n\t\tnew ctrmap.humaninterface.ToolHost(\"a view nobody asked about\", new javax.swing.JPanel(), true); //PLANTED\n",
+   "suite": "ctrmap.tests.ToolHostTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL every host the window builds has had its way back seen and pressed: 3 of 4"
+  },
+  {
+   "id": "the-launch-repair-leaves-a-shared-area-for-the-next-launch",
+   "why": "PAID FOR IN 1.0.4: the owner saw \"Zones sharing a map or area\" on EVERY launch for 2 days of a public release - the repair ran, changed nothing, and the next start asked again. A check that the repair does not refuse is one launch; this counts what it left. The plant skips the repair's area pass: 3 of the 4 appended zones own their area, and the next launch's repair is QUIET about the fourth (its record says the row was repaired) - which is why the count, not the next launch's silence, is the line that guards it.",
+   "file": "src/ctrmap/GeometryForker.java",
+   "find": "\t\t\t\t\tAreaForker.forkAppendedAreas(zos, table, zones);\n",
+   "replace": "\t\t\t\t\t//PLANTED: the area pass skipped\n",
+   "suite": "ctrmap.tests.ForkGuardsTest",
+   "args": [
+    "${PRISTINE}",
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: every appended zone has an area of its own after the repair: 3 of 4"
   }
  ],
  "retired": [

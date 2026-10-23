@@ -54,6 +54,20 @@ class TheFastPathTakesOnlyARed(unittest.TestCase):
             self.addCleanup(patch.stop)
         replant.BUILT_PLANTED[0] = False
 
+    def test_a_restore_puts_back_the_time_with_the_bytes(self):
+        """PAID FOR TWICE (2026-10-18, 2026-10-23): a fast-path plant's byte-exact restore left the source newer than
+        its class, which no build had touched, and EdtReachTest refused a tree nobody had edited."""
+        path = os.path.join(self.root, "src", "A.java")
+        os.utime(path, ns=(1_000_000_000_000_000_000, 1_000_000_000_000_000_000))
+        with io.open(path, "rb") as handle:
+            bytes_before = handle.read()
+        self.answers = [(1, "FAIL: x is 1")]
+        self.assertTrue(replant.replant(self.plant, "java", "p", "g"), "CONTROL: the plant was not driven red")
+        with io.open(path, "rb") as handle:
+            self.assertEqual(handle.read(), bytes_before, "CONTROL: the restore did not put the bytes back")
+        self.assertEqual(os.stat(path).st_mtime_ns, 1_000_000_000_000_000_000,
+                         "the restored file's modification time is not the one it had before the plant")
+
     def test_a_red_from_the_fast_path_needs_no_build(self):
         self.answers = [(1, "FAIL: x is 1")]
         self.assertTrue(replant.replant(self.plant, "java", "p", "g"), "a red on the fast path was not taken")

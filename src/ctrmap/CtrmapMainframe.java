@@ -1252,9 +1252,11 @@ public class CtrmapMainframe {
 		ZONE_LIST(Area.ZONE, "Zone list (pick a zone to load)", "Zone list",
 				"The zone list in the Zone Loader tab, to pick a zone and load it - from wherever you are, any tool over it put away.",
 				CtrmapMainframe::showZoneListAction),
-		CONNECT_ZONES(Area.ZONE, "Connect zones through a warp...", "Connect zones",
-				"Wire a warp in one zone to a warp in another, both ways, so the trip works there AND back.",
-				CtrmapMainframe::connectZonesAction),
+		//THE OWNER'S REQUEST OF 2026-09-11, under its own name: re-link a zone to what it shares. A warp connector
+		//was built in its place and called "Connect zones"; the owner had it removed (2026-10-23)
+		RELINK_ZONE(Area.ZONE, "Re-link zone (share a map or area again)...", "Re-link zone",
+				"Point a zone back at the map, area, story text or script it shipped sharing with other zones - or share"
+				+ " another zone's. Undoes a zone being made independent.", CtrmapMainframe::relinkZoneAction),
 		RENAME_ZONE(Area.ZONE, "Rename zone (in-game name)...", "Rename",
 				"Rename the loaded zone's in-game location banner.", CtrmapMainframe::renameZoneAction),
 		EMPTY_ZONE(Area.ZONE, "Empty zone (clear contents)...", "Empty",
@@ -1322,13 +1324,6 @@ public class CtrmapMainframe {
 	private void inZoneColumn(String title, JComponent tool) {
 		if (zoneHost != null && zoneHost.show(title, tool, null, null)) {
 			selectTab("Zone Loader");
-		}
-	}
-
-	/** Back to the zone list. */
-	private void closeZoneColumnTool() {
-		if (zoneHost != null) {
-			zoneHost.goHome();
 		}
 	}
 
@@ -1500,23 +1495,19 @@ public class CtrmapMainframe {
 	}
 
 	/**
-	 * Wire a warp in one zone to a warp in another, both ways - in the Zone Loader tab, beside
-	 * the zone it is about.
+	 * Re-link a zone - in the Zone Loader's column, beside the zone list, with the column's way back above it.
 	 *
-	 * <p>On the zone actions bar rather than the warp form: the warp form edits ONE
-	 * warp of the loaded zone, and this is about two zones, only one of which is
-	 * open. Putting it where a zone-level action lives is also what lets it be used
-	 * without loading either end.
-	 *
-	 * <p>It was a modal window. The rule here is that a feature lives in the part of
-	 * the UI it belongs to, and wiring two zones together belongs with the zone list.
+	 * <p>The owner's request of 2026-09-11, "re-link/connect zones ... relink back to its original other vanilla
+	 * zones it was linked to". Each relink is one change of the workspace's history, and the zones are read
+	 * again after it - the open zone too, or its next save would write the old ids back (F234).
 	 */
-	private void connectZonesAction() {
-		inZoneColumn("Connect zones", ctrmap.humaninterface.ZoneLinkDialog.panel(
-			frame, game, loadedZone, () -> {
-				closeZoneColumnTool();
-				reopenIfWritten(); //a link writes both ends through containers of its own (F234)
-			}, workspaceOps(), CtrmapMainframe.this::readTheWorkspaceAgain));
+	private void relinkZoneAction() {
+		inZoneColumn("Re-link zone", ctrmap.humaninterface.ZoneRelinkPanel.panel(frame, game, loadedZone,
+			(zone, to) -> {
+				String said = WorkspaceOps.relink(game, zone, to, workspaceOps(), CtrmapMainframe.this::readTheWorkspaceAgain);
+				reopenIfWritten();
+				return said;
+			}));
 	}
 
 	/**

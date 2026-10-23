@@ -187,11 +187,12 @@ public class ZoneWrittenElsewhereTest {
 		String mf = SourceSeamTest.stripComments(DialogSeamTest.read(new File(root, "ctrmap/CtrmapMainframe.java")));
 		String empty = PropEditFormGuardsTest.body(mf, "private void emptyZoneAction(");
 		String rename = PropEditFormGuardsTest.body(mf, "private void renameZoneAction(");
-		String connect = PropEditFormGuardsTest.body(mf, "private void connectZonesAction(");
+		//RE-LINK WRITES A ZONE'S HEADER through a container of its own, as Connect zones did before it was removed
+		String relink = PropEditFormGuardsTest.body(mf, "private void relinkZoneAction(");
 		check(empty != null && empty.indexOf("reopenIfWritten();") > empty.indexOf("ZoneManager.clearZone(")
 				&& rename != null && rename.indexOf("reopenIfWritten();") > rename.indexOf("ZoneManager.renameZone(game, idx, name)")
-				&& connect != null && connect.contains("reopenIfWritten();"),
-				"and Empty zone, Rename and Connect zones each reopen the open zone after writing");
+				&& relink != null && relink.indexOf("reopenIfWritten();") > relink.indexOf("WorkspaceOps.relink("),
+				"and Empty zone, Rename and Re-link zone each reopen the open zone after writing");
 	}
 
 	static void check(boolean ok, String what) {

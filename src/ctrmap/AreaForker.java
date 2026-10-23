@@ -196,7 +196,8 @@ public class AreaForker {
 		if (ad == null || np == null) {
 			throw new IOException("No workspace is loaded (AreaData unavailable).");
 		}
-		return idsLeft(MasterTable.read(Workspace.session()), ad.length, registryEmpty(Workspace.session(), np));
+		return idsLeft(MasterTable.read(Workspace.session()), Workspace.session().reach(ArchiveType.AREA_DATA, ad.length),
+				registryEmpty(Workspace.session(), np));
 	}
 
 	/**
@@ -293,13 +294,14 @@ public class AreaForker {
 	 * Gives each of {@code count} freshly appended zones its OWN area, in ONE pack
 	 * cycle - the area half of making a created zone independent from birth.
 	 *
-	 * <p>WHY A BATCH AND NOT {@code count} CALLS TO {@link #forkArea}. That method
-	 * takes its new id from {@code ad.length} and refuses when the slot is already
-	 * staged, so it can only run ONCE between packs: a second call in the same
-	 * cycle asks for the same id and is told a fork is pending. An append creates
-	 * four zones at a time, so four calls could never have worked. This threads the
-	 * id, and the global per-area table, through the loop - the table especially,
-	 * because each fork GROWS it and the next fork has to grow the grown one.
+	 * <p>WHY A BATCH AND NOT {@code count} CALLS TO {@link #forkArea}. ONE UNIT and ONE
+	 * budget check for the whole append: four calls could each succeed and the fifth
+	 * run out of ids, leaving some new zones private and some sharing. (They used to be
+	 * impossible as well - forkArea took its id from the packed {@code ad.length} and
+	 * refused a slot already staged - but every allocator now asks
+	 * {@link WorkspaceSession#reach}, so a second fork before a pack takes the next id.)
+	 * This threads the id, and the global per-area table, through the loop - the table
+	 * especially, because each fork GROWS it and the next fork has to grow the grown one.
 	 *
 	 * <p>Mutates the caller's payloads in place, exactly as
 	 * {@code GeometryForker.forkAppendedZones} does: {@code newZos[i]} becomes the
@@ -347,15 +349,15 @@ public class AreaForker {
 		if (ad == null || np == null || zo == null) {
 			throw new IOException("No workspace is loaded (AreaData/NPCRegistries unavailable).");
 		}
-		//the ids given back first, then the archive's end (F043); refused here, before any write
-		int[] ids = takeAreaIds(master, ad.length, registryEmpty(Workspace.session(), np), count);
+		//the ids given back first, then the archive's end (F043); refused here, before any write. THE END IS WHERE
+		//THE ARCHIVE REACHES, staged forks counted (1.0.4): from the packed end, a fork left unpacked was this
+		//one's first id - refused on every launch by the repair - and its registry this one's first filler
+		WorkspaceSession s = Workspace.session();
+		int adReach = s.reach(ArchiveType.AREA_DATA, ad.length);
+		int npReach = s.reach(ArchiveType.NPC_REGISTRIES, np.length);
+		int[] ids = takeAreaIds(master, adReach, registryEmpty(s, np), count);
 		File adDir = Workspace.getExtractionDirectory(ArchiveType.AREA_DATA);
 		File npDir = Workspace.getExtractionDirectory(ArchiveType.NPC_REGISTRIES);
-		for (int id : ids) {
-			if (Workspace.isPendingArtifact(new File(adDir, String.valueOf(id)))) {
-				throw new IOException("An area fork is already staged and not yet packed.");
-			}
-		}
 		File tableFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, AD_GLOBAL_TABLE);
 		if (tableFile == null) {
 			throw new IOException("Could not extract the per-area table.");
@@ -364,10 +366,10 @@ public class AreaForker {
 		npDir.mkdirs();
 		//how far the registry archive REACHES, not how many entries it has: the
 		//engine indexes registries by area id, and an archive only grows at its tail
-		int npReaches = np.length;
+		int npReaches = npReach;
 		for (int i = 0; i < count; i++) {
 			int newArea = ids[i];
-			requireInStep(newArea, ad.length, np.length);
+			requireInStep(newArea, adReach, npReach);
 			int oldArea = ZoneResource.AREA.idIn(zos[i]);
 			File srcAdFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, oldArea);
 			if (srcAdFile == null) {
@@ -452,22 +454,22 @@ public class AreaForker {
 		if (zoneIndex < 0 || zoneIndex >= zoneCount) {
 			throw new IOException("Zone " + zoneIndex + " out of range (0.." + (zoneCount - 1) + ").");
 		}
-		//one allocator for every fork: an id given back first, then the archive's end (F043)
-		int newArea = takeAreaIds(MasterTable.read(Workspace.session()), ad.length,
-				registryEmpty(Workspace.session(), np), 1)[0];
+		//one allocator for every fork: an id given back first, then the archive's end (F043) - where it REACHES,
+		//staged forks counted (1.0.4), so a second fork before a pack takes the next id instead of refusing
+		WorkspaceSession s = Workspace.session();
+		int adReach = s.reach(ArchiveType.AREA_DATA, ad.length);
+		int npReach = s.reach(ArchiveType.NPC_REGISTRIES, np.length);
+		int newArea = takeAreaIds(MasterTable.read(s), adReach, registryEmpty(s, np), 1)[0];
 		//The engine indexes the NPC registry by area id, so the archive has to
 		//REACH the new id - a count relationship is not the same thing. Retail
 		//ships 229 AreaData entries (228 of them areas, plus the per-area table
 		//at index 228) against 228 registries, so the first forked id, 229, is
 		//two past the end of the registry archive. The gap is filled below. An id
 		//given back sits inside both archives, where there is no gap to fill.
-		requireInStep(newArea, ad.length, np.length);
+		requireInStep(newArea, adReach, npReach);
 		File adDir = Workspace.getExtractionDirectory(ArchiveType.AREA_DATA);
 		File npDir = Workspace.getExtractionDirectory(ArchiveType.NPC_REGISTRIES);
 		File adOut = new File(adDir, String.valueOf(newArea));
-		if (Workspace.isPendingArtifact(adOut)) {
-			throw new IOException("An area fork is already pending. Pack the workspace before forking again.");
-		}
 		File zoneFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
 		if (zoneFile == null) {
 			throw new IOException("Could not extract zone " + zoneIndex + " from the workspace.");
@@ -497,7 +499,7 @@ public class AreaForker {
 		//an empty registry is a real thing - 36 retail areas ship one - and no
 		//zone can name them anyway: the only id skipped this way is 228, the
 		//per-area table's slot, which planFork refuses as an area.
-		for (int filler = np.length; filler < newArea; filler++) {
+		for (int filler = npReach; filler < newArea; filler++) {
 			File fillOut = new File(npDir, String.valueOf(filler));
 			WorkspaceUnit.write(fillOut, new byte[0]);
 			Workspace.addPersist(fillOut);

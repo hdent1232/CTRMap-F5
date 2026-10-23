@@ -100,11 +100,11 @@ public final class WorkspaceOps {
 		}
 	}
 
-	/** Wires warp {@code wa} of zone {@code za} to warp {@code wb} of zone {@code zb}, and back when {@code both}, kept. */
-	public static String link(WorkspaceSession ws, int za, int wa, int zb, int wb, boolean both, SaveHistory ops,
+	/** Re-links zone {@code zone}: points what its header names at the ids in {@code to}, header and master row, kept. */
+	public static String relink(WorkspaceSession ws, int zone, java.util.Map<ZoneResource, Integer> to, SaveHistory ops,
 			Runnable reread) throws IOException {
-		try (WorkspaceUnit unit = WorkspaceUnit.begin("Connect zone " + za + " and zone " + zb, ws)) {
-			String said = ZoneLinker.link(ws, za, wa, zb, wb, both);
+		try (WorkspaceUnit unit = WorkspaceUnit.begin("Re-link zone " + zone, ws)) {
+			String said = ZoneRelinker.relink(ws, zone, to);
 			WorkspaceUnit.inMemory(reread, reread);
 			ops.keep(unit.commitKeeping());
 			return said;

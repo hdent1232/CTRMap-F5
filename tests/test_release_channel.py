@@ -9,9 +9,12 @@ version nobody chose; and jpackage on Windows refuses a version with a suffix, s
 """
 import io
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
+import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
@@ -24,10 +27,28 @@ import release_channel  # noqa: E402  - the one place a version's channel is dec
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
-def said(version):
-    done = bounded.run([sys.executable, "-B", os.path.join(HERE, "tools", "release_channel.py"), version,
-                        "W.zip", "P.zip"], capture_output=True, text=True, timeout=60, creationflags=NO_WINDOW)
-    return done.returncode, [line.strip() for line in (done.stdout or "").splitlines()]
+def build(folder, name, *paths):
+    """A stand-in build: a zip holding `paths` as written, a backslash kept raw (zipfile would make it "/")."""
+    with zipfile.ZipFile(os.path.join(folder, name), "w") as z:
+        for path in paths:
+            info = zipfile.ZipInfo("x")
+            info.filename = path
+            z.writestr(info, "x")
+
+
+def said(version, portable=("run.bat", "lib/jogl-all.jar"), make=True):
+    """What the tool prints for `version` and two builds W.zip and P.zip, made here unless `make` is False."""
+    folder = tempfile.mkdtemp(prefix="release-channel-")
+    try:
+        if make:
+            build(folder, "W.zip", "CTRMap-F5/CTRMap-F5.exe")
+            build(folder, "P.zip", *portable)
+        done = bounded.run([sys.executable, "-B", os.path.join(HERE, "tools", "release_channel.py"), version,
+                            "W.zip", "P.zip"], capture_output=True, text=True, timeout=60, creationflags=NO_WINDOW,
+                           cwd=folder)
+        return done.returncode, [line.strip() for line in (done.stdout or "").splitlines()]
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
 
 
 class EachVersionIsPublishedOnItsOwnChannel(unittest.TestCase):
@@ -35,7 +56,11 @@ class EachVersionIsPublishedOnItsOwnChannel(unittest.TestCase):
     def test_a_core_version_is_a_full_release_from_master(self):
         code, lines = said("1.0.4")
         self.assertEqual(code, 0, lines)
-        self.assertIn("git push origin master v1.0.4", lines, "a core version did not name its tag in the push to master")
+        self.assertIn("git push origin HEAD:refs/heads/master v1.0.4", lines,
+                      "a core version did not send the tagged commit, with its tag, to master")
+        self.assertFalse(any(line.startswith("git push origin master ") for line in lines),
+                         "a core version pushes the LOCAL master by name, which need not hold the tagged commit: %s"
+                         % lines)
         release = [line for line in lines if line.startswith("gh release create")]
         self.assertEqual(len(release), 1, "a core version did not say exactly one release: %s" % lines)
         self.assertIn("v1.0.4 W.zip P.zip", release[0], "the release does not carry both builds: %s" % release)
@@ -63,6 +88,26 @@ class EachVersionIsPublishedOnItsOwnChannel(unittest.TestCase):
                          ("core", "nightly"), "CONTROL: the two channels are not told apart")
 
 
+class NoBuildThatUnpacksWrongIsPublished(unittest.TestCase):
+    """MEASURED 2026-10-23: both 1.0.4 zips named every path with a backslash (Compress-Archive), which the updater
+    unpacks off Windows as one file named "lib\\jogl-all.jar" beside an untouched lib/."""
+
+    def test_a_build_whose_zip_names_a_path_with_a_backslash_is_refused(self):
+        code, lines = said("1.0.5", portable=("run.bat", "lib" + chr(92) + "jogl-all.jar"))
+        self.assertEqual(code, 2, "a build with backslash paths was published: %s" % lines)
+        self.assertFalse(any(line.startswith("gh release create") for line in lines), lines)
+        self.assertTrue(any("P.zip names 1 of its 2 paths with a backslash" in line for line in lines),
+                        "the refusal does not say which build and how many paths: %s" % lines)
+        code, lines = said("1.0.5")
+        self.assertEqual(code, 0, "CONTROL: the same build with '/' paths is refused too, so nothing was asked: %s"
+                         % lines)
+
+    def test_a_build_that_cannot_be_read_is_refused_not_passed(self):
+        code, lines = said("1.0.5", make=False)
+        self.assertEqual(code, 2, "a build nobody could open was published as clean: %s" % lines)
+        self.assertTrue(any("could not be read" in line for line in lines), lines)
+
+
 class ThePackagerSaysOnlyWhatTheChannelToolSays(unittest.TestCase):
 
     def setUp(self):
@@ -83,6 +128,15 @@ class ThePackagerSaysOnlyWhatTheChannelToolSays(unittest.TestCase):
         self.assertEqual(writes, [], "the packager writes version.properties with CRLF line ends: %s" % writes)
         self.assertIn("WriteAllText((Join-Path $root $verFile), (($verLines -join \"`n\") + \"`n\")", self.code,
                       "CONTROL: the packager no longer writes the version at all, so nothing was asked")
+
+    def test_the_packager_writes_its_zips_with_the_jdks_jar(self):
+        """Compress-Archive wrote backslash names into both 1.0.4 zips; the channel tool refuses such a zip at publish,
+        and this says so at the packager, where it would otherwise be found only after a whole packaging run."""
+        self.assertNotIn("Compress-Archive", self.code, "the packager zips with Compress-Archive again")
+        self.assertIn('--create --file $zip --no-manifest -C $stage .', self.code,
+                      "CONTROL: the portable build is no longer written by jar, so nothing was asked")
+        self.assertIn('--create --file $winZip --no-manifest -C "dist\\app" CTRMap-F5', self.code,
+                      "CONTROL: the Windows build is no longer written by jar, so nothing was asked")
 
     def test_jpackage_is_handed_the_numbers_only(self):
         """jpackage on Windows takes numbers only for --app-version, so a nightly's suffix would fail the build."""

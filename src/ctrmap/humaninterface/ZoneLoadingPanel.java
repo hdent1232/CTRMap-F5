@@ -317,13 +317,27 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 	/** Puts what a load read into the boxes - on the event thread, where every Swing component lives. */
 	private void showListed(Listed listed) {
 		loadedZone.table(listed.zones);
-		zoneList.setSelectedIndex(-1);
-		zoneList.removeAllItems();
-		tmg.setSelectedIndex(-1);
-		tmg.removeAllItems();
-		for (String name : listed.names) {
-			zoneList.addItem(name);
-			tmg.addItem(name);
+		//THE BROWSER IS MIRRORED ONCE, AFTER THE FILL (1.0.4's lag). Every addItem below tells the dropdown's
+		//listeners a row was added, and the browser's listener rebuilt and re-scrolled the whole browser list
+		//each time: 540 zones, 540 rebuilds, about 146,000 rows inserted - a 15.5 s freeze of the window,
+		//measured on the owner's game, on every refill (open, clone, add, undo, repair). It ran off the
+		//event thread until F116 moved the fill onto it, which is why 1.0.3 showed none of it.
+		mirroringHeld = true;
+		try {
+			zoneList.setSelectedIndex(-1);
+			zoneList.removeAllItems();
+			tmg.setSelectedIndex(-1);
+			tmg.removeAllItems();
+			for (String name : listed.names) {
+				zoneList.addItem(name);
+				tmg.addItem(name);
+			}
+		} finally {
+			mirroringHeld = false;
+		}
+		mirrorZonesToBrowser();
+		if (browser != null) {
+			browser.select(zoneList.getSelectedIndex());
 		}
 		//The button follows the same capability the action behind it
 		//refuses on. It used to be disabled for XY and enabled for
@@ -1672,9 +1686,12 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		zoneList.setToolTipText(LOAD_HINT);
 	}
 
+	/** True while showListed fills the dropdown, which mirrors the browser once when it is done. */
+	private boolean mirroringHeld;
+
 	/** Keeps the browser showing the same zones the dropdown does. */
 	private void mirrorZonesToBrowser() {
-		if (browser == null) {
+		if (browser == null || mirroringHeld) {
 			return;
 		}
 		java.util.List<String> rows = new java.util.ArrayList<>();

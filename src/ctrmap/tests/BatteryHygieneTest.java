@@ -764,8 +764,12 @@ public class BatteryHygieneTest {
 		// PRE-release, which GitHub never returns as releases/latest, so no updater is offered it; anything else
 		// is refused rather than published as one of the two.
 		List<String> core = channelSays(repo, "1.0.4");
-		check(core.contains("git push origin master v1.0.4") && core.contains("exit=0"),
+		check(core.contains("git push origin HEAD:refs/heads/master v1.0.4") && core.contains("exit=0"),
 			"a core version names its tag in the push to master: " + core);
+		// ...AND SENDS THE COMMIT THE TAG NAMES (2026-10-23): "git push origin master" sends the LOCAL master, and 1.0.5
+		// was packaged on a working branch whose local master was 4 commits behind origin/master.
+		check(!core.toString().contains("git push origin master "),
+			"a core version sends HEAD, the tagged commit, never the local master by name: " + core);
 		check(core.toString().contains("gh release create v1.0.4 W.zip P.zip") && !core.toString().contains("--prerelease"),
 			"...and is a full release carrying BOTH builds, which every copy's updater is offered: " + core);
 		List<String> nightly = channelSays(repo, "1.0.3-nightly.1");
@@ -779,6 +783,19 @@ public class BatteryHygieneTest {
 		List<String> neither = channelSays(repo, "1.0.4-beta");
 		check(neither.contains("exit=2") && !neither.toString().contains("gh release create"),
 			"a version neither core nor nightly is refused, not published as either: " + neither);
+		// NOR A BUILD THAT UNPACKS WRONG (2026-10-23): Compress-Archive named every path in both 1.0.4 zips with a
+		// backslash, which the updater unpacks off Windows as one file beside an untouched lib/.
+		List<String> backslashed = channelSays(repo, "1.0.5", "lib\\jogl-all.jar");
+		check(backslashed.contains("exit=2") && !backslashed.toString().contains("gh release create")
+				&& backslashed.toString().contains("P.zip names 1 of its 2 paths with a backslash"),
+			"a build whose zip names a path with a backslash is refused, and says which: " + backslashed);
+		List<String> unread = channelSays(repo, "1.0.5", null);
+		check(unread.contains("exit=2") && !unread.toString().contains("gh release create")
+				&& unread.toString().contains("P.zip could not be read"),
+			"a build that cannot be opened is refused, never published as clean: " + unread);
+		check(!code.contains("Compress-Archive") && code.contains("--create --file $zip --no-manifest -C $stage .")
+				&& code.contains("--create --file $winZip --no-manifest -C \"dist\\app\" CTRMap-F5"),
+			"and the packager writes both zips with the JDK's jar, whose names use '/'");
 		check(code.contains("--app-version $appVersion") && code.contains("$appVersion = $Version -replace '-.*$', ''"),
 			"and jpackage is handed the version's numbers only, which is all it takes on Windows");
 
@@ -797,19 +814,52 @@ public class BatteryHygieneTest {
 
 	/** What tools/release_channel.py prints for {@code version} and two stand-in builds, its exit code last. */
 	static List<String> channelSays(File repo, String version) throws Exception {
-		ProcessBuilder pb = new ProcessBuilder("python", "-B", new File(repo, "tools/release_channel.py").getAbsolutePath(),
-				version, "W.zip", "P.zip");
-		pb.redirectErrorStream(true);
-		Process p = pb.start();
-		List<String> out = new ArrayList<>();
-		try (java.io.BufferedReader r = new java.io.BufferedReader(
-				new java.io.InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
-			for (String line = r.readLine(); line != null; line = r.readLine()) {
-				out.add(line.trim());
+		return channelSays(repo, version, "lib/jogl-all.jar");
+	}
+
+	/**
+	 * The same, the portable stand-in holding run.bat and {@code portablePath} as written, or absent when it is null:
+	 * the tool opens the builds it is handed and refuses one it cannot read, so the stand-ins are real zips in a
+	 * folder of their own.
+	 */
+	static List<String> channelSays(File repo, String version, String portablePath) throws Exception {
+		File folder = Files.createTempDirectory("release-channel-").toFile();
+		try {
+			standIn(new File(folder, "W.zip"), "CTRMap-F5/CTRMap-F5.exe");
+			if (portablePath != null) {
+				standIn(new File(folder, "P.zip"), "run.bat", portablePath);
+			}
+			ProcessBuilder pb = new ProcessBuilder("python", "-B", new File(repo, "tools/release_channel.py").getAbsolutePath(),
+					version, "W.zip", "P.zip");
+			pb.directory(folder);
+			pb.redirectErrorStream(true);
+			Process p = pb.start();
+			List<String> out = new ArrayList<>();
+			try (java.io.BufferedReader r = new java.io.BufferedReader(
+					new java.io.InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
+				for (String line = r.readLine(); line != null; line = r.readLine()) {
+					out.add(line.trim());
+				}
+			}
+			out.add(p.waitFor(120, java.util.concurrent.TimeUnit.SECONDS) ? "exit=" + p.exitValue() : "exit=hung");
+			return out;
+		} finally {
+			for (File f : folder.listFiles()) {
+				f.delete();
+			}
+			folder.delete();
+		}
+	}
+
+	/** A zip holding each of {@code paths} as written - java.util.zip keeps a backslash in a name as it is given. */
+	static void standIn(File zip, String... paths) throws java.io.IOException {
+		try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(Files.newOutputStream(zip.toPath()))) {
+			for (String path : paths) {
+				z.putNextEntry(new java.util.zip.ZipEntry(path));
+				z.write('x');
+				z.closeEntry();
 			}
 		}
-		out.add(p.waitFor(120, java.util.concurrent.TimeUnit.SECONDS) ? "exit=" + p.exitValue() : "exit=hung");
-		return out;
 	}
 
 	/**

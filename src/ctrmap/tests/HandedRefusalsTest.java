@@ -50,8 +50,12 @@ public class HandedRefusalsTest {
 
 	static int fails = 0;
 
-	/** How many "must be handed" refusals the production source held when this was last counted (2026-10-15). */
-	static final int REFUSALS = 80;
+	/**
+	 * How many "must be handed" refusals the production source held when this was last counted: 80 on 2026-10-15, 79 on
+	 * 2026-10-23 - ZoneLinkDialog's one went with the dialog, deleted with Connect zones on the owner's decision (every
+	 * other file's count unchanged, git grep -c against 0240c1a).
+	 */
+	static final int REFUSALS = 79;
 
 	/** One refusal in the source: where its throw statement is, and the constructor or method it is in. */
 	static final class Site {

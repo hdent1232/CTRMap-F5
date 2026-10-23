@@ -344,9 +344,9 @@ public final class TestWorldBuilder {
 		int matIndex = z.entities.warps.size() - 1;
 		b.say("arrival mat: warp " + matIndex + " of zone " + world + " at " + MAT_AT + ", height " + mat.z
 				+ ", shaped as zone " + RIVAL_HOUSE + "'s exit mat; saved " + z.store());
-		b.say(ctrmap.WorkspaceOps.link(s, world, matIndex, doors.get(0)[0], doors.get(0)[1], true, OPS, () -> { }).replace("\n", " | "));
+		b.say(WarpLink.linkKept(s, world, matIndex, doors.get(0)[0], doors.get(0)[1], true, OPS, () -> { }).replace("\n", " | "));
 		for (int[] d : doors.subList(1, doors.size())) {
-			b.say(ctrmap.WorkspaceOps.link(s, d[0], d[1], world, matIndex, false, OPS, () -> { }).replace("\n", " | "));
+			b.say(WarpLink.linkKept(s, d[0], d[1], world, matIndex, false, OPS, () -> { }).replace("\n", " | "));
 		}
 		b.say("doors into zone " + RIVAL_HOUSE + " found: " + doors.size() + " - " + describe(doors) + "; each now leads to the mat");
 		pack(b, "the warps");

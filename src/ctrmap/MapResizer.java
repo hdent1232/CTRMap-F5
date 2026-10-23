@@ -274,11 +274,11 @@ public class MapResizer {
 		//THE OLD CELLS BECOME THIS ZONE'S OWN (F018). The action said growing a map made the
 		//zone's geometry private first, and nothing did: the new matrix kept the old cells on the
 		//regions every zone sharing the map draws, so painting an old cell of a grown clone
-		//repainted the town it was cloned from. Forking first cannot work - a fork appends a
-		//matrix, and this refuses while one is pending - so the fork's own plan is taken here and
-		//its copies are written in this unit: each old region the grid names gets a private copy,
-		//and the new cells come after them.
-		int firstNew = gr.length;
+		//repainted the town it was cloned from. Forking as a step of its own would stage a matrix
+		//this resize then makes stale, so the fork's own plan is taken here and its copies are
+		//written in this unit: each old region the grid names gets a private copy, and the new
+		//cells come after them.
+		int firstNew = GeometryForker.nextFreeRegion(ws, gr);
 		GeometryForker.ForkPlan own = null;
 		if (!MasterTable.read(ws).sharing(ZoneResource.MAP, zoneIndex).isEmpty()) {
 			try {

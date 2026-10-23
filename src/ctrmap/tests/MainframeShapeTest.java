@@ -71,7 +71,7 @@ public class MainframeShapeTest {
 	private static final String[] EXPECTED_MENUS = {
 		"File: Open GR Mapfile | Open MapMatrix | Open Zone | Save | Pack Workspace | Deploy to emulator (mod)...",
 		"Map: Map Builder (this zone) | Blank map canvas (this zone)... | Resize map (this zone)... | Edit area fog & lighting... | Make zone independent (own map, own area)... | --- | Import map model (.bch)... | Export map region to OBJ (Blender)... | Import OBJ into map region (Blender)... | OBJ to collisions | Tileset Editor",
-		"Zone: Zone list (pick a zone to load) | Connect zones through a warp... | Rename zone (in-game name)... | Empty zone (clear contents)... | Find reusable base zones... | Remove added zones (restore stock 536)... | Custom battle facility here...",
+		"Zone: Zone list (pick a zone to load) | Re-link zone (share a map or area again)... | Rename zone (in-game name)... | Empty zone (clear contents)... | Find reusable base zones... | Remove added zones (restore stock 536)... | Custom battle facility here...",
 		"Game Data: Edit trainer (party/battle)... | Edit battle facility opponents... | Edit shop inventories (Marts)... | Edit items (price, effects, name)... | Edit wild encounters (this zone)...",
 		"Options: Setup wizard... | --- | Workspace settings | Restore from pristine backup... | Clean workspace",
 		"Help: Quick start guide | Check for updates... | --- | Support/Issue tracker | About",
@@ -106,7 +106,7 @@ public class MainframeShapeTest {
 	/** The Blender round trip joined the row (census M.146): it was in the Map menu and nowhere else. */
 	private static final String EXPECTED_MAP_ROW = "label: Map:   button:Blank canvas button:Resize map button:Fog & lighting button:Encounters button:Make independent"
 			+ " button:Import model button:Export OBJ button:Import OBJ";
-	private static final String EXPECTED_ZONE_ROW = "label: Zone actions:   button:Zone list button:Connect zones button:Rename button:Empty button:Find reusable zones button:Remove added zones button:Custom battle facility";
+	private static final String EXPECTED_ZONE_ROW = "label: Zone actions:   button:Zone list button:Re-link zone button:Rename button:Empty button:Find reusable zones button:Remove added zones button:Custom battle facility";
 	private static final String EXPECTED_EXTRAS_ROW = "button:Raw archive browser (Builder) button:Tileset editor button:Workspace & paths";
 
 	/**

@@ -181,7 +181,7 @@ public class ZoneLinkUnitTest {
 	static void aLinkThatWorksWritesBothEnds() throws Exception {
 		System.out.println("--- control: a link that works writes both ends (F227)");
 		WorkspaceSession ws = workspace("ctrmap_link_ok", entities(-1), entities(0));
-		String said = ZoneLinker.link(ws, 0, 0, 1, 0, true);
+		String said = WarpLink.link(ws, 0, 0, 1, 0, true);
 		ZoneEntities.Warp a = warpsOf(ws, 0).warps.get(0);
 		ZoneEntities.Warp b = warpsOf(ws, 1).warps.get(0);
 		check(a.targetZone == 1 && b.targetZone == 0 && said.contains("lead to each other"),
@@ -195,7 +195,7 @@ public class ZoneLinkUnitTest {
 		byte[] before = Files.readAllBytes(first.toPath());
 		String refused;
 		try {
-			ZoneLinker.link(ws, 0, 0, 1, 0, true);
+			WarpLink.link(ws, 0, 0, 1, 0, true);
 			refused = "nothing was refused";
 		} catch (Exception ex) {
 			refused = String.valueOf(ex.getMessage());
@@ -208,31 +208,25 @@ public class ZoneLinkUnitTest {
 	}
 
 	/**
-	 * Connect zones is kept (F209c): its Connect button links both ends as one change of the history it is handed, and
-	 * Undo puts both zones back byte for byte and reads the zones again; Redo links them again.
+	 * A warp link is kept (F209c): WorkspaceOps.link links both ends as one change of the history it is handed, and
+	 * Undo puts both zones back byte for byte and reads the zones again; Redo links them again. The Connect zones
+	 * form that drove it is gone - the owner never asked for it, and had it removed (2026-10-23) - and the link
+	 * stays for what still wires warps: the in-game test world's builder.
 	 */
 	static void aLinkMadeInTheFormIsTakenBack() throws Exception {
-		System.out.println("--- a link made in the Connect zones form is taken back and put again (F209c)");
+		System.out.println("--- a warp link is taken back and put again (F209c)");
 		WorkspaceSession ws = workspace("ctrmap_link_kept", entities(-1), entities(0));
 		File zero = ws.getWorkspaceFile(ArchiveType.ZONE_DATA, 0);
 		File one = ws.getWorkspaceFile(ArchiveType.ZONE_DATA, 1);
 		byte[] zeroWas = Files.readAllBytes(zero.toPath());
 		byte[] oneWas = Files.readAllBytes(one.toPath());
-		ctrmap.LoadedZone zones = new ctrmap.LoadedZone();
-		zones.table(new ctrmap.formats.zone.Zone[]{new ctrmap.formats.zone.Zone(new ZO(zero, ws), GameType.ORAS),
-			new ctrmap.formats.zone.Zone(new ZO(one, ws), GameType.ORAS)});
 		ctrmap.humaninterface.SaveHistory ops = new ctrmap.humaninterface.SaveHistory(
 				() -> java.util.Collections.<Object>singletonList(ws));
 		int[] reread = {0};
-		javax.swing.JComponent form = ctrmap.humaninterface.ZoneLinkDialog.panel(null, ws, zones, () -> { }, ops,
-				() -> reread[0]++);
-		javax.swing.JButton connect = button(form, "Connect");
-		java.util.List<String> said = ctrmap.Ui.record(javax.swing.JOptionPane.OK_OPTION);   //"connect anyway", over the fixture's self-warp
-		javax.swing.SwingUtilities.invokeAndWait(connect::doClick);
-		ctrmap.Ui.stopRecording();
+		String said = WarpLink.linkKept(ws, 0, 0, 1, 0, true, ops, () -> reread[0]++);
 		check(warpsOf(ws, 0).warps.get(0).targetZone == 1 && warpsOf(ws, 1).warps.get(0).targetZone == 0
 				&& ops.history().canUndo(),
-				"control: the form's Connect links zone 0 and zone 1, kept in the history it was handed: " + said);
+				"control: the link joins zone 0 and zone 1, kept in the history it was handed: " + said);
 		ops.history().undo();
 		check(Arrays.equals(zeroWas, Files.readAllBytes(zero.toPath())) && Arrays.equals(oneWas, Files.readAllBytes(one.toPath()))
 				&& reread[0] == 1,
@@ -240,22 +234,6 @@ public class ZoneLinkUnitTest {
 		ops.history().redo();
 		check(warpsOf(ws, 0).warps.get(0).targetZone == 1 && warpsOf(ws, 1).warps.get(0).targetZone == 0 && reread[0] == 2,
 				"and Redo links them again (read " + reread[0] + ")");
-	}
-
-	/** The button in {@code in} that says {@code text}, or null. */
-	static javax.swing.JButton button(java.awt.Container in, String text) {
-		for (java.awt.Component c : in.getComponents()) {
-			if (c instanceof javax.swing.JButton && text.equals(((javax.swing.JButton) c).getText())) {
-				return (javax.swing.JButton) c;
-			}
-			if (c instanceof java.awt.Container) {
-				javax.swing.JButton found = button((java.awt.Container) c, text);
-				if (found != null) {
-					return found;
-				}
-			}
-		}
-		return null;
 	}
 
 	static void check(boolean ok, String what) {
