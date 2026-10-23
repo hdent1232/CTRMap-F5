@@ -71,7 +71,7 @@ public class MainframeShapeTest {
 	private static final String[] EXPECTED_MENUS = {
 		"File: Open GR Mapfile | Open MapMatrix | Open Zone | Save | Pack Workspace | Deploy to emulator (mod)...",
 		"Map: Map Builder (this zone) | Blank map canvas (this zone)... | Resize map (this zone)... | Edit area fog & lighting... | Make zone independent (own map, own area)... | --- | Import map model (.bch)... | Export map region to OBJ (Blender)... | Import OBJ into map region (Blender)... | OBJ to collisions | Tileset Editor",
-		"Zone: Connect zones through a warp... | Rename zone (in-game name)... | Empty zone (clear contents)... | Find reusable base zones... | Remove added zones (restore stock 536)... | Custom battle facility here...",
+		"Zone: Zone list (pick a zone to load) | Connect zones through a warp... | Rename zone (in-game name)... | Empty zone (clear contents)... | Find reusable base zones... | Remove added zones (restore stock 536)... | Custom battle facility here...",
 		"Game Data: Edit trainer (party/battle)... | Edit battle facility opponents... | Edit shop inventories (Marts)... | Edit items (price, effects, name)... | Edit wild encounters (this zone)...",
 		"Options: Setup wizard... | --- | Workspace settings | Restore from pristine backup... | Clean workspace",
 		"Help: Quick start guide | Check for updates... | --- | Support/Issue tracker | About",
@@ -79,7 +79,7 @@ public class MainframeShapeTest {
 
 	/** The items whose label needs a sentence more; every other item has none. */
 	private static final String[][] TOOLTIPS = {
-		{"Open Zone", "Opens a single loose ZO file. To load a map from the game, use the zone dropdown in the \"Zone Loader\" tab instead."},
+		{"Open Zone", "Opens a single loose ZO file. To load a map from the game, use the zone list in the \"Zone Loader\" tab instead."},
 		{"Setup wizard...", "Point CTRMap at your game, step by step."},
 		{"Restore from pristine backup...", "Put the whole game, or one damaged archive, back as it was when CTRMap first copied it."},
 		{"Quick start guide", "The guide that ships beside the program: what to do first, in order."},
@@ -106,7 +106,7 @@ public class MainframeShapeTest {
 	/** The Blender round trip joined the row (census M.146): it was in the Map menu and nowhere else. */
 	private static final String EXPECTED_MAP_ROW = "label: Map:   button:Blank canvas button:Resize map button:Fog & lighting button:Encounters button:Make independent"
 			+ " button:Import model button:Export OBJ button:Import OBJ";
-	private static final String EXPECTED_ZONE_ROW = "label: Zone actions:   button:Connect zones button:Rename button:Empty button:Find reusable zones button:Remove added zones button:Custom battle facility";
+	private static final String EXPECTED_ZONE_ROW = "label: Zone actions:   button:Zone list button:Connect zones button:Rename button:Empty button:Find reusable zones button:Remove added zones button:Custom battle facility";
 	private static final String EXPECTED_EXTRAS_ROW = "button:Raw archive browser (Builder) button:Tileset editor button:Workspace & paths";
 
 	/**
@@ -121,8 +121,13 @@ public class MainframeShapeTest {
 	 * <p>So this sits beside it. Raising the number is a deliberate, single, visible edit
 	 * that has to say what it is for, and a feature that belongs in a tab no longer gets
 	 * into the menu bar by accident. It may only fall.
+	 *
+	 * <p>RAISED 35 TO 36 for Zone > Zone list (1.0.4). The zone list is the only way to open a
+	 * zone, and a tool shown over it left the release with no way back that the owner could
+	 * find - in their words, "its not in the zone menu dropdowns, and nothing in the zone
+	 * actions main page tab to get to it". A way back to it from the menus is the item.
 	 */
-	private static final int MENU_ITEM_CEILING = 35;
+	private static final int MENU_ITEM_CEILING = 36;
 
 	static int fails = 0;
 
@@ -1854,37 +1859,7 @@ public class MainframeShapeTest {
 				new ctrmap.humaninterface.tools.ToolSelection();
 		ctrmap.humaninterface.ZoneLoadingPanel panel;
 		try {
-			panel = new ctrmap.humaninterface.ZoneLoadingPanel(owner, tools,
-					new ctrmap.humaninterface.OpenEditors(java.util.Arrays.asList(
-							(ctrmap.humaninterface.OpenEditors.Editable) askFirst -> true)),
-					new ctrmap.humaninterface.ZoneEditors(java.util.Arrays.asList(
-							new ctrmap.humaninterface.ZoneEditors.ZoneView() {
-								@Override
-								public void show(ctrmap.formats.zone.Zone zone) {
-								}
-
-								@Override
-								public void clear() {
-								}
-
-								@Override
-								public boolean commit() {
-									return true;
-								}
-
-								@Override
-								public void showEntities(ctrmap.formats.zone.Zone zone) {
-								}
-							})),
-					new ctrmap.humaninterface.Navigator() {
-						@Override
-						public void follow(ctrmap.formats.MapObject o) {
-						}
-
-						@Override
-						public void resync() {
-						}
-					}, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}), new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
+			panel = realZonePanel(owner, tools);
 		} catch (Throwable cannotBuild) {
 			check(false, "a real ZoneLoadingPanel can be built headlessly: " + cannotBuild);
 			return;
@@ -1914,6 +1889,43 @@ public class MainframeShapeTest {
 		}
 		check(visibleClone == 1,
 				"exactly one VISIBLE 'Clone zone...' in the tab, not two (" + visibleClone + ")");
+	}
+
+	/** The REAL zone panel, with stand-ins for the editors it is handed: no game, no display. */
+	static ctrmap.humaninterface.ZoneLoadingPanel realZonePanel(ctrmap.LoadedZone owner,
+			ctrmap.humaninterface.tools.ToolSelection tools) {
+		return new ctrmap.humaninterface.ZoneLoadingPanel(owner, tools,
+				new ctrmap.humaninterface.OpenEditors(java.util.Arrays.asList(
+						(ctrmap.humaninterface.OpenEditors.Editable) askFirst -> true)),
+				new ctrmap.humaninterface.ZoneEditors(java.util.Arrays.asList(
+						new ctrmap.humaninterface.ZoneEditors.ZoneView() {
+							@Override
+							public void show(ctrmap.formats.zone.Zone zone) {
+							}
+
+							@Override
+							public void clear() {
+							}
+
+							@Override
+							public boolean commit() {
+								return true;
+							}
+
+							@Override
+							public void showEntities(ctrmap.formats.zone.Zone zone) {
+							}
+						})),
+				new ctrmap.humaninterface.Navigator() {
+					@Override
+					public void follow(ctrmap.formats.MapObject o) {
+					}
+
+					@Override
+					public void resync() {
+					}
+				}, () -> { }, () -> { }, UndoHistoryTest.overOneNumber(new int[]{0}),
+				new ctrmap.humaninterface.SaveHistory(() -> java.util.Collections.<Object>emptyList()));
 	}
 
 	/** Every visible JButton under a container. */

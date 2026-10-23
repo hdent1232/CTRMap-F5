@@ -1876,7 +1876,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		Zone zone = loadedZone.open();
 		int zoneIndex = loadedZone.index();
 		if (loadedZone.count() == 0 || zone == null || zoneIndex == -1) {
-			ctrmap.Ui.error(this, "Load the source zone from the dropdown first.", "Clone zone");
+			ctrmap.Ui.error(this, "Load the source zone first: pick it in the zone list and press \"Load this zone\".", "Clone zone");
 			return;
 		}
 		//the cloner reads the last-SAVED workspace bytes, so flush any pending

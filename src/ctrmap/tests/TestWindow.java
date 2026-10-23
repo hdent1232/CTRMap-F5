@@ -300,6 +300,18 @@ final class TestWindow {
 		invoke(M_clearGameData);
 	}
 
+	private static final Method M_inZoneColumn = method("inZoneColumn", void.class, java.lang.String.class, javax.swing.JComponent.class);
+
+	static void inZoneColumn(java.lang.String a0, javax.swing.JComponent a1) {
+		invoke(M_inZoneColumn, a0, a1);
+	}
+
+	private static final Method M_closeZoneColumnTool = method("closeZoneColumnTool", void.class);
+
+	static void closeZoneColumnTool() {
+		invoke(M_closeZoneColumnTool);
+	}
+
 	private static final Method M_deployAfterPack = method("deployAfterPack", void.class, java.io.File.class, java.io.File.class);
 
 	static void deployAfterPack(java.io.File a0, java.io.File a1) {

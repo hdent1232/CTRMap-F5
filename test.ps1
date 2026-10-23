@@ -211,6 +211,7 @@ $suites = @(
     @{ n = "RecordPool (the facility editors never write a record they could not read, and write only what changed)"; c = "ctrmap.tests.RecordPoolTest"; a = @() },
     @{ n = "GlobalState (the public-static ceiling, and Workspace.reset)"; c = "ctrmap.tests.GlobalStateTest"; a = @("src", "build\classes") },
     @{ n = "MainframeShape (menus and toolbars, built headless)"; c = "ctrmap.tests.MainframeShapeTest"; a = @("src") },
+    @{ n = "ToolHost (every swapped view has a way back that is seen; the zone list from anywhere)"; c = "ctrmap.tests.ToolHostTest"; a = @("src") },
     @{ n = "Ui output paths (printed, and shown)"; c = "ctrmap.tests.UiOutputTest";           a = @() },
     @{ n = "Dialog seam (only Ui opens one)"; c = "ctrmap.tests.DialogSeamTest";     a = @("src") },
     @{ n = "Foreground (a window nobody asked for waits for the owner)"; c = "ctrmap.tests.ForegroundTest"; a = @() },

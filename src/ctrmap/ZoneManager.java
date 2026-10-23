@@ -67,7 +67,7 @@ public class ZoneManager {
 				sb.append("The name belonged to this zone alone.\n\n");
 			}
 			sb.append("Run File > Deploy to emulator (it packs first), then fully restart the emulator.\n");
-			sb.append("Reselect the zone in the dropdown to see the new name in the editor.");
+			sb.append("Load the zone again from the zone list to see the new name in the editor.");
 			return sb.toString();
 		}
 	}

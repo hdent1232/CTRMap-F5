@@ -654,7 +654,7 @@ public class SetupWizard extends JDialog {
 		dispose();
 		Ui.message(getOwner(),
 				gameResult.gameName() + " is loaded - " + zones + " maps.\n\n"
-				+ "Open the \"Zone Loader\" tab and pick one from the dropdown to start editing.",
+				+ "Open the \"Zone Loader\" tab, pick one in the zone list and press \"Load this zone\" to start editing.",
 				"CTRMap is ready", JOptionPane.INFORMATION_MESSAGE);
 	}
 

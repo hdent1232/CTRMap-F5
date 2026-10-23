@@ -1608,10 +1608,10 @@
   },
   {
    "id": "the-zone-preview-is-built-but-not-put-anywhere",
-   "why": "The preview was built twice and shipped twice without ever being visible in the Zone Loader: once as a dialog behind a button on another bar, once as a window floating beside the dropdown popup. Every suite was green both times, because every suite asked whether the DECODE worked - nothing asked whether the thing was on screen. The owner opened the tab, saw nothing, and had to say so twice. This puts back the exact shape of that defect: the preview is constructed, wired to the dropdown, and never added to the tab. The guard builds the tab and looks for it, which is the only question that was being got wrong. RETARGETED: the preview is no longer added to the tab on its own - it is inside the zone browser, which is what the owner asked for in the first place (a list you scroll, a live preview, a button that opens). The claim is unchanged: built, wired, and never put anywhere. The must_say also moved: the check now says BROWSER where it said PREVIEW, and a plant scored on words that no longer appear is a plant that proves nothing while looking green. RETARGETED AGAIN: the browser is no longer added to the tab directly - it lives in the zone column, which can also show a zone tool over it - so the line that could leave it built and nowhere is the one that puts it in that column.",
+   "why": "The preview was built twice and shipped twice without ever being visible in the Zone Loader: once as a dialog behind a button on another bar, once as a window floating beside the dropdown popup. Every suite was green both times, because every suite asked whether the DECODE worked - nothing asked whether the thing was on screen. The owner opened the tab, saw nothing, and had to say so twice. This puts back the exact shape of that defect: the preview is constructed, wired to the dropdown, and never added to the tab. The guard builds the tab and looks for it, which is the only question that was being got wrong. RETARGETED: the preview is no longer added to the tab on its own - it is inside the zone browser, which is what the owner asked for in the first place (a list you scroll, a live preview, a button that opens). The claim is unchanged: built, wired, and never put anywhere. The must_say also moved: the check now says BROWSER where it said PREVIEW, and a plant scored on words that no longer appear is a plant that proves nothing while looking green. RETARGETED AGAIN: the browser is no longer added to the tab directly - it lives in the zone column, which can also show a zone tool over it - so the line that could leave it built and nowhere is the one that puts it in that column. AND AGAIN (1.0.4's trap): the column is a ToolHost whose HOME is the browser, so the plant hands the host another home and leaves the browser built, wired and nowhere.",
    "file": "src/ctrmap/CtrmapMainframe.java",
-   "find": "\t\tzoneColumn.add(browser, BorderLayout.CENTER);\n",
-   "replace": "",
+   "find": "\t\tzoneHost = new ctrmap.humaninterface.ToolHost(\"the zone list\", browser, true);\n",
+   "replace": "\t\tzoneHost = new ctrmap.humaninterface.ToolHost(\"the zone list\", new JPanel(), true);\n",
    "suite": "ctrmap.tests.MainframeShapeTest",
    "args": [
     "src"
@@ -1646,7 +1646,7 @@
    "id": "a-game-data-editor-opens-into-nothing",
    "why": "Five editors - trainers, facility opponents, shops, items, wild encounters - were modal windows opened from a column of buttons inside the Game Data tab, so that tab existed and held nothing but the buttons that opened windows. They are panels now, and the tab hosts them. If the host stops taking what it is handed, every one of those buttons does nothing visible: no crash, no message, just a tab that does not change - which is exactly how the zone preview came to be shipped twice without ever being on screen, reported by the owner both times. A feature that fails by being absent needs a check that looks for it.",
    "file": "src/ctrmap/CtrmapMainframe.java",
-   "find": "\t\tgameDataHost.add(box, BorderLayout.CENTER);\n",
+   "find": "\t\t\tgameDataHost.show(title, gameDataSaves().around(editor), null, null);\n",
    "replace": "",
    "suite": "ctrmap.tests.MainframeShapeTest",
    "args": [
@@ -2130,15 +2130,15 @@
   },
   {
    "id": "the-menu-bar-may-grow-unremarked",
-   "why": "The exact menu list in MainframeShapeTest goes red when an item is added, but its cheapest repair is to paste the new item into the expected list - a PIN, not a refusal. The ceiling of 35 items beside it is the half that has to be raised deliberately and said out loud. This plant removes the ceiling check, leaving only the pin that asks to be updated. The first version of this plant RAISED the ceiling by 99 and survived, because loosening a ceiling leaves nothing for the guard to catch: a ceiling is proven by putting the tree OVER it, not by widening it.",
+   "why": "The exact menu list in MainframeShapeTest goes red when an item is added, but its cheapest repair is to paste the new item into the expected list - a PIN, not a refusal. The ceiling beside it (35, raised to 36 for Zone > Zone list after 1.0.4) is the half that has to be raised deliberately and said out loud. This plant puts the tree one item OVER the ceiling, leaving only the pin that asks to be updated. The first version of this plant RAISED the ceiling by 99 and survived, because loosening a ceiling leaves nothing for the guard to catch: a ceiling is proven by putting the tree OVER it, not by widening it.",
    "file": "src/ctrmap/tests/MainframeShapeTest.java",
-   "find": "\tprivate static final int MENU_ITEM_CEILING = 35;",
-   "replace": "\tprivate static final int MENU_ITEM_CEILING = 34;  //PLANTED: one too few",
+   "find": "\tprivate static final int MENU_ITEM_CEILING = 36;",
+   "replace": "\tprivate static final int MENU_ITEM_CEILING = 35;  //PLANTED: one too few",
    "suite": "ctrmap.tests.MainframeShapeTest",
    "args": [
     "src"
    ],
-   "must_say": "FAIL: the main menu bar holds 35 item(s)"
+   "must_say": "FAIL: the main menu bar holds 36 item(s)"
   },
   {
    "id": "a-trap-may-be-recorded-without-its-bill",
@@ -10335,8 +10335,8 @@
    "id": "the-menu-item-ceiling-keeps-a-slot-of-slack",
    "why": "F189: 14 of the 20 ceilings the suites held were only bounded (2026-10-08). This leaves room for one more item on the main menu bar, against FEATURES LIVE IN THEIR OWN UI AREA.",
    "file": "src/ctrmap/tests/MainframeShapeTest.java",
-   "find": "\tprivate static final int MENU_ITEM_CEILING = 35;",
-   "replace": "\tprivate static final int MENU_ITEM_CEILING = 36;",
+   "find": "\tprivate static final int MENU_ITEM_CEILING = 36;",
+   "replace": "\tprivate static final int MENU_ITEM_CEILING = 37;",
    "suite": "ctrmap.tests.MainframeShapeTest",
    "args": [
     "src"
@@ -15334,8 +15334,8 @@
    "id": "the-zone-column-keeps-its-own-keys",
    "why": "The zone column's operations are kept in the workspace's history; outside around() its Ctrl+Z went to no history at all. Measured planted: Ctrl+Z in the column's 1 name field went to no history.",
    "file": "src/ctrmap/CtrmapMainframe.java",
-   "find": "\t\ttab.add(workspaceOps().around(zoneColumn), BorderLayout.EAST);\n",
-   "replace": "\t\ttab.add(zoneColumn, BorderLayout.EAST);\n",
+   "find": "\t\ttab.add(workspaceOps().around(zoneHost), BorderLayout.EAST);\n",
+   "replace": "\t\ttab.add(zoneHost, BorderLayout.EAST);\n",
    "suite": "ctrmap.tests.MainframeShapeTest",
    "args": [
     "src"
@@ -25556,6 +25556,90 @@
    "suite": "ctrmap.tests.PaintSealTest",
    "args": [],
    "must_say": "FAIL: a ramp cut into a cliff the painter leaves alone"
+  },
+  {
+   "id": "a-tools-way-back-is-a-flat-toolbar-button",
+   "why": "1.0.4 was public for 2 days with the way back from Connect zones in a JToolBar, which Windows draws flat and borderless until hovered, so it read as the tool's caption; the owner found no way back to the zone list and could not open a zone. This plant puts the way back in a JToolBar again.",
+   "file": "src/ctrmap/humaninterface/ToolHost.java",
+   "find": "\t\tJPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));\n",
+   "replace": "\t\tjavax.swing.JToolBar top = new javax.swing.JToolBar();\n",
+   "suite": "ctrmap.tests.ToolHostTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL its Back button: it looks like a button - it is in a JToolBar"
+  },
+  {
+   "id": "the-zone-list-is-on-no-bar-and-in-no-menu",
+   "why": "In 1.0.4 nothing in the Zone menu and nothing on the zone actions bar went back to the zone list - in the owner's words, \"its not in the zone menu dropdowns, and nothing in the zone actions main page tab\" - so 1 hidden tool over the list was a dead end. This plant takes the Zone list action off both again.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\tZONE_LIST(Area.ZONE, \"Zone list (pick a zone to load)\", \"Zone list\",\n\t\t\t\t\"The zone list in the Zone Loader tab, to pick a zone and load it - from wherever you are, any tool over it put away.\",\n\t\t\t\tCtrmapMainframe::showZoneListAction),\n",
+   "replace": "",
+   "suite": "ctrmap.tests.ToolHostTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL Zone list on the zone actions bar: there is a 'Zone list' to press"
+  },
+  {
+   "id": "esc-does-not-leave-a-tool",
+   "why": "1.0.4 bound no key to the way back from any of its 3 swapped views, so a person who could not see the flat button had no second way out. This plant takes Esc off the tool box again.",
+   "file": "src/ctrmap/humaninterface/ToolHost.java",
+   "find": "\t\tbox.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)\n\t\t\t\t.put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), ESC_ACTION);\n",
+   "replace": "",
+   "suite": "ctrmap.tests.ToolHostTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL Esc is bound around the way back"
+  },
+  {
+   "id": "the-window-swaps-a-view-itself-again",
+   "why": "The 3 views the 1.0.4 window swapped each did it with its own removeAll() and its own idea of a way back - one missing, two drawn flat - so nothing could say all 3 had one. This plant swaps the zone column back by hand in the window again.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\tif (zoneHost != null) {\n\t\t\tzoneHost.goHome();\n\t\t}\n",
+   "replace": "\t\tif (zoneHost != null) {\n\t\t\tzoneHost.removeAll();\n\t\t\tzoneHost.add(zoneHost.home(), BorderLayout.CENTER);\n\t\t}\n",
+   "suite": "ctrmap.tests.ToolHostTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL CtrmapMainframe has no removeAll()"
+  },
+  {
+   "id": "a-message-sends-the-user-to-the-hidden-dropdown-again",
+   "why": "1.0.4 hid the zone dropdown behind the zone list and 12 sentences went on telling people to use it - the Zone Loader tab's tooltip, the setup wizard's last page, the workspace-loaded hint and Clone zone's refusal among them. This plant puts Clone zone's old sentence back.",
+   "file": "src/ctrmap/humaninterface/ZoneLoadingPanel.java",
+   "find": "\"Load the source zone first: pick it in the zone list and press \\\"Load this zone\\\".\"",
+   "replace": "\"Load the source zone from the dropdown first.\"",
+   "suite": "ctrmap.tests.ToolHostTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL no sentence names a zone or map dropdown"
+  },
+  {
+   "id": "an-extras-pane-holding-an-edit-is-left-unasked",
+   "why": "Extras panes were windows that saved in windowClosing, and leaving 1 that answers no throws its edit away (F105). Moving the Extras tab onto the shared host had to keep the question; this plant hands the host no question to ask.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\t\t\t? ((ctrmap.humaninterface.FormPanel) tool)::closeRequested : null;\n",
+   "replace": "\t\t\t\t? null : null;\n",
+   "suite": "ctrmap.tests.ToolHostTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL a pane that will not let go of its edit is asked, and stays"
+  },
+  {
+   "id": "a-hosted-tool-is-left-without-asking",
+   "why": "The shared host is now the 1 place all 3 swapped views are left from, so a host that stops asking loses the edit of every pane that would have refused. This plant stops it asking.",
+   "file": "src/ctrmap/humaninterface/ToolHost.java",
+   "find": "\t\tif (mayLeave != null && !mayLeave.getAsBoolean()) {\n",
+   "replace": "\t\tif (false && mayLeave != null && !mayLeave.getAsBoolean()) {\n",
+   "suite": "ctrmap.tests.ToolHostTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL a tool that will not let go is asked, and stays"
   }
  ],
  "retired": [

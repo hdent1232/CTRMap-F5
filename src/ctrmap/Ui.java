@@ -603,7 +603,7 @@ public final class Ui {
 				"No workspace is loaded, so \"" + action + "\" can only open a single loose file.\n\n"
 				+ "To edit a game, first set the RomFS (game directory) and workspace paths in\n"
 				+ "Options > Workspace settings. CTRMap then unpacks the game's GARC archives into\n"
-				+ "the workspace, and you pick a map from the zone dropdown in the \"Zone Loader\" tab.\n\n"
+				+ "the workspace, and you pick a map from the zone list in the \"Zone Loader\" tab.\n\n"
 				+ "Continue anyway to open a loose file?",
 				"No workspace loaded", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.OK_OPTION;
 	}

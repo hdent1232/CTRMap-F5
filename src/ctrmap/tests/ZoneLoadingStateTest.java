@@ -282,8 +282,8 @@ public class ZoneLoadingStateTest {
 
 		openAs(GameType.ORAS);
 		List<String> said = press(pnl, "btnCloneZoneActionPerformed");
-		check(said.size() == 1 && said.get(0).equals("Clone zone: Load the source zone from the dropdown first."),
-				"Clone with nothing open names the dropdown to use: " + said);
+		check(said.size() == 1 && said.get(0).equals("Clone zone: Load the source zone first: pick it in the zone list and press \"Load this zone\"."),
+				"Clone with nothing open names the zone list to load from: " + said);
 
 		Workspace.install(null);
 		said = press(pnl, "btnAddZoneActionPerformed");

@@ -935,7 +935,7 @@ public class CtrmapMainframe {
 				"The 3D collision SURFACE the player stands on (heights, slopes, stairs). Behavior bytes live in the World Editor; this shapes the physical ground. The Tile Painter edits both at once.");
 		tabs.setToolTipTextAt(tabs.indexOfComponent(mtxEditMasterPnl),
 				"How map regions tile together into the zone's world grid.");
-		tabs.setToolTipTextAt(tabs.indexOfComponent(zoneTabPnl), "Pick a map from the zone dropdown here - this is how zones are opened.");
+		tabs.setToolTipTextAt(tabs.indexOfComponent(zoneTabPnl), "Pick a zone in the zone list on the right and press \"Load this zone\" - this is how zones are opened.");
 
 		//Ctrl+Z / Ctrl+Y while the World Editor tab has focus: the history of whatever is being edited
 		//there - the open zone's, unless the focus is inside an editor that owns one (F209). It was
@@ -1059,7 +1059,7 @@ public class CtrmapMainframe {
 		file.add(item("Open GR Mapfile", CtrmapMainframe.this::openGrAction));
 		file.add(item("Open MapMatrix", CtrmapMainframe.this::openMapMatrixAction));
 		file.add(item("Open Zone", CtrmapMainframe.this::openZoneAction,
-				"Opens a single loose ZO file. To load a map from the game, use the zone dropdown in the \"Zone Loader\" tab instead."));
+				"Opens a single loose ZO file. To load a map from the game, use the zone list in the \"Zone Loader\" tab instead."));
 		//CTRL+S, AND CTRL+D FOR DEPLOY. Nothing in this menu bar had a key, in an editor
 		//whose other writer is the window close handler, and whose edit-and-test cycle
 		//ends in Deploy every single time.
@@ -1247,6 +1247,11 @@ public class CtrmapMainframe {
 				"Export a map region's 3D model as a Wavefront OBJ to edit in Blender.", CtrmapMainframe::exportMapObjAction),
 		IMPORT_MAP_OBJ(Area.MAP, "Import OBJ into map region (Blender)...", "Import OBJ",
 				"Bring a Blender-edited OBJ back into the map region it was exported from.", CtrmapMainframe::importMapObjAction),
+		//FIRST OF THE ZONE ROW, AND IN THE ZONE MENU (1.0.4): the zone list is the only way to open a zone,
+		//and a tool shown over it left nothing in either place that went back to it
+		ZONE_LIST(Area.ZONE, "Zone list (pick a zone to load)", "Zone list",
+				"The zone list in the Zone Loader tab, to pick a zone and load it - from wherever you are, any tool over it put away.",
+				CtrmapMainframe::showZoneListAction),
 		CONNECT_ZONES(Area.ZONE, "Connect zones through a warp...", "Connect zones",
 				"Wire a warp in one zone to a warp in another, both ways, so the trip works there AND back.",
 				CtrmapMainframe::connectZonesAction),
@@ -1302,9 +1307,11 @@ public class CtrmapMainframe {
 
 	// ---------------------------------------------- the Zone Loader tab
 
-	/** The right-hand column of the Zone Loader tab, and what is normally in it. */
-	private JPanel zoneColumn;
-	private JComponent zoneBrowser;
+	/**
+	 * The right-hand column of the Zone Loader tab: the zone list, which is the only way to open a
+	 * zone, or a zone tool shown in its place - always with a way back to the list (see ToolHost).
+	 */
+	private ctrmap.humaninterface.ToolHost zoneHost;
 
 	/**
 	 * Shows a zone tool in that column, under its name, with a way back.
@@ -1313,33 +1320,28 @@ public class CtrmapMainframe {
 	 * anything that acts on a zone. A null tool means it refused and has said why.
 	 */
 	private void inZoneColumn(String title, JComponent tool) {
-		if (zoneColumn == null || tool == null) {
-			return;
+		if (zoneHost != null && zoneHost.show(title, tool, null, null)) {
+			selectTab("Zone Loader");
 		}
-		JPanel box = new JPanel(new BorderLayout());
-		box.setBorder(javax.swing.BorderFactory.createTitledBorder(title));
-		JToolBar back = new JToolBar();
-		back.setFloatable(false);
-		back.add(barButton("Back to the zone list", "Leave " + title + ".",
-			CtrmapMainframe.this::closeZoneColumnTool));
-		box.add(back, BorderLayout.NORTH);
-		box.add(new javax.swing.JScrollPane(tool), BorderLayout.CENTER);
-		zoneColumn.removeAll();
-		zoneColumn.add(box, BorderLayout.CENTER);
-		zoneColumn.revalidate();
-		zoneColumn.repaint();
-		selectTab("Zone Loader");
 	}
 
 	/** Back to the zone list. */
 	private void closeZoneColumnTool() {
-		if (zoneColumn == null || zoneBrowser == null) {
-			return;
+		if (zoneHost != null) {
+			zoneHost.goHome();
 		}
-		zoneColumn.removeAll();
-		zoneColumn.add(zoneBrowser, BorderLayout.CENTER);
-		zoneColumn.revalidate();
-		zoneColumn.repaint();
+	}
+
+	/**
+	 * The zone list, from anywhere: the Zone Loader tab, with whatever tool was over the list put
+	 * away and the list given the keyboard. On the zone actions bar and in the Zone menu, so the one
+	 * way to open a zone is never more than a click from wherever the user is.
+	 */
+	private void showZoneListAction() {
+		selectTab("Zone Loader");
+		if (zoneHost != null && zoneHost.goHome() && zoneHost.home() instanceof ctrmap.humaninterface.ZoneBrowserPane) {
+			((ctrmap.humaninterface.ZoneBrowserPane) zoneHost.home()).zoneRows().requestFocusInWindow();
+		}
 	}
 
 	/** The Zone Loader tab: the zone panel, its actions above it, its preview beside it. */
@@ -1370,10 +1372,8 @@ public class CtrmapMainframe {
 		tab.add(buildZoneActionsBar(), BorderLayout.NORTH);
 		tab.add(zonePanel, BorderLayout.CENTER);
 		ctrmap.humaninterface.ZoneBrowserPane browser = new ctrmap.humaninterface.ZoneBrowserPane(owner, heldTool);
-		zoneBrowser = browser;
-		zoneColumn = new JPanel(new BorderLayout());
-		zoneColumn.add(browser, BorderLayout.CENTER);
-		tab.add(workspaceOps().around(zoneColumn), BorderLayout.EAST);
+		zoneHost = new ctrmap.humaninterface.ToolHost("the zone list", browser, true);
+		tab.add(workspaceOps().around(zoneHost), BorderLayout.EAST);
 		if (zonePanel instanceof ZoneLoadingPanel) {
 			ZoneLoadingPanel loading = (ZoneLoadingPanel) zonePanel;
 			loading.useBrowser(browser);
@@ -1424,20 +1424,15 @@ public class CtrmapMainframe {
 	private JPanel buildExtrasTab(JComponent extras, JComponent browser) {
 		JPanel tab = new JPanel(new BorderLayout());
 		tab.add(buildExtrasBar(), BorderLayout.NORTH);
-		extrasDefault = extras;
 		extrasBrowser = browser;
-		extrasHost = new JPanel(new BorderLayout());
-		extrasHost.add(extras, BorderLayout.CENTER);
+		extrasHost = new ctrmap.humaninterface.ToolHost("Extras", extras, true);
 		tab.add(extrasHost, BorderLayout.CENTER);
 		return tab;
 	}
 
-	/** Where an Extras tool is shown, and what is there when none is. */
-	private JPanel extrasHost;
-	private JComponent extrasDefault;
+	/** Where an Extras tool is shown, with the Extras tools as its home (see ToolHost). */
+	private ctrmap.humaninterface.ToolHost extrasHost;
 	private JComponent extrasBrowser;
-	/** The tool on show, so leaving can ask it whether it is finished. */
-	private JComponent extrasOpen;
 
 	/**
 	 * Shows a seldom-used tool in the Extras tab, under its name, with a way back.
@@ -1453,51 +1448,16 @@ public class CtrmapMainframe {
 
 	/** The same, with the tool's menu given - a tool shown inside its Undo and Redo is no FormPanel itself. */
 	private void showInExtras(String title, JComponent tool, javax.swing.JMenuBar menu) {
-		if (extrasHost == null || tool == null) {
-			return;
+		//IT ASKS before the tool is left: these panes used to be windows and did their saving in
+		//windowClosing, so a pane that answers false has an edit it will not discard - and leaving
+		//anyway is how the window version lost one
+		java.util.function.BooleanSupplier mayLeave = tool instanceof ctrmap.humaninterface.FormPanel
+				? ((ctrmap.humaninterface.FormPanel) tool)::closeRequested : null;
+		if (extrasHost != null && extrasHost.show(title, tool, menu, mayLeave)) {
+			selectTab("Extras");
 		}
-		JPanel box = new JPanel(new BorderLayout());
-		box.setBorder(javax.swing.BorderFactory.createTitledBorder(title));
-		JToolBar back = new JToolBar();
-		back.setFloatable(false);
-		back.add(barButton("Back to Extras", "Leave " + title + ".",
-			CtrmapMainframe.this::closeExtrasTool));
-		if (menu != null) {
-			back.add(menu);
-		}
-		box.add(back, BorderLayout.NORTH);
-		box.add(new javax.swing.JScrollPane(tool), BorderLayout.CENTER);
-		extrasOpen = tool;
-		extrasHost.removeAll();
-		extrasHost.add(box, BorderLayout.CENTER);
-		extrasHost.revalidate();
-		extrasHost.repaint();
-		selectTab("Extras");
 	}
 
-	/**
-	 * Back to the Extras tools, if the open one is finished with.
-	 *
-	 * <p>It ASKS: these panes used to be windows and did their saving in
-	 * {@code windowClosing}, so a pane that answers false has an edit it will not
-	 * discard - and leaving anyway is how the window version lost one.
-	 */
-	private void closeExtrasTool() {
-		if (extrasHost == null) {
-			return;
-		}
-		if (extrasOpen instanceof ctrmap.humaninterface.FormPanel
-			&& !((ctrmap.humaninterface.FormPanel) extrasOpen).closeRequested()) {
-			return;
-		}
-		extrasOpen = null;
-		extrasHost.removeAll();
-		if (extrasDefault != null) {
-			extrasHost.add(extrasDefault, BorderLayout.CENTER);
-		}
-		extrasHost.revalidate();
-		extrasHost.repaint();
-	}
 
 	/**
 	 * The Extras bar: everything that opens in this tab, offered from this tab.
@@ -1631,7 +1591,7 @@ public class CtrmapMainframe {
 	/**
 	 * Whether the pane in the World Editor's tool column may be replaced by {@code incoming}: a
 	 * {@link ctrmap.humaninterface.FormPanel} there - bare or in the scroll pane this column wraps
-	 * it in - is ASKED, as {@code closeExtrasTool} asks in the Extras tab (F105). This seam replaced
+	 * it in - is ASKED, as the Extras tab's host asks before it leaves a tool (F105). This seam replaced
 	 * whatever was there with no question, so the registry editors opened into it lost the
 	 * entry being edited on any tool switch, zone switch or second Edit registry data click.
 	 * Re-showing the pane already there asks nothing.
@@ -1793,7 +1753,7 @@ public class CtrmapMainframe {
 						+ "The RomFS only holds packed GARC archives, not single zone files, so pointing\n"
 						+ "this dialog at the game directory can never work.\n"
 						+ (zoneDir != null ? ("Extracted zone files live in " + zoneDir.getAbsolutePath() + "\n") : "")
-						+ "\nThe normal way to open a map is the zone dropdown in the \"Zone Loader\" tab.", "Not a ZO file");
+						+ "\nThe normal way to open a map is the zone list in the \"Zone Loader\" tab.", "Not a ZO file");
 				return;
 			}
 			//WAS "isValid() ? game() : GameType.ORAS". A .zo does not record
@@ -2039,8 +1999,11 @@ public class CtrmapMainframe {
 		JPanel tab = new JPanel(new BorderLayout());
 		javax.swing.JScrollPane left = new javax.swing.JScrollPane(entries);
 		left.setPreferredSize(new java.awt.Dimension(460, 0));
-		gameDataHost = new JPanel(new BorderLayout());
-		clearGameData();
+		JLabel hint = new JLabel("<html><i>Pick a subject on the left - it opens here.</i></html>");
+		hint.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
+		//NOT SCROLLED: the editors that open here scroll their own tables, and a scroll pane around a
+		//scroll pane stretches the inner one to its full height and takes its scrolling away
+		gameDataHost = new ctrmap.humaninterface.ToolHost("the Game Data subjects", hint, false);
 		javax.swing.JSplitPane split = new javax.swing.JSplitPane(
 			javax.swing.JSplitPane.HORIZONTAL_SPLIT, left, gameDataHost);
 		split.setDividerLocation(460);
@@ -2048,8 +2011,8 @@ public class CtrmapMainframe {
 		return tab;
 	}
 
-	/** Where an open Game Data editor lives. */
-	private JPanel gameDataHost;
+	/** Where an open Game Data editor lives, with the subjects' hint as its home (see ToolHost). */
+	private ctrmap.humaninterface.ToolHost gameDataHost;
 
 	/**
 	 * The workspace's own operations - forks, clones, renames, removals, imports, resizes - each kept so it can be
@@ -2162,29 +2125,16 @@ public class CtrmapMainframe {
 
 	/** Puts an editor in the Game Data tab, under its name. */
 	private void showGameData(String title, JComponent editor) {
-		if (gameDataHost == null || editor == null) {
-			return;
+		if (gameDataHost != null && editor != null) {
+			gameDataHost.show(title, gameDataSaves().around(editor), null, null);
 		}
-		JPanel box = new JPanel(new BorderLayout());
-		box.setBorder(javax.swing.BorderFactory.createTitledBorder(title));
-		box.add(gameDataSaves().around(editor), BorderLayout.CENTER);
-		gameDataHost.removeAll();
-		gameDataHost.add(box, BorderLayout.CENTER);
-		gameDataHost.revalidate();
-		gameDataHost.repaint();
 	}
 
 	/** Back to the hint, when an editor is finished with. */
 	private void clearGameData() {
-		if (gameDataHost == null) {
-			return;
+		if (gameDataHost != null) {
+			gameDataHost.goHome();
 		}
-		gameDataHost.removeAll();
-		JLabel hint = new JLabel("<html><i>Pick a subject on the left - it opens here.</i></html>");
-		hint.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
-		gameDataHost.add(hint, BorderLayout.CENTER);
-		gameDataHost.revalidate();
-		gameDataHost.repaint();
 	}
 
 	private JPanel buildGameDataPanel() {
@@ -2351,7 +2301,8 @@ public class CtrmapMainframe {
 		if (!hintPrefs.getBoolean("ZONE_HINT_SHOWN", false)) {
 			hintPrefs.putBoolean("ZONE_HINT_SHOWN", true);
 			Ui.message("Workspace loaded.\n\n"
-					+ "Pick a map from the zone dropdown at the top of the \"Zone Loader\" tab.\n"
+					+ "Pick a zone in the zone list on the right of the \"Zone Loader\" tab and press\n"
+					+ "\"Load this zone\" (or double-click it).\n"
 					+ "That loads the world, matrix, collisions and entities for editing.\n\n"
 					+ "(File > Open Zone is only for single loose ZO files.)", "Opening a zone", JOptionPane.INFORMATION_MESSAGE);
 		}
@@ -2664,7 +2615,7 @@ public class CtrmapMainframe {
 			"currently shares it (e.g. a cloned zone and the town it was cloned from",
 			"share the same 3D model and the same area until this is done).",
 			" ",
-			"Zone (GARC index - the number shown in the zone dropdown):",
+			"Zone (GARC index - the number shown in the zone list):",
 			idSpinner,
 			ownMap,
 			ownArea,
@@ -2823,7 +2774,7 @@ public class CtrmapMainframe {
 			"If the name is shared (a cloned zone shares the town it came from), this",
 			"zone gets its OWN name and the others are left unchanged.",
 			" ",
-			"Zone (the number shown in the zone dropdown):",
+			"Zone (the number shown in the zone list):",
 			idSpinner,
 			"New name:",
 			nameField
@@ -3095,7 +3046,7 @@ public class CtrmapMainframe {
 			"Clear a zone's placed content: NPCs, warps, triggers and props.",
 			"The header, script, and wild encounters are kept - good for redoing a zone.",
 			" ",
-			"Zone (the number shown in the zone dropdown):",
+			"Zone (the number shown in the zone list):",
 			idSpinner
 		};
 		Object[] opts = {"Empty it", "Cancel"};
