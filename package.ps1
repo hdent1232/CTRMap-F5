@@ -129,6 +129,16 @@ Remove-Item -Recurse -Force $shipDir -ErrorAction SilentlyContinue
 Copy-Item -Recurse lib "$stage\lib"
 Copy-Item run.bat, run.sh, README.md, LICENSE, QUICKSTART.md "$stage\"
 
+# A RELEASE IS DRIVEN THROUGH ITS OWN WINDOW BEFORE IT SHIPS (2026-10-24). 1.0.4 passed 219 suites and could not be
+# used - a zone tool covered the zone list with no visible way back, a refusal dialog came up on every launch, every
+# fill of the zone list froze the window 13.8 s - and the owner found all three by downloading it. tools\window_check.py
+# starts the staged program twice on copies of the owner's workspace and game, loads a zone, opens a zone tool and comes
+# back. Nothing is zipped unless it holds, and the pass it records is what the commit changing the version is asked for.
+$wpy = Get-Command python -ErrorAction SilentlyContinue
+if (-not $wpy) { throw "no python on PATH to drive the release through its own window - nothing was zipped" }
+Invoke-Native { & $wpy.Source -B (Join-Path $root "tools\window_check.py") $stage }
+if ($LASTEXITCODE -ne 0) { throw "tools\window_check.py refused this release (exit $LASTEXITCODE) - nothing was zipped" }
+
 # THE ZIPS ARE WRITTEN BY THE JDK'S jar (2026-10-23), whose names always use "/". Compress-Archive in Windows
 # PowerShell 5.1 wrote every one with a backslash ("lib\jogl-all.jar", measured on both 1.0.4 zips), and off Windows
 # the updater unpacks that as one file beside an untouched lib\. tools\release_channel.py refuses such a zip, from

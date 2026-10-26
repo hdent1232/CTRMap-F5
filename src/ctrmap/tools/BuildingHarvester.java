@@ -75,6 +75,15 @@ public class BuildingHarvester {
 	 * says what it skipped - without taking over the process's own stream, which no suite may (SourceSeamTest).
 	 */
 	public static int run(String[] args, java.io.PrintStream said) throws Exception {
+		return run(args, said, 500);
+	}
+
+	/**
+	 * The harvest, saying its progress every {@code progressEvery} candidates. A full dump verifies thousands, and every
+	 * 500th is said; a suite's cut-down dump holds a few hundred, so it asks for a smaller step and reads the lines - the
+	 * 2026-10-17 sweep recorded the progress line, dropped, as a HOLE (BuildingHarvester 264), no suite ever reaching 500.
+	 */
+	public static int run(String[] args, java.io.PrintStream said, int progressEvery) throws Exception {
 		if (args.length < 2) {
 			said.println("Usage: java ctrmap.tools.BuildingHarvester <pristineRomfsDir> <outTsv> - the output is named"
 					+ " every time, so a run cannot rewrite a table the release ships without saying so");
@@ -206,7 +215,12 @@ public class BuildingHarvester {
 		//stamp showed up as a smaller catalogue in the run that decides what ships
 		List<String> threw = new ArrayList<>();
 		long t0 = System.currentTimeMillis();
+		//ASKED ONCE PER CANDIDATE, before the next and after the last (2026-10-24): asked at the foot of the loop it was
+		//skipped by every candidate the gate dropped - each `continue`s past it - so a whole step that ended on a dropped
+		//candidate was never said
+		int stepsSaid = 0;
 		for (Map.Entry<Long, Cand> en : bySig.entrySet()) {
+			stepsSaid = progress(said, verified, dropped, threw.size(), stepsSaid, progressEvery, t0);
 			Cand c = en.getValue();
 			String box = BuildingCatalog.boxKey(c.region, c.comp.tx0, c.comp.ty0, c.comp.tx1, c.comp.ty1);
 			if (offered.contains(box)) {
@@ -260,11 +274,8 @@ public class BuildingHarvester {
 			} catch (Exception ex) {
 				threw.add("region " + c.region + ": " + ctrmap.util.Bytes.reason(ex));
 			}
-			if ((verified + dropped + threw.size()) % 500 == 0) {
-				said.println("verify: " + verified + " ok, " + dropped + " dropped, "
-						+ ((System.currentTimeMillis() - t0) / 1000) + "s");
-			}
 		}
+		progress(said, verified, dropped, threw.size(), stepsSaid, progressEvery, t0);
 		said.println("verified " + verified + " entries (" + dropped + " refused by the gate, " + threw.size()
 				+ " threw" + (threw.isEmpty() ? "" : " - first: " + threw.subList(0, Math.min(3, threw.size()))) + ") in "
 				+ ((System.currentTimeMillis() - t0) / 1000) + "s; " + sameBox
@@ -474,6 +485,16 @@ public class BuildingHarvester {
 		{"building", "pokecen", "friend", "shop", "gym", "yane", "roof", "kabe", "mado", "door", "house"},
 		{"rock", "iwa", "rock", "gake", "ishi"}
 	};
+
+	/** Says the verify's progress once for each whole {@code every} candidates seen; answers the steps said by now. */
+	static int progress(java.io.PrintStream said, int verified, int dropped, int threw, int stepsSaid, int every, long t0) {
+		int steps = (verified + dropped + threw) / every;
+		if (steps <= stepsSaid) {
+			return stepsSaid;
+		}
+		said.println("verify: " + verified + " ok, " + dropped + " dropped, " + ((System.currentTimeMillis() - t0) / 1000) + "s");
+		return steps;
+	}
 
 	/** The family a material name belongs to - the first that claims it - or null. */
 	public static String[] familyOf(String material) {

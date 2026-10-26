@@ -47,11 +47,13 @@ deeply as asked. It draws on the subscription's usage, not a separate bill, and 
 worth that is a measurement (README: the A/B). When declared: once every request is
 itemised and resolved, the requests whose items changed since their last PASS are owed a review:
 a subagent on the declared model, launched with EXACTLY the prompt this file writes - it names the
-requests verbatim, the items, and what to fail - and synchronously, so the verdict is in the
-transcript when the turn tries to end. The verdict is read from the tool result the harness
-wrote, never from anything the agent records; a launch whose prompt carries the review token and
-differs from the owed prompt by one word is refused before it runs; and an earlier FAIL is handed
-to the next reviewer of the same request, so re-rolling until a PASS is not free.
+requests verbatim, the items, and what to fail. The verdict is read from what the harness wrote,
+never from anything the agent records: the launch's own result, or - for a review the harness ran
+in the BACKGROUND, which since Claude Code 2.1.288 is every agent - the completion the harness
+delivers for that launch. While a review runs the turn stays open and no second one may start.
+A launch whose prompt carries the review token and differs from the owed prompt by one word is
+refused before it runs; and an earlier FAIL is handed to the next reviewer of the same request,
+so re-rolling until a PASS is not free.
 
     python <hooks>/request_ledger.py                          what would keep this turn open
     python <hooks>/request_ledger.py show                     requests, their clauses, their items
@@ -600,6 +602,7 @@ def calls(rows):
         given = row.get("toolUseResult") if isinstance(row, dict) else None
         results = [part for part in parts if part.get("type") == "tool_result"]
         agent = given.get("agentId") if isinstance(given, dict) and len(results) == 1 else None
+        started = isinstance(given, dict) and len(results) == 1 and given.get("status") == ASYNC_LAUNCHED
         for part in parts:
             if part.get("type") == "tool_use" and part.get("id"):
                 out[part["id"]] = {"index": index, "name": part.get("name"),
@@ -607,13 +610,73 @@ def calls(rows):
                                    "strings": _strings(part.get("input"), []),
                                    "evidence": evidence_strings(part.get("input") or {}),
                                    "commands": bool(bundle_shell.commands({"tool_input": part.get("input") or {}})),
-                                   "error": None, "result": None, "agent": None}
+                                   "error": None, "result": None, "agent": None, "background": False}
             elif part.get("type") == "tool_result" and part.get("tool_use_id") in out:
                 call = out[part["tool_use_id"]]
                 call["error"] = bool(part.get("is_error"))
                 call["result"] = LF.join(_strings(part.get("content"), []))
                 call["agent"] = agent if isinstance(agent, str) else None
+                call["background"] = started
     return out
+
+
+#: The status the harness records for an agent it runs in the BACKGROUND - measured on Claude Code
+#: 2.1.288 (DF Engine 2026-10-09, CTRMap 2026-10-23), whose Agent tool offers no other way to run one.
+#: The launch's own result then says only that it started; what it returned comes in a completion.
+ASYNC_LAUNCHED = "async_launched"
+
+#: The head of the harness's completion notice: the task's id and the launch's tool-use id, written
+#: before anything the agent returned. Read anchored, so a notice quoted inside a result is not one.
+_NOTICE = re.compile(r"\A<task-notification>\n<task-id>([^<\n]+)</task-id>\n<tool-use-id>([^<\n]+)"
+                     r"</tool-use-id>\n")
+_NOTICE_STATUS = re.compile(r"<status>([^<\n]*)</status>")
+_NOTICE_RESULT = re.compile(r"<result>(.*)</result>", re.S)
+
+#: What a background review's answer is while the harness has delivered no completion for it.
+RUNNING = object()
+
+
+def completions(rows):
+    """{launch tool-use id: [(row index, task id, status, result)]} - every background task's end, as
+    the harness delivered it.
+
+    ONLY THE HARNESS'S OWN DELIVERY. A `queued_command` attachment whose mode and origin both say a
+    session task produced it - measured 2026-10-09 on 2.1.288 - with the notice's head at its very
+    start. A notice typed by a person, said by the agent, printed by a command or sent as a peer's
+    message carries the same words and none of that."""
+    out = {}
+    for index, row in enumerate(rows):
+        held = row.get("attachment") if isinstance(row, dict) else None
+        if not isinstance(held, dict) or held.get("type") != "queued_command" \
+                or held.get("commandMode") != "task-notification":
+            continue
+        origin = held.get("origin") if isinstance(held.get("origin"), dict) else {}
+        if origin.get("kind") != "task-notification":
+            continue
+        text = str(held.get("prompt") or "").replace("\r\n", LF)
+        head = _NOTICE.match(text)
+        if not head:
+            continue
+        rest = text[head.end():]
+        status, result = _NOTICE_STATUS.search(rest), _NOTICE_RESULT.search(rest)
+        out.setdefault(head.group(2), []).append(
+            (index, head.group(1), status.group(1) if status else "", result.group(1) if result else ""))
+    return out
+
+
+def background_answer(ident, call, finished, handed):
+    """What a launch the harness ran in the background returned - RUNNING until its completion is in.
+
+    THE FIRST COMPLETION AFTER THE LAUNCH, FROM THE AGENT THE HARNESS RECORDED RUNNING IT. A resumed
+    agent completes again under the same id, as it hands back again (`handed_back_answer`). Its result
+    either IS the report or points to the hand-back that holds it."""
+    mine = [end for end in finished.get(ident, []) if end[0] > call["index"]
+            and (call.get("agent") is None or end[1] == call["agent"])]
+    if not mine:
+        return RUNNING
+    result = mine[0][3]
+    pointed = handed_back_answer(dict(call, result=result), handed)
+    return result if pointed is None else pointed
 
 
 #: The sentence a launch's own result carries when the harness delivers the agent's report as a
@@ -744,6 +807,20 @@ def cites(span, call):
     return any(span in value for value in call["evidence"])
 
 
+def alone(call):
+    """Did this call run ONE program - a change of directory aside - so that what it printed is that program's own?
+
+    A CALL THAT RAN OTHERS PRINTED THEIRS TOO (2026-10-14, on DF Engine): a measurement that printed 2360 of 2360 was
+    refused as covering part of a whole, because the same call also grepped a log reading "75 of 216" - its lines could
+    not be told from the measurement's. The other way it passes a part: `python tools/x.py; echo 30 of 30`, or a pipe
+    that filters the short lines out. `bundle_shell.runs` is the one reading of what programs a call ran - through `;`,
+    `&&`, a pipe, a group and a shell handed text - and a line it cannot split is unknown, never alone. A call that ran
+    no command at all - a read or a write of the measurement's file - ran no program, so it is never alone either."""
+    ran = [one for text_ in bundle_shell.commands({"tool_input": call.get("input") or {}})
+           for one in bundle_shell.runs(text_)]
+    return len(ran) == 1 and ran[0][0] is not None
+
+
 def claims_whole(item, request):
     """Does this item - in its own words, or the owner's in the clauses it covers - claim a whole?
 
@@ -781,16 +858,22 @@ def coverage_problem(said, request, rows, made=None):
     the tree at its time; the latest says what the tree is now, a part measured after a whole included."""
     made = calls(rows) if made is None else made
     spans = [flat(s) for s in BACKTICKED.findall(said)]
-    #a RUN of a measurement is a command that ran - a read of the measurement's file is not one (2026-10-13)
+    #a RUN of a measurement is a command that ran ALONE - a read of the measurement's file runs no program, so it is
+    #never alone and never a reading (2026-10-13; one guard, `alone`, since 2026-10-14)
     measured = [call for call in made.values()
-                if call["index"] > request["index"] and call["error"] is False and call.get("commands")
+                if call["index"] > request["index"] and call["error"] is False
                 and any(MEASURES.search(value) for value in call["evidence"])]
-    latest = {}
+    latest, beside = {}, []
     for span in spans:
         runs = [call for call in measured if cites(span, call)]
+        beside += [span for call in runs if not alone(call)]
+        runs = [call for call in runs if alone(call)]
         if runs:
             latest[span] = max(runs, key=lambda call: call["index"])
     ran = list({id(call): call for call in latest.values()}.values())
+    if not ran and beside:
+        return ("it claims the whole, and the measurement it names only ran beside other commands, whose output cannot "
+                "be told from its own - run it alone and cite that run")
     if not ran:
         return ("it claims the whole, and no `command` it names ran a measurement in tests/ or tools/ after request %s"
                 " - the whole is shown by what a measurement covered, not by a description of it" % request["key"])
@@ -1080,12 +1163,14 @@ def reviews(rows, made=None):
     """[{digest, verdict, text, prompt, index}] - every ledger review this transcript holds, read
     from what the harness wrote back, never from anything the agent recorded.
 
-    ONLY AN AGENT LAUNCH THAT RAN, AND ONLY ITS OWN RESULT. A `prompt` key is not a launch -
-    `WebFetch` and `ScheduleWakeup` carry one - and a launch the door denied is still in the
-    transcript, answered by the denial. And the result is the tool result of the launch itself,
-    because the door makes a review synchronous: a task notification matched by its tool-use id
-    could be written into the agent's own message, attaching a PASS to a launch that never gave
-    one.
+    ONLY AN AGENT LAUNCH THAT RAN, AND ONLY WHAT THE HARNESS WROTE FOR IT. A `prompt` key is not a
+    launch - `WebFetch` and `ScheduleWakeup` carry one - and a launch the door denied is still in
+    the transcript, answered by the denial. The answer is the launch's own tool result, or, for a
+    launch the harness RAN IN THE BACKGROUND (`toolUseResult` says `async_launched`, every agent
+    since 2.1.288), the first completion the harness delivered for that tool-use id - read only
+    from its own `task-notification` delivery (`completions`), because the same words written into
+    the agent's message, a command's output or a peer's message would attach a PASS to a launch
+    that never gave one. Until that completion is in, the review is RUNNING: no verdict either way.
 
     AND ONLY THE REVIEWER'S OWN WORDS, from its verdict line on. The harness opens every
     subagent's result with a paragraph of its own - "[Subagent hand-back] The text below is the
@@ -1103,16 +1188,27 @@ def reviews(rows, made=None):
     """
     made = calls(rows) if made is None else made
     handed = handbacks(rows)
+    finished = completions(rows)
     out = []
-    for call in made.values():
+    for ident, call in made.items():
         found = [launch for launch in bundle_shell.launches({"tool_input": call["input"]})
                  if TOKEN in bundle_shell.brief(launch)]
         if not found or call["error"] is not False:
             continue
         prompt = bundle_shell.brief(found[0])
         digest = prompt.split(TOKEN, 1)[1][:12]
-        pointed = handed_back_answer(call, handed)
-        answer = (call["result"] or "") if pointed is None else pointed
+        # A REVIEW THE HARNESS RAN IN THE BACKGROUND answers in its completion, not its own result
+        # ("Async agent launched successfully"), and until that is delivered it is RUNNING.
+        if call.get("background"):
+            answer = background_answer(ident, call, finished, handed)
+            if answer is RUNNING:
+                out.append({"digest": digest, "verdict": None, "running": True,
+                            "text": "still running in the background", "prompt": prompt,
+                            "index": call["index"]})
+                continue
+        else:
+            pointed = handed_back_answer(call, handed)
+            answer = (call["result"] or "") if pointed is None else pointed
         found = [m for m in VERDICT.finditer(answer) if m.group(1) == digest]
         own = answer[found[-1].start():] if found else answer
         why = left_undone(own) if found else None
@@ -1121,7 +1217,7 @@ def reviews(rows, made=None):
             why = quoted(own, prompt)
             verdict = "FAIL" if why else UNSUPPORTED
         text = own if why is None else "%s - left undone: %s" % (found[-1].group(0), why)
-        out.append({"digest": digest, "verdict": verdict,
+        out.append({"digest": digest, "verdict": verdict, "running": False,
                     "text": text, "prompt": prompt, "index": call["index"]})
     return sorted(out, key=lambda r: r["index"])
 
@@ -1331,7 +1427,8 @@ def not_passed_since_owner(asked, done):
     """How many reviews in a row, since the owner's latest request, did not PASS."""
     since = max((request["index"] for request in asked), default=-1)
     count = 0
-    for review in reversed([r for r in done if r["index"] > since]):
+    #a review still RUNNING has said nothing yet - neither a pass nor a failure to count
+    for review in reversed([r for r in done if r["index"] > since and not r.get("running")]):
         if review["verdict"] == "PASS":
             break
         count += 1
@@ -1355,7 +1452,7 @@ def escalation(asked, owing, done, rows, last=None):
     streak = not_passed_since_owner(asked, done)
     if streak < REVIEW_ROUNDS:
         return None
-    latest = done[-1]
+    latest = [r for r in done if not r.get("running")][-1]
     spoken = said_after(rows, latest["index"], last)
     if any(words(ESCALATION) in text for text in spoken):
         return []
@@ -1397,14 +1494,18 @@ def review_problems(held, asked, rows, config, made=None):
                 "reasons:" + LF + "    " + shown(failed["text"])]
     prompt = review_prompt(owing, rows, made)
     digest = prompt.split(TOKEN, 1)[1][:12]
-    mine = [r for r in done if r["digest"] == digest]
     keys = ", ".join(r["key"] for r, _i, _s in owing)
-    return ["request(s) %s are owed a review. Launch ONE Agent, synchronously "
-            "(run_in_background false), with model %r, subagent_type %r, and as its prompt "
-            "EXACTLY what `python %s/request_ledger.py review` prints. The verdict is read from "
-            "what comes back.%s" % (keys, config["model"], config["subagent_type"], FOLDER,
-                                    " The last review of this state returned no verdict line."
-                                    if mine else "")]
+    if any(r["digest"] == digest and r.get("running") for r in done):
+        return ["request(s) %s are being reviewed: the owed review is still running in the "
+                "background, and its verdict is read from the completion the harness delivers for "
+                "it. Wait for that notification - a second review of this state is refused." % keys]
+    mine = [r for r in done if r["digest"] == digest]
+    return ["request(s) %s are owed a review. Launch ONE Agent with model %r, subagent_type %r, and "
+            "as its prompt EXACTLY what `python %s/request_ledger.py review` prints. The verdict is "
+            "read from what the harness writes back - the launch's own result, or the completion it "
+            "delivers for a launch it ran in the background.%s"
+            % (keys, config["model"], config["subagent_type"], FOLDER,
+               " The last review of this state returned no verdict line." if mine else "")]
 
 
 def problems(session, transcript, last=None, root=None):
@@ -1474,9 +1575,17 @@ def launch_problem(payload, root=None):
         if str(launch.get("subagent_type") or "") != config["subagent_type"]:
             return "a ledger review runs as subagent_type %r, and this launch names %r" % (
                 config["subagent_type"], launch.get("subagent_type"))
-        if launch.get("run_in_background") is not False:
-            return ("a ledger review runs synchronously - pass run_in_background: false - so its "
-                    "verdict is in the transcript when the turn tries to end")
+        # HOW IT RUNS IS NOT ASKED (2026-10-23). It was refused unless synchronous, so its verdict
+        # would be in the transcript when the turn tried to end - and Claude Code 2.1.288's Agent
+        # tool runs every agent in the background and offers no way to ask otherwise, so the owed
+        # review could not be launched at all while the stop went on demanding it. A review that
+        # runs in the background now holds the turn open itself, and is read from its completion.
+        # What re-rolling needs instead is refused here: a second review while the first one runs.
+        digest = wanted.split(TOKEN, 1)[1][:12]
+        if any(r["digest"] == digest and r.get("running")
+               for r in reviews(read_rows(payload.get("transcript_path")) or [])):
+            return ("the owed review of this state is still running in the background - its verdict "
+                    "is read from the completion the harness delivers; a second one is a re-roll")
         if launch.get("isolation"):
             return ("a ledger review reads THIS tree - a worktree or a remote copy holds HEAD, not "
                     "the work it is judging - so it names no isolation (this one names %r)"

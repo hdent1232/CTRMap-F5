@@ -14,6 +14,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _owner_switches  # noqa: E402,F401  - the owner's settings out of this process, before any hook can read one
 import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
 HERE = _tree_root.require(__file__)
 

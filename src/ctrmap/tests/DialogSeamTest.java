@@ -212,6 +212,46 @@ public class DialogSeamTest {
 				"a converter that will not start says why, offers Close, and Close stores nothing: \"" + status2.getText()
 				+ "\", " + stored2[0] + " stored");
 
+		//a run stopped before its converter finished says so, offers Close, and stores nothing (the 2026-10-17 sweep,
+		//ESPICAControl 137, dropped, a HOLE: "nothing in the program interrupts that thread"). A suite can: a converter
+		//that runs a few seconds, its reading thread interrupted while it waits on the output - and the wait for the
+		//converter's end then throws, as Process.waitFor does for a thread already interrupted
+		int[] stored3 = {0};
+		ctrmap.humaninterface.ESPICAControl stopped = new ctrmap.humaninterface.ESPICAControl(() -> stored3[0]++);
+		javax.swing.JButton close3 = (javax.swing.JButton) declared(stopped, "btnClose").get(stopped);
+		javax.swing.JLabel status3 = (javax.swing.JLabel) declared(stopped, "status").get(stopped);
+		File slow = new File(java.nio.file.Files.createTempDirectory("espica-slow").toFile(), "slow-converter.bat");
+		java.nio.file.Files.write(slow.toPath(), ("@echo off\r\necho converting\r\nping -n 4 127.0.0.1 >nul\r\n")
+				.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+		stopped.runProcess(slow.getAbsolutePath(), new ctrmap.humaninterface.ESPICAControl.ESPICAProcess(
+				ctrmap.humaninterface.ESPICAControl.ESPICAFunctionMode.MODEL_CONVERT, new File(slow.getParentFile(), "map.obj"),
+				new File(slow.getParentFile(), "donor.bch"), new File(slow.getParentFile(), "out.bch"), new String[0]));
+		Thread reader = null;
+		for (int i = 0; i < 100 && reader == null; i++) {
+			Thread.sleep(50);
+			for (java.util.Map.Entry<Thread, StackTraceElement[]> t : Thread.getAllStackTraces().entrySet()) {
+				for (StackTraceElement e : t.getValue()) {
+					if (e.getClassName().startsWith(ctrmap.humaninterface.ESPICAControl.class.getName() + "$")
+							&& "run".equals(e.getMethodName())) {
+						reader = t.getKey();
+					}
+				}
+			}
+		}
+		check(reader != null, "CONTROL: the run's reading thread is found while the converter runs");
+		if (reader != null) {
+			reader.interrupt();
+		}
+		for (int i = 0; i < 200 && !String.valueOf(status3.getText()).startsWith("Failed"); i++) {
+			Thread.sleep(50);
+			javax.swing.SwingUtilities.invokeAndWait(() -> { });
+		}
+		boolean offered3 = close3.isEnabled();
+		press(close3);
+		check("Failed - stopped before ESPICA finished, so nothing was stored".equals(status3.getText()) && offered3
+				&& stored3[0] == 0, "a run stopped before its converter finished says so, offers Close, and Close stores"
+				+ " nothing: \"" + status3.getText() + "\", " + stored3[0] + " stored");
+
 		//a progress dialog with no window waits for its work, and work that never finishes is a failure, not a finish
 		//(census M.124; the 2026-10-14 shared sweep, LoadingDialog 104, drop-throw, SURVIVED: no suite waited it out)
 		java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);

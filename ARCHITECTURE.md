@@ -38,6 +38,7 @@ which deleted the geometry that seals a painted map).
 | `-Dterrain=<file>` | paints with another terrain catalogue instead of the bundled `oras_terrain.tsv`, so a volcanic design can make WATER lava and CLIFF black rock without changing every other map's |
 | `-Dctrmap.log.root=<folder>` | writes the error log there instead of beside the vault under the user's local data; the suites use it so they never write the user's real log |
 | `-Dctrmap.vault.root=<folder>` | keeps the vault's sealed pristine copies there instead; the suites use it so a test seal can never refuse the user's next real one |
+| `-Djogl.disable.opengles=<true\|false>` | JOGL's own switch, which GlSupport sets to `true` on Windows when it is not given, so OpenGL start-up does not also probe OpenGL ES - measured 2026-10-24 at about 0.9 s of every launch; given `false`, the probe runs as JOGL 2.6 ships it |
 
 ## The three layers
 

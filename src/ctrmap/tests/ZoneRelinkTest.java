@@ -55,6 +55,7 @@ public class ZoneRelinkTest {
 		aZoneSharesAnotherZonesArea(dump, also);
 		aRelinkThatCannotBeDoneWritesNothing(dump, also);
 		thePanelsButtonsDoIt(dump, also);
+		thePanelSaysWhenAsShippedCannotBeRead(dump, also);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		System.exit(fails == 0 ? 0 : 1);
 	}
@@ -168,6 +169,90 @@ public class ZoneRelinkTest {
 		}
 		check(Arrays.equals(Files.readAllBytes(zo.toPath()), zoWas) && Arrays.equals(MasterTable.read(ws).bytes(), masterWas),
 				"and the zone's header and the master table are exactly as they were");
+
+		//A ZONE PAST THE TABLE, asked for its links, is refused in words (mutation sweep of 2026-10-25: the refusal
+		//dropped, or swallowed into an answer, passed every suite)
+		int zones = MasterTable.read(ws).zones();
+		for (int past : new int[]{-1, zones}) {
+			String no = null;
+			try {
+				ZoneRelinker.links(ws, past, ZoneRelinker.shipped(ws));
+			} catch (Exception ex) {   //an index read past the table is an answer too, and not the one wanted
+				no = String.valueOf(ex);
+			}
+			check(no != null && no.contains("There is no zone " + past + " "), "the links of zone " + past
+					+ " - the game has " + zones + " - are refused in words: " + no);
+		}
+		//AND A ZONE WHOSE FILE CANNOT BE READ OUT OF THE WORKSPACE is refused before anything is written (the same
+		//sweep): a folder stands where zone ZONES[1]'s file was
+		File unreadable = ws.getWorkspaceFile(ArchiveType.ZONE_DATA, ZONES[1]);
+		Files.delete(unreadable.toPath());
+		check(unreadable.mkdir() && unreadable.isDirectory(), "CONTROL: a folder stands where zone " + ZONES[1] + "'s file was");
+		byte[] masterBefore = MasterTable.read(ws).bytes().clone();
+		String unread = null;
+		try {
+			ZoneRelinker.relink(ws, ZONES[1], one(ZoneResource.AREA, MasterTable.read(ws).id(ZoneResource.AREA, ZONES[0])));
+		} catch (IOException ex) {
+			unread = ex.getMessage();
+		}
+		check(unread != null && unread.contains("could not be read out of the workspace")
+				&& Arrays.equals(MasterTable.read(ws).bytes(), masterBefore),
+				"a zone whose file cannot be read out of the workspace is refused in words, the master table untouched: " + unread);
+	}
+
+	/**
+	 * THE PANEL SAYS WHEN AS SHIPPED CANNOT BE READ, AND ONLY THEN (mutation sweep of 2026-10-25): inverted, it told a
+	 * user who has the pristine copy that there is none, and one without it nothing - and every suite passed, since
+	 * each built the panel over a game with the copy.
+	 */
+	static void thePanelSaysWhenAsShippedCannotBeRead(File dump, File[] also) throws Exception {
+		System.out.println("--- the Re-link panel says when what each zone shipped with cannot be read, and only then");
+		ScratchGame.open(dump, also);
+		WorkspaceSession bare = Workspace.session();
+		//THE SCRATCH COPY'S OWN SNAPSHOT of the zone table taken away: a game opened without one has nothing as shipped
+		File snap = new File(WorkspaceSession.originalSnapshotDir(bare.workspaceDir()).getAbsolutePath()
+				+ bare.profile().archivePath(ArchiveType.ZONE_DATA));
+		Files.deleteIfExists(snap.toPath());
+		check(ZoneRelinker.shipped(bare) == null, "CONTROL: a scratch game with no pristine snapshot reads no table as shipped");
+		String said = notice(panelOver(bare));
+		check(said != null && said.contains("has no pristine copy"),
+				"over a game with no pristine copy the panel says what cannot be read: " + said);
+		WorkspaceSession ws = game(dump, also);
+		said = notice(panelOver(ws));
+		check(said == null, "and over a game with one it says nothing of the kind: " + said);
+	}
+
+	/** The Re-link panel over {@code ws}, one parsed zone in every slot of the table, relinking nothing. */
+	static javax.swing.JComponent panelOver(WorkspaceSession ws) throws Exception {
+		ctrmap.LoadedZone zones = new ctrmap.LoadedZone();
+		ctrmap.formats.zone.Zone any = new ctrmap.formats.zone.Zone(new ctrmap.formats.containers.ZO(
+				ws.getWorkspaceFile(ArchiveType.ZONE_DATA, 0), ws), ctrmap.gamedef.GameType.ORAS);
+		ctrmap.formats.zone.Zone[] table = new ctrmap.formats.zone.Zone[MasterTable.read(ws).zones()];
+		Arrays.fill(table, any);
+		zones.table(table);
+		javax.swing.JComponent[] panel = new javax.swing.JComponent[1];
+		javax.swing.SwingUtilities.invokeAndWait(() -> panel[0] = ctrmap.humaninterface.ZoneRelinkPanel.panel(null, ws, zones,
+				(zone, to) -> ""));
+		return panel[0];
+	}
+
+	/** The text of the panel's label naming the pristine copy, or null when it shows none. */
+	static String notice(java.awt.Container in) {
+		if (in == null) {
+			return null;
+		}
+		for (java.awt.Component c : in.getComponents()) {
+			if (c instanceof javax.swing.JLabel && String.valueOf(((javax.swing.JLabel) c).getText()).contains("pristine copy")) {
+				return ((javax.swing.JLabel) c).getText();
+			}
+			if (c instanceof java.awt.Container) {
+				String t = notice((java.awt.Container) c);
+				if (t != null) {
+					return t;
+				}
+			}
+		}
+		return null;
 	}
 
 	/** The panel the zone column shows: its way back to as shipped, pressed, re-links; the All button does every one. */

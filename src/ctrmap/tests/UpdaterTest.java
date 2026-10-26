@@ -42,6 +42,7 @@ public class UpdaterTest {
 		aSweepThatCannotRemoveTheStagedFolderSaysSo();
 		aFailedApplyIsSaidAndKeptForTheNextStart();
 		anApplySaysWhatItDid();
+		anAppliedUpdateIsStartedAgain();
 		anAnswerIsReadOnlyWhenItIsAnAnswer();
 		asidesAreSweptAway();
 		linksNameThisProject();
@@ -649,6 +650,80 @@ public class UpdaterTest {
 		File f = new File(new File(install, Updater.STAGE_DIR), "READY");
 		f.getParentFile().mkdirs();
 		write(f, "version=" + version + "\n");
+	}
+
+	/**
+	 * After an apply the installed editor is started again in its own folder, marked as reopened; a folder with no
+	 * launcher starts nothing; one that will not start leaves the installed update standing, unsaid as before; and the
+	 * real launch does start a process; and the apply starts only an update it installed. The 2026-10-17 sweep recorded
+	 * Updater 621, that check negated, as a HOLE: no suite may start the editor - so the start is asked of a launcher a
+	 * suite hands in, and the real one of `java`.
+	 */
+	private static void anAppliedUpdateIsStartedAgain() throws Exception {
+		Class<?> launcher = Class.forName("ctrmap.update.Updater$Launcher");
+		java.lang.reflect.Method again = Updater.class.getDeclaredMethod("startAgain", File.class, launcher);
+		again.setAccessible(true);
+		java.util.List<Object> asked = new java.util.ArrayList<>();
+		Object recording = java.lang.reflect.Proxy.newProxyInstance(launcher.getClassLoader(), new Class<?>[]{launcher},
+				(proxy, method, args) -> {
+					asked.add(args[0]);
+					asked.add(args[1]);
+					return null;
+				});
+		File installed = temp("started_again");
+		write(new File(installed, "CTRMap-F5.exe"), "a launcher");
+		again.invoke(null, installed, recording);
+		check("the installed editor is started again in its folder, marked as reopened: " + asked, asked.size() == 2
+				&& asked.get(0).equals(java.util.Arrays.asList(new File(installed, "CTRMap-F5.exe").getAbsolutePath(),
+						Updater.REOPENED_FLAG)) && installed.equals(asked.get(1)));
+		asked.clear();
+		again.invoke(null, temp("started_again_none"), recording);
+		check("a folder with no launcher starts nothing: " + asked, asked.isEmpty());
+		Object refusing = java.lang.reflect.Proxy.newProxyInstance(launcher.getClassLoader(), new Class<?>[]{launcher},
+				(proxy, method, args) -> {
+					throw new IOException("it would not start");
+				});
+		String left = "(nothing thrown)";
+		try {
+			again.invoke(null, installed, refusing);
+		} catch (java.lang.reflect.InvocationTargetException thrown) {
+			left = String.valueOf(thrown.getCause());
+		}
+		check("and a launcher that will not start leaves the installed update standing: " + left, "(nothing thrown)".equals(left));
+		java.lang.reflect.Method launch = Updater.class.getDeclaredMethod("launch", java.util.List.class, File.class);
+		launch.setAccessible(true);
+		File jvm = new File(new File(System.getProperty("java.home"), "bin"), File.separatorChar == '\\' ? "java.exe" : "java");
+		Process started = (Process) launch.invoke(null, java.util.Arrays.asList(jvm.getAbsolutePath(), "-version"),
+				temp("started_java"));
+		check("the real launch starts a process (java -version, exited " + (started == null ? "nothing" : started.waitFor())
+				+ ")", started != null && started.exitValue() == 0);
+		//THE APPLY THAT DECIDES IT (2026-10-24): Updater 621 was the check in runApply that starts only an installed update,
+		//negated - and no suite reached runApply. Its body after the wait is installAndStart, handed a launcher
+		java.lang.reflect.Method installAndStart = Updater.class.getDeclaredMethod("installAndStart", File.class, File.class,
+				java.io.PrintStream.class, launcher);
+		installAndStart.setAccessible(true);
+		java.io.PrintStream quiet = new java.io.PrintStream(new java.io.ByteArrayOutputStream(), true, "UTF-8");
+		File fine = temp("install_start_target");
+		write(new File(fine, "CTRMap-F5.exe"), "a launcher");
+		write(new File(fine, "app/CTRMap-F5.jar"), "OLD JAR");
+		File payload = temp("install_start_payload");
+		write(new File(payload, "CTRMap-F5.exe"), "a launcher");
+		write(new File(payload, "app/.jpackage.xml"), "<jpackage/>");
+		write(new File(payload, "app/CTRMap-F5.jar"), "NEW JAR");
+		new File(payload, "runtime").mkdirs();
+		asked.clear();
+		installAndStart.invoke(null, payload, fine, quiet, recording);
+		check("an update that installs is started again: " + asked, "NEW JAR".equals(read(new File(fine, "app/CTRMap-F5.jar")))
+				&& asked.size() == 2 && fine.equals(asked.get(1)));
+		File kept = temp("install_start_odd_target");
+		write(new File(kept, "CTRMap-F5.exe"), "a launcher");
+		write(new File(kept, "app/CTRMap-F5.jar"), "OLD JAR");
+		File odd = temp("install_start_odd_payload");
+		write(new File(odd, "notes.txt"), "not an app image");
+		asked.clear();
+		installAndStart.invoke(null, odd, kept, quiet, recording);
+		check("and a staged copy refused, nothing changed, is not: " + asked, asked.isEmpty()
+				&& "OLD JAR".equals(read(new File(kept, "app/CTRMap-F5.jar"))));
 	}
 
 	private static File temp(String name) throws IOException {

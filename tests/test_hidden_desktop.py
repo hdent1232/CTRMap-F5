@@ -22,6 +22,7 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _owner_switches  # noqa: E402,F401  - the owner's settings out of this process, before any hook can read one
 import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
 import bounded  # noqa: E402  - a deadline ends the child's whole tree
 
@@ -765,6 +766,25 @@ class AnUnattendedWindowIsNeverOnTheOwnersScreen(unittest.TestCase):
             self.assertEqual(code, 0, "CONTROL: the asker did not run: %r" % said)
             self.assertIn("MARK=1", said, "a program started on the unattended desktop with %s was not told it is"
                                           " there: %r" % (given, said))
+
+    def test_a_program_started_there_keeps_its_local_data_away_from_the_owners(self):
+        """THE OWNER'S LOG HELD PLANTED FAILURES (measured 2026-10-23): %LOCALAPPDATA%\\CTRMap\\logs\\ctrmap.0.log carried
+        "planted: a listener that throws" and two NullPointerExceptions from planted runs - a plant takes out the guard
+        that keeps a suite away from the real log, and the suite then wrote there. The editor's log and its vault live
+        under LOCALAPPDATA, and everything a run starts is started here, so this hands every one of them its own."""
+        asker = os.path.join(self.dir, "local.py")
+        with io.open(asker, "w", encoding="utf-8") as handle:
+            handle.write("import os" + LF + "print('LOCAL=%s' % os.environ.get('LOCALAPPDATA'))" + LF)
+        for given in ("no environment", "the caller's own environment"):
+            env = None if given == "no environment" else dict(os.environ)
+            code, said = hidden_desktop.run([sys.executable, "-B", asker], cwd=self.dir, env=env, timeout=60)
+            self.assertEqual(code, 0, "CONTROL: the asker did not run: %r" % said)
+            self.assertIn("LOCAL=%s" % hidden_desktop.LOCAL, said,
+                          "a program started with %s was handed the owner's local data folder: %r" % (given, said))
+        own = os.path.join(self.dir, "a-folder-of-its-own")
+        code, said = hidden_desktop.run([sys.executable, "-B", asker], cwd=self.dir,
+                                        env=dict(os.environ, LOCALAPPDATA=own), timeout=60)
+        self.assertIn("LOCAL=%s" % own, said, "a LOCALAPPDATA the caller chose on purpose was replaced: %r" % said)
 
     def test_a_desktop_that_cannot_be_made_runs_nothing_rather_than_running_it_on_the_owners(self):
         """The cheapest way past: when the second desktop cannot be made, run the program anyway - on the

@@ -27,6 +27,7 @@ import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _owner_switches  # noqa: E402,F401  - the owner's settings out of this process, before any hook can read one
 import test_bundle            # noqa: E402  - the harness's transcript, as its tests build it
 import test_bundle_action     # noqa: E402  - a project of stub rules a change can be held in
 

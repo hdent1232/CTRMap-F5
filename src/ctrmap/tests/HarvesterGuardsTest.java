@@ -478,7 +478,9 @@ public class HarvesterGuardsTest {
 		//what the run printed). Dropped, a catalog harvested without some regions said so nowhere
 		java.io.ByteArrayOutputStream heard = new java.io.ByteArrayOutputStream();
 		java.io.PrintStream said = new java.io.PrintStream(heard, true, "UTF-8");
-		int status = BuildingHarvester.run(new String[]{romfs.getAbsolutePath(), tsv.getAbsolutePath()}, said);
+		//EVERY 100TH CANDIDATE, not the 500th a full dump uses: the cut-down dump holds a few hundred, and the progress line
+		//was a line no suite reached (the 2026-10-17 sweep, BuildingHarvester 264, dropped, a HOLE)
+		int status = BuildingHarvester.run(new String[]{romfs.getAbsolutePath(), tsv.getAbsolutePath()}, said, 100);
 		System.out.print(heard.toString("UTF-8"));
 		check(status == 0, "the harvester ran on a dump and an output it was handed: status " + status);
 		if (status != 0) {
@@ -504,10 +506,21 @@ public class HarvesterGuardsTest {
 		long wrote = printed.stream().filter(l -> l.startsWith("wrote " + rows.size() + " entries -> ")).count();
 		boolean header = Files.readAllLines(tsv.toPath(), StandardCharsets.UTF_8).stream()
 				.anyMatch(l -> l.startsWith("# Every row passed the cut->stamp->validate gate."));
-		check(swept == 1 && progress == 0 && wrote == 1 && header, "the building harvest says what it swept and what it"
-				+ " wrote, no progress under 500 candidates, and its table says what its rows passed: " + swept
-				+ " sweep line(s), " + progress + " progress line(s), " + wrote + " wrote line(s), header "
-				+ (header ? "written" : "missing"));
+		//how many candidates it verified, from its own closing line: one progress line for each whole hundred
+		long candidates = -1;
+		for (String l : printed) {
+			java.util.regex.Matcher m = java.util.regex.Pattern.compile("^verified (\\d+) entries \\((\\d+) refused by the gate, (\\d+)"
+					+ " threw").matcher(l);
+			if (m.find()) {
+				candidates = Long.parseLong(m.group(1)) + Long.parseLong(m.group(2)) + Long.parseLong(m.group(3));
+			}
+		}
+		check(candidates >= 100, "control: the harvest verified " + candidates + " candidates - enough for a progress line at"
+				+ " every 100th to be asked");
+		check(swept == 1 && progress == candidates / 100 && wrote == 1 && header, "the building harvest says what it swept"
+				+ " and what it wrote, its progress at every 100th of " + candidates + " candidates, and its table says what"
+				+ " its rows passed: " + swept + " sweep line(s), " + progress + " progress line(s), " + wrote
+				+ " wrote line(s), header " + (header ? "written" : "missing"));
 		//and offers no box the curated catalog already offers, wired with its doors (the 2026-10-15 shared sweep,
 		//BuildingHarvester 192, negate-if, SURVIVED: nothing compared a harvest's boxes with the curated ones).
 		//Inverted, the boxes held back were the auto table's own, and the curated ones came back unwired

@@ -18,8 +18,9 @@ BEFORE A TOOL CALL, three doors:
   * the store and its start mark are written only by `request_ledger.py`. A Write or Edit naming
     either, or a command naming either, is refused - `show` reads the ledger;
   * a launch carrying the review token must be EXACTLY the review the ledger owes, on the declared
-    model and agent, and synchronous: a reviewer handed a different prompt is not independent,
-    and one running in the background has no verdict when the turn tries to end;
+    model and agent, in this tree: a reviewer handed a different prompt is not independent. How
+    it runs is not asked - one running in the background holds the turn open until the harness
+    delivers its completion, and a second one is refused while it runs (2026-10-23);
   * a launch for a state that already has its verdict is refused - a PASS needs no second one,
     and a FAIL is answered by changing the items, not by asking again.
 

@@ -1,7 +1,6 @@
 package ctrmap.formats.cameradata;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 
 import ctrmap.util.LittleEndianDataInputStream;
@@ -141,13 +140,8 @@ public class CameraData {
 
 	/** The record as {@link #write} puts it in the table - what equality and {@link #keep} compare. */
 	public byte[] bytes() {
-		ByteArrayOutputStream out = new ByteArrayOutputStream();
-		try {
-			write(new LittleEndianDataOutputStream(out));
-		} catch (IOException cannotWrite) {
-			throw new java.io.UncheckedIOException(cannotWrite);
-		}
-		return out.toByteArray();
+		//through the one in-memory write (Bytes.written): a catch here was a line no input reaches (2026-10-17 sweep)
+		return ctrmap.util.Bytes.written(this::write);
 	}
 
 	/** An independent copy, its coordinates included: its own bytes read back. */

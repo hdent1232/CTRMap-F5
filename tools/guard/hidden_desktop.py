@@ -30,6 +30,22 @@ import bounded  # noqa: E402  - a deadline ends the child's whole tree
 DESKTOP = "ctrmap-unattended"
 LF = chr(10)
 
+#: Where everything started here keeps its local data - the editor's log and its vault - and never in the owner's
+#: (2026-10-24). The owner's own log held "planted: a listener that throws" and two NullPointerExceptions from planted
+#: runs: a plant takes out the very guard that keeps a suite away from the real log, and the suite then writes there.
+#: The log and the vault both live under LOCALAPPDATA, so every program started here is handed this one instead.
+LOCAL = os.path.join(tempfile.gettempdir(), "ctrmap-unattended-local")
+
+
+def environment(env=None):
+    """The environment a program started here gets: `env` (this process's own by default), marked as started here,
+    and with its local data in LOCAL - unless the caller handed a LOCALAPPDATA of its own, on purpose."""
+    out = dict(os.environ if env is None else env, CTRMAP_ON_UNATTENDED_DESKTOP="1")
+    if out.get("LOCALAPPDATA") == os.environ.get("LOCALAPPDATA"):
+        os.makedirs(LOCAL, exist_ok=True)
+        out["LOCALAPPDATA"] = LOCAL
+    return out
+
 _GENERIC_ALL = 0x10000000
 _CREATE_SUSPENDED = 0x00000004
 _CREATE_UNICODE_ENVIRONMENT = 0x00000400
@@ -142,7 +158,7 @@ def run(argv, cwd=None, env=None, timeout=None, stream=None):
     desktop or the process cannot be made - it is never run on the owner's."""
     if os.name != "nt":
         try:
-            done = bounded.run(argv, cwd=cwd, env=env, capture_output=True, text=True, errors="replace",
+            done = bounded.run(argv, cwd=cwd, env=environment(env), capture_output=True, text=True, errors="replace",
                                timeout=timeout, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except subprocess.TimeoutExpired as late:
             out = late.stdout or ""
@@ -171,7 +187,7 @@ def run(argv, cwd=None, env=None, timeout=None, stream=None):
         #EVERYTHING STARTED HERE KNOWS IT IS HERE (2026-10-12). Two callers marked the child and replant did not, so
         #a suite it ran started build.ps1 and package.ps1 in a scratch tree, each moved itself here AGAIN through a
         #hidden_desktop.py the scratch tree has not got, and RuleRefusalsTest failed only outside the battery
-        block = _environment_block(dict(os.environ if env is None else env, CTRMAP_ON_UNATTENDED_DESKTOP="1"))
+        block = _environment_block(environment(env))
         made = False
         for extra in (_CREATE_BREAKAWAY_FROM_JOB, 0):
             if k32.CreateProcessW(None, subprocess.list2cmdline(argv), None, None, True, flags | extra,

@@ -55,6 +55,7 @@ public class HandleCloseTest {
 			aTextFileThatDoesNotReadIsNotOffered();
 			aPrefabCannotAskForMoreThanItHolds();
 			aMissingResourceIsABrokenBuild();
+			aWriteOrReadInMemoryThatFailsIsSaid();
 		} finally {
 			ctrmap.Ui.stopRecording();
 			Workspace.reset();
@@ -509,6 +510,32 @@ public class HandleCloseTest {
 		} catch (Throwable t) {
 			return t.getClass().getSimpleName() + ": " + t.getMessage();
 		}
+	}
+
+	/**
+	 * A record written to memory that fails is SAID - through the one helper of its kind (2026-10-24). A format's own
+	 * catch around a write into memory was a line no input reaches, and the 2026-10-17 sweep recorded it as a hole
+	 * (CameraData 148): it goes through ctrmap.util.Bytes.written now, and here is the input that reaches its catch - a
+	 * writing that refuses. (NPCRegistry 106, the read, has no catch left: NpcRegistryTest.)
+	 */
+	static void aWriteOrReadInMemoryThatFailsIsSaid() {
+		System.out.println("--- a write to memory that fails is said, never swallowed");
+		byte[] two = ctrmap.util.Bytes.written(out -> {
+			out.writeShort((short) 0x0201);
+		});
+		check(java.util.Arrays.equals(two, new byte[]{1, 2}), "control: a writing's bytes come back as written, little-endian: "
+				+ java.util.Arrays.toString(two));
+		String said;
+		try {
+			ctrmap.util.Bytes.written(out -> {
+				throw new java.io.IOException("a value this record cannot hold");
+			});
+			said = "nothing was said";
+		} catch (java.io.UncheckedIOException refused) {
+			said = refused.getMessage();
+		}
+		check(said.contains("could not be written") && said.contains("a value this record cannot hold"),
+				"a writing that refuses is said, with its own reason: " + said);
 	}
 
 	static void check(boolean ok, String what) {

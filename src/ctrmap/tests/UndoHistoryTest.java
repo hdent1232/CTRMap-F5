@@ -787,6 +787,49 @@ public class UndoHistoryTest {
 			}
 		}
 		check(records == 4, "every record kind the zone's entities hold is flat (" + records + " of 4 copied)");
+		aFieldThatCannotBeReadOrWrittenIsSaid();
+	}
+
+	/** Refuses every write: a static final field, which set() refuses even made accessible. */
+	static final class Constant {
+
+		static final String FIXED = "fixed";
+		private int hidden = 3;
+	}
+
+	/**
+	 * A field FlatCopy cannot read or write is said, naming it (2026-10-24). Every field it copies is made accessible
+	 * first, so the catch each of its loops kept was a line no record reached - the 2026-10-17 sweep recorded FlatCopy 57
+	 * as a HOLE. Its loops read and write through one read and one write now, and those are handed what refuses: a
+	 * private field never made accessible, and a static final field, which set() refuses whatever is done to it.
+	 */
+	static void aFieldThatCannotBeReadOrWrittenIsSaid() throws Exception {
+		java.lang.reflect.Method read = FlatCopy.class.getDeclaredMethod("read", java.lang.reflect.Field.class, Object.class);
+		java.lang.reflect.Method write = FlatCopy.class.getDeclaredMethod("write", java.lang.reflect.Field.class, Object.class,
+				Object.class);
+		read.setAccessible(true);
+		write.setAccessible(true);
+		java.lang.reflect.Field hidden = Constant.class.getDeclaredField("hidden");
+		java.lang.reflect.Field fixed = Constant.class.getDeclaredField("FIXED");
+		fixed.setAccessible(true);
+		check(fixed.get(null).equals("fixed"), "control: the static final field reads once made accessible");
+		String unread = said(read, hidden, new Constant());
+		check(unread.contains("Constant.hidden could not be read"), "a field that cannot be read is said, naming it: " + unread);
+		String unwritten = said(write, fixed, null, "other");
+		check(unwritten.contains("Constant.FIXED could not be written") && "fixed".equals(fixed.get(null)),
+				"and one that cannot be written is said, naming it, its value kept: " + unwritten);
+	}
+
+	/** What a FlatCopy helper said when handed {@code args}: its refusal's words, or that it said nothing. */
+	static String said(java.lang.reflect.Method m, Object... args) {
+		try {
+			m.invoke(null, args);
+			return "(nothing was thrown)";
+		} catch (java.lang.reflect.InvocationTargetException thrown) {
+			return String.valueOf(thrown.getCause().getMessage());
+		} catch (IllegalAccessException cannot) {
+			return "the helper could not be asked: " + cannot;
+		}
 	}
 
 	static void theZonesEntitiesComeBack() throws Exception {

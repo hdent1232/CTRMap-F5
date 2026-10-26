@@ -199,13 +199,34 @@ public class Workspace {
 	 * and a static would be a tenth global on a class whose statics are counted (GlobalStateTest).
 	 */
 	public static WorkspaceSession validate(Component parent, boolean showErrors, java.util.List<String> problems) {
+		return validate(parent, showErrors, problems, open());
+	}
+
+	/**
+	 * The game the settings name, opened and read - and NOTHING said about it yet: no dialog, no session installed.
+	 * {@link #validate(Component, boolean, java.util.List, Opening)} says what there is to say and installs it.
+	 *
+	 * <p>TWO HALVES SO THE WINDOW NEVER WAITS ON THE ARCHIVES (2026-10-24). Start-up ran validate on the event thread
+	 * after the window was shown, so every launch froze the freshly shown window while the workspace's archives were
+	 * parsed - measured through the real window, 310-316 ms, half of it GARC.parse under WorkspaceSession.open, where
+	 * 1.0.3 froze it 0 ms. The window now asks for this half before it shows, and keeps the dialogs for after, when they
+	 * have a window to stand over.
+	 */
+	public static Opening open() {
 		install(null);
-		WorkspaceSession opened;
+		return opening(WORKSPACE_PATH, GAMEDIR_PATH);
+	}
+
+	/**
+	 * The opening itself, from the two folders handed in: it reads no static and installs nothing, so it can run on a
+	 * worker while the event thread owns every field it would otherwise share (EdtReachTest counts them).
+	 */
+	private static Opening opening(String workspace, String game) {
 		try {
-			opened = WorkspaceSession.open(WORKSPACE_PATH == null ? null : new File(WORKSPACE_PATH),
-					GAMEDIR_PATH == null ? null : new File(GAMEDIR_PATH));
+			WorkspaceSession opened = WorkspaceSession.open(workspace == null ? null : new File(workspace),
+					game == null ? null : new File(game));
 			opened.prepareDirectories();
-			reportSnapshot(opened.snapshotOriginals());
+			WorkspaceSession.SnapshotReport snapshot = opened.snapshotOriginals();
 			//the location names are read from the session that was just opened, NOW,
 			//so a game whose text lacks them is refused here rather than at the first
 			//zone dropdown (F231). They are kept in that session's own store (F218),
@@ -215,8 +236,9 @@ public class Workspace {
 			//picker; a pack's emptied store reads them again when next asked.
 			LocationNames.loadFromGarc(opened);
 			ctrmap.formats.pokedata.PokeData.of(opened);
+			return new Opening(opened, snapshot, null);
 		} catch (WorkspaceSession.OpenFailed ex) {
-			return failedToOpen(parent, showErrors, ex.problems(), problems);
+			return new Opening(null, null, ex.problems());
 		} catch (RuntimeException ex) {
 			//ANY FAILURE, NOT ONLY A MISSING FILE (F231). Only OpenFailed was caught,
 			//and that covers files that are absent. A game folder whose archives are
@@ -225,15 +247,79 @@ public class Workspace {
 			//the old session already gone (install(null) above) and no caller ever
 			//reaching onWorkspaceOpened(null) - the method written to close the zone
 			//that was open, so its editors were left live over no workspace at all.
-			return failedToOpen(parent, showErrors,
-					java.util.Collections.singletonList("The game could not be opened: " + Ui.reason(ex)), problems);
+			return new Opening(null, null,
+					java.util.Collections.singletonList("The game could not be opened: " + Ui.reason(ex)));
 		}
-		if (showErrors && !opened.openWarnings().isEmpty()) {
-			Ui.message(parent, "The game opened, but:\n\n" + String.join("\n", opened.openWarnings()),
+	}
+
+	/** What {@link #open()} found: the session and what its snapshot step reported, or why the game did not open. */
+	public static final class Opening {
+		final WorkspaceSession opened;
+		final WorkspaceSession.SnapshotReport snapshot;
+		final java.util.List<String> problems;
+
+		Opening(WorkspaceSession opened, WorkspaceSession.SnapshotReport snapshot, java.util.List<String> problems) {
+			this.opened = opened;
+			this.snapshot = snapshot;
+			this.problems = problems;
+		}
+	}
+
+	/**
+	 * {@link #open()} on a worker of its own, so the window is built while the archives open (2026-10-24). Opened on the
+	 * event thread before the window showed, they held it off the screen a further 400-525 ms of every launch (sampled
+	 * every 50 ms through the real window on copies of the owner's workspace and game) - after OpenGL's start-up, the
+	 * largest part of the 0.35 s by which the window still came up later than 1.0.3's. The opening says nothing and
+	 * touches no Swing - EdtReachTest follows this worker's whole reach to prove it - so nothing it does waits on the
+	 * event thread that waits on it in {@link #await}. It drops no session: start-up has none to drop.
+	 */
+	public static java.util.concurrent.Future<Opening> openBeside() {
+		//READ HERE, on the thread that asks: the worker is handed the two folders and reads no static, so no field is
+		//written by one thread while another reads it unlocked
+		final String workspace = WORKSPACE_PATH;
+		final String game = GAMEDIR_PATH;
+		javax.swing.SwingWorker<Opening, Void> opening = new javax.swing.SwingWorker<Opening, Void>() {
+			@Override
+			protected Opening doInBackground() {
+				return opening(workspace, game);
+			}
+		};
+		opening.execute();
+		return opening;
+	}
+
+	/** What {@link #openBeside} found, once it has: {@link #open()}'s answer, or why there is none. */
+	public static Opening await(java.util.concurrent.Future<Opening> opening) {
+		try {
+			return opening.get();
+		} catch (InterruptedException ex) {
+			Thread.currentThread().interrupt();
+			return new Opening(null, null, java.util.Collections.singletonList(
+					"The game was still opening when the editor was interrupted, so it is not open."));
+		} catch (java.util.concurrent.ExecutionException ex) {
+			//open() turns every RuntimeException into an Opening, so what arrives here is an Error: not a game that
+			//would not open, and not to be said as one
+			if (ex.getCause() instanceof Error) {
+				throw (Error) ex.getCause();
+			}
+			return new Opening(null, null, java.util.Collections.singletonList(
+					"The game could not be opened: " + Ui.reason(ex.getCause())));
+		}
+	}
+
+	/** {@link #validate(Component, boolean, java.util.List)} over a game {@link #open()} already opened: what it says, and the install. */
+	public static WorkspaceSession validate(Component parent, boolean showErrors, java.util.List<String> problems,
+			Opening opening) {
+		if (opening.opened == null) {
+			return failedToOpen(parent, showErrors, opening.problems, problems);
+		}
+		reportSnapshot(opening.snapshot);
+		if (showErrors && !opening.opened.openWarnings().isEmpty()) {
+			Ui.message(parent, "The game opened, but:\n\n" + String.join("\n", opening.opened.openWarnings()),
 					"Damaged archive", JOptionPane.WARNING_MESSAGE);
 		}
-		install(opened);
-		return opened;
+		install(opening.opened);
+		return opening.opened;
 	}
 
 	/** Hands why validate failed to {@code out} and, when asked to, shows it; always answers null. */

@@ -575,7 +575,14 @@ def held_plant_keys(files, held=None):
     of 729 held plants, 10 no longer reddened - one of them recorded red that morning and emptied
     by the next edit to its own file - and in seven of the ten the change that did it touched the
     plant's own file. Nothing had driven any of them since the day each was added.
+
+    A KEY'S TEST FILE IS WHERE prove_plants LOOKS FOR IT (`test_files`): a bare name is a suite in
+    `tests/` - matched by its name too, so a suite a project installed elsewhere still is - and a
+    path is a declared runner's own file. Matched by bare names alone, no path-keyed plant was ever
+    driven by a change to its test: measured 2026-10-23, 349 of one project's 963 held plants keyed
+    so, and a commit changing two of their test files left 51 of them undriven.
     """
+    import prove_plants
     held = head_plants() if held is None else held
     if files is None or held is None:
         return None
@@ -583,7 +590,8 @@ def held_plant_keys(files, held=None):
     names = {f.rsplit("/", 1)[-1] for f in changed}
     return sorted(key for key, entry in held.items()
                   if isinstance(entry, dict)
-                  and (entry.get("file") in changed or key.split("::", 1)[0] in names))
+                  and (entry.get("file") in changed or key.split("::", 1)[0] in names
+                       or bool(set(prove_plants.test_files(key)) & changed)))
 
 
 def _own_entries(held, key):
@@ -811,7 +819,8 @@ def plants_that_leave(message, files, head=None, index=None, read=None):
                        "the change that removes its test" % (key, homes[0]))
         else:
             try:
-                still = pp.test_exists(key, read=read)
+                still = pp.test_exists(key, read=read,
+                                       named=((index.get("withdrawn") or {}).get(key) or {}).get("must_say"))
             except OSError as exc:
                 still = None
                 out.append("whether the test %s names is gone cannot be read from git's index "

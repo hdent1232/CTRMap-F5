@@ -26,6 +26,14 @@ the honest work as well, and a guard that refuses honest work is a guard that ge
 off. Programs that write through code the shell cannot see are refused where they run, not
 here.
 
+NOR A COPY IN THE TEMP FOLDER. The refusal below tells whoever was refused to work on a copy
+under the scratch directory, and until 2026-10-24 a copy named the way the game is named was
+refused there too: measuring 1.0.4 on copies of the owner's workspace and game needed the copies
+renamed (ws, game) before they could be written at all. A path is judged by the folder it
+really is - `..` and links resolved, a relative one from the folder the call runs in - and one
+inside the system's temp folder is a copy, never the owner's data. A path that cannot be
+resolved (a variable, a folder the call does not name) is judged by its name, as before.
+
 The roots are data: `readonly_paths.txt` beside this file, one path component per line, so
 this hook stays byte-identical across projects.
 
@@ -35,6 +43,7 @@ data and their decision, and it should take a decision.
 import os
 import re
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import hook_env                                   # noqa: E402
@@ -77,6 +86,35 @@ def under_a_protected_root(path):
             if part == root:
                 return root
     return None
+
+
+def _drive_spelled(path):
+    """`/c/x` - Git Bash's name for `C:/x` - as `C:/x` on Windows, when that drive is there and no
+    folder `/c` stands at the root of the current one; anything else as given."""
+    if (os.name == "nt" and len(path) >= 2 and path[0] == "/" and path[1].isalpha()
+            and (len(path) == 2 or path[2] in "/" + chr(92)) and not os.path.isdir(path[:2])
+            and os.path.isdir(path[1] + ":" + os.sep)):
+        return path[1].upper() + ":/" + path[3:]
+    return path
+
+
+def a_scratch_copy(path, base):
+    """True when `path`, judged from the folder `base` (the call's own), lies inside the system's
+    temp folder - a copy, which no owner's game is. False whenever that cannot be told: a variable,
+    a home folder, a wildcard, a relative path with no folder to judge it from."""
+    path = path.strip().strip(chr(34) + chr(39))
+    if not path or any(c in path for c in "$%*?") or path.startswith("~"):
+        return False
+    path = _drive_spelled(path)
+    if not shellin.absolute(path):
+        if not base or not shellin.absolute(base):
+            return False
+        path = os.path.join(_drive_spelled(base), path)
+    #REALPATH, NOT ABSPATH: `..` climbs out and a junction inside the temp folder can stand on the
+    #real dump; both resolve to the folder actually written
+    full = os.path.normcase(os.path.realpath(path))
+    scratch = os.path.normcase(os.path.realpath(tempfile.gettempdir()))
+    return full.startswith(scratch.rstrip(os.sep) + os.sep)
 
 
 #: Bourne and PowerShell spellings of "this argument is about to be written".
@@ -274,15 +312,16 @@ def _crude_targets(command):
     return out
 
 
-def verdict(command, where=""):
+def verdict(command, where="", base=None):
     """(deny, reason) for one shell command, run in `where` - the folder it moved to, relative to
     the call's own ("" when it did not move; see shellin.each_located). `cd RomFS && rm a/0/1/3`
     deletes from the dump although no argument names it, so a relative target is judged where it
-    lands. Separated so it can be tested directly."""
+    lands. `base` is the call's own folder, which a copy in the temp folder is judged from; None
+    judges every path by its name. Separated so it can be tested directly."""
     for path, why in _targets(command):
         landed = path if not where or shellin.absolute(path) else os.path.join(where, path)
         root = under_a_protected_root(landed)
-        if root:
+        if root and not a_scratch_copy(landed, base):
             return True, refusal(landed, root, why)
     return False, None
 
@@ -308,10 +347,11 @@ def decide(payload):
     blind = shellin.unreadable(payload)
     if blind:
         return True, shellin.blind_refusal(HOOK, "; ".join(blind), BYPASS)
+    base = payload.get("cwd") if isinstance(payload.get("cwd"), str) else None
     #: the file-editing tools, read by shape - `file_path`, `notebook_path`, `path`
     for path in shellin.paths_written(payload):
         root = under_a_protected_root(path)
-        if root:
+        if root and not a_scratch_copy(path, base):
             return True, refusal(path, root, "a file-editing tool writes it directly")
     for command, where in shellin.located(payload):
         if where is None:
@@ -322,7 +362,7 @@ def decide(payload):
                 return True, refusal(blind_writes[0], "an UNKNOWN folder",
                                      "it writes after a move to a folder the command does not "
                                      "name, so where it lands cannot be told")
-        deny, reason = verdict(command, where or "")
+        deny, reason = verdict(command, where or "", base)
         if deny:
             return deny, reason
     return False, None

@@ -163,10 +163,16 @@ def ask(path, raw):
 #: THE HOOKS DIRECTORY IS THIS ONE, read from where this file sits. Spelled `.claude/hooks`, the
 #: repair route pointed at the wrong folder in a project that keeps the bundle's hooks beside a
 #: stack of its own - a broken bundle guard there could be repaired by nothing but `git`.
-REPAIR = (
-    r"^\s*git\b",
-    r"\.claude[/\\]" + re.escape(os.path.basename(HERE)) + r"[/\\]",
-)
+#:
+#: ASKED OF THE PARSED CALL, NEVER ITS RAW TEXT (2026-10-24). This was two patterns searched over
+#: the raw payload: `^\s*git\b`, and the folder between two separators. A Write's file_path
+#: arrives JSON-escaped - two characters between the names - and a command sits mid-line in
+#: one-line JSON, where `^git` never starts a line. MEASURED 2026-10-18 installing the bundle into
+#: CTRMap: a guard landed one write before the module it imports, crashed on load, and refused a
+#: Write of that module by either slash and a `git rev-parse`, until a payload whose CONTENT
+#: spelled the folder with forward slashes went through. So the folder is looked for in each path
+#: and command the call carries, decoded, either slash; and `git` in each program it RUNS.
+HOOKS_NAMED = re.compile(r"\.claude/+" + re.escape(os.path.basename(HERE)) + r"(?:/|$)", re.I)
 
 #: The code `ask` returns when a guard could not ANSWER - it raised, timed out, would not load,
 #: or has no entry point. Distinct from 2, which is a guard saying no, because the two need
@@ -175,16 +181,29 @@ REPAIR = (
 CRASHED = 3
 
 
-def repairs(raw):
-    """Is this call one that could FIX a broken guard? Read from the raw payload text.
+def repairs(raw, payload=None):
+    """Is this call one that could FIX a broken guard - does it name the hooks directory in any
+    path or command it carries, or run `git` in any command?
 
-    Deliberately crude - a substring of the whole payload rather than a parsed field - because
-    the shapes differ per tool: Bash carries `command`, Edit and Write carry `file_path`, and a
-    batching tool nests either. What they have in common is that the hooks directory, or `git`,
-    appears in the text. Being generous here costs a guard that has ALREADY CRASHED; being
-    strict costs the only route out of a wedged session.
+    The shapes differ per tool - Bash and PowerShell carry `command`, Edit and Write carry
+    `file_path`, and a batching tool nests either - so it asks `bundle_shell`, which already reads
+    every tool's shape at any depth, rather than the raw text (see HOOKS_NAMED for what that
+    cost). Being generous here costs a guard that has ALREADY CRASHED; being strict costs the only
+    route out of a wedged session.
     """
-    return any(re.search(pattern, raw or "", re.I | re.M) for pattern in REPAIR)
+    if payload is None:
+        try:
+            payload = json.loads(raw or "")
+        except ValueError:
+            return False
+    if not isinstance(payload, dict):
+        return False
+    commands = bundle_shell.commands(payload)
+    if any(HOOKS_NAMED.search(text.replace(chr(92), "/"))
+           for text in bundle_shell.paths(payload) + commands):
+        return True
+    return any(words and bundle_shell.program_of(words[0][0]) == "git"
+               for command in commands for words, _background in bundle_shell.runs(command))
 
 
 def denies(out):
@@ -308,7 +327,7 @@ def excused(raw, payload):
     so with `stop_hook_active`, and refusing again would spin forever over a file the turn may
     not be able to reach.
     """
-    if repairs(raw):
+    if repairs(raw, payload):
         return True
     return bool(isinstance(payload, dict) and not bundle_shell.is_tool_call(payload)
                 and payload.get("stop_hook_active"))

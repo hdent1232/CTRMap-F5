@@ -51,6 +51,21 @@ public class MaterialImportTest {
 			String missing = refusal(() -> TerrainCatalog.ensureCliffMaterial(shortOne, model));
 			check(missing.contains("Could not import") && missing.contains("the pristine copy holds no region "),
 					"a cliff donor region the snapshot does not hold is refused, naming it: " + missing);
+			//WHAT THE APPENDER RETURNS, asked (the 2026-10-17 sweep, TerrainCatalog 450 and 458, dropped and negated: HOLES,
+			//"no input reaches it short of breaking the appender"): appenders handed in through the seam, over a snapshot
+			//whose regions hold a real map model
+			WorkspaceSession modelled = game("modelled", 654, model);
+			String asIs = refusal(() -> TerrainCatalog.ensureCliffMaterial(modelled, model, (m, donor, mesh, name) -> m));
+			check(asIs.contains("Could not import") && asIs.contains("the append produced no mesh named ctr_gake"),
+					"an append that names no mesh is refused, naming the material: " + asIs);
+			String clean = refusal(() -> TerrainCatalog.ensureCliffMaterial(modelled, model,
+					(m, donor, mesh, name) -> renamed(m, "Material", name)));
+			check(!clean.contains("produced no mesh") && !clean.contains("failed validation"),
+					"control: an append whose merge names the mesh and validates passes both checks: " + clean);
+			String invalid = refusal(() -> TerrainCatalog.ensureCliffMaterial(modelled, model,
+					(m, donor, mesh, name) -> culled(renamed(m, "Material", name))));
+			check(invalid.contains("Could not import") && invalid.contains("the merged model failed validation: SubMeshCullings empty"),
+					"and one whose merge does not validate is refused, saying why: " + invalid);
 			ctrmap.formats.h3d.BchMapModel probe = new ctrmap.formats.h3d.BchMapModel(model);
 			//the lookup both importers ask before cutting, and after (F092): each mesh's own material
 			//finds the FIRST mesh drawing it, and a name the model lacks finds none
@@ -121,8 +136,45 @@ public class MaterialImportTest {
 		return game(name, snapshot ? 654 : -1);
 	}
 
+	/** {@code model} with its one material named {@code to} instead of {@code from}: names of one length, written over. */
+	static byte[] renamed(byte[] model, String from, String to) {
+		byte[] was = (from + "\0").getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+		byte[] now = (to + "\0").getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+		if (was.length != now.length) {
+			throw new IllegalArgumentException("a rename in place needs names of one length: " + from + ", " + to);
+		}
+		byte[] out = model.clone();
+		int at = -1;
+		for (int i = 0; i + was.length <= out.length; i++) {
+			if (Arrays.equals(Arrays.copyOfRange(out, i, i + was.length), was)) {
+				if (at >= 0) {
+					throw new IllegalArgumentException(from + " is in the model more than once");
+				}
+				at = i;
+			}
+		}
+		if (at < 0) {
+			throw new IllegalArgumentException(from + " is not in the model");
+		}
+		System.arraycopy(now, 0, out, at, now.length);
+		return out;
+	}
+
+	/** {@code model} with its model header's SubMeshCullings count set to one: it parses, and says it should be none. */
+	static byte[] culled(byte[] model) {
+		byte[] out = model.clone();
+		int count = new ctrmap.formats.h3d.BchMapModel(model).modelPtr + 0x6C;
+		out[count] = 1;
+		return out;
+	}
+
 	/** A bare ORAS session; with a snapshot of {@code regions} regions with no map model in them, or none when -1. */
 	static WorkspaceSession game(String name, int regionCount) throws Exception {
+		return game(name, regionCount, null);
+	}
+
+	/** A bare ORAS session; with a snapshot of {@code regionCount} regions, each holding {@code model} - or no map model. */
+	static WorkspaceSession game(String name, int regionCount, byte[] model) throws Exception {
 		boolean snapshot = regionCount >= 0;
 		File root = Scratch.dir("ctrmap_matimport_" + name);
 		File ws = new File(root, "workspace");
@@ -134,7 +186,8 @@ public class MaterialImportTest {
 			File garc = new File(snap.getAbsolutePath() + GameProfile.of(GameType.ORAS).archivePath(ArchiveType.FIELD_DATA));
 			garc.getParentFile().mkdirs();
 			byte[][] regions = new byte[regionCount][];
-			Arrays.fill(regions, MapResizeTest.region("not a map model"));
+			Arrays.fill(regions, model == null ? MapResizeTest.region("not a map model")
+					: MapResizeTest.container(0x4752, "a region".getBytes(java.nio.charset.StandardCharsets.US_ASCII), model));
 			HandedGameTest.writeGarc(garc, regions);
 		}
 		Workspace.install(s);

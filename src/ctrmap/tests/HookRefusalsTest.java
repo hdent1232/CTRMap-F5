@@ -65,6 +65,7 @@ public class HookRefusalsTest {
 
 		gameDataIsReadOnly(hooks);
 		aReadOfTheGameIsNotAWrite(hooks);
+		aCopyInTheTempFolderIsNotTheGame(hooks);
 		everyPushNeedsItsOwnApproval(hooks);
 		sourceIsNotEditedWhileARunHoldsTheLock(bundleHooks);
 		aRunThatIsOverDoesNotRefuse(bundleHooks);
@@ -152,6 +153,43 @@ public class HookRefusalsTest {
 				+ QUOTE)), "a > inside a quoted argument is not a redirect");
 		check(!refuses(guard, bash("dd if=RomFS/a/0/1/3 of=/tmp/x")),
 				"and dd reading the dump is allowed");
+	}
+
+	/**
+	 * NOR IS A COPY IN THE TEMP FOLDER THE GAME (2026-10-24). The refusal tells whoever it refuses to work on a copy
+	 * under the scratch directory, and a copy named the way the game is named was refused there too: measuring 1.0.4 on
+	 * copies of the owner's workspace and game needed them renamed (ws, game) before they could be written. A path is
+	 * judged by the folder it really is - {@code ..} and links resolved, a relative one from the call's folder.
+	 */
+	static void aCopyInTheTempFolderIsNotTheGame(File hooks) throws Exception {
+		System.out.println("--- and a copy in the temp folder is not the game");
+		File guard = new File(hooks, "guard_game_data.py");
+		//THE GUARD'S TEMP FOLDER, asked of the python that runs it: Java's can be another spelling or another folder
+		Process p = new ProcessBuilder("python", "-B", "-c", "import tempfile, os; print(os.path.realpath(tempfile.gettempdir()))")
+				.redirectErrorStream(true).start();
+		String temp = CommitGuardTest.drain(p).trim().replace(File.separatorChar, '/');
+		p.waitFor();
+		check(new File(temp).isDirectory(), "python names its temp folder: " + temp);
+		String home = hooks.getCanonicalPath().replace(File.separatorChar, '/');
+		check(!home.toLowerCase(java.util.Locale.ROOT).startsWith(temp.toLowerCase(java.util.Locale.ROOT) + "/"),
+				"control: the refusals above were asked from " + home + ", outside the temp folder - from inside it, "
+				+ "every relative one would be a copy");
+		String copy = temp + "/ctrmap_gamecopy";
+		check(!refuses(guard, bash("rm -rf " + QUOTE + copy + "/RomFS/region" + QUOTE)),
+				"deleting from a copy of the dump in the temp folder is allowed");
+		check(!refuses(guard, writes("Write", copy + "/Workspace/notes.txt")),
+				"a file tool writing into a copy of the workspace in the temp folder is allowed");
+		check(!refusesIn(guard, bash("rm -rf RomFS/a"), copy, null),
+				"a relative write from a call whose folder is a copy in the temp folder is allowed");
+		check(refuses(guard, bash("rm -rf " + QUOTE + temp + "/../../RomFS/a" + QUOTE)),
+				"a path that climbs out of the temp folder by .. is judged where it lands, and refused");
+		check(refuses(guard, bash("rm -rf $TMP/RomFS/a")),
+				"a path through a variable cannot be told to be a copy, and is refused");
+		if (File.separatorChar == '\\' && temp.length() > 2 && temp.charAt(1) == ':') {
+			String gitBash = "/" + Character.toLowerCase(temp.charAt(0)) + temp.substring(2);
+			check(!refuses(guard, bash("rm -rf " + QUOTE + gitBash + "/ctrmap_gamecopy/RomFS/a" + QUOTE)),
+					"and Git Bash's spelling of the same copy (" + gitBash + ") is the same copy");
+		}
 	}
 
 	/**

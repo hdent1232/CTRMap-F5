@@ -44,6 +44,27 @@ ADAPT = ("PREFIX",)
 #: owner's.
 FOREIGN = ("CLAUDE_PROJECT_DIR", "CLAUDE_CODE_SESSION_ID", "JAVA_HOME", "CLAUDE_CONFIG_DIR")
 
+#: The names under `PREFIX` that the bundle's OWN tools set for a process they start, which nobody
+#: types: `PLANTED` tells a plant's own test which file is planted (`prove_plants`), and `JUDGING`
+#: is the stack of judges a write is being asked of (`bundle_rules`). Every other name under the
+#: prefix is the owner's - an override or a cap - and `owner_settings` names those.
+INTERNAL = ("PLANTED", "JUDGING")
+
+
+def owner_settings(environ=None):
+    """Every name in `environ` (the process's own by default) that is one of the owner's settings:
+    under `PREFIX`, and not one of the `INTERNAL` names the bundle's tools hand their children.
+
+    WHAT A TEST MUST NOT INHERIT. A hook's test asks what the hook does; run under the owner's
+    environment, it asks what the hook does under the owner's settings. Measured 2026-10-23: with
+    the owner's way past a held tree set for a repair, 24 tests that expect a held tree to refuse
+    failed, because every hook they drove inherited the switch - see `tests/_owner_switches.py`.
+    """
+    environ = os.environ if environ is None else environ
+    mine = PREFIX + "_"
+    internal = {name(suffix) for suffix in INTERNAL}
+    return sorted(key for key in environ if key.startswith(mine) and key not in internal)
+
 
 def name(suffix):
     """The full environment variable name for `suffix`, e.g. "ALLOW_PIPE"."""

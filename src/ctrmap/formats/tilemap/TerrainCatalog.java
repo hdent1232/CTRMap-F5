@@ -318,7 +318,7 @@ public class TerrainCatalog {
 	 * handed game, if it does not already carry it. See {@link #ensureCliffMaterial}.
 	 */
 	public static ImportResult ensureChurnMaterial(GameFiles files, byte[] model) {
-		return ensureNamedMaterial(files, model, churnDonor());
+		return ensureNamedMaterial(files, model, churnDonor(), BchModelAppender::append);
 	}
 
 	/**
@@ -333,10 +333,26 @@ public class TerrainCatalog {
 	 * the import failed, naming the material, the region and the reason
 	 */
 	public static ImportResult ensureCliffMaterial(GameFiles files, byte[] model) {
-		return ensureNamedMaterial(files, model, cliffDonor());
+		return ensureCliffMaterial(files, model, BchModelAppender::append);
 	}
 
-	private static ImportResult ensureNamedMaterial(GameFiles files, byte[] model, Donor d) {
+	/** How a donor's material is appended to a model: BchModelAppender's, unless a suite hands one that misbehaves. */
+	public interface Appender {
+
+		byte[] append(byte[] model, byte[] donorModel, int donorMesh, String injectName) throws Exception;
+	}
+
+	/**
+	 * {@link #ensureCliffMaterial(GameFiles, byte[])}, appending with {@code appender}: the program's call hands the real
+	 * appender, and a suite one that misbehaves - whose merge names no mesh, or does not validate - which the real
+	 * appender, validating both models, cannot be made to do by any input (the 2026-10-17 sweep, TerrainCatalog 450 and
+	 * 458, HOLES).
+	 */
+	public static ImportResult ensureCliffMaterial(GameFiles files, byte[] model, Appender appender) {
+		return ensureNamedMaterial(files, model, cliffDonor(), appender);
+	}
+
+	private static ImportResult ensureNamedMaterial(GameFiles files, byte[] model, Donor d, Appender appender) {
 		ImportResult r = new ImportResult();
 		r.model = model;
 		if (d == null) {
@@ -357,7 +373,7 @@ public class TerrainCatalog {
 				r.texturesNeeded.addAll(donorTextures(files, d));
 				return r;
 			}
-			cutFromPristine(files, model, d, r);
+			cutFromPristine(files, model, d, r, appender);
 		} catch (Exception ex) {
 			//thrown, not shown: the map would otherwise keep the material it
 			//already had, which may be the wrong rock, and the caller that owns
@@ -409,7 +425,7 @@ public class TerrainCatalog {
 			if (!BuildingCatalog.canCutDonor(files)) {
 				return r; //no snapshot to cut from yet - see ensureNamedMaterial
 			}
-			cutFromPristine(files, model, d, r);
+			cutFromPristine(files, model, d, r, BchModelAppender::append);
 		} catch (Exception ex) {
 			throw new IllegalStateException("Could not import a " + brush + " material into this map: "
 					+ ctrmap.util.Bytes.reason(ex), ex);
@@ -427,7 +443,8 @@ public class TerrainCatalog {
 	 * returning the model unchanged would paint on whatever material the map already has, which
 	 * both importers promise not to do. With no snapshot, the callers return before this.
 	 */
-	private static void cutFromPristine(GameFiles files, byte[] model, Donor d, ImportResult r) throws Exception {
+	private static void cutFromPristine(GameFiles files, byte[] model, Donor d, ImportResult r, Appender appender)
+			throws Exception {
 		GR donorGr = BuildingCatalog.pristineRegion(files, d.donorRegion);
 		if (donorGr == null) {
 			throw new IllegalStateException("the pristine copy holds no region " + d.donorRegion);
@@ -437,7 +454,7 @@ public class TerrainCatalog {
 			throw new IllegalStateException("the model in region " + d.donorRegion + " of the pristine copy is not"
 					+ " a map model");
 		}
-		byte[] merged = BchModelAppender.append(model, donorModel, d.donorMesh, d.injectName);
+		byte[] merged = appender.append(model, donorModel, d.donorMesh, d.injectName);
 		BchMapModel mm = new BchMapModel(merged);
 		//the append brings the donor's own terrain along - blank it, we only
 		//wanted the material; the painter fills it with the user's tiles.

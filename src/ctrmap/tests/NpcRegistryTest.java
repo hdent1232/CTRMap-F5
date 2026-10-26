@@ -54,6 +54,23 @@ public class NpcRegistryTest {
 		check(reg.store(), "a store is made");
 		check(Arrays.equals(Files.readAllBytes(f.toPath()), onDisk),
 				"and the file is the bytes it was read from: both dummies, in their order, and the 3 bytes after them");
+		//EVERY BYTE OF AN ENTRY IN ITS OWN PLACE (2026-10-24): an entry is read from its bytes at an offset now, and two
+		//fields swapped would round-trip unseen over the mostly-default entries above - so one entry of 24 distinct bytes
+		byte[] distinct = new byte[NPCRegistry.ENTRY];
+		for (int i = 0; i < distinct.length; i++) {
+			distinct[i] = (byte) (0x41 + i);
+		}
+		distinct[20] = 1; //the model, little-endian: the second the fake game stages, and still no byte repeated
+		distinct[21] = 0;
+		FakeGameFiles each = HandedGameTest.npcGame("hero", "rival").plant(ArchiveType.NPC_REGISTRIES, 3, distinct);
+		File g = each.staged(ArchiveType.NPC_REGISTRIES, 3);
+		NPCRegistry one = new NPCRegistry(g, each);
+		check(one.entries.size() == 1 && one.entries.containsKey(0x4241) && one.entries.get(0x4241).model == 1,
+				"control: one entry read, its UID the first two bytes little-endian and its model bytes 20-21 ("
+				+ one.entries.keySet() + ")");
+		one.modified = true;
+		check(one.store() && Arrays.equals(Files.readAllBytes(g.toPath()), distinct),
+				"and written back, each of its 24 distinct bytes is where it was read from");
 
 		System.out.println("--- an edit changes only what was edited, where it was (F081)");
 		NPCRegistryEntry e = reg.entries.get(7);

@@ -56,7 +56,9 @@ public class ToolHostTest {
 			try {
 				theZoneListComesBackFromATool();
 				extrasAndGameDataHaveAWayBack();
+				aToolOpenedFromAnotherTabTakesTheUserThere();
 				aToolHoldingAnEditIsAsked();
+				aHostWithNowhereToGoBackIsRefused();
 			} catch (Throwable t) {
 				t.printStackTrace(System.out);
 				check(false, "the zone tab could be built and driven: " + t);
@@ -217,6 +219,70 @@ public class ToolHostTest {
 			check(onScreen(browser, root) && onScreen(load, root),
 					"after " + way + " the zone list and '" + load.getText() + "' are on screen again");
 		}
+		//AND THE LIST IS GIVEN THE KEYBOARD (mutation sweep of 2026-10-25): inverted, the Zone list action put the list
+		//back and asked nothing for the keyboard, and every suite passed - a suite has no display, so no focus to read,
+		//and the action now answers which component it asked
+		TestWindow.inZoneColumn("Re-link zone", new JPanel());
+		JComponent asked = TestWindow.showZoneListAction();
+		layOut(root);
+		check(asked == browser.zoneRows() && onScreen(browser, root),
+				"the Zone list action puts the list back and asks the list itself for the keyboard: " + asked);
+	}
+
+	/**
+	 * A TOOL OPENED FROM ANOTHER TAB TAKES THE USER TO IT, and one that is refused leaves them where they were (mutation
+	 * sweep of 2026-10-25). The window selects its host's tab only when the host shows the tool, and every suite drove
+	 * the hosts with no tabs at all, so the selection returned at its first line and both halves, inverted, passed:
+	 * a zone tool opening in a column nobody was looking at, a refused one swapping the tab under the user.
+	 */
+	static void aToolOpenedFromAnotherTabTakesTheUserThere() throws Exception {
+		System.out.println("--- a tool opened from another tab takes the user to its tab, and a refused one leaves them there");
+		javax.swing.JTabbedPane tabs = new javax.swing.JTabbedPane();
+		for (String title : new String[]{"World Editor", "Zone Loader", "Extras"}) {
+			tabs.add(title, new JPanel());
+		}
+		//FRESH HOSTS: the cases above leave a pane holding an edit in Extras, which would refuse every tool shown here
+		ctrmap.LoadedZone owner = new ctrmap.LoadedZone();
+		ctrmap.humaninterface.tools.ToolSelection tools = new ctrmap.humaninterface.tools.ToolSelection();
+		TestWindow.buildZoneTab(MainframeShapeTest.realZonePanel(owner, tools), owner, tools);
+		TestWindow.buildExtrasTab(new JPanel(), new JPanel());
+		Object was = TestWindow.field("tabs");
+		TestWindow.field("tabs", tabs);
+		try {
+			String[][] hosts = {{"Zone Loader", "Re-link zone"}, {"Extras", "Raw archive browser (Builder)"}};
+			for (String[] host : hosts) {
+				for (boolean refused : new boolean[]{false, true}) {
+					tabs.setSelectedIndex(0);
+					JPanel tool = refused ? null : new JPanel();
+					if ("Extras".equals(host[0])) {
+						TestWindow.showInExtras(host[1], tool);
+					} else {
+						TestWindow.inZoneColumn(host[1], tool);
+					}
+					String now = tabs.getTitleAt(tabs.getSelectedIndex());
+					String want = refused ? "World Editor" : host[0];
+					check(want.equals(now), (refused ? "a refused " + host[1] + " leaves the user on the World Editor"
+							: host[1] + " opened from the World Editor takes the user to " + host[0]) + ": " + now);
+				}
+			}
+		} finally {
+			TestWindow.field("tabs", was);
+		}
+	}
+
+	/** A HOST WITH NOWHERE TO GO BACK TO IS REFUSED when it is built (mutation sweep of 2026-10-25), not at its first way back. */
+	static void aHostWithNowhereToGoBackIsRefused() {
+		System.out.println("--- a tool host with no home, or no name for it, is refused when it is built");
+		for (boolean noName : new boolean[]{true, false}) {
+			String refusal = null;
+			try {
+				new ctrmap.humaninterface.ToolHost(noName ? null : "the zone list", noName ? new JPanel() : null, true);
+			} catch (IllegalArgumentException expected) {
+				refusal = expected.getMessage();
+			}
+			check(refusal != null && refusal.contains("a home to go back to"),
+					"a host built with no " + (noName ? "name for its home" : "home") + " is refused: " + refusal);
+		}
 	}
 
 	/** Runs the Esc binding of the box a way back sits in, as the key would. */
@@ -303,6 +369,15 @@ public class ToolHostTest {
 		}
 		layOut(data);
 		check(!onScreen(editor, data) && waysBack(data).isEmpty(), "and its way back puts it away");
+		//AND THE PROGRAM PUTS ONE AWAY ITSELF when it is finished with it (mutation sweep of 2026-10-25): inverted, the
+		//editor stayed up after the program had cleared it, and every suite passed - none asked after the clear
+		TestWindow.showGameData("Trainer editor", editor);
+		layOut(data);
+		check(onScreen(editor, data), "control: the editor is on screen again");
+		TestWindow.clearGameData();
+		layOut(data);
+		check(!onScreen(editor, data) && waysBack(data).isEmpty(),
+				"an editor the program is finished with is put away by it, and no way back is left behind");
 	}
 
 	static void aToolHoldingAnEditIsAsked() {

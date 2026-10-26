@@ -48,13 +48,33 @@ public final class FlatCopy {
 			throw new IllegalArgumentException("a " + from.getClass().getSimpleName() + " cannot be copied into a "
 					+ to.getClass().getSimpleName());
 		}
+		for (Field f : fields(from.getClass())) {
+			Object v = read(f, from);
+			write(f, to, v != null && v.getClass().isArray() ? cloneArray(v) : v);   //flat() let through primitive arrays only
+		}
+	}
+
+	/**
+	 * A field's value, read - THE ONE PLACE A FIELD IS READ HERE (2026-10-24). Every field is made accessible before it is
+	 * read, so the IllegalAccessException each loop caught was a line no record reached (the 2026-10-17 sweep, FlatCopy 57,
+	 * a HOLE). A field that cannot be read is said, naming it; UndoHistoryTest hands one never made accessible.
+	 */
+	private static Object read(Field f, Object from) {
 		try {
-			for (Field f : fields(from.getClass())) {
-				Object v = f.get(from);
-				f.set(to, v != null && v.getClass().isArray() ? cloneArray(v) : v);   //flat() let through primitive arrays only
-			}
+			return f.get(from);
 		} catch (IllegalAccessException ex) {
-			throw new IllegalStateException(from.getClass().getName() + " could not be copied: " + ctrmap.Ui.reason(ex), ex);
+			throw new IllegalStateException(f.getDeclaringClass().getName() + "." + f.getName() + " could not be read: "
+					+ ctrmap.Ui.reason(ex), ex);
+		}
+	}
+
+	/** A field's value, written - the other half; UndoHistoryTest hands one a static final field, which refuses it. */
+	private static void write(Field f, Object to, Object value) {
+		try {
+			f.set(to, value);
+		} catch (IllegalAccessException ex) {
+			throw new IllegalStateException(f.getDeclaringClass().getName() + "." + f.getName() + " could not be written: "
+					+ ctrmap.Ui.reason(ex), ex);
 		}
 	}
 
@@ -66,27 +86,23 @@ public final class FlatCopy {
 		if (a == null || b == null || a.getClass() != b.getClass()) {
 			return false;
 		}
-		try {
-			for (Field f : fields(a.getClass())) {
-				Object x = f.get(a);
-				Object y = f.get(b);
-				if (x != null && x.getClass().isArray() && y != null && y.getClass().isArray()) {
-					if (!java.util.Objects.deepEquals(x, y)) {
-						return false;
-					}
-				} else if (f.getType().isPrimitive() || x instanceof String || x instanceof Enum || x instanceof Number
-						|| x instanceof Boolean || x instanceof Character) {
-					if (!java.util.Objects.equals(x, y)) {
-						return false;
-					}
-				} else if (x != y) {
+		for (Field f : fields(a.getClass())) {
+			Object x = read(f, a);
+			Object y = read(f, b);
+			if (x != null && x.getClass().isArray() && y != null && y.getClass().isArray()) {
+				if (!java.util.Objects.deepEquals(x, y)) {
 					return false;
 				}
+			} else if (f.getType().isPrimitive() || x instanceof String || x instanceof Enum || x instanceof Number
+					|| x instanceof Boolean || x instanceof Character) {
+				if (!java.util.Objects.equals(x, y)) {
+					return false;
+				}
+			} else if (x != y) {
+				return false;
 			}
-			return true;
-		} catch (IllegalAccessException ex) {
-			throw new IllegalStateException(a.getClass().getName() + " could not be compared: " + ctrmap.Ui.reason(ex), ex);
 		}
+		return true;
 	}
 
 	/** A list of copies. */

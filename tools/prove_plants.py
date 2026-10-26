@@ -334,27 +334,37 @@ def forget_bytecode(path):
         pass
 
 
-def put_back(path, original, attempts=5):
-    """Write `original` to `path` and read it back; None when it is there, else why not.
+def laid(path, data, attempts=5):
+    """Write `data` to `path` and read it back; None when it is there, else why not. Every write of
+    a planted file goes through here - the plant AND its restore.
 
     RETRIED, because on Windows a scanner or the indexer can hold a file for a moment after a
     subprocess that touched it exits - errno 22 on a write that is not reproducible afterwards.
-    One such failure on the source project left a planted launcher on disk.
+    One such failure on the source project left a planted launcher on disk. And the retry was
+    written into the restore alone: the PLANT's own write was a bare open, so a commit gate
+    re-driving the plants in commit_gate.py - whose tests run it as a subprocess, plant after plant
+    - met errno 22 on 2 of its 1,192 and refused the commit over 2 plants that "no longer redden",
+    both red when driven again (CTRMap, 2026-10-25).
     """
     why = None
     for attempt in range(attempts):
         try:
             with io.open(path, "wb") as handle:
-                handle.write(original)
+                handle.write(data)
             with io.open(path, "rb") as handle:
-                if handle.read() == original:
+                if handle.read() == data:
                     forget_bytecode(path)
                     return None
-            why = "the bytes read back differ from the original"
+            why = "the bytes read back differ from the ones written"
         except OSError as bad:
             why = str(bad)
         time.sleep(0.2 * (attempt + 1))
     return why
+
+
+def put_back(path, original, attempts=5):
+    """Write `original` back to `path` and read it back (`laid`); None when it is there, else why not."""
+    return laid(path, original, attempts)
 
 
 def not_restorable(root, rel):
@@ -430,9 +440,12 @@ def apply_and_run(entry, test_id, root=None, run=None, rebuild=None):
     # that drives a hook this plant broke must see the break, not a lock read as UNKNOWN.
     os.environ[bundle_rules.PLANTED] = entry["file"]
     try:
-        with io.open(path, "wb") as handle:
-            handle.write(planted_text.encode("utf-8"))
-        forget_bytecode(path)
+        unlaid = laid(path, planted_text.encode("utf-8"))
+        if unlaid:
+            # NOT ASKED: the test would answer about code with no defect in it, so its answer is
+            # no verdict on the plant - UNKNOWN, which a gate refuses as such, never as a survivor
+            return None, ("the plant could not be written into %s (%s) - not asked, which is neither "
+                          "a pass nor a kill" % (entry["file"], unlaid))
         if rebuild is not None:
             broken = rebuild()
             if broken:
@@ -476,10 +489,14 @@ def apply_and_run(entry, test_id, root=None, run=None, rebuild=None):
 #                "build": ["powershell", "-File", "build.ps1"],         optional; after the plant
 #                                                                       AND after the restore
 #                "unresolved": "Could not find or load main class",    text meaning "no such test"
-#                "ran":   "ALL PASS"}           optional: text only a run to a verdict prints. Without
+#                "ran":   "ALL PASS",           optional: text only a run to a verdict prints. Without
 #                                               it a plant needs a must_say, or it is never a kill
+#                "run_one": ["pytest", "{file}::{test}"]}      optional: ONE named test of a file
 #
-# `{name}` is the package-qualified class, `{class}` the bare class, `{file}` the path. Each file
+# `{name}` is the package-qualified class, `{class}` the bare class, `{file}` the path. A runner
+# whose test files hold many tests each may declare `run_one` beside `run`: a plant whose must_say
+# names a test its file defines (`_declared_test`) is driven by `run_one`, `{test}` that test's name
+# - the one test it is watched by - and any other plant by `run`, the whole file. Each file
 # `find` matches is one guard class, keyed `<file>::<Class>`, and is planted, driven and ratcheted
 # exactly as a Python test class is. A project that proves its tests another way declares
 # `"_tests": {"not_covered": "<80+ characters why>"}` instead; saying nothing is refused by the
@@ -541,8 +558,13 @@ def declared_classes(config=None, root=None):
     return out
 
 
-def declared_command(key, config, root=None):
-    """The declared `run` command for one plant key, its placeholders filled."""
+def declared_command(key, config, root=None, must_say=None):
+    """The declared `run` command for one plant key, its placeholders filled - or, where the runner
+    declares `run_one` and the plant's must_say names a test its file defines (`_declared_test`), that
+    command, its `{test}` the test's name: the one test the plant is watched by, not its whole file.
+
+    MEASURED 2026-10-18 on a pytest project: one commit's gate was to drive 204 plants on one test
+    file of 120 tests, the whole file 187 s a run - 10.6 hours, each plant watching one test of them."""
     import re
     rel, cls = key.split("::")[:2]
     try:
@@ -554,8 +576,12 @@ def declared_command(key, config, root=None):
     package = re.search(r"^\s*package\s+([\w.]+)\s*;", text, re.M)
     values = {"{name}": "%s.%s" % (package.group(1), cls) if package else cls,
               "{class}": cls, "{file}": rel}
+    command = config["run"]
+    if config.get("run_one") and _declared_test(text, must_say):
+        command = config["run_one"]
+        values["{test}"] = must_say
     out = []
-    for arg in config["run"]:
+    for arg in command:
         for mark, value in values.items():
             arg = str(arg).replace(mark, value)
         out.append(arg)
@@ -585,7 +611,7 @@ def _declared_child(argv, root=None, seed=None):
 def run_declared(config, root=None):
     """A `run(key, must_say)` over the project's declared runner - the same verdicts as Python's."""
     def run(key, must_say=None, seed=None):
-        code, said = _declared_child(declared_command(key, config, root), root, seed)
+        code, said = _declared_child(declared_command(key, config, root, must_say), root, seed)
         unresolved = config.get("unresolved")
         reddened, last = verdict(code, said, must_say, config.get("ran"),
                                  code == 127 or bool(unresolved and unresolved in said))
@@ -1162,7 +1188,7 @@ def retire(reasons, drive=None, root=None, classes=None):
             failed.append("%s did not redden, but its test did not simply pass either (%s) - "
                           "re-anchor it with `--reanchor`%s" % (
                               key, str(detail).strip()[:160],
-                              "" if test_exists(key, root) else
+                              "" if test_exists(key, root, named=held[key].get("must_say")) else
                               ", or, since the test it names is gone, `--withdraw` it"))
     if failed:
         return 1, out + ["REFUSING to retire:"] + ["   " + line for line in failed]
@@ -1235,18 +1261,54 @@ def _defines_test(text, cls, method):
     return has(cls, set())
 
 
-def test_exists(key, root=None, read=None):
+def _declared_test(text, named):
+    """For a Python test file a declared runner owns (pytest's functions, read by no class): False when
+    `named` - a plant's must_say that is a test's own name, an identifier beginning `test` - is PROVEN
+    absent from it: the file parses, imports nothing with `*`, and binds nothing by that name (no def,
+    class, assignment or import of it); True when it binds it; None when it cannot be told - a file that
+    does not parse, a must_say that is a message rather than a name.
+
+    MEASURED 2026-10-18 on a project this is installed in: its pytest suite's plants name their test by
+    must_say, and `test_exists` read any file a declared runner owns as "there while its file is" - so
+    sixteen plants on a deleted code path, whose tests went with it from a file that kept its others,
+    could leave the ledger only as dead tests kept under their old names."""
+    import ast
+    if not (isinstance(named, str) and named.isidentifier() and named.startswith("test")):
+        return None
+    try:
+        tree = ast.parse(text or "")
+    except SyntaxError:
+        return None
+    bound = False
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                if alias.name == "*":
+                    return None
+                bound = bound or (alias.asname or alias.name).split(".")[-1] == named
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            bound = bound or node.name == named
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            bound = bound or node.id == named
+    return bound
+
+
+def test_exists(key, root=None, read=None, named=None):
     """False only when the test `key` names is PROVEN gone from the tree; True otherwise.
 
     `read(rel)` is a file's text, or None when the file is not there - the disk under `root` by
     default; the commit gate hands in git's index, so it asks the tree the commit would record.
+    `named`: the plant's must_say, by which a Python file a declared runner owns is read down to the
+    test (`_declared_test`); without one, such a file is there while its file is.
 
     A QUERY THAT CANNOT READ ITS SUBJECT MUST NOT REPORT IT ABSENT. A test file that does not
-    parse, a class imported from elsewhere, a base defined in another file, a file a declared
-    runner owns: none of them can say a test is gone, so each answers that it is still here. The
-    cheapest way past `--withdraw` is otherwise to break a test file's syntax, and every plant on
-    it reads as orphaned. A Python suite this ledger reads whole (`natively_seen`) is read down to
-    the method, on the class or a base the file defines; anything else is there while its file is.
+    parse, a class imported from elsewhere, a base defined in another file, a declared runner's
+    file in a language this does not read, a must_say that is a message rather than a test's name:
+    none of them can say a test is gone, so each answers that it is still here. The cheapest way
+    past `--withdraw` is otherwise to break a test file's syntax, and every plant on it reads as
+    orphaned. A Python suite this ledger reads whole (`natively_seen`) is read down to the method,
+    on the class or a base the file defines; a declared runner's Python file down to the test its
+    plant's must_say names (`_declared_test`); anything else is there while its file is.
     """
     if read is None:
         def read(rel):
@@ -1261,9 +1323,11 @@ def test_exists(key, root=None, read=None):
         text = read(rel)
         if text is None:
             continue
-        if len(parts) < 3 or not natively_seen(rel, text):
-            return True
-        return _defines_test(text, parts[1], parts[2]) is not False
+        if natively_seen(rel, text):
+            return len(parts) < 3 or _defines_test(text, parts[1], parts[2]) is not False
+        if rel.endswith(".py"):
+            return _declared_test(text, named) is not False
+        return True
     return False
 
 
@@ -1289,9 +1353,9 @@ def withdraw(reasons, exists=None, root=None, classes=None):
     The commit then names each plant on a flush-left `Withdraws: <key> -- <reason>` line and
     changes the test file it named (`tools/commit_gate.py`), where `git log` keeps the argument.
     """
-    exists = exists or (lambda key: test_exists(key, root))
     ledger = load()
     held = ledger.get("plants") or {}
+    exists = exists or (lambda key: test_exists(key, root, named=(held.get(key) or {}).get("must_say")))
     failed = []
     for key, why in sorted(reasons.items()):
         if key not in held:
@@ -1633,10 +1697,11 @@ def main(argv):
         print("no plants recorded - nothing to drive, and that is not a pass")
         return 1
 
-    problems, driven = [], 0
+    problems, driven, matched = [], 0, 0
     for key in sorted(plants):
         if owed_only or (only and only not in key):
             continue
+        matched += 1
         entry = plants[key]
         for field in ("file", "old", "new", "site", "why"):
             if field not in entry:
@@ -1654,6 +1719,12 @@ def main(argv):
         if not reddened:
             print("         %s" % detail)
             problems.append("%s did NOT redden - %s" % (key, detail))
+    # NOTHING DRIVEN IS NOT A PASS for `--only` either: measured 2026-10-23, fifty-one keys read from a
+    # list written CRLF each carried a carriage return, matched no plant, and every run printed
+    # "0 plant(s) driven" and exited 0 - fifty-one passes over plants nothing drove.
+    if only and not owed_only and not matched:
+        problems.append("--only %r matches no plant in the ledger - nothing was driven, and that is "
+                        "not a pass" % only)
 
     print()
     # `--owed` DRIVES NO PLANT BY DESIGN, and saying "0 plant(s) driven" beside a commit gate that

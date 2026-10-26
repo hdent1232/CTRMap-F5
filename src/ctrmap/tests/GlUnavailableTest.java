@@ -40,8 +40,9 @@ import javax.swing.JScrollPane;
  * preview class or a new JOGL call is covered without being named here. Exempt: GlSupport, which is the
  * asking, and a drawable's own constructor, which runs only where a guarded construction put it.
  *
- * <p>ORDER: needs no dump and no display. The runtime half proves the placeholders only where OpenGL
- * cannot start, and says it skipped where it can - a drawable cannot be built without a display.
+ * <p>ORDER: needs no dump and no display. The runtime half proves the placeholders where OpenGL cannot
+ * start - in this JVM where that is so, and where it starts, in a second JVM whose JOGL is told by its own
+ * switches to offer no profile (2026-10-24: skipped where OpenGL started, the half never ran anywhere).
  *
  * Usage: java ctrmap.tests.GlUnavailableTest &lt;compiled classes root&gt;
  */
@@ -51,10 +52,19 @@ public class GlUnavailableTest {
 	static int skips = 0;
 
 	public static void main(String[] args) throws Exception {
+		if (args.length > 0 && WITHOUT_GL.equals(args[0])) {
+			whereJoglOffersNothing();
+			return;
+		}
 		File root = new File(args.length > 0 ? args[0] : "build/classes");
 		theAnswerIsAskedOnce();
-		aModelPreviewStandsWithoutGl();
-		theMapViewStandsWithoutGl();
+		openGlEsIsNotProbedOnWindows();
+		if (GlSupport.available()) {
+			inAJvmWithoutGl();
+		} else {
+			aModelPreviewStandsWithoutGl();
+			theMapViewStandsWithoutGl();
+		}
 		everyWayIntoGlAsksFirst(root);
 		onlyHeadlessSetsTheSwitch(root);
 		libShipsNativesForEveryPlatformTheLaunchersStart(root.getAbsoluteFile().getParentFile().getParentFile());
@@ -169,6 +179,55 @@ public class GlUnavailableTest {
 		}
 	}
 
+	/** The argument that runs this suite as the JVM where JOGL offers no profile. */
+	static final String WITHOUT_GL = "--without-gl";
+
+	/**
+	 * JOGL's OWN SWITCHES, which turn every profile off: on a machine where OpenGL starts, a JVM started with them is
+	 * a machine where it cannot. The sections that need OpenGL absent ran only where it was - skipped on every machine
+	 * this was run on (2026-10-24), so three plants on them could never be driven red, and the gate was passed only by
+	 * skipping it. Asked of JOGL itself in that JVM, so "it cannot start there" is measured, not assumed.
+	 */
+	static final String[] NO_PROFILES = {"-Djogl.disable.opengldesktop=true", "-Djogl.disable.opengles=true"};
+
+	/** The sections that need OpenGL absent, run in a JVM started with {@link #NO_PROFILES}; what it says is said here. */
+	static void inAJvmWithoutGl() throws Exception {
+		System.out.println("--- OpenGL starts here, so what needs it absent runs in a JVM JOGL is told to offer nothing");
+		File jvm = new File(System.getProperty("java.home"), "bin/java.exe");
+		if (!jvm.isFile()) {
+			jvm = new File(System.getProperty("java.home"), "bin/java");
+		}
+		List<String> command = new ArrayList<>();
+		command.add(jvm.getPath());
+		command.addAll(java.util.Arrays.asList(NO_PROFILES));
+		command.addAll(java.util.Arrays.asList("-cp", System.getProperty("java.class.path"),
+				GlUnavailableTest.class.getName(), WITHOUT_GL));
+		Process child = new ProcessBuilder(command).redirectErrorStream(true).start();
+		StringBuilder said = new StringBuilder();
+		try (java.io.BufferedReader in = new java.io.BufferedReader(new java.io.InputStreamReader(child.getInputStream(),
+				java.nio.charset.StandardCharsets.UTF_8))) {
+			for (String line = in.readLine(); line != null; line = in.readLine()) {
+				System.out.println(line);
+				said.append(line).append('\n');
+			}
+		}
+		int code = child.waitFor();
+		check(code == 0 && said.toString().contains("ALL PASS"), "and all of it passed there (exit " + code + ")");
+	}
+
+	/** This suite as the JVM {@link #inAJvmWithoutGl} starts: OpenGL absent, asked of JOGL, and what needs it absent. */
+	static void whereJoglOffersNothing() {
+		theAnswerIsAskedOnce();
+		check(!GlSupport.available(), "control: JOGL's own switches turned every profile off, so OpenGL does not start here: "
+				+ GlSupport.unavailable());
+		if (!GlSupport.available()) {
+			aModelPreviewStandsWithoutGl();
+			theMapViewStandsWithoutGl();
+		}
+		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
+		System.exit(fails == 0 ? 0 : 1);
+	}
+
 	static void theAnswerIsAskedOnce() {
 		System.out.println("--- whether OpenGL starts is asked once and kept, and is the truth");
 		String first = GlSupport.unavailable();
@@ -198,13 +257,34 @@ public class GlUnavailableTest {
 		check(asked, "and JOGL was asked by the first question, its answer kept - not answered without asking");
 	}
 
-	static void aModelPreviewStandsWithoutGl() {
-		System.out.println("--- a model preview is built where OpenGL cannot start, and says why");
-		if (GlSupport.available()) {
-			skips++;
-			Skip.section("OpenGL starts on this machine, so the placeholder is not what is built");
+	/**
+	 * OPENGL ES IS NOT PROBED ON WINDOWS (2026-10-24). JOGL 2.6.0's first question probes ES as well as desktop GL, and
+	 * nothing here asks for ES. Measured through the real window on copies of the owner's workspace and game, 3 launches
+	 * each, interleaved: OpenGL start-up 1650 ms and the window at 3832 ms; with JOGL's switch, 750 and 2674 ms - level
+	 * with 1.0.3's 2579. Asked of JOGL itself: its own flag, read in GLProfile's initialiser, says whether the switch
+	 * was set before it - a switch set after is a switch nobody reads.
+	 */
+	static void openGlEsIsNotProbedOnWindows() throws Exception {
+		System.out.println("--- OpenGL ES is not probed on Windows, where nothing asks for it - asked of JOGL's own flag");
+		boolean flag;
+		try {
+			flag = com.jogamp.opengl.GLProfile.class.getField("disableOpenGLES").getBoolean(null);
+		} catch (ReflectiveOperationException unreadable) {
+			check(false, "control: JOGL's GLProfile.disableOpenGLES can be read: " + unreadable);
 			return;
 		}
+		boolean windows = System.getProperty("os.name", "").startsWith("Windows");
+		if (windows) {
+			check(flag, "JOGL says OpenGL ES is off: the switch was set before GLProfile read it (property "
+					+ System.getProperty("jogl.disable.opengles") + ")");
+		} else {
+			check(System.getProperty("jogl.disable.opengles") == null && !flag,
+					"elsewhere JOGL keeps its own default - only Windows was measured");
+		}
+	}
+
+	static void aModelPreviewStandsWithoutGl() {
+		System.out.println("--- a model preview is built where OpenGL cannot start, and says why");
 		CustomH3DPreview preview;
 		try {
 			preview = new CustomH3DPreview();
@@ -239,11 +319,6 @@ public class GlUnavailableTest {
 
 	static void theMapViewStandsWithoutGl() {
 		System.out.println("--- the 2D map view is built where OpenGL cannot start, and resizes");
-		if (GlSupport.available()) {
-			skips++;
-			Skip.section("OpenGL starts on this machine, so the map view keeps its GL overlay");
-			return;
-		}
 		ToolSelection tools = new ToolSelection();
 		TileMapPanel map;
 		try {

@@ -29,6 +29,7 @@ proves nothing about it.
 
 Exit 0 when nothing is owed afterwards, 1 when something still is, 2 when it refused.
 """
+import base64
 import importlib.util
 import io
 import json
@@ -51,6 +52,37 @@ def _load(name, path):
     return module
 
 
+#: What a driver answers, in place of red, for a plant it SETTLED: retired in the bundle's ledger, and its test ran to
+#: a pass with the defect planted - so the defect cannot happen, and nothing can redden.
+SETTLED = "settled"
+
+#: How a plant a driver could not ask is said and recorded: owed still, and not as one that stayed green.
+UNASKED = "COULD NOT BE ASKED - "
+
+_RULE = []
+
+
+def _rule():
+    """The gate's own rule file, loaded once from its FILE (F184): what GONE and a run to a pass are called there."""
+    if not _RULE:
+        _RULE.append(_load("commit_guard_of_drive_owed_rule", os.path.join(HERE, "commit_guard.py")))
+    return _RULE[0]
+
+
+_PATHS = []
+
+
+def _masked(text):
+    """`text` with every name of this machine masked, as tools/owner_paths.py masks a finding - a suite's crash
+    names files by their full path, and the record this is written to is tracked (2026-10-24: a home directory in
+    not_red, refused by the owner_paths rule the moment after the drive wrote it)."""
+    if not _PATHS:
+        _PATHS.append(_load("owner_paths_of_drive_owed", os.path.join(ROOT, "tools", "owner_paths.py")).identifiers())
+    for kind, pattern in _PATHS[0]:
+        text = pattern.sub("<%s>" % kind, text)
+    return text
+
+
 def settle(record, results, subject):
     """The record after a drive. A plant `results` says reddened moves to `driven` with the tree it
     reddened against; one that did not stays owed, what it said kept in `not_red`; one the drive
@@ -64,6 +96,13 @@ def settle(record, results, subject):
         if result is None:
             return True
         red, detail = result
+        if red in (_rule().GONE, SETTLED):
+            #SETTLED BY A PROOF about this tree, with how: GONE is asked again at the commit, a run to a pass is not
+            driven[key] = dict({"settled": _masked(str(detail))[:300], "subject": subject,
+                                "how": _rule().GONE if red == _rule().GONE else _rule().RAN_TO_A_PASS},
+                               **({"plant": plant} if plant is not None else {"bundle": True}))
+            not_red.pop(key, None)
+            return False
         if red:
             #WHICH PLANT IT WAS, kept with the verdict: a verdict about a tree that has since changed is owed
             #again (reowed), and it can only be owed again as the plant it was
@@ -71,7 +110,7 @@ def settle(record, results, subject):
                                **({"plant": plant} if plant is not None else {"bundle": True}))
             not_red.pop(key, None)
             return False
-        not_red[key] = str(detail)[:300]
+        not_red[key] = _masked(str(detail))[:300]
         return True
     out["plants"] = [p for p in record.get("plants") or [] if still_owed(p.get("id"), p)]
     out["bundle_plants"] = [k for k in record.get("bundle_plants") or [] if still_owed(k)]
@@ -130,6 +169,59 @@ def run_output():
     return [magnitude.SERIES]
 
 
+#: THE READINGS A DRIVE HOLDS, journalled before it plants (2026-10-25). A stop from outside that cannot be caught
+#: runs no `finally` - on Windows every such stop is one (TerminateProcess: Stop-Process, a task's stop), elsewhere
+#: SIGKILL - and the SIGTERM handler in main is the POSIX half alone: the commit gate found its test skipped on win32,
+#: so on the one platform this project runs on, a drive stopped from outside left its planted readings in. The next
+#: drive asks this before it takes any reading of the tree (put_back_left). A dotfile at the root, where the records
+#: live, so it is no tree's subject, by shape.
+HELD = os.path.join(ROOT, ".drive-owed-held")
+
+_SHELL = []
+
+
+def _shell():
+    """bundle_shell - the bundle's one probe of whether a process is the one that wrote a lock - from its FILE."""
+    if not _SHELL:
+        folder = _load("bundle_hooks_of_drive_owed", os.path.join(ROOT, "tools", "bundle_hooks.py")).path(ROOT)
+        if folder not in sys.path:
+            sys.path.insert(0, folder)
+        _SHELL.append(_load("bundle_shell_of_drive_owed", os.path.join(folder, "bundle_shell.py")))
+    return _SHELL[0]
+
+
+def _hold(journal, held):
+    """Journal `held` ({path: bytes}) under this process's name before a defect is planted: see HELD."""
+    _write_record(journal, {"pid": os.getpid(), "started_epoch": _shell().process_started_at(os.getpid()),
+                            "files": {path: base64.b64encode(body).decode("ascii") for path, body in held.items()}})
+
+
+def put_back_left(journal):
+    """(None, what was put back or None), or (why this refuses, None). A journal whose drive is gone is put back
+    file by file, then removed. One whose drive may still run - ALIVE whenever that cannot be told, as
+    bundle_shell.alive answers - is that drive's own to put back; one that cannot be read is UNKNOWN, never
+    absent."""
+    if not journal or not os.path.exists(journal):
+        return None, None
+    try:
+        with io.open(journal, encoding="utf-8") as handle:
+            left = json.load(handle)
+        files = {path: base64.b64decode(body) for path, body in left["files"].items()}
+        holder = (left.get("pid"), left.get("started_epoch"))
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        return ("%s cannot be read (%s), so whether a drive killed from outside left planted readings in this tree"
+                " is UNKNOWN - put its files back by hand, then delete it" % (journal, exc)), None
+    if _shell().alive(*holder):
+        return ("%s names a drive that may still be running (pid %s): the readings it planted are its own to put"
+                " back - stop it, or delete the journal once it is gone" % (journal, holder[0])), None
+    for path, body in files.items():
+        with io.open(path, "wb") as handle:
+            handle.write(body)
+    os.remove(journal)
+    return None, ("put back %d reading(s) a drive killed from outside left planted (pid %s, gone): %s"
+                  % (len(files), holder[0], ", ".join(sorted(files))))
+
+
 #: A RUN OF HOURS RECORDS AS IT GOES. The record was written once, at the end: on 2026-10-11 the app
 #: hosting the session quit 154 plants into a 1,578-plant drive, and fifty minutes of verdicts went
 #: with it. Every CHECKPOINT plants the planted readings are put back, the tree is asked whether it is
@@ -152,6 +244,27 @@ def _copy_of(tree, where, root=ROOT):
     if os.path.isdir(build):
         shutil.copytree(build, os.path.join(where, "build"), ignore=shutil.ignore_patterns(".battery-running"))
     return None
+
+
+def copy_problem(where, subject, guard, root=ROOT):
+    """None when the copy at `where` digests to `subject`, this tree's; else why not, naming what this tree holds that
+    git's index - which every copy is made from - does not.
+
+    ASKED BEFORE A PLANT IS DRIVEN, NOT AFTER EVERY ONE IS (2026-10-24). A worker's verdict was compared with this tree
+    only when it was taken back: an untracked file here that no ignore rule named (.claude/settings.local.json) was part
+    of this tree's subject and of no copy, and 1,569 verdicts were refused as another tree's two hours later."""
+    import bounded
+    theirs = guard.source_digest(root=where, exclude=(guard.GATE_OWED,))
+    if theirs == subject:
+        return None
+    differ = set()
+    for args in (["git", "-C", root, "ls-files", "--others", "--exclude-standard"], ["git", "-C", root, "diff", "--name-only"]):
+        done = bounded.run(args, capture_output=True, text=True, errors="replace", timeout=600,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        differ.update(done.stdout.split())
+    return ("its copy digests to %s and this tree to %s, so every verdict it drove would be refused as another tree's -"
+            " this tree holds what git's index does not: %s" % (theirs, subject, ", ".join(sorted(differ)[:10]) or
+                                                                 "nothing git names (an ancestor's CLAUDE.md?)"))
 
 
 def _worker_root(index, root=ROOT):
@@ -190,9 +303,9 @@ def drive_in_copies(work, workers, record_path_in, subject, guard, log=print):
     def one(index):
         where = _worker_root(index)
         copies.append(where)
-        why = _copy_of(tree, where)
+        why = _copy_of(tree, where) or copy_problem(where, subject, guard)
         if why:
-            return index, where, why
+            return index, where, "worker %d: %s" % (index, why)
         keys = os.path.join(base, "w%d.keys" % index)
         with io.open(keys, "w", encoding="utf-8", newline=LF) as handle:
             handle.write(LF.join(shares[index]) + LF)
@@ -232,7 +345,8 @@ def take_back(index, share, theirs, subject, results, trouble):
     for key, said in (theirs.get("driven") or {}).items():
         if key in share:
             if said.get("subject") == subject:
-                results[key] = (True, "red")
+                results[key] = ((True, "red") if not said.get("settled") else
+                                (_rule().GONE if said.get("how") == _rule().GONE else SETTLED, said["settled"]))
             else:
                 trouble.append("worker %d drove %s on another tree (%s)" % (index, key, said.get("subject")))
     for key, said in (theirs.get("not_red") or {}).items():
@@ -260,7 +374,7 @@ def _write_record(path, settled):
 
 
 def main(argv, drive_own=None, drive_bundle=None, digest=None, stale=None, record_path=None, shape=None,
-         written=None, retired=None, checkpoint=CHECKPOINT):
+         written=None, retired=None, checkpoint=CHECKPOINT, proven=None, held_at=None, prove=None):
     #a word this does not read refuses the run, before anything runs (cli_words, 2026-10-10)
     import _cli
     #EVERY FLAG main READS IS ONE IT ACCEPTS (2026-10-12): --workers and --keys-from were read below and refused
@@ -320,12 +434,18 @@ def main(argv, drive_own=None, drive_bundle=None, digest=None, stale=None, recor
     if digest is None:
         def digest():
             return guard.source_digest(exclude=(guard.GATE_OWED,))
+    if proven is None and prove is None and (drive_own is None or drive_bundle is None):
+        #PROVEN UNDRIVABLE in the tree being driven - git's index, the tree the workers copy and the commit records -
+        #asked of the gate's own rule, so the drive and the commit agree on what a proof is
+        def prove(plants, keys):
+            return guard.proven_undrivable(plants, keys, guard.gate().index_reader())
     if drive_own is None or drive_bundle is None:
         gate = guard.gate()
         own = gate.project_ledger()
         prove_plants = _load("prove_plants_of_drive_owed", os.path.join(ROOT, "tools", "prove_plants.py"))
         with io.open(os.path.join(ROOT, gate.LEDGER), encoding="utf-8") as handle:
-            bundle = json.load(handle)["plants"]
+            held = json.load(handle)
+        bundle, bundle_retired = held["plants"], held.get("retired") or {}
         if drive_own is None:
             if not own:
                 sys.stderr.write("REFUSED: the project declares no prove command (_tests.ledger), so its"
@@ -336,6 +456,18 @@ def main(argv, drive_own=None, drive_bundle=None, digest=None, stale=None, recor
                 return gate._prove_in_project(own[2], key)
         if drive_bundle is None:
             def drive_bundle(key):
+                if key in bundle_retired and key not in bundle:
+                    #RETIRED IN THE BUNDLE: settled only when its test runs to a pass with the defect planted - the
+                    #bundle gate's own question (commit_gate.retirements_hold), asked of this tree
+                    red, detail = prove_plants.drive_plant(key, bundle_retired[key])
+                    if prove_plants.verdict_label(red, detail) == "skip":
+                        return False, "retired, and its test skipped here: %s" % detail
+                    if red:
+                        return False, "retired, and it still reddens its test - a working guard, not a retired one"
+                    if str(detail).strip() != "OK":
+                        return False, "retired, and its test did not run to a pass: %s" % str(detail).strip()[:160]
+                    return SETTLED, "retired (%s): its test ran to a pass with the defect planted" % str(
+                        (bundle_retired[key].get("retired") or {}).get("why") or "")[:80]
                 if key not in bundle:
                     return False, "not in %s" % gate.LEDGER
                 return prove_plants.drive_plant(key, bundle[key])
@@ -345,6 +477,15 @@ def main(argv, drive_own=None, drive_bundle=None, digest=None, stale=None, recor
                          " and every answer would read as not red - re-anchor these first:%s%s%s"
                          % (LF, LF.join("    " + r for r in rotted[:10]), LF))
         return 2
+    outputs = run_output() if written is None else written
+    #WHAT A DRIVE KILLED FROM OUTSIDE LEFT PLANTED is put back before this one takes any reading of the tree
+    journal = held_at or (HELD if written is None else None)
+    why, said = put_back_left(journal)
+    if why:
+        sys.stderr.write("REFUSED: %s%s" % (why, LF))
+        return 2
+    if said:
+        print(said)
     subject = digest()
     if subject is None:
         sys.stderr.write("REFUSED: this tree cannot be digested, so no verdict could say which tree it is about%s" % LF)
@@ -357,13 +498,27 @@ def main(argv, drive_own=None, drive_bundle=None, digest=None, stale=None, recor
         return 2
     if again:
         print("owed again - driven against another tree: %d" % again)
+    #ASKED OF WHAT IS OWED NOW, after the verdicts about another tree are owed again (2026-10-25): asked before them, a
+    #plant settled by proof against the last tree came back owed, was DRIVEN, and could not redden - 4 of 1,576 NOT RED
+    if proven is None and prove is not None:
+        try:
+            proven = prove(record.get("plants") or [], list(record.get("bundle_plants") or []))
+        except (OSError, guard.CannotAsk) as exc:
+            sys.stderr.write("REFUSED: what is staged cannot be read to prove a plant undrivable (%s)%s" % (exc, LF))
+            return 2
+    proven = proven or {}
     work = [(p.get("id"), drive_own) for p in record.get("plants") or []]
     work += [(k, drive_bundle) for k in record.get("bundle_plants") or []]
     if only is not None:
         work = [(k, d) for k, d in work if k in only]
-    results = {}
+    #A PLANT PROVEN UNDRIVABLE HERE IS SETTLED, NOT DRIVEN: planted, its anchor would match nothing, or its test is gone
+    results = {k: (_rule().GONE, proven[k]) for k, _d in work if k in proven}
+    for key in sorted(results):
+        print("  settled, not driven: %s - %s" % (key, results[key][1]))
+    work = [(k, d) for k, d in work if k not in proven]
     if workers > 1 and len(work) > 1:
-        results, trouble = drive_in_copies(work, workers, path, subject, guard)
+        taken, trouble = drive_in_copies(work, workers, path, subject, guard)
+        results.update(taken)
         for why in trouble:
             sys.stderr.write("  %s%s" % (why, LF))
         after = digest()
@@ -373,9 +528,9 @@ def main(argv, drive_own=None, drive_bundle=None, digest=None, stale=None, recor
                              % (subject, after, LF))
             return 2
         work = []
-    outputs = run_output() if written is None else written
     #TERMINATED IS FINISHED TOO: SIGTERM ends Python without running `finally`, so a drive stopped from
-    #outside left its planted readings in magnitudes.json (2026-10-08). As SystemExit it unwinds.
+    #outside left its planted readings in magnitudes.json (2026-10-08). As SystemExit it unwinds. A stop nothing
+    #can catch is the journal's (HELD).
     try:
         import signal
         signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(128 + signum))
@@ -385,14 +540,23 @@ def main(argv, drive_own=None, drive_bundle=None, digest=None, stale=None, recor
     for out in outputs:
         with io.open(out, "rb") as handle:
             held[out] = handle.read()
+    if journal and held:
+        _hold(journal, held)
     try:
         for n, (key, driver) in enumerate(work, 1):
             try:
                 red, detail = driver(key)
             except Exception as exc:                     # noqa: BLE001 - a broken plant is a NO
                 red, detail = False, "%s: %s" % (type(exc).__name__, exc)
-            results[key] = (bool(red), detail)
-            print("  [%d/%d] %s: %s" % (n, len(work), key, "red" if red else "NOT RED - " + " ".join(str(detail).split())[:160]))
+            if red is None:
+                #COULD NOT BE ASKED IS NOT A PLANT THAT STAYED GREEN (2026-10-25): a driver's UNKNOWN - a plant it could
+                #not lay, a suite that never finished - printed NOT RED and read as a plant to re-anchor. It stays
+                #owed all the same, and says what it is.
+                detail = UNASKED + str(detail)
+            results[key] = (SETTLED if red == SETTLED else bool(red), detail)
+            print("  [%d/%d] %s: %s" % (n, len(work), key, "settled - " + str(detail)[:160] if red == SETTLED
+                                        else "red" if red else ("" if red is None else "NOT RED - ")
+                                        + " ".join(str(detail).split())[:160]))
             sys.stdout.flush()
             if checkpoint and n % checkpoint == 0 and n < len(work):
                 for out, body in held.items():
@@ -411,6 +575,8 @@ def main(argv, drive_own=None, drive_bundle=None, digest=None, stale=None, recor
         for out, body in held.items():
             with io.open(out, "wb") as handle:
                 handle.write(body)
+        if journal and held and os.path.exists(journal):
+            os.remove(journal)      #the readings are back: a journal already gone has nothing left to keep
     after = digest()
     if after != subject:
         sys.stderr.write("REFUSED: the tree moved while the plants were driven (%s, then %s), so the verdicts"

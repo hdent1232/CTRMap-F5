@@ -1805,9 +1805,32 @@ def _claim_left_by_the_gone(target):
         return None
     if not isinstance(held, dict) or not held.get("pid"):
         return None
+    #A RUN THAT FINISHED IS GONE TOO (2026-10-25): two shares ended, and the third, four hours into one file, then
+    #took over their claims and measured their recorded files again. A file its run recorded is measured, not
+    #abandoned: its claim is kept.
+    if held.get("recorded"):
+        return None
     if bundle_shell.alive(held.get("pid"), held.get("started_epoch")):
         return None
     return "%s.gone-%s-%s" % (target, held.get("pid"), held.get("started_epoch"))
+
+
+def claim_file(folder, cid, path):
+    """The one name a file's claim has in `folder`."""
+    return os.path.join(folder, "claim-" + hashlib.sha1(unit_key(cid, path).encode("utf-8")).hexdigest()[:20])
+
+
+def mark_recorded(folder, cid, path):
+    """Say on this run's claim of the file that the file is recorded - swapped in whole, so a reader sees the claim
+    before or after, never half - so no run that outlives this one takes the claim over as a gone run's."""
+    target = claim_file(folder, cid, path)
+    with io.open(target, encoding="utf-8") as handle:
+        held = json.loads(handle.read())
+    held["recorded"] = True
+    part = "%s.%d.part" % (target, os.getpid())
+    with io.open(part, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(held))
+    os.replace(part, target)
 
 
 def claim(folder, cid, path):
@@ -1820,8 +1843,7 @@ def claim(folder, cid, path):
     measured by another - the claim carried its holder's pid and start time and nothing read them. A claim whose
     holder `bundle_shell.alive` calls gone is moved aside under a name of that holder, and the file is asked for
     again; a holder it cannot tell about is ALIVE, and keeps its claim."""
-    name = "claim-" + hashlib.sha1(unit_key(cid, path).encode("utf-8")).hexdigest()[:20]
-    target = os.path.join(folder, name)
+    target = claim_file(folder, cid, path)
     try:
         fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError:
@@ -1855,6 +1877,13 @@ def record_unit(target, frozen, recorded, cid, path, expected, unit_results):
     with io.open(part, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps({"frozen": frozen, "worktree": str(WT), "units": recorded}, indent=1))
     os.replace(part, target)
+
+
+def record_claimed(target, frozen, recorded, folder, cid, path, expected, unit_results):
+    """Record one file a run measured, then say so on its claim: ONE call, so no run records a file and leaves the
+    claim looking like an abandoned one for the next run to take over."""
+    record_unit(target, frozen, recorded, cid, path, expected, unit_results)
+    mark_recorded(folder, cid, path)
 
 
 #: kills a suite did not repeat: (file, suite) for every first failure the same suite passed on the second run
@@ -2360,6 +2389,25 @@ def selftest():
         check(overs == [True, False, False, False] and len(aside) == 1 and mine,
               "a claim whose run is gone is taken over once and moved aside under its holder's name; a live "
               "holder's claim, and one that cannot be read, are kept: %s, moved aside %s" % (overs, aside))
+        # A RUN THAT FINISHED IS GONE TOO (2026-10-25): its claims are of files it recorded, and taken over they were
+        # measured a second time - hours of it - by the run that outlived it
+        recorded = left("src/a/F.java", json.dumps({"pid": gone_run.pid, "started_epoch": gone_began,
+                                                     "recorded": True}))
+        kept = claim(folder, "audit", "src/a/F.java")
+        check(kept is False and not [n for n in os.listdir(folder) if n.startswith(recorded + ".gone-")],
+              "a claim of a run that finished and recorded its file is kept, never taken over to measure the file "
+              "again: %s" % kept)
+        check(claim(folder, "audit", "src/a/G.java") is True, "control: a file nobody claimed is claimed")
+        results_g = os.path.join(folder, "results-selftest.json")
+        record_claimed(results_g, sha, {}, folder, "audit", "src/a/G.java", [], [])
+        with io.open(claim_file(folder, "audit", "src/a/G.java"), encoding="utf-8") as handle:
+            marked = json.loads(handle.read())
+        with io.open(results_g, encoding="utf-8") as handle:
+            units = json.load(handle).get("units") or {}
+        check(marked.get("recorded") is True and marked.get("pid") == os.getpid()
+              and unit_key("audit", "src/a/G.java") in units,
+              "a file a run records says so on its claim, which still names the run: %s, recorded %s"
+              % (marked, sorted(units)))
         try:
             claims_folder(folder, "0" * 40)
             other = ""
@@ -2960,7 +3008,7 @@ for cid, (base, suites) in RESOLVED.items():
             del _PENDING_RESTORE[:]            # paid; nothing is owed now
 
         if CLAIMS:
-            record_unit(CLAIMED_TO, FROZEN, CLAIMED, cid, path, expected, results[first:])
+            record_claimed(CLAIMED_TO, FROZEN, CLAIMED, CLAIMS, cid, path, expected, results[first:])
 
     git("reset", "--hard", FROZEN)
 

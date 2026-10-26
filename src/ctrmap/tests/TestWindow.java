@@ -336,6 +336,12 @@ final class TestWindow {
 		return TestWindow.<Boolean>invoke(M_openMapMatrixFile, a0);
 	}
 
+	private static final Method M_openFirst = method("openFirst", void.class, boolean.class, java.lang.Runnable.class, java.lang.Runnable.class);
+
+	static void openFirst(boolean a0, java.lang.Runnable a1, java.lang.Runnable a2) {
+		invoke(M_openFirst, a0, a1, a2);
+	}
+
 	private static final Method M_showGameData = method("showGameData", void.class, java.lang.String.class, javax.swing.JComponent.class);
 
 	static void showGameData(java.lang.String a0, javax.swing.JComponent a1) {
@@ -346,6 +352,12 @@ final class TestWindow {
 
 	static void showInExtras(java.lang.String a0, javax.swing.JComponent a1) {
 		invoke(M_showInExtras, a0, a1);
+	}
+
+	private static final Method M_showZoneListAction = method("showZoneListAction", javax.swing.JComponent.class);
+
+	static javax.swing.JComponent showZoneListAction() {
+		return TestWindow.<javax.swing.JComponent>invoke(M_showZoneListAction);
 	}
 
 	private static final Method M_switchToolUI = method("switchToolUI", void.class, javax.swing.JComponent.class);

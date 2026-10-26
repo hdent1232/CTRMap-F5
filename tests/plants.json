@@ -8,8 +8,8 @@
    "test_bundle.py::ARecordedMeasurementCarriesTheTreeItMeasured"
   ]
  },
- "evasion_ceiling": 33,
- "generalisation_ceiling": 23,
+ "evasion_ceiling": 34,
+ "generalisation_ceiling": 27,
  "must_say_ceiling": 19,
  "owed_ceiling": 0,
  "plants": {
@@ -536,10 +536,10 @@
   "test_bundle.py::ACapturedChildOpensNoWINDOW::test_no_captured_child_in_the_tests_opens_a_window": {
    "file": "tests/test_bundle_gates.py",
    "must_say": "these tests capture a child's output and still give it a console window",
-   "new": "                               timeout=120, env={\"PATH\": folder, \"HOME\": root})\n",
-   "old": "                               timeout=120, env={\"PATH\": folder, \"HOME\": root},\n                               creationflags=getattr(subprocess, \"CREATE_NO_WINDOW\", 0))\n",
+   "new": "                               timeout=120, env=env)\n",
+   "old": "                               timeout=120, env=env,\n                               creationflags=getattr(subprocess, \"CREATE_NO_WINDOW\", 0))\n",
    "site": "instance",
-   "why": "2026-10-12: the console-window rule walked the hooks and tools and not tests/, and a captured git hook in test_bundle_gates opened a console window on the owner's desktop whenever the suite ran there. This plant takes its NO_WINDOW away again."
+   "why": "2026-10-12: the console-window rule walked the hooks and tools and not tests/, and a captured git hook in test_bundle_gates opened a console window on the owner's desktop whenever the suite ran there. This plant takes its NO_WINDOW away again. RE-ANCHORED 2026-10-24, when the hook's environment was built before the call (SYSTEMROOT, on Windows only)."
   },
   "test_bundle.py::ACapturedChildOpensNoWINDOW::test_the_rule_sees_both_spellings_of_a_capture::bounded": {
    "file": "tests/test_bundle.py",
@@ -586,6 +586,14 @@
    "old": "        return any(names_span(span, value) for value in call[\"evidence\"])\n    return any(span in value for value in call[\"evidence\"])\n",
    "site": "instance",
    "why": "MEASURED 2026-10-13 on CTRMap: a debugging script handed the cited command as a quoted argument printed an old run's 164 of 165 and was read as the latest run of it, refusing a done whose real latest run said 165 of 165. This plant matches a cited command by its text again, inside quotes included."
+  },
+  "test_bundle.py::AClaimOfTheWholeIsAMeasurementOfTheWhole::test_a_count_echoed_beside_the_measurement_is_not_its_reading": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "was read as the measurement's own output",
+   "new": "    return True",
+   "old": "    return len(ran) == 1 and ran[0][0] is not None",
+   "site": "instance",
+   "why": "A call's output is read as the measurement's reading. Read whatever else the call ran, `python tools/x.py; echo 39 of 39` passes a measurement that printed nothing of its scope as the whole."
   },
   "test_bundle.py::AClaimOfTheWholeIsAMeasurementOfTheWhole::test_a_file_edited_is_still_evidence_of_its_path": {
    "file": ".claude/bundle-hooks/request_ledger.py",
@@ -635,13 +643,29 @@
    "site": "evasion",
    "why": "The cheapest way past a rule that lets a later run supersede an earlier one: measure the whole once, lose part of it, and cite the old run. This plant reads the EARLIEST run of each command, so a whole measured before a regression stands over the part measured after it."
   },
+  "test_bundle.py::AClaimOfTheWholeIsAMeasurementOfTheWhole::test_a_part_printed_by_another_command_does_not_refuse_the_measurements_reading": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "another command's count beside the measurement refused its own reading",
+   "new": "        runs = runs",
+   "old": "        runs = [call for call in runs if alone(call)]",
+   "site": "elsewhere",
+   "why": "MEASURED 2026-10-14 on DF Engine: a measurement that printed 2360 of 2360 alone was refused as covering part of a whole, because a later call ran it beside a grep of a log reading 75 of 216. Under the latest-run rule the run beside the grep became the reading."
+  },
+  "test_bundle.py::AClaimOfTheWholeIsAMeasurementOfTheWhole::test_a_pipe_after_the_measurement_is_not_its_reading": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a piped run was read as the measurement's own output",
+   "new": "           for one in bundle_shell.split_commands(text_)]",
+   "old": "           for one in bundle_shell.runs(text_)]",
+   "site": "evasion",
+   "why": "The cheapest reading of 'ran alone' counts commands by `;` and `&&`, and a pipe is one of them - so `| grep -v 16` drops the short lines and the rest stands as the measurement's own output. What ran is every program, a pipeline's stages included."
+  },
   "test_bundle.py::AClaimOfTheWholeIsAMeasurementOfTheWhole::test_a_read_of_the_measurements_file_is_no_run_of_it": {
    "file": ".claude/bundle-hooks/request_ledger.py",
    "must_say": "a read of the measurement's file was read as a later run of it",
-   "new": "                if call[\"index\"] > request[\"index\"] and call[\"error\"] is False\n",
-   "old": "                if call[\"index\"] > request[\"index\"] and call[\"error\"] is False and call.get(\"commands\")\n",
+   "new": "    return len(ran) <= 1 and (not ran or ran[0][0] is not None)",
+   "old": "    return len(ran) == 1 and ran[0][0] is not None",
    "site": "evasion",
-   "why": "The cheapest way past paths-only evidence: a call that runs nothing still names a path, and the path can be the measurement's own file - read after the run, it would be the latest run and shadow the reading. This plant counts any call naming the measurement, run or not, as a run of it."
+   "why": "The cheapest way past paths-only evidence: a call that runs nothing still names a path, and the path can be the measurement's own file - read after the run, it would be the latest run and shadow the reading. Since 2026-10-14 the one guard is `alone`: this plant lets a call that ran NO program count as alone, so a read of the file becomes the reading."
   },
   "test_bundle.py::AClaimOfTheWholeIsAMeasurementOfTheWhole::test_a_script_cited_by_its_name_is_the_one_run_by_its_path": {
    "file": ".claude/bundle-hooks/request_ledger.py",
@@ -990,10 +1014,10 @@
   "test_bundle.py::AHookNamesTheFolderItSitsIn::test_the_repair_route_is_the_folder_the_dispatcher_is_in": {
    "file": ".claude/bundle-hooks/dispatch.py",
    "must_say": "the repair route is not the folder the dispatcher sits in",
-   "new": "    r\"\\.claude[/\\\\]hooks[/\\\\]\",\n",
-   "old": "    r\"\\.claude[/\\\\]\" + re.escape(os.path.basename(HERE)) + r\"[/\\\\]\",\n",
+   "new": "HOOKS_NAMED = re.compile(r\"\\.claude/+hooks(?:/|$)\", re.I)",
+   "old": "HOOKS_NAMED = re.compile(r\"\\.claude/+\" + re.escape(os.path.basename(HERE)) + r\"(?:/|$)\", re.I)",
    "site": "instance",
-   "why": "A REPAIR ROUTE INTO THE WRONG FOLDER. Spelled, a broken bundle guard beside a project's own stack could be repaired by nothing but git."
+   "why": "A REPAIR ROUTE INTO THE WRONG FOLDER. Spelled, a broken bundle guard beside a project's own stack could be repaired by nothing but git. RE-ANCHORED 2026-10-24 (CTRMap): the route is asked of the parsed call now, through HOOKS_NAMED."
   },
   "test_bundle.py::AHookPayloadIsReadAsTheUTF8TheHarnessWrote::test_no_entry_point_the_harness_runs_reads_stdin_any_other_way": {
    "file": ".claude/bundle-hooks/after_rules.py",
@@ -1034,6 +1058,46 @@
    "old": "            verdict = \"FAIL\" if why else UNSUPPORTED\n",
    "site": "instance",
    "why": "THE OWNER'S RULING, 2026-09-26: a reviewer that keeps hallucinating is as bad as shallow work. Six FAILs in two sessions stood on reasons no item held any more - an item 'still citing' a script it had stopped citing - and nothing could clear them but contrived items."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_background_review_still_RUNNING_is_waited_for_and_never_launched_twice": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a second review was let through while the first was still running",
+   "new": "        if False:\n",
+   "old": "        if any(r[\"digest\"] == digest and r.get(\"running\")\n               for r in reviews(read_rows(payload.get(\"transcript_path\")) or [])):\n",
+   "site": "instance",
+   "why": "THE CHEAPEST WAY PAST A BACKGROUND REVIEW: launch a second while the first runs and keep whichever passes - a re-roll the synchronous door never had to refuse, at 39k-69k tokens a review (measured, ADAPT.md). This plant lets the second launch through the door."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_background_review_still_RUNNING_is_waited_for_and_never_launched_twice::stop": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a running background review was asked to be launched again",
+   "new": "    if False:\n",
+   "old": "    if any(r[\"digest\"] == digest and r.get(\"running\") for r in done):\n",
+   "site": "elsewhere",
+   "why": "The stop asking for a launch while the owed review is still running - the 2026-10-23 loop the other way round, where 11 turn ends in a row demanded a launch that could not be made. This plant drops the running answer from the stop."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_background_review_that_ENDED_with_no_verdict_may_be_launched_again": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a review that ended with no verdict blocked the next one for good",
+   "new": "    if not mine or \"VERDICT\" not in mine[0][3]:\n        return RUNNING\n",
+   "old": "    if not mine:\n        return RUNNING\n",
+   "site": "instance",
+   "why": "A reviewer stopped or killed before it answered, read as still running, holds the state owed with no launch allowed to settle it - the 11-turn loop of 2026-10-23 again, with no way out but an override. This plant treats every completion without a verdict as running."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_completion_that_CARRIES_the_report_is_read_from_its_result": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a background review whose completion carried its report was not read",
+   "new": "    return \"\" if pointed is None else pointed\n",
+   "old": "    return result if pointed is None else pointed\n",
+   "site": "elsewhere",
+   "why": "A completion that carries the report is the harness's own row around what the reviewer returned; reading only hand-backs leaves that review with no verdict and the turn owing one it already has - another 39k-69k tokens a review (measured, ADAPT.md). This plant reads hand-backs only."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_completion_the_harness_did_not_write_for_THAT_launch_is_no_verdict": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a peer's message was read as the background review's verdict",
+   "new": "",
+   "old": "        if origin.get(\"kind\") != \"task-notification\":\n            continue\n",
+   "site": "instance",
+   "why": "A completion is the harness's only when its own delivery says a session task produced it. Without that check the same <task-notification> words in a peer's message - which another agent writes - attach a PASS to a review that never gave one: 1 forged line settles the whole ledger. This plant drops the origin check."
   },
   "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_declaration_that_cannot_be_READ_is_trouble_not_NO_reviewer": {
    "file": ".claude/bundle-hooks/request_ledger.py",
@@ -1187,6 +1251,14 @@
    "site": "instance",
    "why": "THE FIRST REAL REVIEW OF A LEDGER FAILED IT OVER THE HARNESS'S OWN WORDS. Two readers sliced a reviewer's answer from its start, and the harness opens every subagent result with a paragraph of its own, so the next reviewer was shown that paragraph cut off before the verdict and called the earlier failure incomplete. The answer is cut at its verdict where it is read now, so no reader of a review - including one written later - can be handed it."
   },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_review_the_harness_runs_in_the_BACKGROUND_is_read_from_its_completion": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a background review's PASS was not read from the completion it points to",
+   "new": "        if False:\n            answer = background_answer(ident, call, finished, handed)\n",
+   "old": "        if call.get(\"background\"):\n            answer = background_answer(ident, call, finished, handed)\n",
+   "site": "instance",
+   "why": "MEASURED 2026-10-23 on CTRMap (Claude Code 2.1.288): every agent runs in the background, and a background launch's own result is only \"Async agent launched successfully\" - read as the answer, no review could ever pass, and the stop refused 11 turn ends in a row. This plant reads the launch's own result again."
+  },
   "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_verdict_the_agent_SAID_or_ECHOED_is_not_a_review": {
    "file": ".claude/bundle-hooks/request_ledger.py",
    "must_say": "a verdict the agent wrote itself was taken as the reviewer's",
@@ -1266,6 +1338,14 @@
    "old": "    return after[0]\n",
    "site": "evasion",
    "why": "The cheapest way past an independent reviewer that hands back: resume it by messaging its id, argue with its FAIL, and read its second hand-back - the same agent id, a PASS the working agent talked it into. Only the first report after the launch is the review."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_the_door_asks_no_launch_MODE_of_the_review": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "the owed review was refused for how it asked to run",
+   "new": "        if launch.get(\"run_in_background\") is not False:\n            return \"a ledger review runs synchronously\"\n        if launch.get(\"isolation\"):\n            return (\"a ledger review reads THIS tree",
+   "old": "        if launch.get(\"isolation\"):\n            return (\"a ledger review reads THIS tree",
+   "site": "instance",
+   "why": "The shipped rule: the owed review refused unless synchronous, on a harness (2.1.288) whose Agent tool offers no way to ask for that - so it could not be launched at all, and the stop refused 11 turn ends in a row on 2026-10-23 while demanding it. This plant puts that rule back."
   },
   "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_the_escalation_must_be_SAID_to_the_owner": {
    "file": ".claude/bundle-hooks/request_ledger.py",
@@ -1427,6 +1507,22 @@
    "site": "elsewhere",
    "why": "THE SWEEP'S OWN READER: the run lock records its start, and a reader that does not hand it back refuses every run over a recycled pid - sweep.take_run_lock on DF Engine, over pid 38856."
   },
+  "test_bundle.py::AMessageToTheOwnersOwnSessionIsNotALaunch::test_a_key_that_starts_a_model_is_still_a_launch_on_a_sendmessage": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "went ahead with no yes",
+   "new": "        if False:\n            return \"\"",
+   "old": "        if set(given) & SHAPES_A_MODEL:\n            return \"\"",
+   "site": "evasion",
+   "why": "Reading the harness's SendMessage by what it may not carry is cheapest to pass by carrying it anyway: a model, a prompt or a subagent type on a message starts a model, and must still be a launch."
+  },
+  "test_bundle.py::AMessageToTheOwnersOwnSessionIsNotALaunch::test_a_key_the_harness_adds_to_a_sendmessage_is_still_a_message": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "a key the harness adds to its own SendMessage made a message a launch",
+   "new": "    if False:",
+   "old": "    if str(payload.get(\"tool_name\") or \"\") == \"SendMessage\":",
+   "site": "instance",
+   "why": "Measured 2026-10-15: the harness records recipient_kind on every SendMessage and the allow-list did not hold it, so every message between the owner's sessions asked the owner for a code - the second time an added bookkeeping key did that."
+  },
   "test_bundle.py::AMessageToTheOwnersOwnSessionIsNotALaunch::test_a_listing_printed_by_another_tool_lists_nothing": {
    "file": ".claude/bundle-hooks/bundle_shell.py",
    "must_say": "a listing shown by another tool unlocked a message",
@@ -1483,6 +1579,14 @@
    "site": "evasion",
    "why": "THE CHEAPEST WAY TO SAY IT: the guidance after the code. A session reads the refusal top down and relays the code it meets first - the owner is asked anyway."
   },
+  "test_bundle.py::AMessageToTheOwnersOwnSessionIsNotALaunch::test_another_tool_handing_words_over_keeps_the_strict_shape": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "another tool carrying more than a message's keys passed as a message",
+   "new": "    elif False:",
+   "old": "    elif not set(given) <= MESSAGE_ONLY:",
+   "site": "elsewhere",
+   "why": "Only the harness's own SendMessage is trusted with keys it adds; a tool of any other name that hands words to a name keeps the strict shape, or any tool could pass as a message by naming a recipient."
+  },
   "test_bundle.py::AMessageToTheOwnersOwnSessionIsNotALaunch::test_anything_else_is_still_a_launch::bare": {
    "file": ".claude/bundle-hooks/bundle_shell.py",
    "must_say": "a launch went ahead with no yes",
@@ -1494,10 +1598,10 @@
   "test_bundle.py::AMessageToTheOwnersOwnSessionIsNotALaunch::test_anything_else_is_still_a_launch::keys": {
    "file": ".claude/bundle-hooks/bundle_shell.py",
    "must_say": "a launch went ahead with no yes",
-   "new": "    if not isinstance(given, dict):\n",
-   "old": "    if not isinstance(given, dict) or not set(given) <= MESSAGE_ONLY:\n",
+   "new": "        if False:\n            return \"\"",
+   "old": "        if set(given) & SHAPES_A_MODEL:\n            return \"\"",
    "site": "instance",
-   "why": "MORE THAN A MESSAGE: a call carrying a prompt or a subagent type beside a listed `to` starts or shapes a model, and reading it as a message would wave a launch through for naming a session."
+   "why": "MORE THAN A MESSAGE: a call carrying a prompt or a subagent type beside a listed `to` starts or shapes a model, and reading it as a message would wave a launch through for naming a session. Since 2026-10-15 the harness's SendMessage is read by what it may not carry, SHAPES_A_MODEL, and this is that check."
   },
   "test_bundle.py::AMessageToTheOwnersOwnSessionIsNotALaunch::test_anything_else_is_still_a_launch::kind": {
    "file": ".claude/bundle-hooks/bundle_shell.py",
@@ -3013,6 +3117,78 @@
    "site": "elsewhere",
    "why": "THE REVIEW DOOR LOOKING AWAY: a message carrying the review token names no model and no subagent type, and the door that asks whether a launch is the owed review never looked at it."
   },
+  "test_bundle.py::EveryTestProcessStartsWithoutTheOwnersSettings::test_a_folder_search_that_finds_no_settings_is_recorded_not_raised": {
+   "file": "tests/_owner_switches.py",
+   "must_say": "a folder search that found no settings was raised at import",
+   "new": "except ZeroDivisionError as _cannot:\n",
+   "old": "except (OSError, ImportError, ValueError) as _cannot:\n",
+   "site": "instance",
+   "why": "MEASURED 2026-10-24 on CTRMap (hooks in .claude/bundle-hooks): raised at import, a folder search that found no bundle_env.py killed every module of test_bundle_gates before a test ran, so the plant on that search came back 'it never ran to a verdict' in the owed drive and could never be proven there. This plant raises it at import again."
+  },
+  "test_bundle.py::EveryTestProcessStartsWithoutTheOwnersSettings::test_a_folder_search_that_finds_no_settings_is_recorded_not_raised::evasion": {
+   "file": "tests/_owner_switches.py",
+   "must_say": "a folder search that found no settings was raised at import",
+   "new": "    pass\n",
+   "old": "    UNREAD = \"the owner's settings could not be taken out: %s: %s\" % (type(_cannot).__name__, _cannot)\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST: swallow the failure and record nothing - every test runs, and a process still holding the owner's settings reads as one that took them out. This plant swallows it."
+  },
+  "test_bundle.py::EveryTestProcessStartsWithoutTheOwnersSettings::test_a_held_tree_still_refuses_under_the_owners_switch": {
+   "file": "tests/_owner_switches.py",
+   "must_say": "a held tree let a launch through under the owner's switch",
+   "new": "TAKEN = {}\n",
+   "old": "TAKEN = {key: os.environ.pop(key) for key in _ENV.owner_settings(os.environ)}\n",
+   "site": "instance",
+   "why": "The failure as measured on 2026-10-23: a test run under the owner's held-tree switch hands it to every hook it drives, and a held tree lets 3 of 5 refused launches through. This plant takes nothing out. (Taking the import out of test_held_messages alone does not redden it: that file imports test_bundle, which imports this first - measured by this plant's first draft.)"
+  },
+  "test_bundle.py::EveryTestProcessStartsWithoutTheOwnersSettings::test_a_switch_the_owner_set_is_live_and_is_taken_out": {
+   "file": "tests/_owner_switches.py",
+   "must_say": "the switch must be live in the child, then gone once it imports",
+   "new": "TAKEN = {key: os.environ[key] for key in _ENV.owner_settings(os.environ)}\n",
+   "old": "TAKEN = {key: os.environ.pop(key) for key in _ENV.owner_settings(os.environ)}\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST: name the owner's settings as taken and leave every one of them in the process. Measured 2026-10-23: under the held-tree switch 23 tests in this folder failed, because each hook they drove read it. This plant records the settings and takes none out."
+  },
+  "test_bundle.py::EveryTestProcessStartsWithoutTheOwnersSettings::test_every_test_file_takes_the_owners_settings_out_first": {
+   "file": "tests/test_asked_register.py",
+   "must_say": "test file(s) can run a hook under the owner's settings",
+   "new": "",
+   "old": "import _owner_switches  # noqa: E402,F401  - the owner's settings out of this process, before any hook can read one\n",
+   "site": "instance",
+   "why": "WALKED, NOT LISTED: a test file added without the import runs every hook it drives under whatever the owner set, as all 7 of this folder's files did before 2026-10-24. This plant takes it out of one file that is not the one the end-to-end test runs."
+  },
+  "test_bundle.py::EveryTestProcessStartsWithoutTheOwnersSettings::test_every_test_file_takes_the_owners_settings_out_first::late": {
+   "file": "tests/test_bundle_gates.py",
+   "must_say": "imports _tree_root before _owner_switches is imported",
+   "new": "import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)\nimport _owner_switches  # noqa: E402,F401  - the owner's settings out of this process, before any hook can read one\n",
+   "old": "import _owner_switches  # noqa: E402,F401  - the owner's settings out of this process, before any hook can read one\nimport _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST THE WALK: import it, but after a project module - and a hook read at import (guard_fanout reads its agent cap when it is imported) has already read the owner's settings by then. This plant moves the import 1 line down, behind the first project import."
+  },
+  "test_bundle.py::EveryTestProcessStartsWithoutTheOwnersSettings::test_the_check_tells_a_late_import_from_an_early_one": {
+   "file": "tests/test_bundle.py",
+   "must_say": "a project module first in line passed",
+   "new": "            if False:\n",
+   "old": "            if top and top not in known:\n",
+   "site": "instance",
+   "why": "A check that passes everything walks the tree for nothing and reads green over 7 of 7 files. This plant makes the order check pass any import before _owner_switches; its control must notice, since the walk itself then cannot."
+  },
+  "test_bundle.py::EveryTestProcessStartsWithoutTheOwnersSettings::test_the_owners_settings_were_read_and_taken_out_here": {
+   "file": "tests/_owner_switches.py",
+   "must_say": "the owner's settings could not be taken out",
+   "new": "        \"_owner_switches_env\", os.path.join(bundle_hooks.path(_ROOT), \"bundle_env_gone.py\"))\n",
+   "old": "        \"_owner_switches_env\", os.path.join(bundle_hooks.path(_ROOT), \"bundle_env.py\"))\n",
+   "site": "elsewhere",
+   "why": "RECORDED IS NOT SAID: once a failed search is recorded instead of raised, a process that never took the owner's settings out runs every test under them - the 2026-10-23 failure, 24 tests red in a project for the owner's switch. This plant breaks the search for real; the one test that asks must fail, saying it."
+  },
+  "test_bundle.py::EveryTestProcessStartsWithoutTheOwnersSettings::test_what_the_bundles_own_tools_hand_a_test_stays": {
+   "file": ".claude/bundle-hooks/bundle_env.py",
+   "must_say": "the plant driver's word to a plant's own test was taken out with the owner's settings",
+   "new": "    return sorted(key for key in environ if key.startswith(mine))\n",
+   "old": "    return sorted(key for key in environ if key.startswith(mine) and key not in internal)\n",
+   "site": "instance",
+   "why": "The plant driver tells a plant's own test which file is planted through a name under the same prefix as the owner's settings; taken out with them, every one of the 2 bundle-internal names is lost and a plant's own test judges the planted file as any other. This plant takes the internal names too."
+  },
   "test_bundle.py::EveryWiredEntryPointRefusesWhatItCannotRead::test_a_readable_call_is_still_judged_and_allowed": {
    "file": ".claude/bundle-hooks/bundle_shell.py",
    "must_say": "could not be judged",
@@ -3514,12 +3690,92 @@
    "site": "elsewhere",
    "why": "An escape judged by the FIRST command only - the shape two guards had, where `git status; <anything>` was an escape because the way out was put in front of the thing refused."
   },
+  "test_bundle.py::TextIsNotRun::test_a_backtick_in_text_bash_runs_is_refused_where_it_runs": {
+   "file": ".claude/bundle-hooks/guard_text_substitution.py",
+   "must_say": "text bash runs was not seen: the measured answer",
+   "new": "            if False:\n                found.append((\"a double-quoted argument\", text[at + 1:close]))\n",
+   "old": "            if inside == \"double\":\n                found.append((\"a double-quoted argument\", text[at + 1:close]))\n",
+   "site": "instance",
+   "why": "THE MEASURED SHAPE UNREAD. 2026-10-18 on CTRMap: an answer recorded double-quoted, citing a backticked `python -B tools/whole_tree.py check`, ran that command and stored its output inside the owner's answer; the turn end was refused twice before it was found."
+  },
+  "test_bundle.py::TextIsNotRun::test_a_backtick_in_text_bash_runs_is_refused_where_it_runs::elsewhere": {
+   "file": ".claude/bundle-hooks/guard_text_substitution.py",
+   "must_say": "text bash runs was not seen: a heredoc whose delimiter is not quoted",
+   "new": "            while False and index < len(line):\n",
+   "old": "            while runs and index < len(line):\n",
+   "site": "elsewhere",
+   "why": "THE SAME TEXT IN ANOTHER PLACE: a heredoc whose delimiter is not quoted runs its backticks exactly as a double-quoted argument does, and a guard written for the argument alone never reads a body."
+  },
+  "test_bundle.py::TextIsNotRun::test_text_bash_does_not_run_goes_through::evasion": {
+   "file": ".claude/bundle-hooks/guard_text_substitution.py",
+   "must_say": "text bash does not run was refused: a substitution at the top level",
+   "new": "            if True:\n",
+   "old": "            if inside == \"double\":\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST: refuse every backtick that is not single-quoted, so the measured shape is caught - and so is every substitution written as one, which a session then learns to route around."
+  },
+  "test_bundle.py::TextIsNotRun::test_text_bash_does_not_run_goes_through::heredoc": {
+   "file": ".claude/bundle-hooks/guard_text_substitution.py",
+   "must_say": "text bash does not run was refused: the commit-message heredoc",
+   "new": "                runs = True\n",
+   "old": "                runs = single is None and double is None and not escaped\n",
+   "site": "evasion",
+   "why": "THE COMMIT IDIOM REFUSED: every heredoc read as running its body would refuse the `git commit -m \"$(cat <<'EOF' ...)\"` message, the one way this project writes a commit message, whose quoted delimiter makes its body text to the end."
+  },
+  "test_bundle.py::TextIsNotRun::test_text_bash_does_not_run_goes_through::powershell": {
+   "file": ".claude/bundle-hooks/guard_text_substitution.py",
+   "must_say": "a PowerShell escape was read as a substitution",
+   "new": "    text = command or \"\"\n",
+   "old": "    if shell == \"powershell\":\n        return []\n    text = command or \"\"\n",
+   "site": "elsewhere",
+   "why": "THE OTHER SHELL READ AS BASH: in PowerShell a backtick escapes the next character, and \"a`nb\" is a newline - read as bash, every escaped PowerShell string would be refused as a substitution."
+  },
+  "test_bundle.py::TextIsNotRun::test_the_owner_can_let_one_through": {
+   "file": ".claude/bundle-hooks/guard_text_substitution.py",
+   "must_say": "'deny' != 'allow'",
+   "new": "    if not found:\n",
+   "old": "    if not found or bundle_env.allowed(\"ALLOW_TEXT_SUBSTITUTION\"):\n",
+   "site": "instance",
+   "why": "A REFUSAL WITH NO WAY PAST: the owner's switch read by nothing, so the one case a person decides - a legacy substitution they mean - has no road but editing the guard."
+  },
   "test_bundle.py::TheDispatcherAsksEveryGuardAndCannotBeWedged::test_a_command_nobody_can_READ_is_refused_once_for_every_guard": {
    "file": ".claude/bundle-hooks/dispatch.py",
    "new": "    blind = None",
    "old": "    blind = unreadable_refusal(payload) if isinstance(payload, dict) else None",
    "site": "elsewhere",
    "why": "`bundle_shell.unreadable` with no caller again - a command that is not text is read by every guard as no command at all, which is the clean negative an unmeasurable quantity produces."
+  },
+  "test_bundle.py::TheDispatcherAsksEveryGuardAndCannotBeWedged::test_a_crashed_guard_lets_through_the_call_that_repairs_it_however_it_is_spelled": {
+   "file": ".claude/bundle-hooks/dispatch.py",
+   "must_say": "a crashed guard refused the call that repairs it: a Write by a backslash path",
+   "new": "    if any(HOOKS_NAMED.search(text)",
+   "old": "    if any(HOOKS_NAMED.search(text.replace(chr(92), \"/\"))",
+   "site": "instance",
+   "why": "THE WAY OUT BLIND TO A WINDOWS PATH. Measured 2026-10-18 installing the bundle into CTRMap: a guard crashed on load and the dispatcher refused the Write of the module it lacked, by a backslash path, until a payload whose content spelled the folder with forward slashes went through."
+  },
+  "test_bundle.py::TheDispatcherAsksEveryGuardAndCannotBeWedged::test_a_crashed_guard_lets_through_the_call_that_repairs_it_however_it_is_spelled::elsewhere": {
+   "file": ".claude/bundle-hooks/dispatch.py",
+   "must_say": "a crashed guard refused the call that repairs it: a copy into the hooks folder by backslashes",
+   "new": "           for text in bundle_shell.paths(payload)):",
+   "old": "           for text in bundle_shell.paths(payload) + commands):",
+   "site": "elsewhere",
+   "why": "THE FOLDER LOOKED FOR IN PATHS ONLY: a command that copies a good guard back into the hooks folder carries the folder in its text, not in a path key, and is the other way a session repairs a crashed guard."
+  },
+  "test_bundle.py::TheDispatcherAsksEveryGuardAndCannotBeWedged::test_a_crashed_guard_lets_through_the_call_that_repairs_it_however_it_is_spelled::evasion": {
+   "file": ".claude/bundle-hooks/dispatch.py",
+   "must_say": "CONTROL: a crashed guard let through what repairs nothing: a command that only says git",
+   "new": "    return any(re.search(r\"\\bgit\\b\", command) for command in commands)",
+   "old": "    return any(words and bundle_shell.program_of(words[0][0]) == \"git\"\n               for command in commands for words, _background in bundle_shell.runs(command))",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST: look for the word anywhere in the command, so every spelling of git goes through - and so does any command that only mentions it, past a guard that has crashed."
+  },
+  "test_bundle.py::TheDispatcherAsksEveryGuardAndCannotBeWedged::test_a_crashed_guard_lets_through_the_call_that_repairs_it_however_it_is_spelled::git": {
+   "file": ".claude/bundle-hooks/dispatch.py",
+   "must_say": "a crashed guard refused the call that repairs it: a git command after a cd",
+   "new": "    return any(re.match(r\"\\s*git\\b\", command) for command in commands)",
+   "old": "    return any(words and bundle_shell.program_of(words[0][0]) == \"git\"\n               for command in commands for words, _background in bundle_shell.runs(command))",
+   "site": "instance",
+   "why": "THE WAY OUT THAT ASKS ONLY A COMMAND'S FIRST WORD. Measured 2026-10-18: `^git` over one-line JSON never matched, and a `git rev-parse` was refused past a crashed guard; asked of the command's first word, a `cd` before it hides it the same way."
   },
   "test_bundle.py::TheDispatcherAsksEveryGuardAndCannotBeWedged::test_a_guard_that_ALLOWS_and_says_why_is_heard": {
    "file": ".claude/bundle-hooks/dispatch.py",
@@ -5063,6 +5319,14 @@
    "site": "instance",
    "why": "WHICH FILE IS THE PROGRAM, MISREAD AGAIN: split on spaces, a quoted script path in a folder with a space in its name - this project's own root has one - is two fragments, neither a file, and the forger in it was never read. Measured 2026-09-27 before the fix: `python \"<root>\\a dir\\forge.py\"` was allowed."
   },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_command_handed_to_a_shell_as_TEXT_is_read_as_a_command": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a forger handed to a shell as its command text was never read",
+   "new": "            if False:  # a shell handed its command as text: that text is a command, read as one\n",
+   "old": "            if inline:  # a shell handed its command as text: that text is a command, read as one\n",
+   "site": "elsewhere",
+   "why": "WHAT ONE WORD LOSES ELSEWHERE: every word after a shell was a candidate, the only reason `bash -c ./forge.sh` was caught. Reading `-c` as no program here, and the text not as a command, opens it while every forger named as a file is still refused."
+  },
   "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_commit_in_ANOTHER_WORKTREE_is_asked_too": {
    "file": "tools/gate_stamps.py",
    "must_say": "in another worktree was not found",
@@ -5090,10 +5354,10 @@
   "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_data_file_handed_to_ANOTHER_interpreter_is_data_too": {
    "file": "tools/gate_stamps.py",
    "must_say": "a data file a shell script reads was read as a program",
-   "new": "            if _PYTHON.fullmatch(name): break\n",
-   "old": "            break                         # the program is read, and nothing it is handed\n",
+   "new": "            candidates = words[1:]\n",
+   "old": "            candidates = candidates[:1]\n",
    "site": "elsewhere",
-   "why": "THE FIX MADE FOR PYTHON ONLY: the natural place to write it is `_python_runs`, and then `bash show.sh ledger.json` and `pwsh -File show.ps1 ledger.json` are still refused - the same false forge through the next interpreter, the site this rule was not first written for."
+   "why": "THE FIX MADE FOR PYTHON ONLY: the natural place to write it is `_python_runs`, and then `bash show.sh ledger.json` and `pwsh -File show.ps1 ledger.json` are still refused - the same false forge through the next interpreter, the site this rule was not first written for. Re-anchored 2026-10-15 onto the cut every other interpreter takes, once the break after the read became dead."
   },
   "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_gated_TREE_under_an_ungated_MESSAGE_is_still_ungated": {
    "file": "tools/gate_stamps.py",
@@ -5111,6 +5375,14 @@
    "site": "instance",
    "why": "MEASURED 2026-09-27 on DF Engine: a BOM-led subject stamped by commit-msg and refused as made past the gate, because git's copy was decoded in the Windows code page - every command held until the repair."
   },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_program_another_interpreter_cannot_find_is_not_replaced_by_its_data": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a data file was read as the program another interpreter could not find",
+   "new": "            candidates = words[1:]\n",
+   "old": "            candidates = candidates[:1]\n",
+   "site": "instance",
+   "why": "THE DEFECT AS MEASURED 2026-10-15 ON DF ENGINE: every word after bash or pwsh was a candidate, so a script this could not find was skipped and the data file after it read as the program - `bash not_here.sh tests/plants.json` refused as forging a stamp."
+  },
   "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_program_named_by_a_VARIABLE_is_not_replaced_by_its_data": {
    "file": "tools/gate_stamps.py",
    "must_say": "a data file was read as the program a variable names",
@@ -5126,6 +5398,22 @@
    "old": "    mark = (signature(paths + [os.path.abspath(__file__)]) + \"|\"\n",
    "site": "elsewhere",
    "why": "THE SAME DAY, ONE STEP LATER: with the decode fixed the lock stayed, because the memo was keyed on the reflogs and the stamps only and replayed the wrong verdict until some ref happened to move."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_an_options_value_is_skipped_by_name_not_by_not_being_a_file": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a forger behind an option's value was never read",
+   "new": "            index += 1\n",
+   "old": "            index += 2 if valued else 1\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WIDENING OF ONE WORD: take the first word that is no option, knowing nothing of values. `pwsh -ExecutionPolicy Bypass -File forge.ps1` then reads `Bypass`, finds no file, and the forger walks past the gate."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_an_options_value_is_skipped_by_name_not_by_not_being_a_file::shell": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a forger behind a shell option's value was never read",
+   "new": "            command = command or \"c\" in word[1:]  # -c, and -c among bundled flags (`-ec`)\n            index += 1\n",
+   "old": "            command = command or \"c\" in word[1:]  # -c, and -c among bundled flags (`-ec`)\n            index += 2 if word in _SH_VALUED else 1\n",
+   "site": "elsewhere",
+   "why": "THE SAME WIDENING IN THE SHELL BRANCH, which the PowerShell plant never reaches: `bash -o posix forge.sh` reads `posix` as the program, finds no file there, and the forger after it is never read."
   },
   "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_every_way_a_call_could_FORGE_a_stamp_is_refused_before_it_runs": {
    "file": "tools/gate_stamps.py",
@@ -5368,11 +5656,19 @@
    "site": "instance",
    "why": "A walk that reads every file and records nothing reports the clean tree a clean tree would earn; this control shows it one offender before its empty answer about the real tree is believed."
   },
+  "test_bundle_gates.py::AHeldPlantIsDrivenAgainWhenItsFileChanges::test_a_change_to_a_named_test_IN_A_FOLDER_selects_the_plant": {
+   "file": "tools/commit_gate.py",
+   "must_say": "a change to the test a folder-keyed plant names drove nothing",
+   "new": "                       or False))\n",
+   "old": "                       or bool(set(prove_plants.test_files(key)) & changed)))\n",
+   "site": "instance",
+   "why": "A path-keyed plant matched by its test file's bare name alone: a declared runner keys its plants restore/test_x.py, and a commit changing that test drives none of them - 51 left undriven by one commit, measured."
+  },
   "test_bundle_gates.py::AHeldPlantIsDrivenAgainWhenItsFileChanges::test_a_change_to_the_planted_file_OR_the_named_test_selects_the_plant": {
    "file": "tools/commit_gate.py",
    "must_say": "a change to the TEST a plant names drove nothing",
    "new": "                  and entry.get(\"file\") in changed)\n",
-   "old": "                  and (entry.get(\"file\") in changed or key.split(\"::\", 1)[0] in names))\n",
+   "old": "                  and (entry.get(\"file\") in changed or key.split(\"::\", 1)[0] in names\n                       or bool(set(prove_plants.test_files(key)) & changed)))\n",
    "site": "elsewhere",
    "why": "A DIFFERENT HALF OF WHAT A PLANT PROVES. A plant is a defect AND the test that must notice it; a test rewritten so it no longer notices empties the plant as surely as a moved rule, and a selection that only asks about the planted file never drives it again."
   },
@@ -5448,6 +5744,22 @@
    "site": "evasion",
    "why": "Call the deleted test's plant RETIRED instead of withdrawn: a retirement whose test does not even resolve passes the gate, and Withdraws is walked round by its neighbour."
   },
+  "test_bundle_gates.py::APlantLeavesTheLedgerOnlyByAnActTheCommitAsksAgain::test_a_declared_runners_plant_leaves_once_the_test_its_must_say_names_is_gone": {
+   "file": "tools/prove_plants.py",
+   "must_say": "a declared runner's plant whose test is gone was refused",
+   "new": "            return True\n",
+   "old": "            return _declared_test(text, named) is not False\n",
+   "site": "instance",
+   "why": "A declared runner's test file read as there while its file is: a plant whose test was deleted from a file that kept its others could never be withdrawn, and sixteen plants on a deleted code path had no way out of the ledger but dead tests kept under their old names (2026-10-18)."
+  },
+  "test_bundle_gates.py::APlantLeavesTheLedgerOnlyByAnActTheCommitAsksAgain::test_a_declared_runners_plant_leaves_once_the_test_its_must_say_names_is_gone::gate": {
+   "file": "tools/commit_gate.py",
+   "must_say": "a declared runner's plant whose test is gone was refused",
+   "new": "                still = pp.test_exists(key, read=read)\n",
+   "old": "                still = pp.test_exists(key, read=read,\n                                       named=((index.get(\"withdrawn\") or {}).get(key) or {}).get(\"must_say\"))\n",
+   "site": "elsewhere",
+   "why": "The commit gate asks test_exists of a withdrawn plant without the plant's must_say, so the tool withdraws a plant the gate then refuses as still having its test."
+  },
   "test_bundle_gates.py::APlantLeavesTheLedgerOnlyByAnActTheCommitAsksAgain::test_a_plant_that_VANISHES_is_refused": {
    "file": "tools/commit_gate.py",
    "must_say": "a plant deleted from the ledger by hand went through",
@@ -5468,9 +5780,9 @@
    "file": "tools/commit_gate.py",
    "must_say": "a plant whose test is still in the commit was withdrawn",
    "new": "                still = False",
-   "old": "                still = pp.test_exists(key, read=read)",
+   "old": "                still = pp.test_exists(key, read=read,\n                                       named=((index.get(\"withdrawn\") or {}).get(key) or {}).get(\"must_say\"))",
    "site": "evasion",
-   "why": "The gate trusts the withdrawn record, which is a line anybody can type into a JSON file, and never asks the committed tree whether the test it names is really gone."
+   "why": "The gate trusts the withdrawn record, which is a line anybody can type into a JSON file, and never asks the committed tree whether the test it names is really gone. Re-anchored (2026-10-18): the gate asks it with the plant's must_say now, so a declared runner's file is read down to the test."
   },
   "test_bundle_gates.py::APlantLeavesTheLedgerOnlyByAnActTheCommitAsksAgain::test_a_withdrawal_with_no_line_or_a_label_or_an_indented_line_is_refused": {
    "file": "tools/commit_gate.py",
@@ -5584,6 +5896,22 @@
    "site": "instance",
    "why": "The shipped defect: with no argument the driver fell through to its default and drove every plant in the ledger - on the project this came from, 75 minutes of planted defects started by a run meant as a quick look."
   },
+  "test_bundle_gates.py::EveryPlantTheGateDrivesIsCountedAloud::test_a_declared_runner_drives_the_one_test_a_plant_names_where_it_declares_how": {
+   "file": "tools/prove_plants.py",
+   "must_say": "a plant naming a test its file defines was not driven by that test alone",
+   "new": "    if False:\n",
+   "old": "    if config.get(\"run_one\") and _declared_test(text, must_say):\n",
+   "site": "instance",
+   "why": "A declared runner's run_one never chosen: every plant on a file of many tests runs the whole file to watch one of them - one commit's gate on a pytest project was to spend 10.6 hours on 204 plants of one file of 120 tests (2026-10-18)."
+  },
+  "test_bundle_gates.py::EveryPlantTheGateDrivesIsCountedAloud::test_a_declared_runner_drives_the_one_test_a_plant_names_where_it_declares_how::handed": {
+   "file": "tools/prove_plants.py",
+   "must_say": "a plant naming a test its file defines was not driven by that test alone",
+   "new": "        code, said = _declared_child(declared_command(key, config, root), root, seed)\n",
+   "old": "        code, said = _declared_child(declared_command(key, config, root, must_say), root, seed)\n",
+   "site": "elsewhere",
+   "why": "run_declared builds the command without the plant's must_say, so a runner that declares run_one is never handed the one test and every plant runs its whole file."
+  },
   "test_bundle_gates.py::EveryPlantTheGateDrivesIsCountedAloud::test_a_flag_given_no_value_is_refused_in_words": {
    "file": "tools/cli_words.py",
    "must_say": "was not refused in words",
@@ -5631,6 +5959,14 @@
    "old": "    said = \"all %d red\" % driven if reds == driven else \"%d of %d red\" % (reds, driven)\n",
    "site": "evasion",
    "why": "THE CHEAPEST WAY TO SAY SOMETHING: count the plants asked and call them all red, which prints reassurance over a drive where a plant stayed green - a count that is not a measurement."
+  },
+  "test_bundle_gates.py::EveryPlantTheGateDrivesIsCountedAloud::test_an_only_that_matches_no_plant_drives_nothing_and_is_refused": {
+   "file": "tools/prove_plants.py",
+   "must_say": "matches no plant",
+   "new": "    if only and not owed_only and not matched and False:\n",
+   "old": "    if only and not owed_only and not matched:\n",
+   "site": "instance",
+   "why": "An --only matching no plant passes again: a key read with a carriage return on its end, or misspelt, prints 0 plant(s) driven and exits 0 - fifty-one such passes over plants nothing drove, measured."
   },
   "test_bundle_gates.py::EveryPlantTheGateDrivesIsCountedAloud::test_an_unclassified_record_can_be_classified_by_the_command_its_refusal_names": {
    "file": "tools/whole_tree.py",
@@ -5914,11 +6250,11 @@
   },
   "test_bundle_gates.py::TheInstallIsAskedAtEveryCommit::test_the_gate_runs_where_only_python3_does": {
    "file": ".githooks/commit-msg",
-   "must_say": "python: not found",
+   "must_say": "the commit-msg hook did not run its tools with python3 alone",
    "new": "PY=python\n",
    "old": "PY=python\ncommand -v python >/dev/null 2>&1 || PY=python3\n",
    "site": "instance",
-   "why": "F184: CTRMap's commit-msg, kept different from the bundle's on purpose, still said `python` after the bundle's hook learned to fall back to python3 - every commit died on 'python: not found' where only python3 exists."
+   "why": "F184: CTRMap's commit-msg, kept different from the bundle's on purpose, still said `python` after the bundle's hook learned to fall back to python3 - every commit died on 'python: not found' where only python3 exists. RE-ANCHORED 2026-10-24: the test runs on Windows now (bundle 00ad13e), where bash says 'command not found'; its must_say is the test's own sentence. This project's own copy, since its commit-msg is declared apart from the bundle's and the merge leaves it here."
   },
   "test_bundle_gates.py::TheInstallIsAskedAtEveryCommit::test_the_install_SCOPE_is_the_checkers_own_walk": {
    "file": "tools/bundle_install.py",
@@ -6002,11 +6338,11 @@
   },
   "test_every_wired_hook_reads_its_payload.py::EveryWiredHookRefusesAPayloadItCannotRead::test_every_wired_hook_refuses_what_it_cannot_read_and_says_why::guard_unfinished": {
    "file": ".claude/bundle-hooks/dispatch.py",
-   "must_say": "UNREADABLE: dispatch.py for",
+   "must_say": "and it did not say why",
    "new": "    problem = None  #PLANTED: whatever arrived is a payload\n    if problem:\n        retried = bundle_shell.refused_before(raw)\n",
    "old": "    problem = bundle_shell.payload_problem(raw)\n    if problem:\n        retried = bundle_shell.refused_before(raw)\n",
    "site": "instance",
-   "why": "F213: the project's Stop hook answered 0 for a payload that did not parse and for '{}', exactly as for a reply that owes nothing. Re-anchored 2026-10-09 onto the dispatcher, the 1 Stop hook left once guard_unfinished.py was retired on the owner's yes - the key keeps its old name."
+   "why": "F213: the project's Stop hook answered 0 for a payload that did not parse and for '{}', exactly as for a reply that owes nothing. Re-anchored 2026-10-09 onto the dispatcher, the 1 Stop hook left once guard_unfinished.py was retired. RE-ANCHORED 2026-10-24: with the dispatcher's own check planted away, a guard behind it now refuses the unreadable payload - so the refusal stands, and what is lost is the dispatcher saying it could not read it; the test's second sentence."
   },
   "test_every_wired_hook_reads_its_payload.py::EveryWiredHookRefusesAPayloadItCannotRead::test_the_owners_way_past_lets_every_hook_through_and_SAYS_so": {
    "file": ".claude/hooks/guard_all.py",
@@ -6080,6 +6416,70 @@
    "site": "elsewhere",
    "why": "The rule is only a refusal if the commit-msg hook asks it: this plant takes it out of main's checks, where a correct rule would then judge nothing."
   },
+  "test_gate_owed.py::APlantNothingCanDriveIsSettledOnlyByProof::test_a_retirement_or_withdrawal_is_not_a_proof_on_its_own_word": {
+   "file": "tools/guard/commit_guard.py",
+   "must_say": "proven undrivable while its anchor still stands",
+   "new": "        if said.strip() and (suite is None or said not in suite):\n",
+   "old": "        if said.strip() and (text is None or entry[\"find\"] not in text) and (suite is None or said not in suite):\n",
+   "site": "instance",
+   "why": "2026-10-24: 10 project and 16 bundle plants owed, and the only way past a plant nothing could drive was the gate skipped again - every release since 1.0.4 made with --no-verify. A retired plant is settled only when its code and its check are both gone; this plant settles one whose anchor still stands."
+  },
+  "test_gate_owed.py::APlantNothingCanDriveIsSettledOnlyByProof::test_a_retirement_or_withdrawal_is_not_a_proof_on_its_own_word::check": {
+   "file": "tools/guard/commit_guard.py",
+   "must_say": "proven undrivable while its check is still in its suite",
+   "new": "        if said.strip() and (text is None or entry[\"find\"] not in text):\n",
+   "old": "        if said.strip() and (text is None or entry[\"find\"] not in text) and (suite is None or said not in suite):\n",
+   "site": "elsewhere",
+   "why": "THE CODE MOVED, THE CHECK STAYED: an anchor that matches nothing may be code rewritten, not deleted - a plant whose suite still says what it watches for is re-anchored, never retired. This plant settles it on the anchor alone."
+  },
+  "test_gate_owed.py::APlantNothingCanDriveIsSettledOnlyByProof::test_a_retirement_or_withdrawal_is_not_a_proof_on_its_own_word::withdrawn": {
+   "file": "tools/guard/commit_guard.py",
+   "must_say": "proven undrivable while its test is still there",
+   "new": "        if why:\n",
+   "old": "        if why and not gate()._prove_plants().test_exists(k, read=read, named=entry.get(\"must_say\")):\n",
+   "site": "elsewhere",
+   "why": "THE LEDGER'S WORD FOR IT: a bundle plant settled because its ledger says withdrawn, while the test it names still runs. This plant drops the asking of the test."
+  },
+  "test_gate_owed.py::APlantNothingCanDriveIsSettledOnlyByProof::test_a_settled_verdict_clears_a_plant_only_against_this_tree_and_only_while_its_proof_holds": {
+   "file": "tools/guard/commit_guard.py",
+   "must_say": "a plant recorded settled by a proof that does not hold for this tree cleared",
+   "new": "    unheld = [k for k in [] if k not in unproven and not driven[k].get(\"red\")\n",
+   "old": "    unheld = [k for k in owed_plants if k not in unproven and not driven[k].get(\"red\")\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST: a record that says settled, believed - written once, or by hand, it would clear a plant whose code came back. This plant stops asking the proof again at the commit."
+  },
+  "test_gate_owed.py::APlantNothingCanDriveIsSettledOnlyByProof::test_the_drive_settles_a_proven_plant_without_driving_it_and_records_a_ran_to_a_pass": {
+   "file": "tools/guard/drive_owed.py",
+   "must_say": "a proven plant was driven, or something settled stayed owed",
+   "new": "    work = list(work)\n",
+   "old": "    work = [(k, d) for k, d in work if k not in proven]\n",
+   "site": "instance",
+   "why": "A PROVEN PLANT DRIVEN ANYWAY: planted, its anchor matches nothing and the runner refuses its whole ledger (replant's rotted-anchor rule), or its test is gone and it reads as not red - so the drive must settle it, not drive it. This plant drives it."
+  },
+  "test_gate_owed.py::DriveOwedClearsOnlyWhatReddened::test_a_copy_that_is_another_tree_is_refused_before_it_drives_and_names_why": {
+   "file": "tools/guard/drive_owed.py",
+   "must_say": "a copy that is another tree was let drive",
+   "new": "    if True:\n        return None\n",
+   "old": "    if theirs == subject:\n        return None\n",
+   "site": "instance",
+   "why": "MEASURED 2026-10-24: an untracked file no ignore rule named was part of this tree's subject and of no worker copy, and 1,569 verdicts were refused as another tree's two hours into the drive. This plant lets every copy drive, whatever it digests to."
+  },
+  "test_gate_owed.py::DriveOwedClearsOnlyWhatReddened::test_a_copy_that_is_another_tree_is_refused_before_it_drives_and_names_why::elsewhere": {
+   "file": "tools/guard/drive_owed.py",
+   "must_say": "a worker's copy is made and driven without being asked whether it is this tree",
+   "new": "        why = _copy_of(tree, where)\n",
+   "old": "        why = _copy_of(tree, where) or copy_problem(where, subject, guard)\n",
+   "site": "elsewhere",
+   "why": "THE CHECK KEPT AND ITS ONE CALLER DROPPED: copy_problem still answers right, and nothing asks it - the 2 hours of refused verdicts again. This plant stops the worker asking."
+  },
+  "test_gate_owed.py::DriveOwedClearsOnlyWhatReddened::test_a_copy_that_is_another_tree_is_refused_before_it_drives_and_names_why::evasion": {
+   "file": "tools/guard/drive_owed.py",
+   "must_say": "a copy that is another tree was let drive, or the reason did not name the file",
+   "new": "        pass\n",
+   "old": "        differ.update(done.stdout.split())\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST: refuse, and say nothing of why - the 2026-10-24 cause took reading 1,569 refusals to find. This plant names no file."
+  },
   "test_gate_owed.py::DriveOwedClearsOnlyWhatReddened::test_a_drive_killed_partway_keeps_what_reddened_and_is_run_again_from_there": {
    "file": "tools/guard/drive_owed.py",
    "must_say": "a drive killed partway lost what it had driven before the kill",
@@ -6088,6 +6488,22 @@
    "site": "instance",
    "why": "PAID FOR 2026-10-11: the app hosting the session quit 154 plants into a 1,578-plant drive_owed run, and about fifty minutes of verdicts were lost, because the record was written once, at the end. This plant checks the tree at each checkpoint and writes nothing."
   },
+  "test_gate_owed.py::DriveOwedClearsOnlyWhatReddened::test_a_journal_that_cannot_be_read_refuses_the_drive": {
+   "file": "tools/guard/drive_owed.py",
+   "must_say": "a journal that cannot be read was taken for no journal at all",
+   "new": "        return None, None\n",
+   "old": "        return (\"%s cannot be read (%s), so whether a drive killed from outside left planted readings in this tree\"\n                \" is UNKNOWN - put its files back by hand, then delete it\" % (journal, exc)), None\n",
+   "site": "instance",
+   "why": "A QUERY THAT CANNOT READ ITS SUBJECT MUST NOT REPORT IT ABSENT: a journal that cannot be read may hold the only copy of the readings a killed drive planted over. This plant reads an unreadable journal as none."
+  },
+  "test_gate_owed.py::DriveOwedClearsOnlyWhatReddened::test_a_journal_whose_drive_still_runs_is_left_to_it": {
+   "file": "tools/guard/drive_owed.py",
+   "must_say": "a drive put back the readings of a drive still running, or drove beside it",
+   "new": "    if False:\n",
+   "old": "    if _shell().alive(*holder):\n",
+   "site": "instance",
+   "why": "Two drives over one tree: the second would put the first's held readings back under it mid-plant and drive beside it. A journal whose holder may still run (ALIVE whenever that cannot be told) is that drive's own. This plant takes every holder for gone."
+  },
   "test_gate_owed.py::DriveOwedClearsOnlyWhatReddened::test_a_ledger_the_runner_refuses_drives_nothing": {
    "file": "tools/guard/drive_owed.py",
    "must_say": "a drive went ahead over a ledger its runner refuses wholesale",
@@ -6095,6 +6511,30 @@
    "old": "    if rotted:\n",
    "site": "instance",
    "why": "2026-10-08: one rotted anchor made replant refuse every id, and the first drive read each refusal as a plant that did not redden - 1582 answers, none of them about a plant. This plant drives over a ledger the runner refuses."
+  },
+  "test_gate_owed.py::DriveOwedClearsOnlyWhatReddened::test_a_plant_its_driver_could_not_ask_stays_owed_and_says_so": {
+   "file": "tools/guard/drive_owed.py",
+   "must_say": "a plant its driver could not ask was said or recorded as one that stayed green",
+   "new": "                pass\n",
+   "old": "                detail = UNASKED + str(detail)\n",
+   "site": "instance",
+   "why": "MEASURED 2026-10-25: lz11-lz11-negate-if's suite ran past its limit beside 3 sweep shares, the driver answered UNKNOWN, and the drive recorded it as a plant that no longer reddens. This plant records it so again."
+  },
+  "test_gate_owed.py::DriveOwedClearsOnlyWhatReddened::test_a_plant_its_driver_could_not_ask_stays_owed_and_says_so::said": {
+   "file": "tools/guard/drive_owed.py",
+   "must_say": "a plant its driver could not ask was said or recorded as one that stayed green",
+   "new": "                                        else \"red\" if red else (\"NOT RED - \" if red is None else \"NOT RED - \")\n",
+   "old": "                                        else \"red\" if red else (\"\" if red is None else \"NOT RED - \")\n",
+   "site": "instance",
+   "why": "WHAT IS PRINTED, beside what is recorded: the drive's own line said NOT RED for a plant it could not ask, and that line is what a person reads. This plant prints it so again."
+  },
+  "test_gate_owed.py::DriveOwedClearsOnlyWhatReddened::test_a_plant_settled_by_proof_against_another_tree_is_settled_again_not_driven": {
+   "file": "tools/guard/drive_owed.py",
+   "must_say": "a plant settled by proof against another tree was driven instead of settled again",
+   "new": "            proven = prove([], [])\n",
+   "old": "            proven = prove(record.get(\"plants\") or [], list(record.get(\"bundle_plants\") or []))\n",
+   "site": "instance",
+   "why": "MEASURED 2026-10-25: the proofs were asked of the record before the verdicts about the last tree were owed again, so the 4 plants settled by proof against it came back owed, were driven, and could not redden - 4 of 1,576 NOT RED, and a second pass to settle them. This plant asks the proof of what nothing owes, as asking it before the re-owing did."
   },
   "test_gate_owed.py::DriveOwedClearsOnlyWhatReddened::test_a_plant_the_drive_never_reached_stays_owed": {
    "file": "tools/guard/drive_owed.py",
@@ -6147,18 +6587,43 @@
   "test_gate_owed.py::DriveOwedClearsOnlyWhatReddened::test_a_worker_red_about_another_tree_is_not_taken_back": {
    "file": "tools/guard/drive_owed.py",
    "must_say": "a worker's red about another tree",
-   "new": "            if True:\n                results[key] = (True, \"red\")\n",
-   "old": "            if said.get(\"subject\") == subject:\n                results[key] = (True, \"red\")\n",
+   "new": "            if True:\n                results[key] = ((True, \"red\") if not said.get(\"settled\") else\n",
+   "old": "            if said.get(\"subject\") == subject:\n                results[key] = ((True, \"red\") if not said.get(\"settled\") else\n",
    "site": "elsewhere",
-   "why": "PAID FOR 2026-10-11: a drive resumed after the tree changed carried 24 reds about the old tree out of what it would drive and into what the gate then refused. A worker's copy that was not this tree proves nothing about it; this plant takes its reds anyway."
+   "why": "PAID FOR 2026-10-11: a drive resumed after the tree changed carried 24 reds about the old tree out of what it would drive and into what the gate then refused. A worker's copy that was not this tree proves nothing about it; this plant takes its reds anyway. RE-ANCHORED 2026-10-24, when a worker's settlement came back as one too."
+  },
+  "test_gate_owed.py::DriveOwedClearsOnlyWhatReddened::test_readings_a_drive_killed_from_outside_left_are_put_back_by_the_next_drive": {
+   "file": "tools/guard/drive_owed.py",
+   "must_say": "a drive killed from outside left its planted readings in after the next drive",
+   "new": "    os.remove(journal)\n",
+   "old": "    for path, body in files.items():\n        with io.open(path, \"wb\") as handle:\n            handle.write(body)\n    os.remove(journal)\n",
+   "site": "instance",
+   "why": "MEASURED 2026-10-25: the commit gate found the SIGTERM test skipped on win32, so on the one platform this project runs on a drive stopped from outside (TerminateProcess: Stop-Process, a task's stop) left its planted readings in - the 2026-10-08 defect, open. This plant reads the journal and puts nothing back."
+  },
+  "test_gate_owed.py::DriveOwedClearsOnlyWhatReddened::test_readings_a_drive_killed_from_outside_left_are_put_back_by_the_next_drive::elsewhere": {
+   "file": "tools/guard/drive_owed.py",
+   "must_say": "a drive killed from outside left its planted readings in after the next drive",
+   "new": "    why, said = None, None\n",
+   "old": "    why, said = put_back_left(journal)\n",
+   "site": "elsewhere",
+   "why": "THE CHECK KEPT AND ITS ONE CALLER DROPPED: put_back_left still answers right, and no drive asks it - planted readings left in by a killed drive are read as the tree again. This plant stops main asking."
+  },
+  "test_gate_owed.py::DriveOwedClearsOnlyWhatReddened::test_readings_a_drive_killed_from_outside_left_are_put_back_by_the_next_drive::evasion": {
+   "file": "tools/guard/drive_owed.py",
+   "must_say": "a drive killed from outside left its planted readings in after the next drive",
+   "new": "    pass\n",
+   "old": "    if journal and held:\n        _hold(journal, held)\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST: journal nothing, and the next drive finds nothing to put back and says nothing - the readings a kill left planted stay in. This plant never writes the journal."
   },
   "test_gate_owed.py::DriveOwedClearsOnlyWhatReddened::test_readings_are_put_back_when_the_drive_is_terminated": {
    "file": "tools/guard/drive_owed.py",
    "must_say": "a drive terminated from outside left its planted readings in",
    "new": "        pass\n",
    "old": "        signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(128 + signum))\n",
+   "platform": "linux",
    "site": "instance",
-   "why": "2026-10-08: the owed drive was stopped from outside mid-run, and SIGTERM ended Python without running the `finally` that puts the run outputs back - planted readings were left in magnitudes.json. This plant catches no SIGTERM."
+   "why": "2026-10-08: the owed drive was stopped from outside mid-run, and SIGTERM ended Python without running the `finally` that puts the run outputs back - planted readings were left in magnitudes.json. This plant catches no SIGTERM. PLATFORM 2026-10-25: SIGTERM is caught on POSIX only; Windows ends a process from outside with TerminateProcess, which nothing catches - the journal (HELD) closes that, its own plants."
   },
   "test_gate_owed.py::DriveOwedClearsOnlyWhatReddened::test_readings_taken_with_a_defect_planted_are_put_back": {
    "file": "tools/guard/drive_owed.py",
@@ -6175,6 +6640,22 @@
    "old": "        if red:\n            #WHICH PLANT IT WAS, kept with the verdict",
    "site": "instance",
    "why": "ONLY A RED CLEARS A DEBT: a plant that did not redden, cleared from the owed record, is a guard nobody has seen fail, signed off as proven. Re-anchored 2026-10-12, when the line after the test gained a comment: the plant clears every plant again."
+  },
+  "test_gate_owed.py::DriveOwedClearsOnlyWhatReddened::test_what_a_suite_said_reaches_the_record_without_this_machines_paths": {
+   "file": "tools/guard/drive_owed.py",
+   "must_say": "what a suite said reached the record with this machine's home in it",
+   "new": "    for kind, pattern in []:\n",
+   "old": "    for kind, pattern in _PATHS[0]:\n",
+   "site": "instance",
+   "why": "MEASURED 2026-10-24: a plant whose suite crashed at import left this machine's home directory in not_red, in a tracked record, and the owner_paths rule refused it at the moment after the drive. This plant masks nothing."
+  },
+  "test_gate_owed.py::DriveOwedClearsOnlyWhatReddened::test_what_a_suite_said_reaches_the_record_without_this_machines_paths::elsewhere": {
+   "file": "tools/guard/drive_owed.py",
+   "must_say": "what a suite said reached the record with this machine's home in it",
+   "new": "        not_red[key] = str(detail)[:300]\n",
+   "old": "        not_red[key] = _masked(str(detail))[:300]\n",
+   "site": "elsewhere",
+   "why": "THE MASK KEPT AND ONE WRITE PAST IT: the settled note is masked and what a not-red suite said is written as it came - the 1 field that carried the home directory on 2026-10-24. This plant writes it unmasked."
   },
   "test_generated_code.py::AGeneratedBlockIsJudgedByWhatChanged::test_a_change_inside_the_block_is_refused_whatever_wrote_it": {
    "file": "tools/guard/generated_code.py",
@@ -6531,10 +7012,18 @@
   "test_hidden_desktop.py::AnUnattendedWindowIsNeverOnTheOwnersScreen::test_a_program_started_there_KNOWS_it_is_there_whoever_started_it": {
    "file": "tools/guard/hidden_desktop.py",
    "must_say": "was not told it is there",
-   "new": "        block = _environment_block(env)\n",
-   "old": "        block = _environment_block(dict(os.environ if env is None else env, CTRMAP_ON_UNATTENDED_DESKTOP=\"1\"))\n",
+   "new": "    out = dict(os.environ if env is None else env)\n",
+   "old": "    out = dict(os.environ if env is None else env, CTRMAP_ON_UNATTENDED_DESKTOP=\"1\")\n",
    "site": "instance",
-   "why": "MEASURED 2026-10-12: replant started its suites on the unattended desktop without the mark the other two callers set, so RuleRefusalsTest's scratch-tree build.ps1 and package.ps1 moved themselves there a second time through a hidden_desktop.py the scratch tree lacks - three cases red outside the battery, green inside it, and every plant drive and sweep runs outside it. This plant gives the mark back to the callers."
+   "why": "MEASURED 2026-10-12: replant started its suites on the unattended desktop without the mark the other two callers set, so RuleRefusalsTest's scratch-tree build.ps1 and package.ps1 moved themselves there a second time through a hidden_desktop.py the scratch tree lacks - three cases red. RE-ANCHORED 2026-10-24, when the mark moved into environment(), the one place both start paths build their environment."
+  },
+  "test_hidden_desktop.py::AnUnattendedWindowIsNeverOnTheOwnersScreen::test_a_program_started_there_keeps_its_local_data_away_from_the_owners": {
+   "file": "tools/guard/hidden_desktop.py",
+   "must_say": "was handed the owner's local data folder",
+   "new": "",
+   "old": "        out[\"LOCALAPPDATA\"] = LOCAL\n",
+   "site": "instance",
+   "why": "MEASURED 2026-10-23: the owner's own editor log held planted failures from 2 days of plant drives - a plant takes out the guard that keeps a suite from the real log, and the suite it runs wrote there. This plant hands everything started on the unattended desktop the owner's LOCALAPPDATA again."
   },
   "test_hidden_desktop.py::AnUnattendedWindowIsNeverOnTheOwnersScreen::test_a_window_a_CHILD_started_on_the_unattended_desktop_opens_is_not_on_this_desktop": {
    "file": "tools/guard/hidden_desktop.py",
@@ -7064,6 +7553,14 @@
    "site": "evasion",
    "why": "F183: the cheapest way to accept every honest count is to stop comparing the record's subject with this tree's - which also accepts every stale one."
   },
+  "test_release_channel.py::EachVersionIsPublishedOnItsOwnChannel::test_a_core_version_is_a_full_release_from_master": {
+   "file": "tools/release_channel.py",
+   "must_say": "a core version did not send the tagged commit, with its tag, to master",
+   "new": "BRANCH = {\"core\": \"master\", \"nightly\": \"HEAD:refs/heads/nightly\"}\n",
+   "old": "BRANCH = {\"core\": \"HEAD:refs/heads/master\", \"nightly\": \"HEAD:refs/heads/nightly\"}\n",
+   "site": "instance",
+   "why": "MEASURED 2026-10-23 cutting 1.0.5: the work was on a branch whose local master stood 4 commits behind origin/master, and the printed instruction pushed master by name - the stale local master, not the commit git tag had just named. This plant puts the core channel back to pushing master by name."
+  },
   "test_release_channel.py::EachVersionIsPublishedOnItsOwnChannel::test_a_nightly_is_a_pre_release_from_the_nightly_branch": {
    "file": "tools/release_channel.py",
    "must_say": "a nightly was published as a full release",
@@ -7075,10 +7572,10 @@
   "test_release_channel.py::EachVersionIsPublishedOnItsOwnChannel::test_a_nightly_is_a_pre_release_from_the_nightly_branch::branch": {
    "file": "tools/release_channel.py",
    "must_say": "a nightly was not pushed to the nightly branch",
-   "new": "BRANCH = {\"core\": \"master\", \"nightly\": \"master\"}\n",
-   "old": "BRANCH = {\"core\": \"master\", \"nightly\": \"HEAD:refs/heads/nightly\"}\n",
+   "new": "BRANCH = {\"core\": \"HEAD:refs/heads/master\", \"nightly\": \"HEAD:refs/heads/master\"}\n",
+   "old": "BRANCH = {\"core\": \"HEAD:refs/heads/master\", \"nightly\": \"HEAD:refs/heads/nightly\"}\n",
    "site": "elsewhere",
-   "why": "THE OTHER HALF OF THE SAME CHANNEL: core is master, so a nightly pushed there moves core itself to work nobody swept, whatever the release says. This plant sends a nightly to master."
+   "why": "THE OTHER HALF OF THE SAME CHANNEL: core is master, so a nightly pushed there moves core itself to work nobody swept, whatever the release says. This plant sends a nightly to master. Re-anchored 2026-10-23, when core began pushing HEAD:refs/heads/master instead of the local master by name."
   },
   "test_release_channel.py::EachVersionIsPublishedOnItsOwnChannel::test_a_version_that_is_neither_is_refused": {
    "file": "tools/release_channel.py",
@@ -7087,6 +7584,22 @@
    "old": "NIGHTLY = re.compile(r\"^\\d+\\.\\d+\\.\\d+-nightly\\.\\d+$\")\n",
    "site": "evasion",
    "why": "THE CHEAPEST WAY PAST TWO CHANNELS IS A THIRD NAME: AppVersion drops any suffix, so 1.0.4-beta would read as 1.0.4 and a nightly named that way would keep the real 1.0.4 from ever being offered to its users. This plant takes any suffix as nightly."
+  },
+  "test_release_channel.py::NoBuildThatUnpacksWrongIsPublished::test_a_build_that_cannot_be_read_is_refused_not_passed": {
+   "file": "tools/release_channel.py",
+   "must_say": "a build nobody could open was published as clean",
+   "new": "        return []\n",
+   "old": "        return [\"%s could not be read, so whether its names hold a backslash is unknown: %s\" % (zip_path, unread)]\n",
+   "site": "instance",
+   "why": "A QUERY THAT CANNOT READ ITS SUBJECT MUST NOT REPORT IT ABSENT: a build the tool cannot open has no names to hold a backslash, and an answer of none prints the publish commands for a file that may not exist - the 2 stand-in names its callers handed it were never files. This plant answers an unreadable build with nothing to refuse."
+  },
+  "test_release_channel.py::NoBuildThatUnpacksWrongIsPublished::test_a_build_whose_zip_names_a_path_with_a_backslash_is_refused": {
+   "file": "tools/release_channel.py",
+   "must_say": "a build with backslash paths was published",
+   "new": "    refusals = []\n",
+   "old": "    refusals = unpublishable(argv[2]) + unpublishable(argv[3])\n",
+   "site": "instance",
+   "why": "MEASURED 2026-10-23 on the 1.0.4 zips: 160 of 160 paths in the Windows build and 10 of 16 in the portable one carried a backslash, which the updater unpacks off Windows as one file each beside an untouched lib/ - and 1.0.4 changed those 4 JOGL jars. This plant publishes every build, whatever its names."
   },
   "test_release_channel.py::ThePackagerSaysOnlyWhatTheChannelToolSays::test_jpackage_is_handed_the_numbers_only": {
    "file": "package.ps1",
@@ -7103,6 +7616,14 @@
    "old": "Invoke-Native { & $rpy.Source -B (Join-Path $root \"tools\\release_channel.py\") $Version $winZip $zip }\n",
    "site": "evasion",
    "why": "ONE RULE WRITTEN TWICE DRIFTS: the packager's header once carried its own publish instruction, one zip under a dead name, and a release cut by it would have offered nothing to anyone (2026-09-22). This plant puts a push of the packager's own back, which sends a nightly to master."
+  },
+  "test_release_channel.py::ThePackagerSaysOnlyWhatTheChannelToolSays::test_the_packager_writes_its_zips_with_the_jdks_jar": {
+   "file": "package.ps1",
+   "must_say": "the packager zips with Compress-Archive again",
+   "new": "Compress-Archive -Path \"$stage\\*\" -DestinationPath $zip -CompressionLevel Optimal\n",
+   "old": "Invoke-Native { & \"$jdk\\bin\\jar.exe\" --create --file $zip --no-manifest -C $stage . }\n",
+   "site": "instance",
+   "why": "Both 1.0.4 zips were written by Compress-Archive, and 170 of their 176 paths carry a backslash - every path below a folder. The channel tool refuses such a zip at publish, after a whole packaging run; this says so at the packager. This plant puts Compress-Archive back for the portable build."
   },
   "test_release_channel.py::ThePackagerSaysOnlyWhatTheChannelToolSays::test_the_version_the_packager_writes_ends_its_lines_as_gitattributes_says": {
    "file": "package.ps1",
@@ -7287,6 +7808,86 @@
    "old": "        value = getattr(self.module, name)\n        if not callable(value):\n            return value\n",
    "site": "evasion",
    "why": "The cheapest seal is the load alone: the module is executed sealed and every later call runs bare. On 2026-10-09 it was a CALL - check_install's own stamp lookup - that left the bundle's folder first on the path. This plant seals the load and none of the 4 calls."
+  },
+  "test_window_check.py::ALaunchIsJudgedByWhatItShowed::test_a_dialog_on_a_second_launch_is_refused_and_on_a_first_it_is_not": {
+   "file": "tools/window_check.py",
+   "must_say": "a dialog on a second launch was let through",
+   "new": "    if False:\n",
+   "old": "    if second:\n",
+   "site": "instance",
+   "why": "1.0.4 opened a refusal dialog on EVERY launch (Zones sharing a map or area) and the owner met it each time they opened the editor. A first launch may repair and say so once; this plant lets a second launch raise any dialog, as 1.0.4 did."
+  },
+  "test_window_check.py::ALaunchIsJudgedByWhatItShowed::test_a_freeze_on_screen_over_the_limit_is_refused_before_the_load_and_in_it": {
+   "file": "tools/window_check.py",
+   "must_say": "was let through",
+   "new": "            if value > FREEZE_MS * 100:\n",
+   "old": "            if value > FREEZE_MS:\n",
+   "site": "instance",
+   "why": "MEASURED: 1.0.4 froze the shown window 13,807 ms on every fill of the zone list and 1.0.5 250-1,186 ms on every launch, where the fixed start-up measured 0-63 ms. This plant raises the limit a hundredfold, so the 1.0.4 freeze ships again."
+  },
+  "test_window_check.py::ALaunchIsJudgedByWhatItShowed::test_a_zone_list_that_never_fills_is_refused": {
+   "file": "tools/window_check.py",
+   "must_say": "a zone list that never filled was let through",
+   "new": "    elif False:\n",
+   "old": "    elif counts[0] not in rows:\n",
+   "site": "instance",
+   "why": "The owner could not load one zone in 1.0.4. A zone list that shows 211 of 540 rows is a list nobody can find their zone in; this plant passes a list that never filled to the editor's own zone count."
+  },
+  "test_window_check.py::ALaunchIsJudgedByWhatItShowed::test_a_zone_tool_with_no_way_back_on_screen_is_refused": {
+   "file": "tools/window_check.py",
+   "must_say": "a way back that was not on screen was let through",
+   "new": "        if \"NO 'Back to the zone list'\" in text:\n",
+   "old": "        if \"NO 'Back to the zone list'\" in text or \"way back showing=false\" in text:\n",
+   "site": "evasion",
+   "why": "THE 1.0.4 TRAP EXACTLY: the way back from Connect zones WAS in the window's tree, so every suite that asked the tree read it as there - drawn where nobody could see it. This plant asks only whether the button exists, the question that passed 1.0.4."
+  },
+  "test_window_check.py::AReleaseWaitsForAnEmptyQueue::test_a_queue_that_cannot_be_read_refuses::elsewhere": {
+   "file": "tools/window_check.py",
+   "must_say": "a queue that could not be read was read as an empty one",
+   "new": "        return [], None\n",
+   "old": "        return None, \"it has no `## Open` section to read\"\n",
+   "site": "elsewhere",
+   "why": "THE SAME RELEASE BY ANOTHER DOOR: a queue moved, renamed or emptied of its `## Open` heading reads as no work at all, and the release goes through. A QUERY THAT CANNOT READ ITS SUBJECT MUST NOT REPORT IT ABSENT. This plant reads it as empty."
+  },
+  "test_window_check.py::AReleaseWaitsForAnEmptyQueue::test_a_version_change_while_the_queue_holds_open_work_is_refused": {
+   "file": "tools/window_check.py",
+   "must_say": "a release was let through while the queue it stages holds open work",
+   "new": "        if False:\n",
+   "old": "        if not switch.allowed(RELEASE_WITH_OPEN_WORK):\n",
+   "site": "instance",
+   "why": "THE OWNER, 2026-10-25: 'were you planning on releasing 1.0.6 knowing it still had debt' - and nothing refused a version change while OUTSTANDING.md held open work; only the per-push approval stood between. This plant lets every version change through whatever the queue holds."
+  },
+  "test_window_check.py::AReleaseWaitsForAnEmptyQueue::test_the_owners_own_switch_lets_it_through::evasion": {
+   "file": "tools/window_check.py",
+   "must_say": "a switch the owner did not set to 1 let a release with open work through",
+   "new": "        if not os.environ.get(switch.name(RELEASE_WITH_OPEN_WORK)):\n",
+   "old": "        if not switch.allowed(RELEASE_WITH_OPEN_WORK):\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST: any value of the switch - a stale 0, an empty string - read as the owner's yes. Only exactly 1 is permission (bundle_env.allowed). This plant takes any value."
+  },
+  "test_window_check.py::AVersionChangeNeedsAPassedCheckOfWhatItCommits::test_a_version_change_over_anything_else_is_refused": {
+   "file": "tools/window_check.py",
+   "must_say": "a version change over sources the check never measured was let through",
+   "new": "        elif False:\n",
+   "old": "        elif record.get(\"subject\") != measured:\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST THE RECORD: one pass, kept, approving every later release. A commit-message rule here once checked a test count against a record eight days and 22 changed files old. This plant accepts a pass over any src/ and lib/."
+  },
+  "test_window_check.py::AVersionChangeNeedsAPassedCheckOfWhatItCommits::test_a_version_change_with_no_check_is_refused": {
+   "file": "tools/window_check.py",
+   "must_say": "a version change with no window check was let through",
+   "new": "    if now is not None:\n",
+   "old": "    if now is not None and now == before:\n",
+   "site": "instance",
+   "why": "A release commit made with no window check is how 1.0.4 shipped: 219 suites green and the program unusable. This plant asks nothing of any commit, version change included."
+  },
+  "test_window_check.py::TheEditorsSettingsAreReadAsJavaWroteThem::test_a_name_and_a_path_round_trip_through_javas_registry_spelling": {
+   "file": "tools/window_check.py",
+   "must_say": "a backslash in the editor's settings was read back as something else",
+   "new": "            if following == \"/\":\n                out.append(\"/\")\n",
+   "old": "            if following == \"/\":\n                out.append(chr(92))\n",
+   "site": "instance",
+   "why": "The check copies the folders the editor's own settings name, read from the registry in Java's spelling, where a backslash is written as two slashes. Read wrongly, every Windows path in them names no folder - measured here, both of the owner's resolve. This plant reads the doubled slash as one."
   },
   "test_work_order.py::AQueueOrATreeItCannotReadIsNotClear::test_a_git_that_cannot_answer_is_not_a_clean_tree": {
    "file": "tools/guard/work_order.py",

@@ -119,6 +119,8 @@ public class PaintedGeometryTest {
 				+ (off.isEmpty() ? "" : " - these corners are not: " + off));
 
 		aCornerIsBuiltFromTheHeightsAtIt();
+		wallsWhoseTopsDoNotLineUpAreNotOneStrip();
+		anEdgeRefusesAPointThatIsNotOneOfItsEnds();
 		checkRounding("the cliff's cap", PaintedGeometry.CLIFF_PULL, PaintedGeometry.TILE * 0.3f);
 		checkRounding("the shoreline's cap", shorePull(), PaintedGeometry.TILE * 0.34f);
 
@@ -283,6 +285,77 @@ public class PaintedGeometryTest {
 			}
 		}
 		return new ArrayList<>(at);
+	}
+
+	/**
+	 * TWO WALLS WHOSE TOPS ARE MORE THAN A STEP APART ARE NOT ONE STRIP (mutation sweep of 2026-10-25). Two one-step
+	 * walls in a straight run, one standing four steps above the other, have the same height and run straight on, so
+	 * only the line-up of their tops keeps them apart - and inverted, it joined exactly these and every suite passed.
+	 * Joined, the strip averages the two at the corner they share and stands a blade in the gap between them.
+	 * CONTROL: two walls whose tops ARE a step apart do run on as one, and the probe sees the averaged corner.
+	 */
+	static void wallsWhoseTopsDoNotLineUpAreNotOneStrip() throws Exception {
+		System.out.println("--- two walls whose tops are more than a step apart are not built as one strip");
+		Method edge = method(PaintedCliffMesh.class, "cliffEdge", int.class, int.class, int.class, float.class, float.class);
+		Method emit = method(PaintedCliffMesh.class, "emitCliffStrips", List.class, java.util.Map.class, int.class);
+		List<Float> lined = heightsBuilt(edge, emit, 18f, 36f);
+		check(inGap(lined, 18f, 36f), "control: one-step walls whose tops line up run on as one strip, averaged at the"
+				+ " corner they share: " + lined);
+		//the upper wall's foot is sunk below its fall, as every foot is (measured: 70 under a fall to 72, -2 under 0)
+		List<Float> apart = heightsBuilt(edge, emit, 72f, 90f);
+		check(!apart.isEmpty() && !inGap(apart, 18f, 70f), "one-step walls whose tops are four steps apart are built"
+				+ " apart, nothing standing in the gap between the lower one's top, 18, and the upper one's foot, 70: " + apart);
+	}
+
+	/**
+	 * The heights built, to a tenth, by a one-step wall on tile (20,21)'s west edge falling from {@code top} to
+	 * {@code bottom}, running straight on into one on tile (20,20)'s west edge falling from 18 to 0.
+	 */
+	static List<Float> heightsBuilt(Method edge, Method emit, float bottom, float top) throws Exception {
+		Object upper = edge.invoke(null, 20, 21, 1, bottom, top);
+		Object lower = edge.invoke(null, 20, 20, 1, 0f, 18f);
+		java.util.Map<Integer, List<Object>> out = new java.util.HashMap<>();
+		emit.invoke(null, new ArrayList<>(Arrays.asList(upper, lower)), out, 0);
+		java.util.TreeSet<Float> ys = new java.util.TreeSet<>();
+		for (Object q : out.getOrDefault(0, new ArrayList<>())) {
+			for (float[] p : (float[][]) pos.get(q)) {
+				ys.add(Math.round(p[1] * 10f) / 10f);
+			}
+		}
+		return new ArrayList<>(ys);
+	}
+
+	/** Whether any height lies strictly between {@code lo} and {@code hi}, half a unit clear of both. */
+	static boolean inGap(List<Float> ys, float lo, float hi) {
+		for (float y : ys) {
+			if (y > lo + 0.5f && y < hi - 0.5f) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * AN EDGE ASKED FOR A POINT THAT IS NOT ONE OF ITS ENDS REFUSES (mutation sweep of 2026-10-25). Every reader asks
+	 * for the end it stands at, so the refusal is all that stands between a reader gone wrong and a top read off the
+	 * wrong end without a word - swallowed into an answer, it passed every suite.
+	 */
+	static void anEdgeRefusesAPointThatIsNotOneOfItsEnds() throws Exception {
+		System.out.println("--- a cliff edge asked for the top at a point that is not one of its ends refuses");
+		Method edge = method(PaintedCliffMesh.class, "cliffEdge", int.class, int.class, int.class, float.class, float.class);
+		Object e = edge.invoke(null, 20, 20, 1, 0f, 18f);
+		Method topAt = method(e.getClass(), "topAt", String.class);
+		Object start = method(e.getClass(), "startKey").invoke(e), end = method(e.getClass(), "endKey").invoke(e);
+		check((Float) topAt.invoke(e, start) == 18f && (Float) topAt.invoke(e, end) == 18f,
+				"control: each end of a level edge answers its top, 18");
+		Throwable refused = null;
+		try {
+			topAt.invoke(e, "-1:-1");
+		} catch (java.lang.reflect.InvocationTargetException ex) {
+			refused = ex.getCause();
+		}
+		check(refused instanceof IllegalArgumentException && refused.getMessage().contains("is not an end of the edge"),
+				"a point that is neither end is refused, not answered with a height: " + refused);
 	}
 
 	/**

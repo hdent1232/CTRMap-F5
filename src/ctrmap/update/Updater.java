@@ -618,16 +618,45 @@ public class Updater {
 			System.out.println("CTRMap: it is still running - leaving the update staged.");
 			return;
 		}
-		if (!applyOver(new File(System.getProperty("user.dir")), target, System.out)) {
-			return;
+		installAndStart(new File(System.getProperty("user.dir")), target, System.out, Updater::launch);
+	}
+
+	/**
+	 * The apply after the wait: installs {@code payload} over {@code target}, saying what happened to {@code said}, and
+	 * starts the program again through {@code launcher} - unless the staged copy was refused and nothing changed. Apart
+	 * from runApply so a suite can hand a launcher of its own: the 2026-10-17 sweep recorded Updater 621, this check
+	 * negated, as a HOLE - no suite reached runApply, which waits for the old program and may start the editor.
+	 */
+	static void installAndStart(File payload, File target, java.io.PrintStream said, Launcher launcher) {
+		if (applyOver(payload, target, said)) {
+			startAgain(target, launcher);
 		}
-		try {
-			File exe = launcherIn(target);
-			if (exe != null) {
-				new ProcessBuilder(exe.getAbsolutePath(), REOPENED_FLAG).directory(target).start();
+	}
+
+	/** Starts a program: a process, unless a suite hands its own - no suite may start the editor. */
+	interface Launcher {
+
+		Process start(java.util.List<String> command, File dir) throws IOException;
+	}
+
+	/** The real start: {@code command} as a process in {@code dir}. */
+	static Process launch(java.util.List<String> command, File dir) throws IOException {
+		return new ProcessBuilder(command).directory(dir).start();
+	}
+
+	/**
+	 * Starts the installed editor in {@code target} again, marked as reopened - when it has a launcher; one that does not,
+	 * or will not start, is left for the user to start (the update is installed either way). The launcher is handed in
+	 * because no suite may start the editor.
+	 */
+	static void startAgain(File target, Launcher launcher) {
+		File exe = launcherIn(target);
+		if (exe != null) {
+			try {
+				launcher.start(java.util.Arrays.asList(exe.getAbsolutePath(), REOPENED_FLAG), target);
+			} catch (IOException notStarted) {
+				//the update is installed; the user can start it themselves
 			}
-		} catch (IOException ex) {
-			//the update is installed; the user can start it themselves
 		}
 	}
 

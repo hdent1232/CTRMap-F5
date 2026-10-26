@@ -199,8 +199,9 @@ public class ForegroundTest {
 	private static void everyWindowNobodyAskedForIsWired() throws Exception {
 		System.out.println("--- every window nobody's click opens is wired to wait");
 		String updater = SourceSeamTest.stripComments(DialogSeamTest.read(new File("src/ctrmap/update/Updater.java")));
-		String runApply = CollisionReadTest.body(updater, "public static void runApply(String[] args) {");
-		check(runApply != null && runApply.contains("new ProcessBuilder(exe.getAbsolutePath(), REOPENED_FLAG)"),
+		//the reopen moved out of runApply into startAgain on 2026-10-24, so a suite can hand it a launcher (UpdaterTest)
+		String startAgain = CollisionReadTest.body(updater, "static void startAgain(File target, Launcher launcher) {");
+		check(startAgain != null && startAgain.contains("java.util.Arrays.asList(exe.getAbsolutePath(), REOPENED_FLAG)"),
 				"the updater reopens the editor saying it is a reopen");
 		String main = SourceSeamTest.stripComments(DialogSeamTest.read(new File("src/ctrmap/CtrmapMainframe.java")));
 		String start = CollisionReadTest.body(main, "public static void main(String[] args) {");

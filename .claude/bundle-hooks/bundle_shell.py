@@ -1169,12 +1169,31 @@ def listed_sessions(rows):
             for m in _LISTED.finditer(latest if isinstance(latest, str) else "")]
 
 
+#: What starts or shapes a model. A SendMessage carrying any of these is a launch, whatever else it carries:
+#: every key `_launch_shaped` already reads as a launch, and the ones that pick or place a model.
+SHAPES_A_MODEL = frozenset(LAUNCH_KEYS) | frozenset(("prompt", "model", "isolation", "run_in_background", "effort",
+                                                     "agent_type", "team_name"))
+
+
 def message_recipient(payload):
     """The name a call hands words to, when it ONLY hands words to a recipient by name - the shape
     `message_to_session` asks of a SendMessage - or '' for any other call. ONE shape test: the guard that
-    tells a session to list its sessions before it asks the owner for a code asks this, not a copy."""
+    tells a session to list its sessions before it asks the owner for a code asks this, not a copy.
+
+    THE HARNESS'S OWN SENDMESSAGE IS READ BY WHAT IT MAY NOT CARRY, NOT BY A LIST OF WHAT IT MAY. Its
+    bookkeeping keys are the harness's and they grow: `type`, `recipient` and `content` were added before
+    2026-10-09, and `recipient_kind` by 2026-10-14 (measured 2026-10-15 in another session, 3 of 3 calls).
+    An allow-list of them broke both times, silently, and each time put an owner's code in front of every
+    message between the owner's sessions - the thing this exemption exists to stop. What makes a SendMessage
+    a launch is what it is sent to - a subagent, resumed - which the listing check decides, and a key that
+    starts or shapes a model (`SHAPES_A_MODEL`), refused here. Any other tool keeps the allow-list."""
     given = payload.get("tool_input") if isinstance(payload, dict) else None
-    if not isinstance(given, dict) or not set(given) <= MESSAGE_ONLY:
+    if not isinstance(given, dict):
+        return ""
+    if str(payload.get("tool_name") or "") == "SendMessage":
+        if set(given) & SHAPES_A_MODEL:
+            return ""
+    elif not set(given) <= MESSAGE_ONLY:
         return ""
     to, words = given.get("to"), given.get("message")
     if not (isinstance(to, str) and to.strip() and isinstance(words, str)):

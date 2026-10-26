@@ -546,10 +546,10 @@
   },
   {
    "id": "lz11-lz11-negate-if",
-   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/garc/LZ11.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/garc/LZ11.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect. RE-ANCHORED (2026-10-25): the first anchor, `if (len > bestLen)` inverted, had the planted compressor compare near-maximal lengths at every byte of a long run, so LZ11Test ran past 10 minutes and was red or not by the machine's load - not red beside 3 sweep shares, red alone in 15.5 minutes. The quick reject inverted lays every byte of a run as a literal in linear time, and the same check says the long match forms are not used.",
    "file": "src/ctrmap/formats/garc/LZ11.java",
-   "find": "\t\t\t\tif (len > bestLen) {\n",
-   "replace": "\t\t\t\tif (!(len > bestLen)) {\n",
+   "find": "\t\t\tif (data[cand + bestLen] == data[i + bestLen]) { // quick reject on the frontier byte\n",
+   "replace": "\t\t\tif (!(data[cand + bestLen] == data[i + bestLen])) { // quick reject on the frontier byte\n",
    "suite": "ctrmap.tests.LZ11Test",
    "args": [
     "${A039}"
@@ -2871,9 +2871,9 @@
   },
   {
    "id": "validate-lets-a-late-failure-out",
-   "why": "F231: validate caught only OpenFailed, so a failure after the archives opened - measured here with a GameText missing entry 90, the location names - left validate with the old session already dropped and was seen by none of its three callers. This plant rethrows it.",
+   "why": "F231: validate caught only OpenFailed, so a failure after the archives opened - measured here with a GameText missing entry 90, the location names - left validate with the old session already dropped and was seen by none of its three callers. This plant rethrows it. Re-anchored 2026-10-24, when the catch moved into Workspace.open(), the half start-up runs before the window shows.",
    "file": "src/ctrmap/Workspace.java",
-   "find": "\t\t\treturn failedToOpen(parent, showErrors,\n\t\t\t\t\tjava.util.Collections.singletonList(\"The game could not be opened: \" + Ui.reason(ex)), problems);",
+   "find": "\t\t\treturn new Opening(null, null,\n\t\t\t\t\tjava.util.Collections.singletonList(\"The game could not be opened: \" + Ui.reason(ex)));",
    "replace": "\t\t\tthrow ex;",
    "suite": "ctrmap.tests.WorkspaceOpenGuardsTest",
    "args": [],
@@ -8490,9 +8490,9 @@
   },
   {
    "id": "the-brush-importer-skips-the-cut",
-   "why": "F092: the brush importer must cut once there is a snapshot; skipping it returns the model unchanged and says nothing. This plant drops its 1 call to the shared cut.",
+   "why": "F092: the brush importer must cut once there is a snapshot; skipping it returns the model unchanged and says nothing. This plant drops its 1 call to the shared cut. Re-anchored 2026-10-24, when the cut was handed its appender (the 2026-10-17 sweep, TerrainCatalog 450 and 458).",
    "file": "src/ctrmap/formats/tilemap/TerrainCatalog.java",
-   "find": "return r; //no snapshot to cut from yet - see ensureNamedMaterial\n\t\t\t}\n\t\t\tcutFromPristine(files, model, d, r);\n",
+   "find": "return r; //no snapshot to cut from yet - see ensureNamedMaterial\n\t\t\t}\n\t\t\tcutFromPristine(files, model, d, r, BchModelAppender::append);\n",
    "replace": "return r; //no snapshot to cut from yet - see ensureNamedMaterial\n\t\t\t}\n",
    "suite": "ctrmap.tests.MaterialImportTest",
    "args": [],
@@ -13446,10 +13446,10 @@
   },
   {
    "id": "a-record-copy-shares-its-arrays",
-   "why": "F209: an undo state's primitive arrays are its own; shared, a change to the live record is in the state before the change too. Planted 2026-10-10, it turned 3 of the 78 checks UndoHistoryTest ran red, first: \"a prop registry entry's nested table changed is an edit: null\".",
+   "why": "F209: an undo state's primitive arrays are its own; shared, a change to the live record is in the state before the change too. Planted 2026-10-10, it turned 3 of the 78 checks UndoHistoryTest ran red, first: \"a prop registry entry's nested table changed is an edit: null\". Re-anchored 2026-10-24, when every field is written through one helper (the 2026-10-17 sweep, FlatCopy 57).",
    "file": "src/ctrmap/humaninterface/FlatCopy.java",
-   "find": "\t\t\t\tf.set(to, v != null && v.getClass().isArray() ? cloneArray(v) : v);   //flat() let through primitive arrays only\n",
-   "replace": "\t\t\t\tf.set(to, v);\n",
+   "find": "\t\t\twrite(f, to, v != null && v.getClass().isArray() ? cloneArray(v) : v);   //flat() let through primitive arrays only\n",
+   "replace": "\t\t\twrite(f, to, v);\n",
    "suite": "ctrmap.tests.UndoHistoryTest",
    "args": [],
    "must_say": "FAIL: the array is the copy's own"
@@ -13476,10 +13476,10 @@
   },
   {
    "id": "boxed-values-compared-by-identity",
-   "why": "F209: two records are the same when their values are equal; compared by identity, a field past Java's boxed cache reads as changed on every settle and every gesture becomes an edit.",
+   "why": "F209: two records are the same when their values are equal; compared by identity, a field past Java's boxed cache reads as changed on every settle and every gesture becomes an edit. Re-anchored 2026-10-24, one indent shallower now the read's try is gone (the 2026-10-17 sweep, FlatCopy 57).",
    "file": "src/ctrmap/humaninterface/FlatCopy.java",
-   "find": "\t\t\t\t\tif (!java.util.Objects.equals(x, y)) {\n",
-   "replace": "\t\t\t\t\tif (x != y) {\n",
+   "find": "\t\t\t\tif (!java.util.Objects.equals(x, y)) {\n",
+   "replace": "\t\t\t\tif (x != y) {\n",
    "suite": "ctrmap.tests.UndoHistoryTest",
    "args": [],
    "must_say": "Exception in thread \"main\" java.lang.IllegalStateException: the region's props reads differently twice"
@@ -16385,9 +16385,9 @@
   },
   {
    "id": "a-suite-runs-a-programs-main",
-   "why": "HarvesterGuardsTest called BuildingHarvester.main, whose refusal of its arguments is System.exit(1): with that refusal turned on by a plant the suite's own JVM ended mid-run, red with no FAIL line and no summary, so the pricing drive of 2026-10-10 could only say the plant never said what it watched for.",
+   "why": "HarvesterGuardsTest called BuildingHarvester.main, whose refusal of its arguments is System.exit(1): with that refusal turned on by a plant the suite's own JVM ended mid-run, red with no FAIL line and no summary, so the pricing drive of 2026-10-10 could only say the plant never said what it watched for. Re-anchored 2026-10-24, when the suite hands the harvest its progress interval (the 2026-10-17 sweep, BuildingHarvester 264).",
    "file": "src/ctrmap/tests/HarvesterGuardsTest.java",
-   "find": "\t\tint status = BuildingHarvester.run(new String[]{romfs.getAbsolutePath(), tsv.getAbsolutePath()}, said);\n",
+   "find": "\t\tint status = BuildingHarvester.run(new String[]{romfs.getAbsolutePath(), tsv.getAbsolutePath()}, said, 100);\n",
    "replace": "\t\tBuildingHarvester.main(new String[]{romfs.getAbsolutePath(), tsv.getAbsolutePath()});\n\t\tint status = 0;\n",
    "suite": "ctrmap.tests.BatteryHygieneTest",
    "args": [
@@ -18966,10 +18966,10 @@
   },
   {
    "id": "the-updater-reopens-the-editor-as-if-started",
-   "why": "The updater reopens the editor without saying it is a reopen, so it comes back maximized and active over whatever the owner moved on to after closing it. The bill for this class, in the owner's words on 2026-10-12: kicked out of a window twice by pop ups opened over what they were doing - once losing all their edits - and, seen or not, a paused video and a deleted screenshot.",
+   "why": "The updater reopens the editor without saying it is a reopen, so it comes back maximized and active over whatever the owner moved on to after closing it. The bill for this class, in the owner's words on 2026-10-12: kicked out of a window twice by pop ups opened over what they were doing - once losing all their edits - and, seen or not, a paused video and a deleted screenshot. Re-anchored 2026-10-24, when the reopen moved into startAgain, handed a launcher (the 2026-10-17 sweep, Updater 621).",
    "file": "src/ctrmap/update/Updater.java",
-   "find": "new ProcessBuilder(exe.getAbsolutePath(), REOPENED_FLAG)",
-   "replace": "new ProcessBuilder(exe.getAbsolutePath())",
+   "find": "java.util.Arrays.asList(exe.getAbsolutePath(), REOPENED_FLAG)",
+   "replace": "java.util.Arrays.asList(exe.getAbsolutePath())",
    "suite": "ctrmap.tests.ForegroundTest",
    "args": [],
    "must_say": "FAIL: the updater reopens the editor saying it is a reopen"
@@ -25108,10 +25108,10 @@
   },
   {
    "id": "a-building-harvest-prints-every-candidate",
-   "why": "Measured by the 2026-10-16 assembly (drop-report, SURVIVED): the harvesters' reports were handed a PrintStream so a suite could read them, and REPORT read a print to a handed stream as a report only from that day, so nothing had read these lines. Inverted, a building harvest prints a progress line for every candidate but each 500th - 248 lines for the suite's cut-down dump - and none where it should (line 263).",
+   "why": "Measured by the 2026-10-16 assembly (drop-report, SURVIVED): the harvesters' reports were handed a PrintStream so a suite could read them, and REPORT read a print to a handed stream as a report only from that day, so nothing had read these lines. Inverted, a building harvest prints a progress line for every candidate but each 500th - 248 lines for the suite's cut-down dump - and none where it should (line 263). Re-anchored 2026-10-24, when the progress line moved into progress(), which counts whole steps of a handed interval (the 2026-10-17 sweep, BuildingHarvester 264): inverted, it says a line at every candidate until the first whole step, and none after.",
    "file": "src/ctrmap/tools/BuildingHarvester.java",
-   "find": "\t\t\tif ((verified + dropped + threw.size()) % 500 == 0) {\n",
-   "replace": "\t\t\tif (!((verified + dropped + threw.size()) % 500 == 0)) {\n",
+   "find": "\t\tif (steps <= stepsSaid) {\n",
+   "replace": "\t\tif (!(steps <= stepsSaid)) {\n",
    "suite": "ctrmap.tests.HarvesterGuardsTest",
    "args": [
     "${PRISTINE}"
@@ -25595,10 +25595,10 @@
   },
   {
    "id": "the-window-swaps-a-view-itself-again",
-   "why": "The 3 views the 1.0.4 window swapped each did it with its own removeAll() and its own idea of a way back - one missing, two drawn flat - so nothing could say all 3 had one. This plant has the window swap the zone column back by hand again. RE-ANCHORED (2026-10-23): closeZoneColumnTool, where it was planted, went with the warp connector - the host's own way back does its job - so it is planted in the Zone list action.",
+   "why": "The 3 views the 1.0.4 window swapped each did it with its own removeAll() and its own idea of a way back - one missing, two drawn flat - so nothing could say all 3 had one. This plant has the window swap the zone column back by hand again. RE-ANCHORED (2026-10-23): closeZoneColumnTool, where it was planted, went with the warp connector - the host's own way back does its job - so it is planted in the Zone list action. RE-ANCHORED (2026-10-25): the Zone list action answers the component it asked for the keyboard now, so its signature returns JComponent; the same hand-made swap, planted at the same place.",
    "file": "src/ctrmap/CtrmapMainframe.java",
-   "find": "\tprivate void showZoneListAction() {\n\t\tselectTab(\"Zone Loader\");\n",
-   "replace": "\tprivate void showZoneListAction() {\n\t\tselectTab(\"Zone Loader\");\n\t\tif (zoneHost != null) {\n\t\t\tzoneHost.removeAll();\n\t\t\tzoneHost.add(zoneHost.home(), BorderLayout.CENTER);\n\t\t}\n",
+   "find": "\tprivate JComponent showZoneListAction() {\n\t\tselectTab(\"Zone Loader\");\n",
+   "replace": "\tprivate JComponent showZoneListAction() {\n\t\tselectTab(\"Zone Loader\");\n\t\tif (zoneHost != null) {\n\t\t\tzoneHost.removeAll();\n\t\t\tzoneHost.add(zoneHost.home(), BorderLayout.CENTER);\n\t\t}\n",
    "suite": "ctrmap.tests.ToolHostTest",
    "args": [
     "src"
@@ -25932,6 +25932,431 @@
     "${GAMEDIR}"
    ],
    "must_say": "FAIL: every appended zone has an area of its own after the repair: 3 of 4"
+  },
+  {
+   "id": "the-archives-open-after-the-window-shows",
+   "why": "MEASURED 2026-10-24 through the real window on copies of the owner's workspace and game: with the workspace's archives opened on the event thread after frame.setVisible(true), every launch froze the freshly shown window 310-316 ms, where 1.0.3 froze it 0 ms - the lag the owner reported as never seen before, and the ledger's reviewer failed the lag item over it. This plant waits for them after the show again. Re-anchored 2026-10-24, when they moved onto a worker started before the window is built.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\tWorkspace.Opening opened = opening == null ? null : Workspace.await(opening);\n\t\tframe.setVisible(true);\n",
+   "replace": "\t\tframe.setVisible(true);\n\t\tWorkspace.Opening opened = opening == null ? null : Workspace.await(opening);\n",
+   "suite": "ctrmap.tests.ZoneListThreadTest",
+   "args": [],
+   "must_say": "FAIL: the window starts opening the archives"
+  },
+  {
+   "id": "opening-the-workspace-speaks-before-the-window",
+   "why": "The open half runs before the window shows; a dialog said there has no window to stand over - on Windows a modal over an invisible owner has no taskbar entry and can sit behind other programs, so a launch would look like nothing happened, for every 1 of the 3 dialogs validate can raise. This plant says the setup error inside the open half.",
+   "file": "src/ctrmap/Workspace.java",
+   "find": "\t\t\treturn new Opening(null, null, ex.problems());\n",
+   "replace": "\t\t\tfailedToOpen(null, true, ex.problems(), null);\n\t\t\treturn new Opening(null, null, ex.problems());\n",
+   "suite": "ctrmap.tests.ZoneListThreadTest",
+   "args": [],
+   "must_say": "FAIL: opening says nothing and installs nothing"
+  },
+  {
+   "id": "the-archives-open-on-the-thread-that-asks",
+   "why": "MEASURED 2026-10-24: opened on the event thread before the window showed, the archives held it off the screen 400-525 ms of every launch (sampled every 50 ms through the real window on copies of the owner's workspace and game). openBeside runs them on a worker; run on the calling thread instead, every source-order line still reads true. This plant runs the worker on the thread that asks.",
+   "file": "src/ctrmap/Workspace.java",
+   "find": "\t\topening.execute();\n",
+   "replace": "\t\topening.run();\n",
+   "suite": "ctrmap.tests.ZoneListThreadTest",
+   "args": [],
+   "must_say": "FAIL: and openBeside opens on a worker"
+  },
+  {
+   "id": "the-opening-worker-reads-the-folders-the-event-thread-writes",
+   "why": "The opening worker read WORKSPACE_PATH and GAMEDIR_PATH, which loadWorkspace writes on the event thread, and dropped the session through install(null) - 3 fields written by one thread and touched by another with no lock, measured by EdtReachTest (40 against its ceiling of 37). It is handed the two folders now. This plant has it read the statics again.",
+   "file": "src/ctrmap/Workspace.java",
+   "find": "\t\t\t\treturn opening(workspace, game);\n",
+   "replace": "\t\t\t\treturn opening(WORKSPACE_PATH, GAMEDIR_PATH);\n",
+   "suite": "ctrmap.tests.EdtReachTest",
+   "args": [
+    "src",
+    "build/classes"
+   ],
+   "must_say": "FAIL: fields one thread writes and another touches with no lock"
+  },
+  {
+   "id": "opengl-es-is-probed-on-windows",
+   "why": "MEASURED 2026-10-24 through the real window on copies of the owner's workspace and game, 3 launches each, interleaved: JOGL 2.6.0's first question probed OpenGL ES as well as desktop GL, and OpenGL start-up held the window off the screen 1650 ms (window at 3832 ms); with JOGL's switch 750 ms (2674 ms), level with 1.0.3. Nothing here asks for ES. This plant sets no switch.",
+   "file": "src/ctrmap/humaninterface/GlSupport.java",
+   "find": "\t\t\t\tSystem.setProperty(NO_ES, \"true\");\n",
+   "replace": "",
+   "suite": "ctrmap.tests.GlUnavailableTest",
+   "args": [
+    "build/classes"
+   ],
+   "must_say": "FAIL: JOGL says OpenGL ES is off"
+  },
+  {
+   "id": "the-es-switch-is-set-after-jogl-read-it",
+   "why": "THE CHEAPEST WAY PAST: set the switch, but after GLProfile's initialiser has read it - the property then says true while JOGL probes ES anyway, and a test asking the property would pass over 1650 ms of start-up. This plant asks JOGL for a profile first, then sets it; JOGL's own flag must say so.",
+   "file": "src/ctrmap/humaninterface/GlSupport.java",
+   "find": "System.getProperty(NO_ES) == null) {",
+   "replace": "System.getProperty(NO_ES) == null && GLProfile.get(GLProfile.GL2) != null) {",
+   "suite": "ctrmap.tests.GlUnavailableTest",
+   "args": [
+    "build/classes"
+   ],
+   "must_say": "FAIL: JOGL says OpenGL ES is off"
+  },
+  {
+   "id": "opengl-is-asked-beside-the-event-thread",
+   "why": "MEASURED 2026-10-24: the OpenGL probe started on a thread of its own while the event thread built the window deadlocked 12 runs of 12 - JOGL's JAWTUtil initialiser invokes and waits on the event thread, which was waiting on GlSupport's lock - so every launch would hang. This plant starts the probe on a thread beside the event thread again.",
+   "file": "src/ctrmap/humaninterface/GlSupport.java",
+   "find": "\t\treturn unavailable() == null;\n",
+   "replace": "\t\tnew Thread(GlSupport::unavailable).start();\n\t\treturn unavailable() == null;\n",
+   "suite": "ctrmap.tests.ZoneListThreadTest",
+   "args": [],
+   "must_say": "FAIL: GlSupport starts no thread of its own to ask on"
+  },
+  {
+   "id": "main-asks-for-opengl-off-the-event-thread",
+   "why": "The same deadlock from the other side: main() runs on the main thread, and asking for OpenGL there while the event thread builds the window and then asks too leaves each waiting on the other, as 12 of 12 measured runs did. This plant has main() ask for OpenGL before it hands the window to the event thread.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\tCtrmapMainframe window = new CtrmapMainframe();\n",
+   "replace": "\t\tctrmap.humaninterface.GlSupport.available();\n\t\tCtrmapMainframe window = new CtrmapMainframe();\n",
+   "suite": "ctrmap.tests.ZoneListThreadTest",
+   "args": [],
+   "must_say": "FAIL: and main(), which runs off the event thread, does not ask it"
+  },
+  {
+   "id": "a-record-written-to-memory-that-fails-is-swallowed",
+   "why": "Measured by the 2026-10-17 sweep at 990d0c1 (CameraData L148, drop-throw, SURVIVED): a write into memory cannot fail, so the catch each format kept around one was a line no input reached. Every such write goes through Bytes.written now, and HandleCloseTest hands it a writing that refuses. This plant swallows the refusal, so 1 record would come back short and say nothing.",
+   "file": "src/ctrmap/util/Bytes.java",
+   "find": "\t\t\tthrow new java.io.UncheckedIOException(\"a record could not be written: \" + reason(refused), refused);\n",
+   "replace": "",
+   "suite": "ctrmap.tests.HandleCloseTest",
+   "args": [],
+   "must_say": "FAIL: a writing that refuses is said, with its own reason"
+  },
+  {
+   "id": "an-npc-entry-reads-a-field-from-its-neighbours-byte",
+   "why": "Measured by the 2026-10-17 sweep at 990d0c1 (NPCRegistry L106, drop-throw, SURVIVED): the registry's read of whole entries through a stream could not run out, so its catch was a line no input reached. Each entry is read from the bytes at its offset now, and no catch is left; what is left to get wrong is an offset, which 1 entry of 24 distinct bytes round-trips. This plant reads u4 from byte 5.",
+   "file": "src/ctrmap/formats/npcreg/NPCRegistry.java",
+   "find": "\t\t\tu4 = b[at + 4] & 0xFF;\n",
+   "replace": "\t\t\tu4 = b[at + 5] & 0xFF;\n",
+   "suite": "ctrmap.tests.NpcRegistryTest",
+   "args": [],
+   "must_say": "FAIL: and written back, each of its 24 distinct bytes is where it was read from"
+  },
+  {
+   "id": "an-archive-that-grows-under-an-in-place-pack-is-written",
+   "why": "Measured by the 2026-10-17 sweep at 990d0c1 (GARC L451, drop-throw and swallow-throw, SURVIVED twice): no suite made an archive change length under an in-place write, so the refusal was never reached. GarcPrefixTest grows it by 16 bytes while the pack chooses its files. This plant drops the refusal: an in-place write over a changed archive would land at stale offsets.",
+   "file": "src/ctrmap/formats/garc/GARC.java",
+   "find": "\t\t\tthrow new IOException(\"writing \" + writes.size() + \" entries in place changed the length of \" + file.getPath()\n\t\t\t\t\t+ \" from \" + size + \" to \" + newGARC.length() + \" - an in-place write must not.\");\n",
+   "replace": "",
+   "suite": "ctrmap.tests.GarcPrefixTest",
+   "args": [],
+   "must_say": "FAIL: and the pack refused it, naming the archive"
+  },
+  {
+   "id": "a-converter-run-stopped-early-says-nothing",
+   "why": "Measured by the 2026-10-17 sweep at 990d0c1 (ESPICAControl L137, drop-report, SURVIVED): no suite stopped a run before its converter finished. DialogSeamTest interrupts one over a slow converter. This plant drops the status line, so 1 stopped run leaves the dialog saying it is still converting.",
+   "file": "src/ctrmap/humaninterface/ESPICAControl.java",
+   "find": "\t\t\t\t\t\t\t\tstatus.setText(\"Failed - stopped before ESPICA finished, so nothing was stored\");\n",
+   "replace": "",
+   "suite": "ctrmap.tests.DialogSeamTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: a run stopped before its converter finished says so"
+  },
+  {
+   "id": "the-building-harvest-says-no-progress",
+   "why": "Measured by the 2026-10-17 sweep at 315d48d (BuildingHarvester L264, drop-report, SURVIVED): the progress line came every 500 candidates and no suite's harvest reached 500. The interval is handed in now, and HarvesterGuardsTest asks every 100th of 235. This plant drops the line.",
+   "file": "src/ctrmap/tools/BuildingHarvester.java",
+   "find": "\t\tsaid.println(\"verify: \" + verified + \" ok, \" + dropped + \" dropped, \" + ((System.currentTimeMillis() - t0) / 1000) + \"s\");\n",
+   "replace": "",
+   "suite": "ctrmap.tests.HarvesterGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "FAIL: the building harvest says what it swept and what it wrote"
+  },
+  {
+   "id": "an-append-that-names-no-mesh-is-not-refused",
+   "why": "Measured by the 2026-10-17 sweep at 315d48d (TerrainCatalog L450, drop-throw and swallow-throw, SURVIVED): the real appender validates both models and cannot be made to name no mesh by any input. The appender is handed in now, and MaterialImportTest hands one that returns the model as it was. This plant drops the refusal, so 1 such import would blank mesh -1 with an index error that names nothing.",
+   "file": "src/ctrmap/formats/tilemap/TerrainCatalog.java",
+   "find": "\t\t\tthrow new IllegalStateException(\"the append produced no mesh named \" + d.injectName);\n",
+   "replace": "",
+   "suite": "ctrmap.tests.MaterialImportTest",
+   "args": [],
+   "must_say": "FAIL: an append that names no mesh is refused, naming the material"
+  },
+  {
+   "id": "a-merged-model-that-fails-validation-is-shipped",
+   "why": "Measured by the 2026-10-17 sweep at 315d48d (TerrainCatalog L458, drop-throw and swallow-throw, SURVIVED): no input made the real merge fail validation. MaterialImportTest hands an appender whose merge sets the SubMeshCullings count to 1. This plant drops the refusal, so a model that stopped parsing would be painted with and saved.",
+   "file": "src/ctrmap/formats/tilemap/TerrainCatalog.java",
+   "find": "\t\t\tthrow new IllegalStateException(\"the merged model failed validation: \"\n\t\t\t\t\t+ new BchMapModel(merged).validate().get(0));\n",
+   "replace": "",
+   "suite": "ctrmap.tests.MaterialImportTest",
+   "args": [],
+   "must_say": "FAIL: and one whose merge does not validate is refused, saying why"
+  },
+  {
+   "id": "the-apply-starts-only-a-refused-update",
+   "why": "Measured by the 2026-10-17 sweep at 315d48d (Updater L621, negate-if, SURVIVED): no suite reached runApply, which waits for the old program and may start the editor. Its body after the wait is installAndStart, handed a launcher. This plant negates the check, so 1 installed update would not be started and a refused one would.",
+   "file": "src/ctrmap/update/Updater.java",
+   "find": "\t\tif (applyOver(payload, target, said)) {\n",
+   "replace": "\t\tif (!applyOver(payload, target, said)) {\n",
+   "suite": "ctrmap.tests.UpdaterTest",
+   "args": [],
+   "must_say": "FAIL an update that installs is started again"
+  },
+  {
+   "id": "an-applied-update-is-not-started-again",
+   "why": "The other half of Updater L621 (the 2026-10-17 sweep at 315d48d, SURVIVED): the start itself, which no suite may make for real. UpdaterTest hands startAgain a launcher that records what it is asked. This plant drops the start, so after 1 update the user is left with no editor running. Planted as a refusal the catch beside it takes, not as nothing: an empty try leaves an IOException no body throws, which javac refuses.",
+   "file": "src/ctrmap/update/Updater.java",
+   "find": "\t\t\t\tlauncher.start(java.util.Arrays.asList(exe.getAbsolutePath(), REOPENED_FLAG), target);\n",
+   "replace": "\t\t\t\tthrow new IOException(\"the start, dropped\");\n",
+   "suite": "ctrmap.tests.UpdaterTest",
+   "args": [],
+   "must_say": "FAIL the installed editor is started again in its folder, marked as reopened"
+  },
+  {
+   "id": "a-field-that-cannot-be-read-is-copied-as-null",
+   "why": "Measured by the 2026-10-17 sweep at 315d48d (FlatCopy L57, drop-throw, SURVIVED): every field was made accessible before it was read, so the catch each loop kept was a line no record reached. Both loops read through one helper now, and UndoHistoryTest hands it a field never made accessible. This plant answers null instead, so 1 field would be copied as nothing and undo would restore it so.",
+   "file": "src/ctrmap/humaninterface/FlatCopy.java",
+   "find": "\t\t\tthrow new IllegalStateException(f.getDeclaringClass().getName() + \".\" + f.getName() + \" could not be read: \"\n\t\t\t\t\t+ ctrmap.Ui.reason(ex), ex);\n",
+   "replace": "\t\t\treturn null;\n",
+   "suite": "ctrmap.tests.UndoHistoryTest",
+   "args": [],
+   "must_say": "FAIL: a field that cannot be read is said, naming it"
+  },
+  {
+   "id": "a-field-that-cannot-be-written-is-skipped",
+   "why": "The write half of FlatCopy L57 (the 2026-10-17 sweep at 315d48d, drop-throw, SURVIVED): UndoHistoryTest hands the write helper a static final field, which refuses it. This plant swallows the refusal, so 1 field an undo should restore would keep its edited value and nothing would say so.",
+   "file": "src/ctrmap/humaninterface/FlatCopy.java",
+   "find": "\t\t\tthrow new IllegalStateException(f.getDeclaringClass().getName() + \".\" + f.getName() + \" could not be written: \"\n\t\t\t\t\t+ ctrmap.Ui.reason(ex), ex);\n",
+   "replace": "",
+   "suite": "ctrmap.tests.UndoHistoryTest",
+   "args": [],
+   "must_say": "FAIL: and one that cannot be written is said, naming it"
+  },
+  {
+   "id": "the-no-gl-jvm-is-started-with-gl",
+   "why": "MEASURED 2026-10-24: the sections that need OpenGL absent were skipped on every machine this was run on, because OpenGL started there, so 3 plants on them could never be driven red and the gate was passed only by skipping it. They run now in a JVM started with JOGL's own switches, which turn every profile off. This plant starts that JVM without them: OpenGL starts in it, and the sections are back to proving nothing.",
+   "file": "src/ctrmap/tests/GlUnavailableTest.java",
+   "find": "\t\tcommand.addAll(java.util.Arrays.asList(NO_PROFILES));\n",
+   "replace": "",
+   "suite": "ctrmap.tests.GlUnavailableTest",
+   "args": [
+    "build/classes"
+   ],
+   "must_say": "FAIL: control: JOGL's own switches turned every profile off"
+  },
+  {
+   "id": "windows-cannot-count-a-processs-reads",
+   "why": "MEASURED 2026-10-24: only Linux's /proc/self/io was asked, so on every machine this was run on the section that proves opening an archive reads its entries' first bytes skipped, and its plant could never be driven red. Windows keeps the same count (WMI's ReadTransferCount): 2,097,162 bytes for a 2 MB read, 722 to open a 16 MB archive. This plant answers that Windows will not say.",
+   "file": "src/ctrmap/tests/GarcPrefixTest.java",
+   "find": "\t\tif (!System.getProperty(\"os.name\", \"\").startsWith(\"Windows\")) {\n\t\t\treturn -1;\n\t\t}\n",
+   "replace": "\t\tif (true) {\n\t\t\treturn -1;\n\t\t}\n",
+   "suite": "ctrmap.tests.GarcPrefixTest",
+   "args": [],
+   "must_say": "FAIL: this system keeps a count of a process's reads, and it could not be read"
+  },
+  {
+   "id": "a-scratch-copy-of-the-game-is-the-game",
+   "why": "MEASURED 2026-10-23: guard_game_data refused any path with a RomFS or Workspace segment, so measuring 1.0.4 on copies of the owner's workspace and game in the temp folder needed the copies renamed (ws, game) before they could be written at all - a guard that refuses honest work gets switched off. A path is judged by the folder it really is now; this plant reads every copy in the temp folder as the game again.",
+   "file": ".claude/hooks/guard_game_data.py",
+   "find": "    return full.startswith(scratch.rstrip(os.sep) + os.sep)\n",
+   "replace": "    return False\n",
+   "suite": "ctrmap.tests.HookRefusalsTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: deleting from a copy of the dump in the temp folder is allowed"
+  },
+  {
+   "id": "a-climb-out-of-the-temp-folder-is-a-copy",
+   "why": "THE CHEAPEST WAY PAST the temp-folder rule: judge a path by how it is spelled. MEASURED 2026-10-24 with this plant: HookRefusalsTest's 1 path that climbs out of the temp folder by .. onto the real dump (<the temp folder>/../../RomFS/a) was let through as a copy, and the dump is the one copy there is (not in version control, re-dumped only from a 3DS). The rule resolves the path to the folder actually written (realpath); this plant judges the spelling instead.",
+   "file": ".claude/hooks/guard_game_data.py",
+   "find": "    full = os.path.normcase(os.path.realpath(path))\n",
+   "replace": "    full = os.path.normcase(path)\n",
+   "suite": "ctrmap.tests.HookRefusalsTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a path that climbs out of the temp folder by .. is judged where it lands, and refused"
+  },
+  {
+   "id": "a-launch-opens-the-wizard-for-everyone-else",
+   "why": "Measured by the 2026-10-25 sweep at 42d9ccb (CtrmapMainframe L1043, negate-if, SURVIVED): the start-up choice sat inline in createAndShowGUI, which no suite reaches, and inverted - a first-time user handed the archive check, everyone else the setup wizard - it passed every suite. It is openFirst now; this plant inverts it there.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\tif (wizard) {\n\t\t\tsetUp.run();\n",
+   "replace": "\t\tif (!wizard) {\n\t\t\tsetUp.run();\n",
+   "suite": "ctrmap.tests.ZoneListThreadTest",
+   "args": [],
+   "must_say": "FAIL: a first-time user is shown the wizard and anyone else their game"
+  },
+  {
+   "id": "the-opening-workers-error-is-said-as-a-game",
+   "why": "Measured by the 2026-10-25 sweep at 42d9ccb (Workspace L302, negate-if, SURVIVED): no suite had an opening worker that threw, so Workspace.await could say an Error - the JVM failing, not the game - as a game that would not open, and die on a cast for anything else. This plant inverts the sort.",
+   "file": "src/ctrmap/Workspace.java",
+   "find": "\t\t\tif (ex.getCause() instanceof Error) {\n",
+   "replace": "\t\t\tif (!(ex.getCause() instanceof Error)) {\n",
+   "suite": "ctrmap.tests.ZoneListThreadTest",
+   "args": [],
+   "must_say": "FAIL: an Error on the opening worker is thrown on"
+  },
+  {
+   "id": "a-zone-tool-opens-where-nobody-is-looking",
+   "why": "Measured by the 2026-10-25 sweep at 42d9ccb (CtrmapMainframe L1334, negate-if, SURVIVED): every suite drove the zone column with no tabs, so selectTab returned at its first line and the switch to the Zone Loader tab was never seen. This plant selects it only when the tool was refused.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\tif (zoneHost != null && zoneHost.show(title, tool, null, null)) {\n",
+   "replace": "\t\tif (!(zoneHost != null && zoneHost.show(title, tool, null, null))) {\n",
+   "suite": "ctrmap.tests.ToolHostTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL Re-link zone opened from the World Editor takes the user to Zone Loader"
+  },
+  {
+   "id": "an-extras-tool-opens-where-nobody-is-looking",
+   "why": "Measured by the 2026-10-25 sweep at 42d9ccb (CtrmapMainframe L1460, negate-if, SURVIVED): the Extras half of the same class - with no tabs in any suite, the switch to the Extras tab was never seen. This plant selects it only when the tool was refused.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\tif (extrasHost != null && extrasHost.show(title, tool, menu, mayLeave)) {\n",
+   "replace": "\t\tif (!(extrasHost != null && extrasHost.show(title, tool, menu, mayLeave))) {\n",
+   "suite": "ctrmap.tests.ToolHostTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL Raw archive browser (Builder) opened from the World Editor takes the user to Extras"
+  },
+  {
+   "id": "the-zone-list-is-not-given-the-keyboard",
+   "why": "Measured by the 2026-10-25 sweep at 42d9ccb (CtrmapMainframe L1346, negate-if, SURVIVED): a suite has no display and so no focus to read, and the Zone list action asking nothing for the keyboard passed every suite. It answers which component it asked now; this plant asks nothing.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\tif (zoneHost != null && zoneHost.goHome() && zoneHost.home() instanceof ctrmap.humaninterface.ZoneBrowserPane) {\n",
+   "replace": "\t\tif (!(zoneHost != null && zoneHost.goHome() && zoneHost.home() instanceof ctrmap.humaninterface.ZoneBrowserPane)) {\n",
+   "suite": "ctrmap.tests.ToolHostTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL the Zone list action puts the list back and asks the list itself for the keyboard"
+  },
+  {
+   "id": "a-host-is-built-with-nowhere-to-go-back",
+   "why": "Measured by the 2026-10-25 sweep at 42d9ccb (ToolHost L63, drop-throw, SURVIVED): no suite built a host without a home or a name, so a host with nowhere to go back to was refused by nothing until its first way back. This plant drops the refusal.",
+   "file": "src/ctrmap/humaninterface/ToolHost.java",
+   "find": "\t\t\tthrow new IllegalArgumentException(\"a tool host needs a home to go back to, and a name for it\");\n",
+   "replace": "",
+   "suite": "ctrmap.tests.ToolHostTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL a host built with no name for its home is refused"
+  },
+  {
+   "id": "a-zone-past-the-table-is-given-links",
+   "why": "Measured by the 2026-10-25 sweep at 42d9ccb (ZoneRelinker L77, drop-throw and swallow-throw, both SURVIVED): no suite asked the links of a zone the table does not have, so the refusal in words could go and nothing noticed. This plant drops it.",
+   "file": "src/ctrmap/ZoneRelinker.java",
+   "find": "\t\t\tthrow new IOException(\"There is no zone \" + zone + \" (the game has \" + now.zones() + \").\");\n",
+   "replace": "",
+   "suite": "ctrmap.tests.ZoneRelinkTest",
+   "args": [
+    "${PRISTINE}",
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: the links of zone -1"
+  },
+  {
+   "id": "a-zone-whose-file-cannot-be-read-is-relinked",
+   "why": "Measured by the 2026-10-25 sweep at 42d9ccb (ZoneRelinker L146, drop-throw and swallow-throw, both SURVIVED): no suite re-linked a zone whose workspace file could not be read, so the refusal before anything is written could go and nothing noticed. This plant drops it.",
+   "file": "src/ctrmap/ZoneRelinker.java",
+   "find": "\t\t\tthrow new IOException(\"Zone \" + zone + \" could not be read out of the workspace, so nothing was changed.\");\n",
+   "replace": "",
+   "suite": "ctrmap.tests.ZoneRelinkTest",
+   "args": [
+    "${PRISTINE}",
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: a zone whose file cannot be read out of the workspace is refused in words"
+  },
+  {
+   "id": "the-relink-panel-says-no-copy-when-there-is-one",
+   "why": "Measured by the 2026-10-25 sweep at 42d9ccb (ZoneRelinkPanel L63, negate-if, SURVIVED): every suite built the panel over a game with its pristine copy, so the notice could be said the wrong way round. This plant inverts where it is decided.",
+   "file": "src/ctrmap/humaninterface/ZoneRelinkPanel.java",
+   "find": "\t\t\tif (shipped == null) {\n",
+   "replace": "\t\t\tif (shipped != null) {\n",
+   "suite": "ctrmap.tests.ZoneRelinkTest",
+   "args": [
+    "${PRISTINE}",
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: over a game with no pristine copy the panel says what cannot be read"
+  },
+  {
+   "id": "the-relink-panel-shows-the-notice-the-wrong-way-round",
+   "why": "Measured by the 2026-10-25 sweep at 42d9ccb (ZoneRelinkPanel L88, negate-if, SURVIVED): the same notice, where it is put on the panel. This plant shows it only when there is nothing to say.",
+   "file": "src/ctrmap/humaninterface/ZoneRelinkPanel.java",
+   "find": "\t\tif (whyNoShipped != null) {\n",
+   "replace": "\t\tif (whyNoShipped == null) {\n",
+   "suite": "ctrmap.tests.ZoneRelinkTest",
+   "args": [
+    "${PRISTINE}",
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: over a game with no pristine copy the panel says what cannot be read"
+  },
+  {
+   "id": "walls-whose-tops-do-not-line-up-run-on-as-one",
+   "why": "Measured by the 2026-10-25 sweep at 42d9ccb (PaintedCliffMesh L199, negate-if, SURVIVED): two one-step walls four steps apart in a straight run are kept apart by nothing but the line-up of their tops, and no suite built that pair. This plant joins exactly those, averaging a blade into the gap.",
+   "file": "src/ctrmap/formats/tilemap/PaintedCliffMesh.java",
+   "find": "\t\t\t\t\t\tif (Math.abs(c.yTopA - cur.yTopB) > STEP * 1.01f) {\n",
+   "replace": "\t\t\t\t\t\tif (!(Math.abs(c.yTopA - cur.yTopB) > STEP * 1.01f)) {\n",
+   "suite": "ctrmap.tests.PaintedGeometryTest",
+   "args": [],
+   "must_say": "FAIL: one-step walls whose tops are four steps apart are built apart"
+  },
+  {
+   "id": "an-edge-answers-a-point-that-is-not-its-end",
+   "why": "Measured by the 2026-10-25 sweep at 42d9ccb (PaintedGeometry L128, swallow-throw, SURVIVED): every reader asks an edge for the end it stands at, and none asked for another, so the refusal could be swallowed into a height. This plant answers with the far end's top.",
+   "file": "src/ctrmap/formats/tilemap/PaintedGeometry.java",
+   "find": "\t\t\tthrow new IllegalArgumentException(\"the point \" + end + \" is not an end of the edge \" + startKey() + \" - \" + endKey());\n",
+   "replace": "\t\t\treturn yTopB;\n",
+   "suite": "ctrmap.tests.PaintedGeometryTest",
+   "args": [],
+   "must_say": "FAIL: a point that is neither end is refused"
+  },
+  {
+   "id": "the-game-data-editor-is-never-put-away",
+   "why": "Measured by the 2026-10-25 sweep at 1e41640 (CtrmapMainframe L2152, negate-if, SURVIVED): no suite asked after clearGameData, so the Game Data editor could stay up after the program had cleared it. This plant inverts the check, so the host is never sent home.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\tprivate void clearGameData() {\n\t\tif (gameDataHost != null) {\n",
+   "replace": "\tprivate void clearGameData() {\n\t\tif (!(gameDataHost != null)) {\n",
+   "suite": "ctrmap.tests.ToolHostTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL an editor the program is finished with is put away by it"
+  },
+  {
+   "id": "a-finished-runs-claim-is-taken-over",
+   "why": "MEASURED 2026-10-25: two shares of the 1e41640 sweep ended, and the third, four hours into CtrmapMainframe, then took over 6 of their claims as gone runs' and began measuring their recorded files again; it was stopped by hand. This plant takes a recorded file's claim over as if its run had died.",
+   "file": "tools/mutate2.py",
+   "find": "    if held.get(\"recorded\"):\n        return None\n",
+   "replace": "    if False:\n        return None\n",
+   "suite": "ctrmap.tests.MutationBaselineTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: a claim of a run that finished and recorded its file is kept"
+  },
+  {
+   "id": "a-recorded-file-leaves-its-claim-unmarked",
+   "why": "THE OTHER HALF: the check kept and its producer dropped - a run that records a file and never says so on the claim leaves it looking abandoned to every run that outlives it. This plant records without marking. THE BILL (2026-10-25): with no claim marked recorded, the live share of the 1e41640 sweep moved 6 claims of 2 finished shares aside and began measuring Forms and PaintedGeometry again, after 4 hours on CtrmapMainframe; it was stopped by hand.",
+   "file": "tools/mutate2.py",
+   "find": "    record_unit(target, frozen, recorded, cid, path, expected, unit_results)\n    mark_recorded(folder, cid, path)\n",
+   "replace": "    record_unit(target, frozen, recorded, cid, path, expected, unit_results)\n",
+   "suite": "ctrmap.tests.MutationBaselineTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: a file a run records says so on its claim"
   }
  ],
  "retired": [
@@ -26082,6 +26507,17 @@
    "args": [],
    "must_say": "FAIL: a ",
    "retired": "2026-10-18: the posts are gone, because they closed nothing. With every face over untouched ground backed (the premise that such ground backs itself was false), this plant SURVIVED replant - 'the defect is back and ctrmap.tests.PaintSealTest still passes' - and a post-less copy of the builder first on the classpath left every check of PaintSealTest's 13 terrains passing, the ledge at the foot of a cliff the painter leaves alone among them, while it built 16 fewer triangles in the terrace and in that ledge (two corners of four blades each). They stood where nothing was open."
+  },
+  {
+   "id": "the-stream-string-reader-reads-past-the-end",
+   "why": "F066: a stream's end reads as -1, not 0, and the loop appended it forever; this plant drops the 1 check for it.",
+   "file": "src/ctrmap/formats/h3d/StringUtils.java",
+   "find": "\t\t\tif (read < 0) {\n",
+   "replace": "\t\t\tif (false) {\n",
+   "suite": "ctrmap.tests.BchSectionsTest",
+   "args": [],
+   "must_say": "FAIL: the stream reader says where it ran out",
+   "retired": "2026-10-24: the code it planted into is gone, and so is the check that watched it. F204 deleted the stream string reader - nothing in the program read a string from a stream - and StringUtils now reads only from a byte array (cString), refusing a string with no NUL inside its data; BchSectionsTest's check 'the stream reader says where it ran out' went with it. Its anchor `if (read < 0)` matches nothing in StringUtils.java and its must_say appears in no suite. 0240c1a (Release 1.0.4) dropped it from the ledger with no record, and the owed-plant record kept owing it; recorded here instead."
   }
  ],
  "no_cost_ceiling": 0,

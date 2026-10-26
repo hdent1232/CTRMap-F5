@@ -13,5 +13,8 @@
 PY=python
 command -v python >/dev/null 2>&1 || PY=python3
 "$PY" tools/guard/commit_guard.py "$1" || exit 1
+# A RELEASE IS DRIVEN THROUGH ITS OWN WINDOW BEFORE IT SHIPS: a commit that changes the version is refused unless
+# tools/window_check.py passed over a build of exactly the src/ and lib/ it commits (package.ps1 runs the check).
+"$PY" -B tools/window_check.py --release-commit || exit 1
 "$PY" -B tools/commit_gate.py "$1" || exit 1
 exec "$PY" -B tools/gate_stamps.py stamp "$1"

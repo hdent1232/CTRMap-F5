@@ -440,6 +440,74 @@ def _python_runs(args, root):
     return []
 
 
+#: What another interpreter is handed that is no program: an option's VALUE (skipped with it), and code handed
+#: inline. A shell's or PowerShell's inline text (`bash -c`, `pwsh -Command`) is a COMMAND and is read as one;
+#: script code (`node -e`) and an encoded command name no program here. PowerShell takes an option by any
+#: unambiguous prefix, case aside.
+_SH_VALUED = ("-o", "+o", "-O", "+O", "--rcfile", "--init-file")
+_PWSH_COMMAND = ("-command", "-c", "-commandwithargs", "-cwa")
+_PWSH_ENCODED = ("-encodedcommand", "-e", "-ec", "-enc")
+_PWSH_COMMAND_LONG = ("-command", "-commandwithargs")
+_PWSH_VALUED = ("-executionpolicy", "-ep", "-ex", "-workingdirectory", "-wd", "-windowstyle", "-w", "-outputformat",
+                "-of", "-o", "-inputformat", "-if", "-inp", "-configurationname", "-config", "-custompipename",
+                "-settingsfile", "-settings", "-version", "-v", "-psconsolefile")
+_PWSH_VALUED_LONG = ("-executionpolicy", "-workingdirectory", "-windowstyle", "-outputformat", "-inputformat",
+                     "-configurationname", "-custompipename", "-settingsfile", "-version", "-psconsolefile")
+_OTHER_VALUED = ("-r", "--require", "--import", "--loader", "-I", "-M", "-m", "-C", "-F")
+_OTHER_INLINE = ("-e", "-E", "--eval", "-p", "--print")
+
+
+def _script_runs(name, args):
+    """`(words, inline)`: the words among another interpreter's arguments that could be the program it RUNS -
+    from the first word that is no option, an option's value skipped - and the command text a shell or
+    PowerShell was handed inline instead, which the caller reads as a command of its own.
+
+    THE PROGRAM IS ONE WORD FOR EVERY INTERPRETER, as `_python_runs` made it for Python. Every word after a
+    shell was a candidate and the first that was a file was read as the program, so a script this cannot find
+    - `bash $T/show.sh`, or a relative path from another directory - was skipped and the DATA file after it
+    read instead: `bash not_here.sh tests/plants.json` was refused as forging a stamp (measured 2026-10-15 on
+    DF Engine, pwsh too), the case b22e36d closed for Python. The cheapest widening is to read no file at
+    all, so an option's value is skipped by NAME rather than by not being a file: `pwsh -ExecutionPolicy
+    Bypass -File forge.ps1` still reads forge.ps1.
+
+    Inline text is READ, not dropped: before this, `bash -c ./forge.sh` was caught only because every word
+    was a candidate, so returning nothing for it would have opened what the one-word rule closed."""
+    pwsh = name in ("pwsh", "powershell")
+    shell = name in ("sh", "bash", "zsh", "dash")
+    command = False
+    index = 0
+    while index < len(args):
+        word = args[index]
+        low = word.lower()
+        if word == "--" and not pwsh:
+            index += 1
+            break
+        if pwsh and low.startswith("-") and low != "-":
+            if low in _PWSH_COMMAND or (len(low) > 3 and any(o.startswith(low) for o in _PWSH_COMMAND_LONG)):
+                return [], " ".join(args[index + 1:])
+            if low in _PWSH_ENCODED or (len(low) > 3 and "-encodedcommand".startswith(low)):
+                return [], ""
+            valued = low in _PWSH_VALUED or (len(low) > 3 and any(o.startswith(low) for o in _PWSH_VALUED_LONG))
+            index += 2 if valued else 1
+            continue
+        if shell and word[:1] in ("-", "+") and word not in ("-", "+") and not word.startswith("--"):
+            command = command or "c" in word[1:]  # -c, and -c among bundled flags (`-ec`)
+            index += 2 if word in _SH_VALUED else 1
+            continue
+        if shell and word.startswith("--"):
+            index += 2 if word in _SH_VALUED else 1
+            continue
+        if not (pwsh or shell) and word.startswith("-") and word != "-":
+            if word in _OTHER_INLINE:
+                return [], ""
+            index += 2 if word in _OTHER_VALUED else 1
+            continue
+        break
+    if command:
+        return [], args[index] if index < len(args) else ""
+    return args[index:], ""
+
+
 def _is_this_tool(path):
     try:
         return os.path.samefile(path, os.path.abspath(__file__))
@@ -492,9 +560,17 @@ def forges(command, root=ROOT):
             # b22e36d closed for a program named literally.
             candidates = _python_runs(words[1:], root)[:1]
         elif name in _INTERPRETERS:
-            candidates = words[1:]
+            candidates, inline = _script_runs(name, words[1:])
+            if inline:  # a shell handed its command as text: that text is a command, read as one
+                reason = forges(inline, root)
+                if reason:
+                    return reason
+                continue
+            candidates = candidates[:1]
         else:
             candidates = words[:1]
+        # ONE WORD, the program, and nothing it is handed: every branch above cuts to it, so a `break` after
+        # the read was dead - and the plant on it went vacuous the day the last branch was cut (2026-10-15).
         for word in candidates:
             if word.startswith("-"):
                 continue
@@ -521,7 +597,6 @@ def forges(command, root=ROOT):
                 return ("`%s` runs %s, whose text reaches the gate's stamp store - the stamps are "
                         "written by `commit-msg` and by nothing else%s"
                         % (segment.strip()[:60], word, route))
-            break                         # the program is read, and nothing it is handed
     return ""
 
 

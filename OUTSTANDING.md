@@ -49,21 +49,113 @@ both would have blocked every measurement forever:
       checked 1.0.5 (a driver answering dialogs and sampling event-thread stalls over 300 ms, on fresh copies of the
       owner's workspace and game) lives in a session scratchpad. It belongs in tools/, run by package.ps1 over the
       build it packaged, refusing a release whose window stalls or whose zone list cannot be reached and loaded.
-- [ ] 2026-10-23 THE BUNDLE'S HOOK TESTS READ THE OWNER'S HELD-CHANGE SWITCH. With VERIFY_ALLOW_HELD_CHANGES=1 in the
+      BUILT 2026-10-24: tools/window_check.py with tools/window_check/Driver.java and MemPrefs.java. It copies the
+      folders the editor's own settings name (read from the registry in Java's spelling - both of the owner's resolve),
+      compiles the harness against the build, launches it twice on the unattended desktop (load on fresh copies; then
+      trap: a zone tool over the zone list and back by the way back on screen), and refuses on no window, a freeze on
+      screen over 150 ms before or during the zone load, a zone list short of the zone count, no zone opened, an
+      unreadable answer, a dialog on the second launch other than the two the copy itself causes, a way back not on
+      screen, or a run that did not finish. package.ps1 runs it on the staged release and zips nothing unless it holds;
+      a pass is recorded in tools/guard/window_check.json with the digest of the src/ and lib/ it measured, and the
+      commit-msg hook (`window_check.py --release-commit`) refuses a commit that changes the version unless that record
+      passed over exactly what the commit stages. tests/test_window_check.py 15 tests; 7 plants red. OWED: its first
+      end-to-end run over a real build, and the import the bundle's walk will ask of tests/test_window_check.py.
+- [x] 2026-10-23 EVERY LAUNCH FREEZES THE FRESHLY SHOWN WINDOW FOR ABOUT 0.3 s, AND 1.0.3 DID NOT. CLOSED 2026-10-24:
+      Workspace.validate is two halves - open(), which opens and reads and says nothing, and validate(..., opening),
+      which says what there is to say and installs - and createAndShowGUI asks for the first before
+      frame.setVisible(true) and the second after it. Measured the same way on the fixed build: worst freeze with the
+      window on screen 0, 0 and 0 ms on three ordinary launches, 62 ms on the first launch's one-time repair, zone list
+      full at 5-6 s. ZoneListThreadTest holds the order and the split (the-archives-open-after-the-window-shows,
+      opening-the-workspace-speaks-before-the-window: both red), and validate-lets-a-late-failure-out (F231) is
+      re-anchored into open() and red. The record as found, measured through the
+      real window on copies of the owner's workspace and game, sampling every 50 ms whether a window of the editor is
+      on screen while the event thread is stalled: 1.0.3 0 ms (2 launches), 1.0.4 13,807 ms (the zone-list mirror,
+      fixed in 1.0.5), 1.0.5 316 and 310 ms on an ordinary launch and up to 591 ms on the first launch's repair. The
+      ledger's reviewer failed the lag item for claiming more than the evidence showed, and was right. Where the
+      ordinary launch's freeze goes, 3 launches, each 50 ms sample: about half is Swing's own first show and paint
+      (no editor frame on the stack), and the rest is Workspace.validate opening the workspace's archives
+      (GARC.parse < WorkspaceSession.openOne / open), which createAndShowGUI runs on the event thread AFTER
+      frame.setVisible(true) - since F116 moved start-up onto the event thread; 1.0.3 did it before showing. The fix
+      is the start-up order: open the archives (the dialog-free half of validate) before the window shows, and keep
+      validate's dialogs (Backup belongs to another game, Damaged archive, Setup Error) after it, parented to a
+      visible window - with a suite test that holds the order and the harness measurement repeated.
+- [x] 2026-10-24 THE FIXED START-UP SHOWED ITS WINDOW LATER THAN 1.0.3, AND THE REVIEWER WAS RIGHT TO FAIL "0 ms". The
+      ledger's reviewer failed the lag item again: the fixed build's own runs show the event thread stalled 3.1-3.7 s, and
+      the item reported only the frozen-on-screen figure. Measured interleaved on the same copies of the owner's
+      workspace and game, each build launched in turn, 3 rounds a comparison (scratchpad repro ab_startup.py; parts by
+      before_window.py, every 50 ms before the window shows): the window came at 3832 ms on average against 1.0.3's
+      2579, 1.0.5's at 3452 then frozen 627-1186 ms. Two parts grew. OPENGL: JOGL went 2.3.2 -> 2.6.0 in 1.0.4 (for
+      its macOS and Linux natives), and 2.6.0's first question probes OpenGL ES as well - 1600-1750 ms against 1.0.3's
+      983. Nothing here asks for ES; GlSupport sets jogl.disable.opengles on Windows before the first question
+      (750 ms; GlUnavailableTest asks JOGL's own flag). THE ARCHIVES: opened on the event thread before the show,
+      383-550 ms; now on a worker started before the window is built, handed its two folders (EdtReachTest's shared
+      fields back to 37 of 37) and waited for before the show. FINAL, 3 rounds (ab5): window 1889 / 2036 / 2431 ms
+      (1.0.3 2699 / 1763 / 2403; 1.0.5 3032 / 2363 / 3423), frozen on screen 63 / 0 / 62 ms (1.0.3 0; 1.0.5 250-506),
+      zone list full at 3 s (1.0.3 14-20 s; 1.0.5 4-6 s), the zone load 0 ms frozen in all three and zone 5 opened
+      in every run. The event thread's 1.4-1.9 s stall is before anything is on screen: the window is built on it since
+      F220, where 1.0.3 built it on the main thread. TRIED AND TAKEN BACK: the OpenGL probe on a thread of its own -
+      DEADLOCKED 12 runs of 12 (JOGL's JAWTUtil initialiser invokes and waits on the event thread, which waited on
+      GlSupport's lock); doing the native-window part on the event thread first avoided it on Windows but cannot be
+      measured on Linux or macOS. ZoneListThreadTest refuses it. 7 plants red (replant: "7 guard(s) still notice; 0
+      do not"). The harness answered no "Update available" before (1.0.3's wants "Not now"), so its earlier 1.0.3 runs
+      never loaded a zone; it does now. OWED ELSEWHERE: this harness as the release's own check (the item above).
+- [x] 2026-10-23 THE BUNDLE'S HOOK TESTS READ THE OWNER'S HELD-CHANGE SWITCH. With VERIFY_ALLOW_HELD_CHANGES=1 in the
       session (the owner's way past a held tree, set for the 1.0.5 repair), the battery's Python suite failed 24 tests
       in test_bundle_action, test_held_messages and test_bundle - every one expecting a held tree to refuse, and the
       hooks they run inherited the switch. The same three files with it unset: OK (skipped=4). A test that hands a hook
       the owner's environment measures the owner's settings, not the hook. Fix in the bundle (scrub VERIFY_* from what
       a test hands a hook), a plant red, and take it here - the bundle push needs the owner's yes.
-- [ ] 2026-10-23 THE GAME-DATA HOOK REFUSES SCRATCH COPIES BY NAME. guard_game_data (bundle) refuses any path with a
+      FIXED IN THE BUNDLE 2026-10-24 (staged there, its commit next): bundle_env.owner_settings names the owner's
+      settings (every name under the prefix but the 2 the bundle's own tools hand a child), tests/_owner_switches.py takes
+      them out of the process at import, and every tests/test_*.py imports it before anything outside the standard
+      library - held by test_bundle's walk of the tree, not a list. Reproduced first: under the switch the three files
+      failed 23 of 547 there; after, 0 of 552 (OK, skipped=4). Fail-first: the new class on the bundle as it was, 2 of 5
+      red (7 of 7 files without the import). 6 plants recorded, all red. COMMITTED IN THE BUNDLE as 206518a (its gate:
+      6 new plants and 962 held, all red - after one held plant that had stopped reddening was repaired: its test
+      picked an earlier guard the installer reads as current). STILL OWED HERE: the install, which brings the walk to
+      this project's own 31 Python test files - each needs the import too. BLOCKED ON THE CTRMAP COMMIT: the installer
+      refuses to stage over tests/test_bundle.py and tests/test_bundle_gates.py while they hold the last install's
+      uncommitted changes. The bundle's push needs the owner's yes.
+      INSTALLED 2026-10-24 (bundle 206518a, 5c0e2e9 and 00ad13e): the two blocking files held exactly bundle fbd45b7's
+      text, the last install's, so each was put back at HEAD and the installer wrote the current one - nobody's work
+      in them. The import added to this project's own 30 Python test files; the walk, test_bundle's
+      EveryTestProcessStartsWithoutTheOwnersSettings, 5 of 5 here (it failed 30 of 36 files before). Measured under
+      the switch: the 10 owed bundle plants on held-change tests, not red before, all red now.
+- [x] 2026-10-23 THE GAME-DATA HOOK REFUSES SCRATCH COPIES BY NAME. guard_game_data refuses any path with a
       RomFS or Workspace segment, so copying the owner's workspace and game into a scratch folder had to use other
-      names (ws, game) to measure 1.0.4 at all. A copy the editor writes is not the owner's game data. Fix in the bundle
-      (judge the real folders' paths, not a name), a plant red, and take it here - the bundle push needs the owner's yes.
-- [ ] 2026-10-23 THE OWNER'S REAL LOG HOLDS PLANTED TEST FAILURES. %LOCALAPPDATA%\CTRMap\logs\ctrmap.0.log (2,830
+      names (ws, game) to measure 1.0.4 at all. A copy the editor writes is not the owner's game data. Fix: judge the
+      real folders' paths, not a name. CORRECTION 2026-10-24: the hook is this project's (.claude/hooks), not the
+      bundle's. BLOCKED ON THE OWNER: the auto-mode classifier refuses edits to it as self-modification (one of six
+      edits was refused and the rest landed, leaving the live hook calling a function it did not have - it was put back
+      with git checkout at once, and refuses as before). The fix is built from the committed hook as a separate file
+      (scratchpad gd/guard_game_data.py, 8 edits each applied once) and asked in-process 11 of 11 as wanted: the real
+      dump, ../RomFS, the real Workspace, a relative path with no folder, a .. climb out of the temp folder and a
+      variable all refused; a copy in the temp folder allowed in Windows and Git Bash spelling, by a file tool, as a
+      relative path from a temp folder and after a cd into one. HookRefusalsTest.aCopyInTheTempFolderIsNotTheGame
+      holds it, with a control that its other refusals were asked from outside the temp folder. Once the owner puts the
+      file in place: the suite, and plants red.
+      THE SUITE, MEASURED 2026-10-24 on a copy of this tree beside it (the patch in the copy's .claude/hooks only):
+      HookRefusalsTest 246 of 246, 0 skipped; this tree unpatched, the control: 4 FAIL, exactly the four temp-copy
+      checks. The copy's 9 fewer lines are spellings of three refusals only the unpatched hook made (two temp copies,
+      and a relative RomFS/a asked from a temp folder); every real refusal is still asked in every spelling, a ..
+      climb out of the temp folder and $TMP/RomFS/a among them. A first copy placed IN the temp folder failed 13 - the
+      patch rightly read the copy's own relative paths as a copy's - so a copy for this suite sits beside the tree.
+      Left, blocked on the owner putting the file in place: plants for the new rule, driven red.
+      CLOSED 2026-10-24, the owner's yes to putting it in: on this tree HookRefusalsTest 246 of 246, 0 skipped; 2 plants
+      red (every temp-folder copy read as the game again; a path judged by its spelling, so a .. climb out of the temp
+      folder onto the real dump reads as a copy).
+- [x] 2026-10-23 THE OWNER'S REAL LOG HOLDS PLANTED TEST FAILURES. %LOCALAPPDATA%\CTRMap\logs\ctrmap.0.log (2,830
       bytes) holds "planted: a listener that throws" and its siblings from 2026-10-12 and two NPEs in ErrorSink.root
       from planted runs on 2026-10-15. Today's ErrorSinkTest leaves it alone (size and time the same before and after
       a run, 2026-10-23); a PLANTED run can still reach it, because the plant removes the guard that keeps it out. The
       owner's to clear; what keeps a planted run out is owed (replant could give every suite a log root of its own).
+      CLOSED 2026-10-24 at the one launcher, not per runner: every program the project starts runs through
+      tools/guard/hidden_desktop.py (test.ps1, build.ps1 and package.ps1 move themselves there first, replant and the
+      window check start their JVMs there), and `hidden_desktop.environment` now hands each one a LOCALAPPDATA of its
+      own under the temp folder - where the editor's log and its vault live - unless the caller chose one on purpose.
+      The vault was exposed the same way. test_hidden_desktop: a child started with no environment or the caller's
+      gets the folder of its own, one handed its own keeps it; 1 plant red. The lines already in the owner's log are
+      theirs to clear.
 - [x] 2026-09-22 TWO COPIES OF THE RULES AND THE WIRING EXIST ON THIS MACHINE. `CLAUDE.md`
       and `.claude/` were copied INTO the repo so a checkout is armed - a cloud clone gets the
       repository and nothing else, so before this it would have run with no hooks at all and
@@ -2018,6 +2110,15 @@ both would have blocked every measurement forever:
       a backslash path and a `git` command, both of which must go through, and a plant per pattern. NOT IN THE
       RELEASE COMMIT: any change to this tree before it costs the battery and the ~2-hour owed-plant drive again, and
       the bundle change needs its own per-push yes. Next after the release, before F191's sweep.
+      BUILT 2026-10-24, COMMITTED in verification-bootstrap as 5c0e2e9 (its gate: 10 new plants red, 459 held all
+      red; local main 2 ahead of origin, 206518a and 5c0e2e9): `repairs` asks bundle_shell - the folder
+      in each path and command, decoded, either slash; `git` in each program a command runs. A crashed guard driven
+      against six repairs (a Write by each slash, git after a cd, through PowerShell, behind a runner, a copy into the
+      folder by a command) and four known answers that stay refused; 4 plants red, the moved-folder plant
+      re-anchored and red. Left: the owner's push of the bundle, and the install here after this tree's commit.
+      MEASURED ON THE WAY: this tree's Python suite reads ../verification-bootstrap's WORKING copy - an uncommitted
+      bundle edit to dispatch.py reddened test_bundle_gates' two install-drift tests here (installed dispatch.py is
+      byte-identical to the bundle's HEAD; with the edit, "75 not greater than 75").
 - [x] 2026-10-18 DAYS OF SWEEPS RAN FOR A RELEASE COMMIT THAT COULD NOT LAND, and the owner found out by asking: "WHY
       THE FUCK DID YOU JUST HAVE ME WASTE SEVERAL DAYS IN REAL LIFE DOING SHIT LIKE SWEEPING KNOWING THERE WAS SHIT YOU
       STILL DIDNT DO". The bundle had drifted under the install check, and 6 of the 1,578 owed plants were in no ledger
@@ -2043,7 +2144,20 @@ both would have blocked every measurement forever:
       which also leaves every owed plant owed by the next commit - item (a) below. The debt, all of it:
       (a) THE 1,578 OWED PLANTS, each driven red against the tree that ships (drive_owed --workers 8, ~2 h a drive),
           every one that will not redden fixed - the items below this one say which are known.
-      (b) THE 12 SURVIVORS of the 990d0c1 sweep, each a line no test asserts, each given a test that kills it.
+      (b) [x] THE 12 SURVIVORS of the 990d0c1 sweep, each a line no test asserts, each given a test that kills it.
+          CLOSED 2026-10-24 (read from the sweep's claim records: 5 at 990d0c1, 7 carried from 315d48d). CameraData 148:
+          every write into memory goes through Bytes.written, HandleCloseTest hands it a writing that refuses.
+          NPCRegistry 106: no catch is left - each entry is read from its bytes at its offset, and NpcRegistryTest
+          round-trips one entry of 24 distinct bytes. GARC 451 x2: GarcPrefixTest grows the archive 16 bytes under an
+          in-place pack. ESPICAControl 137: DialogSeamTest stops a run over a slow converter. BuildingHarvester 264: the
+          progress interval is handed in, HarvesterGuardsTest asks every 100th of 235. TerrainCatalog 450 x2 and 458 x2:
+          the appender is handed in, MaterialImportTest hands one that names no mesh and one whose merge does not
+          validate. Updater 621: runApply's body after the wait is installAndStart, handed a launcher, and UpdaterTest
+          asks it with an update that installs and one refused. FlatCopy 57: both loops read and write through one
+          helper, UndoHistoryTest hands it a field never made accessible and a static final one. 11 plants added and 6
+          re-anchored that this round's edits had rotted; replant: 17 of 17 red. ForegroundTest read the reopen flag in
+          runApply's source, where it no longer is - it reads startAgain now. EdtReachTest 37 of 37 and
+          EveryMethodIsReachedTest 105 of 105, both held.
       (c) F191: THE WHOLE-TREE SWEEP - every line of all 304 production modules, 118 of which mutation_baseline.json
           holds nothing for (`python -B tools/whole_tree.py check`, 2026-10-18; the 251 written here was its stale
           ceiling, now recorded down to 118) and the rest measured only on the lines one round changed. About 4,900
@@ -2060,13 +2174,77 @@ both would have blocked every measurement forever:
           heredoc and backslash guards see neither this nor `$(...)` in a double-quoted argument meant as text. Close
           it in the bundle (guard_command_rules: a double-quoted argument holding a backtick or `$(` is refused unless
           the substitution is the point), a plant red, and take it here - the bundle push needs the owner's yes.
+          BUILT 2026-10-24, COMMITTED in verification-bootstrap as 5c0e2e9: guard_text_substitution refuses a backtick
+          bash would run from inside text - a double-quoted argument, an unquoted-delimiter heredoc body - and leaves
+          single quotes, escapes, the quoted-delimiter commit heredoc, top-level substitutions and PowerShell alone;
+          `$(...)` is the deliberate spelling and is not read (said in the guard). Replayed over every command in the
+          last 40 transcripts here (9,119 Bash, 580 PowerShell) it refuses exactly 1: the 2026-10-18 answer. TextIsNotRun
+          3 tests green; 6 plants red. The bundle's own check found 8 problems on the way, all closed: the guard
+          compared a tool name (now handed the shell), its test spelled the hooks folder, it was untracked, its class
+          owed a plant, a plant anchored on the old REPAIR line, and tests/_owner_switches.py (206518a) was missing
+          from the manifest. Left: the owner's push of the bundle, and the install here after this tree's commit.
       THE OWNER'S, which nothing here can do: the in-game check of the 8 features under "In-game verification owed";
-      one commit with the owner's own --no-verify for the owed plants no tree can drive (a plant whose test the bundle
-      removed or re-keyed, one removed here, one on a deleted hook, one only Linux runs, and two whose code is gone,
-      a-ramp-has-no-apron and a-corner-of-two-depths-has-no-post - 10) - a commit, not a release; each push of the bundle; and F025's two gates - the owner queued it
+      each push of the bundle; and F025's two gates - the owner queued it
       to start only once every session is committed and pushed (so a push comes before this release), and its static
       disassembly needs Capstone, a pip download that needs the owner's yes.
 - [ ] 2026-10-18 THE OWED PLANTS: 15 CANNOT BE DRIVEN RED ON THIS MACHINE, AND THE GATE TAKES NOTHING ELSE.
+      FIXED, NOT SKIPPED (2026-10-24; the owner: "fix the problem correctly dont tell me to just leave it broken and
+      skip it"). The only way past a plant nothing could drive was the gate skipped again - every release since 1.0.4
+      was made with --no-verify. Measured what was owed: 10 project and 16 bundle plants. Each now red or settled
+      by a PROOF asked of the tree being committed: (1) 10 bundle plants on held-change tests were red only for lack of
+      the owner-switch fix - installed, all 10 red; (2) 3 GL plants and 1 GARC plant sat in sections that skipped on
+      Windows - GlUnavailableTest now runs its no-GL half in a JVM started with JOGL's own switches (no profile is
+      offered), GarcPrefixTest counts a process's reads through WMI on Windows (and fails, not skips, where the count
+      exists and cannot be read); all 4 red, 2 plants on the new mechanisms red; (3) the python3-only bundle test runs
+      on Windows through Git for Windows' sh (bundle 00ad13e), its plant no longer declared Linux-only, red here;
+      (4) 5 drivable project plants red; (5) the-stream-string-reader-reads-past-the-end, dropped from the ledger by
+      0240c1a with no record, RETIRED with its reason (F204 deleted the reader and its check); (6) the gate settles a
+      plant nothing can drive only by proof (commit_guard.proven_undrivable, drive_owed): a retired project plant whose
+      anchor matches nothing AND whose check is gone from its suite; a withdrawn bundle plant whose test is gone; a
+      retired bundle plant whose test RUNS TO A PASS with the defect planted - the cheap proofs asked again at the
+      commit, never a ledger's word alone. test_gate_owed: 4 new tests, 5 plants red. Measured: the 2 retired bundle
+      plants ran to a pass (settled), the 3 withdrawn ones' tests are gone. (7) THE GATE'S OWN DRIVE then refused the
+      commit (2026-10-25 04:11, 1,187 of 1,188 held plants red): test_gate_owed's SIGTERM test skips on win32, since
+      Windows ends a process from outside with TerminateProcess, which nothing catches - so here a drive stopped by
+      Stop-Process or a task's stop still left its planted readings in magnitudes.json, the 2026-10-08 defect. The
+      drive now journals what it holds (.drive-owed-held, a root dotfile, ignored) before it plants, and the next drive
+      puts back what a drive that is gone left planted before it reads the tree; it refuses beside a drive that may
+      still run and over a journal it cannot read. 3 tests, one a kill nothing catches on either platform; 5 plants red;
+      the SIGTERM plant declared for Linux, where its test runs. (8) THE RE-SWEEP, run beside the drive over 42d9ccb
+      (the staged index as a commit, refs/measured/index-2026-10-25; 8 shares reusing every 990d0c1 record), found 13
+      survivors on 10 lines, every one in code changed since 990d0c1: CtrmapMainframe 1043 (the start-up choice of
+      wizard or game), 1334 and 1460 (the switch to a host's tab), 1346 (the zone list given the keyboard); Workspace
+      302 (an Error on the opening worker); ToolHost 63 (a host with no home); ZoneRelinker 77 and 146 (x2 each: a zone
+      past the table, a zone whose file cannot be read); ZoneRelinkPanel 63 and 88 (the no-pristine-copy notice);
+      PaintedCliffMesh 199 (walls whose tops do not line up); PaintedGeometry 128 (an edge asked for a point that is
+      not its end). Each now has the input that reaches it - the start-up choice is openFirst, handed both; the Zone
+      list action answers the component it asked for the keyboard, as a suite has no focus to read - and a plant red
+      on it (13 of 13, one re-anchored onto the new signature). The drive's own order bug, found by that drive: the
+      proofs were asked before verdicts about the last tree were owed again, so 4 settled plants were driven and
+      could not redden - asked after now, 1 test, 1 plant red. (9) A CRASH AT 11:17 (Kernel-Power 41, no shutdown)
+      stopped the gate and 2 shares mid-file; the gate's planted BuildingHarvester and the shares' two mutants were
+      put back from the index and from 42d9ccb, every lock checked dead and removed, and the 133 recorded files kept
+      aside. The bundle had moved meanwhile (f381f76, another session's, 09:44): installed - 5 files, 3 plants red.
+      (10) THE GATE REFUSED AGAIN (2026-10-25 20:04, 1,190 of 1,192 held plants red): 2 plants planted into
+      commit_gate.py met errno 22 on the plant's write - a file a scanner holds a moment after a subprocess that
+      touched it exits - and were read as plants that no longer redden; both red driven again. The bundle's
+      prove_plants retried that write for the restore alone: one writer for both now, and a plant it still cannot
+      lay is UNKNOWN, not a verdict (bundle commit, 4 plants red; with it the bundle's own self-checks f381f76 had
+      left red). The re-sweep at 1e41640 (3 shares) killed the 13 earlier survivors and found 1 more,
+      CtrmapMainframe 2152 (clearGameData's check, inverted: the Game Data editor never put away) - ToolHostTest
+      asks after the clear now, 1 plant red. Two defects of the harness, measured on the way: drive_owed printed a
+      driver's UNKNOWN as NOT RED (lz11-lz11-negate-if, whose suite ran past its limit beside the shares) - it says
+      COULD NOT BE ASKED now, 1 test, 2 plants red; and mutate2 took a FINISHED share's claims over as a dead
+      run's and began measuring its recorded files again, for hours - a recorded file's claim says so and is kept
+      (record_claimed), 2 selftest checks, 2 plants red. lz11-lz11-negate-if re-anchored onto the quick reject: the
+      old mutant ran the planted compressor for 15 minutes, the new one reddens in seconds. AND A RELEASE WITH WORK
+      STILL OPEN (the owner, 2026-10-25: "were you planning on releasing 1.0.6 knowing it still had debt"): nothing
+      refused a version change while this queue held open lines - only the per-push approval stood between. The
+      commit-msg hook's release check (window_check.release_commit) now refuses a version change while the
+      OUTSTANDING.md it stages lists an open item, and one it cannot read; the owner's own switch is the one way
+      past. 4 tests, 3 plants red.
+      LEFT: the bundle commit through its gate and installed here; the baseline written over the final tree; the
+      owed drive against it; this commit through the gate.
       DRIVEN 2026-10-18 17:49 with the fixed worker copies: every verdict was about this tree (0 "on another tree"),
       1,563 of 1,578 red; the 15 not red are exactly the set below. Since then: an-unreadable-collision-reads-as-
       ground-at-0 - its early return removed as the equivalent mutant it was, the plant re-anchored to the one NaN

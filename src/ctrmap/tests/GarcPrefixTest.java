@@ -39,6 +39,7 @@ public class GarcPrefixTest {
 		theParseFindsWhatItFoundBefore();
 		aPackFromAFolderThatIsNotThereIsRefused();
 		anInPlacePackRefusesWhatItCannotWriteOver();
+		anArchiveThatGrowsUnderAnInPlacePackIsRefused();
 		anEntryThatWritesAnotherLengthIsRefused();
 		openingAnArchiveReadsItsPrefixes();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -210,6 +211,49 @@ public class GarcPrefixTest {
 				"a staged entry of another length is refused: " + longer);
 	}
 
+	/**
+	 * An archive whose length changes while an in-place pack writes it - another program writing it underneath - is
+	 * refused, naming it, and what was written is not passed on as a pack.
+	 *
+	 * <p>Recorded as a HOLE by the 2026-10-17 sweep (GARC 451, negated and dropped, SURVIVED twice): "a race only another
+	 * process could win". The pack measures the archive, then asks the {@code edited} predicate it was handed which
+	 * staged files to write, then copies the archive - so a predicate that grows the file between the two is that other
+	 * process, every time.
+	 */
+	static void anArchiveThatGrowsUnderAnInPlacePackIsRefused() throws Exception {
+		System.out.println("--- an archive that grows while it is written in place is refused, naming it");
+		File dir = Scratch.dir("ctrmap_garc_inplace_race");
+		File f = new File(dir, "items.garc");
+		HandedGameTest.writeGarc(f, "abcd".getBytes(StandardCharsets.US_ASCII), "efgh".getBytes(StandardCharsets.US_ASCII));
+		GARC g = new GARC(f);
+		File staged = new File(dir, "staged");
+		staged.mkdirs();
+		Files.write(new File(staged, "1").toPath(), "WXYZ".getBytes(StandardCharsets.US_ASCII));
+		long before = f.length();
+		boolean[] grown = {false};
+		File out = new File(dir, "items-race.garc");
+		String said;
+		try {
+			g.prepareInPlace(staged, edit -> {
+				if (!grown[0]) {
+					grown[0] = true;
+					try {
+						Files.write(f.toPath(), new byte[16], java.nio.file.StandardOpenOption.APPEND);
+					} catch (IOException cannot) {
+						throw new java.io.UncheckedIOException(cannot);
+					}
+				}
+				return true;
+			}, out);
+			said = "it wrote " + out.length() + " bytes and said nothing";
+		} catch (IOException refused) {
+			said = refused.getMessage();
+		}
+		check(grown[0] && f.length() == before + 16, "control: the archive grew by 16 bytes while the pack chose its files");
+		check(said.contains("changed the length of " + f.getPath()) && said.contains("an in-place write must not"),
+				"and the pack refused it, naming the archive: " + said);
+	}
+
 	/** What an in-place pack of one staged file said: its refusal, or what it wrote over that entry. */
 	static String inPlace(GARC g, File dir, String name, String file, byte[] bytes) throws Exception {
 		File staged = new File(dir, "staged-" + name);
@@ -295,7 +339,12 @@ public class GarcPrefixTest {
 		}
 	}
 
-	/** This process's bytes read so far, or -1 when the system will not say. */
+	/**
+	 * This process's bytes read so far, or -1 when the system will not say: Linux's /proc/self/io, and on Windows the
+	 * same count WMI keeps for every process (Win32_Process.ReadTransferCount). WINDOWS ASKED TOO (2026-10-24): only
+	 * Linux was asked, so on every machine this was run on the section skipped, and the plant on it could never be
+	 * driven red - the gate was passed only by skipping it.
+	 */
 	static long bytesRead() {
 		try {
 			for (String line : Files.readAllLines(new File("/proc/self/io").toPath())) {
@@ -306,13 +355,34 @@ public class GarcPrefixTest {
 		} catch (Exception notThere) {
 			//not Linux
 		}
-		return -1;
+		if (!System.getProperty("os.name", "").startsWith("Windows")) {
+			return -1;
+		}
+		String pid = java.lang.management.ManagementFactory.getRuntimeMXBean().getName().split("@")[0];
+		try {
+			Process asked = new ProcessBuilder("powershell", "-NoProfile", "-NonInteractive", "-Command",
+					"(Get-CimInstance Win32_Process -Filter 'ProcessId=" + pid + "').ReadTransferCount")
+					.redirectErrorStream(true).start();
+			String said;
+			try (java.io.BufferedReader in = new java.io.BufferedReader(new java.io.InputStreamReader(asked.getInputStream(),
+					java.nio.charset.StandardCharsets.US_ASCII))) {
+				said = in.readLine();
+			}
+			return asked.waitFor() == 0 && said != null && said.trim().matches("\\d+") ? Long.parseLong(said.trim()) : -1;
+		} catch (Exception unanswered) {
+			return -1;
+		}
 	}
 
 	static void openingAnArchiveReadsItsPrefixes() throws Exception {
 		System.out.println("--- opening an archive reads its entries' first bytes, not the entries (F055)");
 		if (bytesRead() < 0) {
-			Skip.section("this system does not count a process's reads (/proc/self/io) - UNKNOWN, not passed");
+			String os = System.getProperty("os.name", "");
+			if (os.startsWith("Windows") || os.startsWith("Linux")) {
+				check(false, "this system keeps a count of a process's reads, and it could not be read - UNKNOWN, not passed");
+			} else {
+				Skip.section("this system does not count a process's reads (/proc/self/io, WMI) - UNKNOWN, not passed");
+			}
 			return;
 		}
 		File dir = Scratch.dir("ctrmap_garcprefix_big");

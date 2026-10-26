@@ -1,13 +1,11 @@
 package ctrmap.formats.npcreg;
 
-import ctrmap.util.LittleEndianDataInputStream;
 import ctrmap.util.LittleEndianDataOutputStream;
 import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.MM;
 import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.h3d.model.H3DModel;
 import ctrmap.gamedef.ArchiveType;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -97,14 +95,8 @@ public class NPCRegistry {
 		//this struct does not describe length in any way. idk why. it works when I add new entries, so it's not described anywhere, even externally.
 		int whole = b.length / ENTRY * ENTRY;
 		List<NPCRegistryEntry> read = new ArrayList<>();
-		try {
-			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new ByteArrayInputStream(b, 0, whole));
-			for (int at = 0; at < whole; at += ENTRY) {
-				read.add(new NPCRegistryEntry(dis));
-			}
-		} catch (IOException cannot) {
-			throw new IllegalStateException("The NPC registry " + f.getName() + " could not be read: "
-					+ ctrmap.util.Bytes.reason(cannot), cannot);
+		for (int at = 0; at < whole; at += ENTRY) {
+			read.add(new NPCRegistryEntry(b, at));
 		}
 		all.clear();
 		all.addAll(read);
@@ -409,29 +401,34 @@ public class NPCRegistry {
 		public int u16; //always 0
 		public int u17; //always 0
 
-		public NPCRegistryEntry(LittleEndianDataInputStream dis) throws IOException {
-			uid = dis.readUnsignedShort();
-			u1 = dis.read();
-			renderEnabled = dis.read();
-			u4 = dis.read();
-			u5 = dis.read();
-			shadowEnabled = dis.read();
-			isItOb = dis.read();
-			u8 = dis.read();
-			u9 = dis.read();
-			collW = dis.read();
-			collH = dis.read();
-			uC = dis.read();
-			uD = dis.read();
-			uE = dis.read();
-			isDummy = dis.read();
-			u10 = dis.read();
-			u11 = dis.read();
-			u12 = dis.read();
-			u13 = dis.read();
-			model = dis.readUnsignedShort();
-			u16 = dis.read();
-			u17 = dis.read();
+		/**
+		 * One entry, read from the {@link NPCRegistry#ENTRY} bytes of {@code b} at {@code at}. FROM THE BYTES, NOT A STREAM
+		 * (2026-10-24): the registry is read whole and cut into whole entries, so a stream over it could never run out,
+		 * and the catch it needed was a line no input reaches (the 2026-10-17 sweep, NPCRegistry 106, a HOLE).
+		 */
+		public NPCRegistryEntry(byte[] b, int at) {
+			uid = ctrmap.util.LittleEndian.u16(b, at);
+			u1 = b[at + 2] & 0xFF;
+			renderEnabled = b[at + 3] & 0xFF;
+			u4 = b[at + 4] & 0xFF;
+			u5 = b[at + 5] & 0xFF;
+			shadowEnabled = b[at + 6] & 0xFF;
+			isItOb = b[at + 7] & 0xFF;
+			u8 = b[at + 8] & 0xFF;
+			u9 = b[at + 9] & 0xFF;
+			collW = b[at + 10] & 0xFF;
+			collH = b[at + 11] & 0xFF;
+			uC = b[at + 12] & 0xFF;
+			uD = b[at + 13] & 0xFF;
+			uE = b[at + 14] & 0xFF;
+			isDummy = b[at + 15] & 0xFF;
+			u10 = b[at + 16] & 0xFF;
+			u11 = b[at + 17] & 0xFF;
+			u12 = b[at + 18] & 0xFF;
+			u13 = b[at + 19] & 0xFF;
+			model = ctrmap.util.LittleEndian.u16(b, at + 20);
+			u16 = b[at + 22] & 0xFF;
+			u17 = b[at + 23] & 0xFF;
 		}
 
 		public NPCRegistryEntry() {

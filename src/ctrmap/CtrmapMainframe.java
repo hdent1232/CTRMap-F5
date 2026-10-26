@@ -666,6 +666,11 @@ public class CtrmapMainframe {
 
 	private void createAndShowGUI() {
 		Workspace.loadWorkspace();
+		//THE ARCHIVES OPEN BESIDE THE WINDOW BEING BUILT (2026-10-24): opened after the show they froze the window, and
+		//opened before it on this thread they held it off the screen 400-525 ms; what opening found is said after the
+		//show, once there is a window to say it over. The setup wizard opens the game its own way, so it is asked first.
+		boolean wizard = ctrmap.setup.SetupWizard.shouldRunOnStartup();
+		java.util.concurrent.Future<Workspace.Opening> opening = wizard ? null : Workspace.openBeside();
 		frame = new JFrame("CTRMap Editor");
 		//every dialog this program opens belongs to this window; the seam holds
 		//it from here, so nothing below has to reach up for it
@@ -968,6 +973,10 @@ public class CtrmapMainframe {
 		frame.setSize(1280, 720 + menubar.getHeight());
 		frame.setMinimumSize(frame.getSize());
 		frame.setExtendedState(firstState);
+		//THE ARCHIVES ARE OPEN BEFORE THE WINDOW SHOWS (2026-10-24): opened after, they froze the freshly shown window on
+		//every launch (310-316 ms measured, where 1.0.3 froze it 0 ms). They have been opening since the top of this
+		//method; this waits only for what is left.
+		Workspace.Opening opened = opening == null ? null : Workspace.await(opening);
 		frame.setVisible(true);
 
 		//an update applied by the launcher leaves its unpacked copy behind,
@@ -1031,12 +1040,23 @@ public class CtrmapMainframe {
 		//The update check waits until setup is out of the way, because it arrives
 		//on a background thread whenever the network answers and would otherwise
 		//throw a modal dialog over the middle of the wizard.
-		if (ctrmap.setup.SetupWizard.shouldRunOnStartup()) {
-			ctrmap.setup.SetupWizard.show(frame, CtrmapMainframe.this::onWorkspaceOpened);
-		} else {
-			onWorkspaceOpened(Workspace.validate(frame));
-		}
+		openFirst(wizard, () -> ctrmap.setup.SetupWizard.show(frame, CtrmapMainframe.this::onWorkspaceOpened),
+				() -> onWorkspaceOpened(Workspace.validate(frame, true, null, opened)));
 		ctrmap.update.UpdateUI.checkOnStartup(frame);
+	}
+
+	/**
+	 * What a launch opens first: the setup wizard for a first-time user, the game for everyone else - one of the two,
+	 * never both. A method of its own so a suite can hand it both and read back which ran (ZoneListThreadTest):
+	 * written inline in createAndShowGUI, which no suite reaches, the branch was inverted by the mutation sweep of
+	 * 2026-10-25 and every suite passed.
+	 */
+	private static void openFirst(boolean wizard, Runnable setUp, Runnable open) {
+		if (wizard) {
+			setUp.run();
+		} else {
+			open.run();
+		}
 	}
 
 	/**
@@ -1331,12 +1351,18 @@ public class CtrmapMainframe {
 	 * The zone list, from anywhere: the Zone Loader tab, with whatever tool was over the list put
 	 * away and the list given the keyboard. On the zone actions bar and in the Zone menu, so the one
 	 * way to open a zone is never more than a click from wherever the user is.
+	 *
+	 * @return the list asked for the keyboard, or null when a tool would not let go of the column - returned so a
+	 *         suite, which has no display and so no focus to read, can see which component was asked (ToolHostTest)
 	 */
-	private void showZoneListAction() {
+	private JComponent showZoneListAction() {
 		selectTab("Zone Loader");
 		if (zoneHost != null && zoneHost.goHome() && zoneHost.home() instanceof ctrmap.humaninterface.ZoneBrowserPane) {
-			((ctrmap.humaninterface.ZoneBrowserPane) zoneHost.home()).zoneRows().requestFocusInWindow();
+			JComponent rows = ((ctrmap.humaninterface.ZoneBrowserPane) zoneHost.home()).zoneRows();
+			rows.requestFocusInWindow();
+			return rows;
 		}
+		return null;
 	}
 
 	/** The Zone Loader tab: the zone panel, its actions above it, its preview beside it. */

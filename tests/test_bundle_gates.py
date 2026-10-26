@@ -26,6 +26,7 @@ import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _owner_switches  # noqa: E402,F401  - the owner's settings out of this process, before any hook can read one
 import _tree_root  # noqa: E402  - the project root, anchored: never counted (F216)
 HERE = _tree_root.require(__file__)
 TOOLS = os.path.join(HERE, "tools")
@@ -298,6 +299,19 @@ class AHeldPlantIsDrivenAgainWhenItsFileChanges(unittest.TestCase):
         self.assertIsNone(self.gate.held_plant_keys(None, self.HELD),
                           "a commit git could not list was read as touching nothing")
 
+    def test_a_change_to_a_named_test_IN_A_FOLDER_selects_the_plant(self):
+        """A project's declared runner keys its plants by the test file's PATH (`restore/test_z.py::...`,
+        prove_plants.test_files), and the gate matched a key's test file only against the changed files'
+        bare names - so no change to such a test drove any plant on it. MEASURED 2026-10-23 on a pytest
+        project: 349 of its 963 held plants keyed so, and a commit that changed restore/test_female.py and
+        restore/test_restore.py drove none of the 51 whose planted file it left alone."""
+        held = {"restore/test_z.py::test_z::p": {"file": "restore/z.py"}}
+        self.assertEqual(self.gate.held_plant_keys(["restore/test_z.py"], held),
+                         ["restore/test_z.py::test_z::p"],
+                         "a change to the test a folder-keyed plant names drove nothing")
+        self.assertEqual(self.gate.held_plant_keys(["other/test_z.py"], held), [],
+                         "a test of the same name in another folder drove a plant on this one")
+
     def test_a_held_plant_that_stays_green_refuses_the_commit(self):
         refused = self.gate.held_plants_redden(["src/a.py"], keys=["test_x.py::C::test_t"],
                                                drive=lambda k: (False, "passed"))
@@ -495,6 +509,34 @@ class APlantLeavesTheLedgerOnlyByAnActTheCommitAsksAgain(unittest.TestCase):
         self.assertTrue(any("still in what this commit records" in line for line in found),
                         "a plant whose test is still in the commit was withdrawn: %r" % found)
 
+    def test_a_declared_runners_plant_leaves_once_the_test_its_must_say_names_is_gone(self):
+        """A test file a declared runner owns - pytest's functions, not a class `guard_classes` reads -
+        is read down to the test the plant's must_say names. MEASURED 2026-10-18 on a project this is
+        installed in: it was read as "there while its file is", so sixteen plants on a deleted code path,
+        whose tests went with it from a file that kept its other tests, could leave the ledger only as
+        dead tests kept under their old names. Gone from the file, the plant may be withdrawn; still
+        there, a must_say that is a message rather than a test's name, or a file that does not parse,
+        and it may not - what cannot be read is not gone."""
+        key = "restore/test_old.py::test_old::a_plant"
+        files = ["tests/plants.json", "restore/test_old.py"]
+        line = "Withdraws: %s -- %s" % (key, self.WHY)
+        gone = LF.join(["def test_other():", "    assert True", ""])
+        kept = LF.join(["def test_old_check():", "    assert True", ""])
+        for text, must_say, allowed in ((gone, "test_old_check", True), (kept, "test_old_check", False),
+                                        (gone, "the old check printed this", False),
+                                        ("def test_other(:", "test_old_check", False)):
+            plant = dict(self.PLANT, must_say=must_say)
+            with self.subTest(file=text[:16], must_say=must_say):
+                found = self.gate.plants_that_leave(
+                    "feat: the old path is gone" + LF + LF + line + self.TRAILER, files,
+                    head={"plants": {key: plant}},
+                    index={"plants": {}, "withdrawn": {key: dict(plant, withdrawn={"why": self.WHY})}},
+                    read={"restore/test_old.py": text}.get)
+                refused = any("still in what this commit records" in f for f in found)
+                self.assertEqual(refused, not allowed, "a declared runner's plant whose test is %s was %s: %r"
+                                 % ("gone" if allowed else "not proven gone", "refused" if refused else
+                                    "let through", found))
+
     def test_a_plant_that_VANISHES_is_refused(self):
         head = {"plants": {self.KEY: dict(self.PLANT)}}
         found = self.gate.plants_that_leave("feat: x" + self.TRAILER, self.FILES, head=head,
@@ -627,6 +669,26 @@ class EveryPlantTheGateDrivesIsCountedAloud(unittest.TestCase):
         self.assertNotEqual(code[0], 0, "a bare invocation that did nothing reported success")
         self.assertIn("--all", said, "the refusal did not say how to drive the whole ledger")
 
+    def test_an_only_that_matches_no_plant_drives_nothing_and_is_refused(self):
+        """NOTHING DRIVEN IS NOT A PASS, for `--only` as for an empty ledger. Measured 2026-10-23 on a pytest
+        project: fifty-one keys read from a list Windows had written CRLF went to `--only` each with a carriage
+        return on its end; none matched a plant, and every run printed "0 plant(s) driven" and exited 0 - fifty-one
+        passes over plants nothing drove. Control: a plant's own key drives that plant."""
+        prove_plants = bundle_hooks.load(HERE, "tools/prove_plants.py")
+        from unittest import mock
+        key = sorted(prove_plants.read_json(prove_plants.LEDGER)["plants"])[0]
+        driven = []
+        with mock.patch.object(prove_plants, "drive_plant",
+                               lambda k, entry, *a, **kw: driven.append(k) or (True, "red")):
+            code = [None]
+            said = self.said(lambda: code.__setitem__(0, prove_plants.main(["prove_plants.py", "--only", key + "\r"])))
+            self.assertEqual(driven, [], "an --only matching no plant drove one")
+            # its words first: with the refusal gone, the run's exit code can still be 1 for another reason
+            self.assertIn("matches no plant", said)
+            self.assertNotEqual(code[0], 0, "an --only matching no plant reported success: %r" % said[-300:])
+            self.said(lambda: prove_plants.main(["prove_plants.py", "--only", key]))
+        self.assertIn(key, driven, "control: --only with a plant's own key drove nothing")
+
     def test_a_word_nothing_reads_drives_nothing_whatever_it_is_spelt_with(self):
         """Measured 2026-10-09 in the project this came from: its own driver read `--help`, run for
         its usage, as no plant named and drove all 1,363 plants - about 7.5 hours. Here only `--`
@@ -719,6 +781,34 @@ class EveryPlantTheGateDrivesIsCountedAloud(unittest.TestCase):
                                         root=HERE)
         self.assertFalse(run("tests/x.py::X")[0],
                          "the declared runner scored a child that ran nothing as a kill")
+
+    def test_a_declared_runner_drives_the_one_test_a_plant_names_where_it_declares_how(self):
+        """MEASURED 2026-10-18 on a pytest project: one commit's gate was to drive 204 plants on one
+        test file of 120 tests, the whole file 187 s a run - 10.6 hours, each plant watching one test.
+        A runner that declares `run_one` is handed the plant's own test by name (`{test}`) when its
+        must_say names one its file defines; a message for must_say, a test the file does not define,
+        or a runner with no `run_one`, and the whole file runs as before. Driven through `run_declared`
+        with a child that prints what it was handed, so the plant's must_say reaching the command is
+        asked too, not only the command's shape."""
+        prove_plants = bundle_hooks.load(HERE, "tools/prove_plants.py")
+        root = tempfile.mkdtemp(prefix="vb-run-one-")
+        self.addCleanup(shutil.rmtree, root, True)
+        os.makedirs(os.path.join(root, "restore"))
+        with io.open(os.path.join(root, "restore", "test_old.py"), "w", encoding="utf-8") as handle:
+            handle.write(LF.join(["def test_price():", "    assert True", ""]))
+        echo = [sys.executable, "-c", "import sys; print(sys.argv[1]); sys.exit(1)"]
+        both = {"run": echo + ["{file}"], "run_one": echo + ["{file}::{test}"]}
+        key = "restore/test_old.py::test_old::a_plant"
+        def said(config, must_say):
+            return prove_plants.run_declared(config, root=root)(key, must_say)[1].strip()
+        self.assertEqual(said(both, "test_price"), "restore/test_old.py::test_price",
+                         "a plant naming a test its file defines was not driven by that test alone")
+        for config, must_say in ((both, "price is wrong"), (both, "test_gone"), ({"run": both["run"]}, "test_price")):
+            with self.subTest(must_say=must_say, run_one="run_one" in config):
+                command = prove_plants.declared_command(key, config, root, must_say)
+                self.assertEqual(command[-1], "restore/test_old.py",
+                                 "a plant the runner cannot drive by one test was not driven by its whole file: %r"
+                                 % command)
 
     def test_a_flag_given_no_value_is_refused_in_words(self):
         """F197: --merge-from and --only read the next argument bare, so given last they crashed with
@@ -831,19 +921,27 @@ class TheInstallIsAskedAtEveryCommit(unittest.TestCase):
         found = self.bi.problems(declarations=self.declared(os.path.join(self.tmp, "c")))
         self.assertTrue(found and "NO file" in found[0], found)
 
-    @unittest.skipIf(os.name == "nt" or not shutil.which("sh"),
-                     "needs a POSIX `sh` and symlinks - the machines that lack `python` are those")
+    @unittest.skipIf(not shutil.which("sh"), "needs a POSIX `sh`, as git runs a hook with")
     def test_the_gate_runs_where_only_python3_does(self):
         """macOS since 12.3, and Debian and Ubuntu without python-is-python3, have `python3` and
         no `python`. Both git hooks said `python -B ...`, so on those machines every commit died
         on `python: not found` before the gate asked anything - measured 2026-10-06. Each hook is
         run here by `sh`, as git runs it, with a PATH holding `python3` and nothing else, over
-        stubs of every tool it names that record that they ran."""
+        stubs of every tool it names that record that they ran.
+
+        ON WINDOWS TOO (2026-10-24), through Git for Windows' `sh` - the one git runs a hook with
+        there. It skipped on Windows, so its plant was declared for Linux and could never be driven
+        on the machine the gate runs on: the gate was passed only by skipping it. Where a link
+        cannot be made, `python3` is a script that hands its arguments to this interpreter."""
         root = os.path.join(self.tmp, "p")
         folder, tools = os.path.join(root, "bin"), os.path.join(root, "tools")
         os.makedirs(folder)
         os.makedirs(tools)
-        os.symlink(sys.executable, os.path.join(folder, "python3"))
+        if os.name == "nt":
+            io.open(os.path.join(folder, "python3"), "w", encoding="utf-8", newline=LF).write(
+                "#!/bin/sh" + LF + "exec '%s' \"$@\"" % sys.executable.replace(chr(92), "/") + LF)
+        else:
+            os.symlink(sys.executable, os.path.join(folder, "python3"))
         ran = os.path.join(root, "ran.txt")
         stub = ("import os" + LF + "with open(%r, 'a') as handle:" % ran + LF
                 + "    handle.write(os.path.basename(__file__) + chr(10))" + LF)
@@ -862,9 +960,13 @@ class TheInstallIsAskedAtEveryCommit(unittest.TestCase):
                 io.open(os.path.join(root, rel), "w", encoding="utf-8").write(stub)
             if os.path.exists(ran):
                 os.remove(ran)
+            # SYSTEMROOT, on Windows only: the interpreter cannot seed its hash there without it,
+            # and it names no program - the PATH still holds `python3` and nothing else
+            env = dict({"PATH": folder, "HOME": root},
+                       **({"SYSTEMROOT": os.environ.get("SYSTEMROOT", "C:/Windows")} if os.name == "nt" else {}))
             done = bounded.run([shutil.which("sh"), os.path.join(HERE, ".githooks", hook),
                                 message], cwd=root, capture_output=True, text=True,
-                               timeout=120, env={"PATH": folder, "HOME": root},
+                               timeout=120, env=env,
                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             said = io.open(ran, encoding="utf-8").read().split() if os.path.exists(ran) else []
             self.assertEqual((done.returncode, sorted(said)),
@@ -1328,6 +1430,52 @@ class ACommitTheGateNeverSawIsFoundAndRefused(unittest.TestCase):
             with self.subTest(command):
                 self.assertEqual(self.gs.forges(command, self.root), "",
                                  "a data file a shell script reads was read as a program")
+
+    def test_a_program_another_interpreter_cannot_find_is_not_replaced_by_its_data(self):
+        """Measured 2026-10-15 on DF Engine: `bash not_here.sh tests/plants.json` and `pwsh -File not_here.ps1
+        tests/plants.json` were refused as forging a stamp. Every word after a shell was a candidate, so a script
+        this cannot find was skipped and the data file after it read as the program - the case b22e36d closed for
+        Python, left open for every other interpreter."""
+        self._files()
+        os.makedirs(os.path.join(self.root, "tests"))
+        shutil.copy(os.path.join(self.root, "ledger.json"),
+                    os.path.join(self.root, "tests", "plants.json"))
+        for command in ("bash $T/show.sh tests/plants.json", "sh not_here.sh tests/plants.json",
+                        "pwsh -File not_here.ps1 tests/plants.json",
+                        "pwsh -NoProfile not_here.ps1 tests/plants.json", "node not_here.js tests/plants.json"):
+            with self.subTest(command):
+                self.assertEqual(self.gs.forges(command, self.root), "",
+                                 "a data file was read as the program another interpreter could not find")
+        self.assertTrue(self.gs.forges("bash forge.sh ledger.json", self.root),
+                        "the control: a forger named literally was not read")
+
+    def test_an_options_value_is_skipped_by_name_not_by_not_being_a_file(self):
+        """The cheapest widening of the rule above is to take an option's VALUE as the program: then
+        `pwsh -ExecutionPolicy Bypass forge.ps1` reads `Bypass`, finds no file, and the forger walks past.
+        Each interpreter's valued options are skipped by name, so the program after them is read."""
+        self._files()
+        for command in ("pwsh -ExecutionPolicy Bypass -File forge.ps1", "pwsh -ep Bypass forge.ps1",
+                        "pwsh -Exec Bypass -File forge.ps1", "bash -x forge.sh ledger.json"):
+            with self.subTest(command):
+                self.assertTrue(self.gs.forges(command, self.root),
+                                "a forger behind an option's value was never read")
+        self.assertTrue(self.gs.forges("bash -o posix forge.sh", self.root),
+                        "a forger behind a shell option's value was never read")
+
+    def test_a_command_handed_to_a_shell_as_TEXT_is_read_as_a_command(self):
+        """Reading one word as the program must not drop what a shell is handed inline. Every word after
+        a shell used to be a candidate, which is the only reason `bash -c ./forge.sh` was caught; a
+        `-c` read as "no program here" would have opened it. The text is a command, judged as one."""
+        self._files()
+        for command in ("bash -c ./forge.sh", "bash -ec ./forge.sh", "sh -c 'bash forge.sh'",
+                        "pwsh -Command ./forge.ps1", "pwsh -NoProfile -c ./forge.ps1"):
+            with self.subTest(command):
+                self.assertTrue(self.gs.forges(command, self.root),
+                                "a forger handed to a shell as its command text was never read")
+        for command in ("bash -c 'cat tests/plants.json'", "pwsh -Command Get-Content ledger.json"):
+            with self.subTest(command):
+                self.assertEqual(self.gs.forges(command, self.root), "",
+                                 "the control: a command that only READS a data file was refused")
 
     def test_a_PROGRAM_handed_to_a_script_is_still_read(self):
         """The program is still read whatever follows it: the script itself, and the file `-m

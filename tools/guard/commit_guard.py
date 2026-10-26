@@ -974,15 +974,73 @@ def retired_at_parent():
             if isinstance(e, dict) and isinstance(e.get(key), str) and str(e.get("retired") or "").strip()}
 
 
-def gate_owed_problems(parent, staged, subject, stale, retired=frozenset()):
+def _ledger_in(read, rel):
+    """The JSON ledger at `rel` in the tree `read` describes, {} when that tree holds none - CannotAsk when it is not JSON."""
+    text = read(rel)
+    if text is None:
+        return {}
+    try:
+        import json
+        held = json.loads(text)
+    except ValueError as exc:
+        raise CannotAsk("%s is not JSON (%s)" % (rel, exc))
+    return held if isinstance(held, dict) else {}
+
+
+#: How a settled plant was proven: its code and check GONE, asked again at every commit; or its test RAN TO A PASS with
+#: the defect planted, which only a drive can ask - recorded, and trusted against its tree as a red is.
+GONE, RAN_TO_A_PASS = "gone", "ran to a pass"
+
+
+def proven_undrivable(plants, keys, read, ledger=None, key=None):
+    """{plant id or bundle key: the proof} for each owed plant nothing in the tree `read` describes can drive.
+
+    THE GATE'S ONLY WAY PAST WAS THE GATE SKIPPED AGAIN (2026-10-24). A plant whose code is gone, or whose test the
+    bundle withdrew, can be driven by nothing, and a retirement counted only once the PARENT held it - which takes a
+    commit this rule refuses. 10 project and 16 bundle plants were owed, and every release since 1.0.4 was made with
+    --no-verify. So a plant is settled by a PROOF, asked of the tree being committed, and never by a ledger's word:
+    a project plant its ledger retires with a reason, whose anchor matches nothing in its file and whose sentence is
+    in no line of its suite - the code and the check both gone, nothing could print it; a bundle plant its ledger
+    withdraws with a reason, whose named test is gone (`prove_plants.test_exists`, which answers present whenever it
+    cannot tell). A plant retired in the BUNDLE's ledger is not proven here: only a drive can ask whether its test runs
+    to a pass with the defect planted (drive_owed). `read(rel)`: a file's text in that tree, None when it is not there."""
+    if ledger is None:
+        own = gate().project_ledger()
+        ledger, key = (own[0], own[1]) if own else (None, None)
+    proven = {}
+    retired = {e.get(key): e for e in (_ledger_in(read, ledger).get("retired") if ledger else None) or []
+               if isinstance(e, dict) and str(e.get("retired") or "").strip()}
+    for plant in plants:
+        entry = retired.get(plant.get("id"))
+        if not entry or not entry.get("find") or not entry.get("file"):
+            continue
+        said = str(entry.get("must_say") or "")
+        said = said[len("FAIL: "):] if said.startswith("FAIL: ") else said
+        text = read(entry["file"])
+        suite = read("src/" + str(entry.get("suite") or "").replace(".", "/") + ".java")
+        if said.strip() and (text is None or entry["find"] not in text) and (suite is None or said not in suite):
+            proven[plant.get("id")] = ("retired (%s): its anchor matches nothing in %s, and %s says nothing of '%s'"
+                                       % (str(entry["retired"])[:80], entry["file"], entry.get("suite"), said[:60]))
+    withdrawn = _ledger_in(read, gate().LEDGER).get("withdrawn") or {} if keys else {}
+    for k in keys:
+        entry = withdrawn.get(k) if isinstance(withdrawn.get(k), dict) else {}
+        why = str((entry.get("withdrawn") or {}).get("why") or "").strip() if isinstance(entry.get("withdrawn"), dict) else ""
+        if why and not gate()._prove_plants().test_exists(k, read=read, named=entry.get("must_say")):
+            proven[k] = "withdrawn (%s): the test it names is gone" % why[:80]
+    return proven
+
+
+def gate_owed_problems(parent, staged, subject, stale, retired=frozenset(), proven=None):
     """The refusals for a commit whose PARENT's record owed `parent`'s items, staging `staged`.
 
     `subject` is the digest of the tree being committed, the record itself left out; `stale` is
     the parent's owed mutation files still scored against other bytes; `retired` the plants the
     parent's own ledger had retired (`retired_at_parent`), which nothing can drive. Each other plant
-    the parent owed must be in the staged record's `driven`, red, against THIS tree - a verdict from
-    another tree is a measurement of something else, and a record edited by hand is the cheapest way
-    past."""
+    the parent owed must be in the staged record's `driven`, red - or SETTLED by a proof - against THIS
+    tree: a verdict from another tree is a measurement of something else, and a record edited by hand is
+    the cheapest way past. `proven` (`proven_undrivable`, asked of the tree being committed) is asked
+    again here: a plant settled because its code is GONE stays settled only while that still holds."""
+    proven = proven or {}
     problems = []
     still = [s for s in owed_in(staged) if s not in retired]
     if still:
@@ -991,10 +1049,15 @@ def gate_owed_problems(parent, staged, subject, stale, retired=frozenset()):
     owed_plants = ([p.get("id") for p in parent.get("plants") or [] if p.get("id") not in retired]
                    + list(parent.get("bundle_plants") or []))
     driven = staged.get("driven") or {}
-    unproven = [k for k in owed_plants if not (driven.get(k) or {}).get("red")]
+    unproven = [k for k in owed_plants if not ((driven.get(k) or {}).get("red") or (driven.get(k) or {}).get("settled"))]
     if unproven:
-        problems.append("%d plant(s) the parent commit owed were never driven red here, e.g. %s"
+        problems.append("%d plant(s) the parent commit owed were never driven red here, nor settled by a proof, e.g. %s"
                         % (len(unproven), ", ".join(unproven[:3])))
+    unheld = [k for k in owed_plants if k not in unproven and not driven[k].get("red")
+              and driven[k].get("how") != RAN_TO_A_PASS and k not in proven]
+    if unheld:
+        problems.append("%d plant(s) are recorded settled by a proof that does not hold for this tree, e.g. %s"
+                        % (len(unheld), ", ".join(unheld[:3])))
     elsewhere = [k for k in owed_plants if k not in unproven and driven[k].get("subject") != subject]
     if elsewhere:
         problems.append("%d plant(s) were driven red against another tree than this one (%s), e.g. %s"
@@ -1040,8 +1103,9 @@ def check_gate_owed(message):
     2026-10-08 with 1117 of the project's plants and 465 of the bundle's, on the owner's one-time
     permission and the instruction that the next commit run them: "The tests are there for a
     reason I do not want you making a habit of asking to skip them." So this has no escape marker
-    on purpose - the only way past it is the owner's own --no-verify again. A plant the PARENT's own
-    ledger had retired is not owed (`retired_at_parent`): nothing can drive it."""
+    on purpose. A plant the PARENT's own ledger had retired is not owed (`retired_at_parent`): nothing can
+    drive it. Nor is one PROVEN undrivable in the tree being committed (`proven_undrivable`): without that,
+    the only way past a plant whose code or test is gone was the gate skipped again (2026-10-24)."""
     parent = _record_at("HEAD:")
     staged = _record_at(":")
     if not owed_in(parent) and not owed_in(staged):
@@ -1049,9 +1113,15 @@ def check_gate_owed(message):
     subject = source_digest(exclude=(GATE_OWED,))
     if subject is None:
         raise CannotAsk("which tree this commit holds cannot be digested")
+    gone = retired_at_parent()
+    try:
+        proven = proven_undrivable([p for p in parent.get("plants") or [] if p.get("id") not in gone],
+                                   list(parent.get("bundle_plants") or []), gate().index_reader())
+    except OSError as exc:
+        raise CannotAsk("what this commit records cannot be read to prove a plant undrivable (%s)" % exc)
     found = gate_owed_problems(parent, staged, subject,
                                sorted(stale_scores(list(parent.get("mutation_sweep_owed") or []))),
-                               retired_at_parent())
+                               gone, proven)
     if not found:
         return 0
     sys.stderr.write(

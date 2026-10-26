@@ -1,0 +1,9 @@
+{
+ "verdict": "passed",
+ "version": "1.0.5",
+ "subject": "5902cad9b6ba400d60352472dafd9de2f2c97c063d4e3ef6c2dcfae5dd45b611",
+ "launches": [
+  "first launch (load): window on screen at 2966 ms, frozen on screen 125 ms before the zone load and 0 ms in it, zone list 540 rows at 9 s, dialogs ['Backup belongs to another game', '', 'Zones repaired', '', 'Shared map']",
+  "second launch (trap): window on screen at 1970 ms, frozen on screen 0 ms before the zone load and 0 ms in it, zone list 540 rows at 4 s, dialogs ['Backup belongs to another game', '']"
+ ]
+}

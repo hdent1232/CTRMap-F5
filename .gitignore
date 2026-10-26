@@ -16,6 +16,15 @@ build-ide/
 
 # NetBeans' per-user folder (F141): open tabs, the active configuration, a home path.
 nbproject/private/
+
+# Claude Code's per-machine settings (2026-10-24): untracked and not ignored, it was part of this tree's
+# subject digest and of no copy git makes - so every owed-plant drive's worker copies digested to
+# "another tree" and 1,569 verdicts were refused after two hours.
+.claude/settings.local.json
+
+# The readings an owed-plant drive holds while a defect is planted (tools/guard/drive_owed.py HELD): the next drive
+# puts them back when a stop from outside left them planted. Local and short-lived, like the lock below it in kind.
+.drive-owed-held
 dist/
 store/
 
@@ -62,3 +71,6 @@ __pycache__/
 
 # What the verification bootstrap's hooks write while they run - never shipped, never tracked.
 /.claude/bundle-hooks/.fanout-count
+
+# What the verification bootstrap's hooks write while they run - never shipped, never tracked.
+/.sweep/

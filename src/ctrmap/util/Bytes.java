@@ -29,6 +29,28 @@ import static ctrmap.util.LittleEndian.u16;
  */
 public final class Bytes {
 
+	/** What a record writes, handed a writer over memory. */
+	public interface Writing {
+
+		void to(LittleEndianDataOutputStream out) throws IOException;
+	}
+
+	/**
+	 * The bytes {@code writing} writes, written to memory - THE ONE CATCH OF ITS KIND (2026-10-24). A write into memory
+	 * cannot fail, so the catch each format kept around one was a line no input reaches: the 2026-10-17 sweep recorded
+	 * CameraData 148's rethrow, dropped, as a HOLE for exactly that. Here a writing that does throw - one that refuses a
+	 * value of its own - is said, never swallowed, and HandleCloseTest hands one to prove it.
+	 */
+	public static byte[] written(Writing writing) {
+		java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+		try {
+			writing.to(new LittleEndianDataOutputStream(out));
+		} catch (IOException refused) {
+			throw new java.io.UncheckedIOException("a record could not be written: " + reason(refused), refused);
+		}
+		return out.toByteArray();
+	}
+
 	/**
 	 * Deletes {@code f} and, for a folder, everything in it; true when nothing of it is left. THE ONE TREE DELETE
 	 * (2026-10-12): the updater and the workspace session each held a byte-identical copy that dropped every failed
