@@ -446,6 +446,67 @@ class AHeldPlantIsDrivenAgainWhenItsFileChanges(unittest.TestCase):
         self.assertIs(self.gate._prove_in_project(exits(3), "p1")[0], False,
                       "with no code declared, a failing driver was read as UNKNOWN")
 
+    def test_the_projects_plant_driver_runs_in_ITS_OWN_repository_not_the_hooks(self):
+        """MEASURED 2026-10-26 in CTRMap: the gate stripped git's place from the checkers it runs and not from the
+        project's own plant driver, whose suites build git repositories of their own - mutate2's selftest. Run with
+        the hook's GIT_INDEX_FILE pointing at the project's index, that selftest wrote a scratch repository's
+        entries into it: 830 tracked files gone from the index, rebuilt from HEAD by hand."""
+        from unittest import mock
+        prove_plants = bundle_hooks.load(HERE, "tools/prove_plants.py")
+        held = {name: "/somewhere/else/" + name for name in prove_plants.GIT_LOCATION}
+        sees = [sys.executable, "-c", "import os, sys; seen = sorted(n for n in %r if n in os.environ); "
+                "print('inherited: %%s' %% seen); sys.exit(1 if seen else 0)" % (prove_plants.GIT_LOCATION,), "{key}"]
+        with mock.patch.dict(os.environ, held):
+            red, detail = self.gate._prove_in_project(sees, "p1")
+        self.assertIs(red, True, "the project's plant driver inherited the hook's git location: %s" % detail)
+        with mock.patch.dict(os.environ, held):
+            self.assertIs(self.gate._prove_in_project([sys.executable, "-c", "import sys; sys.exit(1)", "{key}"],
+                                                      "p1")[0], False,
+                          "CONTROL: a driver that fails reads as red")
+
+    def test_what_the_projects_driver_said_is_KEPT_not_cut_to_its_last_line(self):
+        """MEASURED 2026-10-26 in CTRMap: a held plant read as no longer red inside the gate and red driven alone, and
+        the refusal said only the driver's closing summary - "owed: 24 suite(s) with no plant" - because the gate kept
+        its last line. Why it was not red was gone with the rest, and could not be asked again."""
+        said = [sys.executable, "-c", "print('  p1 -> the suite'); print('     SURVIVED: the defect is back'); "
+                "print('the closing summary'); import sys; sys.exit(1)", "{key}"]
+        red, detail = self.gate._prove_in_project(said, "p1")
+        self.assertIs(red, False)
+        kept = re.search(r"kept at (\S+?);", detail)
+        self.assertTrue(kept, "the refusal names no file holding what the driver said: %r" % detail)
+        self.addCleanup(lambda: os.path.isfile(kept.group(1)) and os.remove(kept.group(1)))
+        with io.open(kept.group(1), encoding="utf-8") as handle:
+            whole = handle.read()
+        self.assertIn("SURVIVED: the defect is back", whole, "the driver's verdict line was not kept")
+        self.assertIn("the closing summary", detail, "CONTROL: the line it ended on is no longer said")
+        self.assertLess(detail.index("kept at"), 200, "the file is named past the 200 characters a refusal shows")
+
+    def test_every_child_the_gate_starts_but_its_own_git_is_handed_an_environment(self):
+        """A GUARD AT A CALL SITE IS ONE CALL SITE FROM BROKEN, and this is the measurement: checker_env was added at
+        the checker's call on 2026-10-07 and the project's plant driver, ten lines on, went without until 2026-10-26.
+        Every process this gate starts outside `_git` - which must see the hook's index, it asks about the commit
+        being made - is handed `checker_env()` itself, so the next call site cannot inherit git's place by forgetting,
+        nor by naming an environment that copies this one whole (`env=dict(os.environ)`, the cheapest way past)."""
+        import ast
+        with io.open(os.path.join(HERE, "tools", "commit_gate.py"), encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+        starts = ("run", "Popen", "call", "check_call", "check_output")
+        bare, seen = [], 0
+        for fn in ast.walk(tree):
+            if not isinstance(fn, ast.FunctionDef) or fn.name == "_git":
+                continue
+            for node in ast.walk(fn):
+                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                        and node.func.attr in starts and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id in ("bounded", "subprocess")):
+                    seen += 1
+                    if not any(k.arg == "env" and isinstance(k.value, ast.Call)
+                               and isinstance(k.value.func, ast.Name) and k.value.func.id == "checker_env"
+                               for k in node.keywords):
+                        bare.append("%s line %d" % (fn.name, node.lineno))
+        self.assertGreaterEqual(seen, 2, "CONTROL: the walk found %d child process(es) - it reads nothing" % seen)
+        self.assertEqual(bare, [], "these start a child that inherits the hook's environment, git's place with it")
+
 class APlantLeavesTheLedgerOnlyByAnActTheCommitAsksAgain(unittest.TestCase):
     """The cheapest way past the whole ledger is to delete a guard's test and its plants. So a
     plant HEAD held live leaves `plants` only into a record this gate asks again: `withdrawn` is

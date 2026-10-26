@@ -1572,10 +1572,16 @@ def measure_again(records, suites_moved, confirmed):
     suites changed after it was taken - a newer suite may notice what the older ones did not - and a kill from a run
     that did not confirm its kills. Measured 2026-10-14 in the shares that did not: SetupWizardTest credited with 3
     kills of files it never runs, and OffscreenRenderTest with ItemTable 392's, which no test names. Every other
-    verdict still is one."""
+    verdict still is one.
+
+    A NOCOMPILE IS NEVER TAKEN, AND IT IS ALONE (2026-10-26). It is this harness's failure, not a measurement, so it is
+    measured again - that mutant, not its file. A record holding one was refused whole, and the nocompiles are
+    deterministic: one each made the a562275 writer measure CtrmapMainframe, NPCEditForm, Ui, UndoHistory, Forms and
+    PokePickers whole again, 328 minutes, as it will every sweep that reuses them."""
     return [(r["line"], r["kind"]) for r in records
             if (suites_moved and r["verdict"] in ("SURVIVED", "hung"))
-            or (not confirmed and r["verdict"] == "killed")]
+            or (not confirmed and r["verdict"] == "killed")
+            or r["verdict"] == "nocompile"]
 
 
 def split_reuse(records, again, picked):
@@ -1699,9 +1705,6 @@ class Reuse(object):
             if not self.unchanged(measured, path):
                 self.refused.append("%s %s: %s measured it at %s, and it has changed since"
                                     % (cid, path, source, measured[:7]))
-            elif any(r.get("verdict") == "nocompile" for r in unit.get("results", [])):
-                self.refused.append("%s %s: %s recorded a nocompile - this harness's own failure, not a measurement "
-                                    "of the file" % (cid, path, source))
             elif unit.get("expected") == expected:
                 self.taken += 1
                 self.last_measured, self.last_confirmed = measured, unit.get("kills") == KILLS_CONFIRMED
@@ -1716,10 +1719,6 @@ class Reuse(object):
             if not self.unchanged(measured, path):
                 self.refused.append("%s %s: %s measured it at %s, and it has changed since"
                                     % (cid, path, source, measured[:7]))
-                continue
-            if any(v == "nocompile" for _l, _k, v, _d in lines):
-                self.refused.append("%s %s: %s printed a nocompile - this harness's own failure, not a measurement "
-                                    "of the file" % (cid, path, source))
                 continue
             if [[l, k] for l, k, _v, _d in lines] != expected:
                 self.refused.append("%s %s: %s printed %s, this tree has %s"
@@ -2705,18 +2704,23 @@ def selftest():
             "  N.java: 1 mutable line(s), trying 1",
             "     L4     negate-if     nocompile   the harness emitted something javac rejected: no diagnostic captured",
             "1 measurement(s) in 1 min"]) + "\n", encoding="utf-8")
+        candidates = [{"i": 3, "kind": "negate-if"}, {"i": 4, "kind": "drop-throw"}]
         taken = Reuse([str(clean / "n.out")], "c" * 40)
-        check(taken.take("audit", "src/x/N.java", [[4, "negate-if"]], ["x"] * 5) is None
-              and any("nocompile" in why for why in taken.refused),
-              "a printed nocompile is never reused - the file is measured again, and said so")
+        got = taken.take_split("audit", "src/x/N.java", [[4, "negate-if"]], ["x"] * 5, candidates[:1])
+        check(got is not None and [c["i"] + 1 for c in got[2]] == [4] and not got[1],
+              "a printed nocompile is never reused - that mutant is measured again: %s" % (got,))
         (clean / "shares").mkdir()
         record_unit(str(clean / "shares" / "results-w9.json"), "c" * 40, {}, "audit", "src/x/N.java",
-                    [[4, "negate-if"]], [dict(cluster="audit", file="N.java", path="src/x/N.java", line=4,
-                                              kind="negate-if", verdict="nocompile", detail="x", by="", code="x")])
+                    [[4, "negate-if"], [5, "drop-throw"]],
+                    [dict(cluster="audit", file="N.java", path="src/x/N.java", line=4, kind="negate-if",
+                          verdict="nocompile", detail="x", by="", code="x"),
+                     dict(cluster="audit", file="N.java", path="src/x/N.java", line=5, kind="drop-throw",
+                          verdict="killed", detail="ATest: refused", by="ATest", code="x")])
         shared = Reuse([str(clean / "shares")], "c" * 40)
-        check(shared.take("audit", "src/x/N.java", [[4, "negate-if"]], ["x"] * 5) is None
-              and any("nocompile" in why for why in shared.refused),
-              "and a nocompile a share recorded is never reused either")
+        got = shared.take_split("audit", "src/x/N.java", [[4, "negate-if"], [5, "drop-throw"]], ["x"] * 6, candidates)
+        check(got is not None and [c["i"] + 1 for c in got[2]] == [4] and [r["line"] for r in got[1]] == [5],
+              "and a nocompile a share recorded is measured again alone, the rest of its file taken - one was "
+              "costing whole files: %s" % (got,))
     finally:
         shutil.rmtree(str(clean), ignore_errors=True)
     print("ALL PASS" if not fails[0] else "FAILURES PRESENT (%d)" % fails[0])

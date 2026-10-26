@@ -135,24 +135,25 @@ public class DialogSeamTest {
 			System.out.println("FAIL: source root not found: " + root.getAbsolutePath());
 			System.exit(1);
 		}
-		onlyTheSeamOpensADialog(root);
-		theAllowedListCannotGrowQuietly();
-		aFeatureLivesInItsTabAndNotInAWindow(root);
-		closingADialogIsNeverConsent(root);
-		aChooseIsNeverACancel(root);
-		aRecordIsPickedNotTyped(root);
-		aListSelectionIsHandledOnce(root);
-		aControlIsNeverGreyedWithoutAReason(root);
-		aCancelIsNeverTheOnlyNo(root);
-		aReportNeverSaysOnlyNull(root);
-		theSeamCannotSayNothing();
-		theSeamCarriesTheWindowItWasGiven();
-		theOneKeepQuestionAnswersClosedAsCancel();
-		closedMeansTheRegistryIsNotWritten();
-		aFileDialogsAnswerIsNeverDiscarded(root);
-		onlyTheSeamShowsAFileChooser(root);
-		aFormIsAnsweredAsAQuestionIs();
-		theConverterPaneSaysTheResultWasStored();
+		aSectionThatThrowsIsAFailNamed();
+		section("onlyTheSeamOpensADialog", () -> onlyTheSeamOpensADialog(root));
+		section("theAllowedListCannotGrowQuietly", DialogSeamTest::theAllowedListCannotGrowQuietly);
+		section("aFeatureLivesInItsTabAndNotInAWindow", () -> aFeatureLivesInItsTabAndNotInAWindow(root));
+		section("closingADialogIsNeverConsent", () -> closingADialogIsNeverConsent(root));
+		section("aChooseIsNeverACancel", () -> aChooseIsNeverACancel(root));
+		section("aRecordIsPickedNotTyped", () -> aRecordIsPickedNotTyped(root));
+		section("aListSelectionIsHandledOnce", () -> aListSelectionIsHandledOnce(root));
+		section("aControlIsNeverGreyedWithoutAReason", () -> aControlIsNeverGreyedWithoutAReason(root));
+		section("aCancelIsNeverTheOnlyNo", () -> aCancelIsNeverTheOnlyNo(root));
+		section("aReportNeverSaysOnlyNull", () -> aReportNeverSaysOnlyNull(root));
+		section("theSeamCannotSayNothing", DialogSeamTest::theSeamCannotSayNothing);
+		section("theSeamCarriesTheWindowItWasGiven", DialogSeamTest::theSeamCarriesTheWindowItWasGiven);
+		section("theOneKeepQuestionAnswersClosedAsCancel", DialogSeamTest::theOneKeepQuestionAnswersClosedAsCancel);
+		section("closedMeansTheRegistryIsNotWritten", DialogSeamTest::closedMeansTheRegistryIsNotWritten);
+		section("aFileDialogsAnswerIsNeverDiscarded", () -> aFileDialogsAnswerIsNeverDiscarded(root));
+		section("onlyTheSeamShowsAFileChooser", () -> onlyTheSeamShowsAFileChooser(root));
+		section("aFormIsAnsweredAsAQuestionIs", DialogSeamTest::aFormIsAnsweredAsAQuestionIs);
+		section("theConverterPaneSaysTheResultWasStored", DialogSeamTest::theConverterPaneSaysTheResultWasStored);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -1198,6 +1199,53 @@ public class DialogSeamTest {
 	 */
 	static String read(File f) throws Exception {
 		return new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8).replace("\r\n", "\n");
+	}
+
+	/** One section of this suite, run so a throw is said. */
+	interface Section {
+		void run() throws Exception;
+	}
+
+	/**
+	 * Runs one section; one that THROWS fails, named, with what it threw. This suite is a gate of the build, and a
+	 * gate that dies with a stack trace has failed no check: the mutation sweep of 2026-10-25 filed 9 mutants this
+	 * suite threw on - CtrmapMainframe 624, Ui 575 and 637, UndoHistory 121, 135, 188 and 193, Forms 205,
+	 * PokePickers 172, NPCEditForm 121 - as its own nocompile, and re-measured each one's whole file every sweep.
+	 */
+	static void section(String name, Section s) {
+		section(name, s, System.out);
+	}
+
+	/** The same, saying it on {@code out} - handed in, so the runner's own check redirects nothing (SourceSeamTest). */
+	static void section(String name, Section s, java.io.PrintStream out) {
+		try {
+			s.run();
+		} catch (Throwable t) {
+			out.println("  FAIL: the section " + name + " threw " + t);
+			fails++;
+		}
+	}
+
+	/** CONTROL for the runner itself: a section that throws on purpose is one FAIL, named, with what it threw. */
+	static void aSectionThatThrowsIsAFailNamed() {
+		System.out.println("--- a section that throws is a FAIL, named, never a stack trace that fails no check");
+		int before = fails;
+		java.io.ByteArrayOutputStream said = new java.io.ByteArrayOutputStream();
+		Throwable escaped = null;
+		try {
+			section("thrownOnPurpose", () -> {
+				throw new IllegalStateException("on purpose");
+			}, new java.io.PrintStream(said, true));
+		} catch (Throwable t) {
+			escaped = t;
+		}
+		boolean counted = fails == before + 1;
+		fails = before;
+		boolean ok = escaped == null && counted
+				&& said.toString().contains("FAIL: the section thrownOnPurpose threw java.lang.IllegalStateException: on purpose");
+		//what the runner said is quoted only when it is wrong: an ok line holding "FAIL:" reads as a failure to a grep
+		check(ok, "a section that throws is one FAIL that names it and what it threw"
+				+ (ok ? "" : ": " + (escaped != null ? "it escaped the runner as " + escaped : said.toString().trim())));
 	}
 
 	static void check(boolean ok, String what) {

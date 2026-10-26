@@ -39,7 +39,7 @@ both would have blocked every measurement forever:
 
 ## Open
 
-- [ ] 2026-10-23 A RELEASE IS NEVER DRIVEN THROUGH ITS OWN WINDOW BEFORE IT SHIPS. 1.0.4 passed 219 suites and
+- [x] 2026-10-23 A RELEASE IS NEVER DRIVEN THROUGH ITS OWN WINDOW BEFORE IT SHIPS. 1.0.4 passed 219 suites and
       could not be used: a zone tool covered the zone list with no visible way back, a refusal dialog opened on every
       launch, and every refill of the zone list froze the window (worst event-thread lag 15,665 ms, against 24 ms in
       1.0.3, both measured through the real window on copies of the owner's workspace and game). The owner
@@ -60,6 +60,10 @@ both would have blocked every measurement forever:
       commit-msg hook (`window_check.py --release-commit`) refuses a commit that changes the version unless that record
       passed over exactly what the commit stages. tests/test_window_check.py 15 tests; 7 plants red. OWED: its first
       end-to-end run over a real build, and the import the bundle's walk will ask of tests/test_window_check.py.
+      CLOSED by 4a682fa (2026-10-26, through the full gate): its first end-to-end run over this tree's build passed
+      (tools/guard/window_check.json: window on screen 2,966 then 1,970 ms, frozen 125 then 0 ms), and
+      tests/test_window_check.py takes the owner's settings out first (_owner_switches). A release commit runs it again
+      over exactly what it stages, and is refused while this queue lists an open item (release_commit).
 - [x] 2026-10-23 EVERY LAUNCH FREEZES THE FRESHLY SHOWN WINDOW FOR ABOUT 0.3 s, AND 1.0.3 DID NOT. CLOSED 2026-10-24:
       Workspace.validate is two halves - open(), which opens and reads and says nothing, and validate(..., opening),
       which says what there is to say and installs - and createAndShowGUI asks for the first before
@@ -2095,7 +2099,7 @@ both would have blocked every measurement forever:
       seven files are the owner's to put in place. The plant drive started at 05:17 was stopped at ~05:35 (no process
       left): any install changes the tree its verdicts are about. After the install, in order: the plant merge, the
       battery, drive_owed --workers 8 (~2 h measured: 51 plants in 3.75 min), the gated commit, the push, the release.
-- [ ] 2026-10-18 THE DISPATCHER'S WAY OUT OF A CRASHED GUARD CANNOT SEE A REPAIR ON WINDOWS. dispatch.REPAIR is two
+- [x] 2026-10-18 THE DISPATCHER'S WAY OUT OF A CRASHED GUARD CANNOT SEE A REPAIR ON WINDOWS. dispatch.REPAIR is two
       patterns searched over the RAW payload text: `^\s*git\b` and `.claude` + a separator + the hooks folder + a
       separator. A Write's file_path arrives JSON-escaped (`.claude\\bundle-hooks\\`: two characters between the
       names, and the harness turns a typed forward-slash path into that too), and a command sits mid-line in one-line
@@ -2116,6 +2120,8 @@ both would have blocked every measurement forever:
       against six repairs (a Write by each slash, git after a cd, through PowerShell, behind a runner, a copy into the
       folder by a command) and four known answers that stay refused; 4 plants red, the moved-folder plant
       re-anchored and red. Left: the owner's push of the bundle, and the install here after this tree's commit.
+      CLOSED here by 4a682fa (2026-10-26): installed with the bundle up to c587f8b, committed through the full gate
+      (1,228 held plants, all red). The bundle's push to GitHub goes with CTRMap's, on the owner's per-push yes.
       MEASURED ON THE WAY: this tree's Python suite reads ../verification-bootstrap's WORKING copy - an uncommitted
       bundle edit to dispatch.py reddened test_bundle_gates' two install-drift tests here (installed dispatch.py is
       byte-identical to the bundle's HEAD; with the edit, "75 not greater than 75").
@@ -2142,8 +2148,10 @@ both would have blocked every measurement forever:
       1.0.5 is that emergency release, and 1.0.6 is released only when every line here is closed. The
       release commit for 1.0.4 is the owner's own --no-verify (owed plants no tree can drive stand in the gate's way),
       which also leaves every owed plant owed by the next commit - item (a) below. The debt, all of it:
-      (a) THE 1,578 OWED PLANTS, each driven red against the tree that ships (drive_owed --workers 8, ~2 h a drive),
-          every one that will not redden fixed - the items below this one say which are known.
+      (a) [x] THE 1,578 OWED PLANTS, each driven red against the tree that ships (drive_owed --workers 8, ~2 h a drive),
+          every one that will not redden fixed - the items below this one say which are known. CLOSED by 4a682fa
+          (2026-10-26), the first commit through the full gate since 1.0.4: 1,572 driven red against its tree, 4
+          settled by proof, and its gate drove 1,228 held plants, all red. Nothing is owed by the next commit.
       (b) [x] THE 12 SURVIVORS of the 990d0c1 sweep, each a line no test asserts, each given a test that kills it.
           CLOSED 2026-10-24 (read from the sweep's claim records: 5 at 990d0c1, 7 carried from 315d48d). CameraData 148:
           every write into memory goes through Bytes.written, HandleCloseTest hands it a writing that refuses.
@@ -2166,8 +2174,9 @@ both would have blocked every measurement forever:
       (d) F132: THE BASELINE MEASURED WITHOUT --anyway, over a committed tree with this queue empty, so
           MutationBaselineTest is green.
       (e) F025: ZONES PAST 536 RUN NO ZONE SCRIPTS - why, from the game's executable, and the fix.
-      (f) THE DISPATCHER'S REPAIR ROUTE (the item below), fixed in the bundle and taken here.
-      (g) A BACKTICK IN A DOUBLE-QUOTED ARGUMENT RUNS A COMMAND, and nothing refuses it. 2026-10-18: the answer the owner
+      (f) [x] THE DISPATCHER'S REPAIR ROUTE (the item below), fixed in the bundle and taken here. CLOSED by 4a682fa.
+      (g) [x] A BACKTICK IN A DOUBLE-QUOTED ARGUMENT RUNS A COMMAND, and nothing refuses it. CLOSED by 4a682fa
+          (guard_text_substitution, installed). 2026-10-18: the answer the owner
           was given was recorded with request_ledger.py answered, its text double-quoted and holding a backticked
           `python -B tools/whole_tree.py check`; bash ran that command and stored its OUTPUT inside the owner's answer, so the
           record matched nothing the owner was shown and the turn end was refused twice before it was found. The
@@ -2187,7 +2196,9 @@ both would have blocked every measurement forever:
       each push of the bundle; and F025's two gates - the owner queued it
       to start only once every session is committed and pushed (so a push comes before this release), and its static
       disassembly needs Capstone, a pip download that needs the owner's yes.
-- [ ] 2026-10-18 THE OWED PLANTS: 15 CANNOT BE DRIVEN RED ON THIS MACHINE, AND THE GATE TAKES NOTHING ELSE.
+- [x] 2026-10-18 THE OWED PLANTS: 15 CANNOT BE DRIVEN RED ON THIS MACHINE, AND THE GATE TAKES NOTHING ELSE.
+      CLOSED by 4a682fa (2026-10-26), committed through the full gate: every owed plant driven red against its tree
+      (1,572) or settled by a proof the gate asks again (4), and 1,228 held plants red.
       FIXED, NOT SKIPPED (2026-10-24; the owner: "fix the problem correctly dont tell me to just leave it broken and
       skip it"). The only way past a plant nothing could drive was the gate skipped again - every release since 1.0.4
       was made with --no-verify. Measured what was owed: 10 project and 16 bundle plants. Each now red or settled
@@ -2243,8 +2254,27 @@ both would have blocked every measurement forever:
       commit-msg hook's release check (window_check.release_commit) now refuses a version change while the
       OUTSTANDING.md it stages lists an open item, and one it cannot read; the owner's own switch is the one way
       past. 4 tests, 3 plants red.
-      LEFT: the bundle commit through its gate and installed here; the baseline written over the final tree; the
-      owed drive against it; this commit through the gate.
+      LANDED as 4a682fa (2026-10-26), the bundle's c587f8b installed in it. (11) THE BASELINE, the commit after it: the
+      sweep's writer over a562275 killed 2,137 of 2,137 measurable mutants (0 survived; clearGameData's survivor among
+      the kills), but re-measured 6 files whole for 1 nocompile each - 328 minutes - and every nocompile is the build
+      gate DialogSeamTest THROWING on the mutant, failing no check. Both closed: a nocompile is measured again alone, the
+      rest of its file's record taken (mutate2 measure_again; 2 selftest checks; 1 plant re-anchored, 1 added, 1
+      retired whose refusal is gone, 2 rotted ones re-anchored); and DialogSeamTest runs every section so a throw is a
+      FAIL naming it (a self-check of the runner; 1 plant red). The writer over the commit's own tree re-measures the
+      9 and writes the baseline that commit carries. (12) ITS GATE REFUSED IT (2026-10-26 08:43, 46 of 47 held plants
+      red): a-gone-runs-claim-is-held-forever "no longer reddens" - red driven alone, twice, with its whole output kept,
+      and the refusal said only replant's closing summary, so why it was not red inside the gate cannot be asked again.
+      Reading for the cause found two bundle defects and one of mine. The gate handed the project's plant driver the
+      hook's git location (checker_env stripped it for checkers alone): a suite that builds repositories of its own
+      works against this one's index. MEASURED BY ACCIDENT: replant run by hand with GIT_INDEX_FILE at this index let
+      mutate2's selftest write a scratch repository's entries into it - 830 tracked files gone from the index, the tree
+      untouched, rebuilt by `git reset --mixed HEAD` and the 7 staged files added again (fsck clean; 4a682fa's tree
+      checked whole, 830 files). And bundle_runs.lock_runs asked a lock's pid alone: the window check ends its editor
+      from outside, build/.editor-running stays behind (08:10:52, pid 14512), and every build refuses while any process
+      holds that number - which a plant that rebuilds reads as not red. Closed in the bundle, one commit: the driver is
+      handed checker_env() and a walk asks every child the gate starts for it; a not-red plant's whole driver output is
+      kept in a file the refusal names; a process that began after a lock was written is not its writer. 4 tests failed
+      first; 5 plants red, 2 the edit had rotted re-anchored and red.
       DRIVEN 2026-10-18 17:49 with the fixed worker copies: every verdict was about this tree (0 "on another tree"),
       1,563 of 1,578 red; the 15 not red are exactly the set below. Since then: an-unreadable-collision-reads-as-
       ground-at-0 - its early return removed as the equivalent mutant it was, the plant re-anchored to the one NaN

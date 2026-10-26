@@ -2286,6 +2286,87 @@ def dotted_in(rel, text):
 
 
 
+class TheDeclaredBundlesInstallerRunsAsAStackTool(ScratchProject, unittest.TestCase):
+    """F261, found 2026-10-18 installing the bundle into DF Engine: the installer takes a file that
+    differs from the bundle's only by `--take <path>`, a command naming a hook was refused as a write
+    of the stack, and so no session could ever take the bundle's copy of a hook. The installer of the
+    bundle the project DECLARES runs as the stack's own tools do - and only while its checkout holds
+    no change and its commit is on the bundle's GitHub main, which a push needs the owner's yes to
+    reach. Each way past that is a test here, beside the control that the honest install runs."""
+
+    def setUp(self):
+        ScratchProject.setUp(self)
+        self.git("init", "-q")
+        os.makedirs(os.path.join(self.root, bundle_shell.FOLDER.replace("/", os.sep)))
+        self.bundle = self.repo("bundle-declared-")
+        origin = tempfile.mkdtemp(prefix="bundle-origin-")
+        self.addCleanup(shutil.rmtree, origin, True)
+        self.run_git(origin, "init", "-q", "--bare")
+        self.run_git(self.bundle, "remote", "add", "origin", origin)
+        self.run_git(self.bundle, "push", "-q", "-u", "origin", "main")
+        self.write_file(guard_command_rules.DECLARATIONS, json.dumps({"_bundle": self.bundle}))
+
+    def repo(self, prefix):
+        """A bundle checkout in a temp folder holding one committed installer, on `main`."""
+        where = tempfile.mkdtemp(prefix=prefix)
+        self.addCleanup(shutil.rmtree, where, True)
+        self.run_git(where, "init", "-q", "-b", "main")
+        for key, value in (("user.name", "t"), ("user.email", "t@example.invalid"), ("commit.gpgsign", "false"),
+                           ("core.hooksPath", os.path.join(where, "no-hooks"))):
+            self.run_git(where, "config", key, value)
+        self.add_to(where, guard_command_rules.INSTALLER, "print('installs')" + LF)
+        self.run_git(where, "add", "-A")
+        self.run_git(where, "commit", "-q", "-m", "the installer")
+        return where
+
+    def add_to(self, where, rel, text):
+        path = os.path.join(where, *rel.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with io.open(path, "a", encoding="utf-8", newline=LF) as handle:
+            handle.write(text)
+
+    def run_git(self, where, *args):
+        done = bounded.run(["git"] + list(args), cwd=where, capture_output=True, text=True, timeout=60,
+                           creationflags=NO_WINDOW)
+        self.assertEqual(done.returncode, 0, "git %s failed: %s" % (" ".join(args), done.stderr))
+
+    def install(self, bundle=None):
+        """The command a session runs to take the bundle's copy of a hook."""
+        installer = os.path.join(bundle or self.bundle, *guard_command_rules.INSTALLER.split("/"))
+        return 'python -B "%s" "%s" --take %s/dispatch.py' % (
+            installer.replace(chr(92), "/"), self.root.replace(chr(92), "/"), bundle_shell.FOLDER)
+
+    def stack(self, command):
+        payload = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": self.root}
+        return [found for name, found in guard_command_rules.problems(payload, self.root)
+                if name == "stack"]
+
+    def test_the_declared_installer_at_a_released_commit_runs_and_no_other_does(self):
+        self.assertEqual(self.stack(self.install()), [],
+                         "the declared bundle's installer, clean and released, was refused as a write of the stack")
+        other = self.repo("bundle-other-")
+        self.assertTrue(self.stack(self.install(other)), "an installer outside the declared bundle ran as a stack tool")
+
+    def test_a_change_in_the_bundles_checkout_is_not_the_bundle_as_released(self):
+        for label, rel in (("the installer edited in place", guard_command_rules.INSTALLER),
+                           ("a file nobody added beside it", "tools/json.py")):
+            with self.subTest(label):
+                self.add_to(self.bundle, rel, "import os" + LF)
+                try:
+                    self.assertTrue(self.stack(self.install()), "%s ran as the stack's own tool" % label)
+                finally:
+                    self.run_git(self.bundle, "checkout", "--", guard_command_rules.INSTALLER)
+                    stray = os.path.join(self.bundle, "tools", "json.py")
+                    if os.path.exists(stray):
+                        os.remove(stray)
+
+    def test_a_commit_the_bundles_github_does_not_hold_is_not_released(self):
+        self.assertEqual(self.stack(self.install()), [], "the control: the released installer must run first")
+        self.add_to(self.bundle, guard_command_rules.INSTALLER, "print('unreleased')" + LF)
+        self.run_git(self.bundle, "commit", "-q", "-am", "not pushed")
+        self.assertTrue(self.stack(self.install()), "an installer at a commit nobody pushed ran as the stack's own tool")
+
+
 class AStackIsJudgedInTheCheckoutTheCommandRunsIn(ScratchProject, unittest.TestCase):
     """`guard_command_rules.stack_write` asks the stack of the checkout a command RUNS in.
 

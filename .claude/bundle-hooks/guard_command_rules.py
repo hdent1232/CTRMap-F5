@@ -553,7 +553,7 @@ def stack(root):
     one is the stack, the bare name is not, so `--exclude .git` names nothing - absolute where git
     keeps them outside the project, as a linked worktree's are; its `.git` FILE is one too."""
     folders = [bundle_shell.FOLDER, HOOKS_DIR.replace(chr(92), "/").strip("/")]
-    files = {".claude/settings.json", ".claude/settings.local.json", ".claude/bundle-install.json"}
+    files = {".claude/settings.json", ".claude/settings.local.json", DECLARATIONS}
     # THE OWNER'S CLAUDE FOLDER AND MANAGED SETTINGS, absolute: user settings can switch every
     # hook off, and the transcript is where the owner's yes is read. Measured 2026-10-07: a
     # command appending a row to a transcript went through with every guard wired.
@@ -708,8 +708,52 @@ def _runs_stack_tool(rest, where, root, folders, files):
             continue
         script = (typed if typed is not None else word).strip("'" + chr(34))
         path = script if os.path.isabs(script) else os.path.join(where or root, script)
-        return _within(path, root, folders, files)
+        return _within(path, root, folders, files) or _the_declared_installer(path, root)
     return False
+
+
+#: Where a project records the bundle it installs from - one of the stack's own files.
+DECLARATIONS = ".claude/bundle-install.json"
+#: The bundle's installer, as a path inside the bundle: the one tool outside the project that
+#: writes the stack by design.
+INSTALLER = "tools/install.py"
+
+
+def _the_declared_installer(path, root):
+    """Is `path` the installer of the bundle this project declares, at a commit the bundle's GitHub
+    holds, with nothing changed in its checkout?
+
+    F261 (found 2026-10-18 installing the bundle into DF Engine): the installer takes a file that
+    differs from the bundle's only by `--take <path>`, and a command naming a hook was refused here
+    as a write of the stack - so no session could ever take the bundle's copy of a hook, and every
+    install went to the owner's own terminal. The installer IS how the stack is written, by design,
+    so it runs as the stack's own tools do. Three ways that would let anything else through are each
+    closed, the cheapest first:
+
+    - ANY `install.py`: the path must be the installer of the bundle `.claude/bundle-install.json`
+      names - a stack file, so a command cannot repoint it - read through the one reader of
+      `_bundle`, `bundle_rules.bundle_path`.
+    - AN INSTALLER EDITED IN PLACE: the bundle's checkout must hold no change, untracked files
+      included, since the installer imports its neighbours. A checkout that cannot be asked is not
+      clean.
+    - A COMMIT NOBODY RELEASED: HEAD must be on the bundle's GitHub main as its remote-tracking ref
+      records it, and every push of the bundle needs the owner's yes - so only code the owner let
+      out runs as the stack's tool.
+
+    WHAT IT CANNOT STOP, said rather than implied: a remote-tracking ref is the bundle repository's
+    own file, and a program that rewrites it there, by `git update-ref` or by hand, passes the
+    third. Fetching from GitHub at every command would close that and cost a network call per act."""
+    where, _why = bundle_rules.bundle_path(os.path.join(root, *DECLARATIONS.split("/")))
+    if not where:
+        return False
+    installer = os.path.join(where, *INSTALLER.split("/"))
+    if os.path.normcase(os.path.realpath(path)) != os.path.normcase(os.path.realpath(installer)):
+        return False
+    changed = _git_text(where, ["status", "--porcelain", "--untracked-files=all"])
+    if changed is None or changed.strip():
+        return False
+    held_by = _git_text(where, ["branch", "-r", "--contains", "HEAD"])
+    return bool(held_by) and any(line.strip().endswith("/main") for line in held_by.splitlines())
 
 
 def stack_write(root, command, where, held=None):

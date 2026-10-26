@@ -464,21 +464,45 @@ def _prove_in_project(prove, key, unknown=None):
     says so with its own exit code - while this read every non-zero exit as "no longer reddens"
     and told the session to re-anchor them. Re-anchoring a plant to get past a refusal is how a
     plant is made to prove less. UNKNOWN is still refused - a plant nobody drove proves nothing -
-    and it says what it is, and where it can be proven."""
+    and it says what it is, and where it can be proven.
+
+    IN ITS OWN REPOSITORY, NOT THE HOOK'S. The driver's suites may build git repositories of their own,
+    and git hands this hook `GIT_INDEX_FILE` and its kin: measured in CTRMap 2026-10-26, a selftest
+    run with them wrote a scratch repository's entries into the project's index. checker_env strips
+    them, as it has for the checkers since 2026-10-07.
+
+    WHAT IT SAID IS KEPT. A plant that is not red is refused, and why it is not - survived, hung,
+    could not build - is in the driver's output, not in its last line, which was all this kept: a
+    CTRMap refusal, 2026-10-26, said only the driver's closing summary, and the plant was red
+    driven again. The whole output is written to a file the refusal names first."""
     argv = [a.replace("{key}", key) for a in prove]
     unknown = unknown_exit() if unknown is None else unknown
     try:
-        done = bounded.run(argv, cwd=ROOT, capture_output=True, text=True,
+        done = bounded.run(argv, cwd=ROOT, capture_output=True, text=True, env=checker_env(),
                            timeout=PROJECT_PROVE_TIMEOUT, creationflags=NO_WINDOW)
     except subprocess.TimeoutExpired:
         return False, "not proven within %ds" % PROJECT_PROVE_TIMEOUT
     except OSError as exc:
         return None, "could not run %s: %s" % (argv[0], exc)
-    tail = (done.stdout + done.stderr).strip().splitlines()
+    whole = (done.stdout or "") + (done.stderr or "")
+    tail = whole.strip().splitlines()
     said = tail[-1] if tail else "exit %d" % done.returncode
-    if unknown is not None and done.returncode == unknown:
-        return None, said
-    return done.returncode == 0, said
+    red = None if unknown is not None and done.returncode == unknown else done.returncode == 0
+    if red is not True:
+        said = "what it said is kept at %s; it ended: %s" % (_keep_said(key, whole), said)
+    return red, said
+
+
+def _keep_said(key, whole):
+    """The file a not-red plant's whole driver output is written to, or why it could not be."""
+    import tempfile
+    path = os.path.join(tempfile.gettempdir(), "commit-gate-%s-%d.out" % (re.sub(r"[^\w.-]", "_", key), os.getpid()))
+    try:
+        with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(whole)
+    except OSError as exc:
+        return "(nowhere - %s could not be written: %s)" % (path, exc)
+    return path
 
 
 def could_not_ask(kind, key, detail):

@@ -441,9 +441,9 @@
    "file": ".claude/bundle-hooks/bundle_runs.py",
    "must_say": "a killed battery's lock was read as a running one",
    "new": "            if True:\n",
-   "old": "            if bundle_shell.alive(int(named.group(1))):\n",
+   "old": "            if bundle_shell.alive(pid) and not bundle_shell.began_after(pid, written):\n",
    "site": "elsewhere",
-   "why": "MEASURED 2026-10-11: build/.battery-running had four readers and four rules - test.ps1 by its pid, build.ps1 by the file's age, replant.py by bare presence, the edit hook by bundle_runs.lock_runs - so whether a battery was running depended on who asked. The rule the one reader asks, broken where it lives: a killed battery's lock holds for good, which is what replant.py's bare-presence reading did to every plant build."
+   "why": "MEASURED 2026-10-11: build/.battery-running had four readers and four rules - test.ps1 by its pid, build.ps1 by the file's age, replant.py by bare presence, the edit hook by bundle_runs.lock_runs - so whether a battery was running depended on who asked. The rule the one reader asks, broken where it lives: a killed battery's lock holds for good, which is what replant.py's bare-presence reading did to every plant build. RE-ANCHORED 2026-10-26: bundle 0176168 asks a reused pid on the same line (began_after); installed, the old anchor matched nothing and the gate refused the commit."
   },
   "test_battery_lock.py::TheLockIsReadByTheHooksRule::test_a_mutation_run_is_not_a_battery": {
    "file": "tools/guard/battery_lock.py",
@@ -1519,7 +1519,7 @@
    "file": ".claude/bundle-hooks/bundle_shell.py",
    "must_say": "a key the harness adds to its own SendMessage made a message a launch",
    "new": "    if False:",
-   "old": "    if str(payload.get(\"tool_name\") or \"\") == \"SendMessage\":",
+   "old": "    if handed_over_by_the_harness(given, to):",
    "site": "instance",
    "why": "Measured 2026-10-15: the harness records recipient_kind on every SendMessage and the allow-list did not hold it, so every message between the owner's sessions asked the owner for a code - the second time an added bookkeeping key did that."
   },
@@ -1586,6 +1586,14 @@
    "old": "    elif not set(given) <= MESSAGE_ONLY:",
    "site": "elsewhere",
    "why": "Only the harness's own SendMessage is trusted with keys it adds; a tool of any other name that hands words to a name keeps the strict shape, or any tool could pass as a message by naming a recipient."
+  },
+  "test_bundle.py::AMessageToTheOwnersOwnSessionIsNotALaunch::test_another_tool_handing_words_over_keeps_the_strict_shape::any_call": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "another tool carrying more than a message's keys passed as a message",
+   "new": "    return True",
+   "old": "    return given.get(\"type\") == \"message\" and str(given.get(\"recipient\") or \"\").strip() == to.strip()",
+   "site": "evasion",
+   "why": "The cheapest way past asking a shape instead of a name: a shape every call has. Then any tool handing words to a name, with whatever else it carries, reads as the harness's own message and is waved past the fan-out code."
   },
   "test_bundle.py::AMessageToTheOwnersOwnSessionIsNotALaunch::test_anything_else_is_still_a_launch::bare": {
    "file": ".claude/bundle-hooks/bundle_shell.py",
@@ -2235,9 +2243,9 @@
    "file": ".claude/bundle-hooks/bundle_runs.py",
    "must_say": "CONTROL: a lock whose process is gone held the tree",
    "new": "            if True:\n",
-   "old": "            if bundle_shell.alive(int(named.group(1))):\n",
+   "old": "            if bundle_shell.alive(pid) and not bundle_shell.began_after(pid, written):\n",
    "site": "evasion",
-   "why": "The cheapest way to hold every live run is to hold every lock file, and a battery killed mid-run leaves one: build.ps1 once refused the build for the fix for 90 minutes over exactly that. This plant holds a lock whatever its process."
+   "why": "The cheapest way to hold every live run is to hold every lock file, and a battery killed mid-run leaves one: build.ps1 once refused the build for the fix for 90 minutes over exactly that. This plant holds a lock whatever its process. RE-ANCHORED 2026-10-26: the question now asks a reused pid too (began_after), on one line."
   },
   "test_bundle.py::ARunThatDeclaresItselfByALockIsWitnessedByIt::test_a_lock_whose_run_is_over_holds_nothing::abandoned": {
    "file": ".claude/bundle-hooks/bundle_runs.py",
@@ -2246,6 +2254,14 @@
    "old": "        elif age <= ABANDONED:\n",
    "site": "elsewhere",
    "why": "A lock that names no process and was left by a crash must age out, or a guard that cannot be released gets deleted; build.ps1 ages its own at 90 minutes for that reason. This plant never ages a lock out."
+  },
+  "test_bundle.py::ARunThatDeclaresItselfByALockIsWitnessedByIt::test_a_pid_REUSED_after_the_lock_was_written_holds_nothing": {
+   "file": ".claude/bundle-hooks/bundle_runs.py",
+   "must_say": "a process that began a minute after the lock was written was read as its writer",
+   "new": "            if bundle_shell.alive(pid):\n",
+   "old": "            if bundle_shell.alive(pid) and not bundle_shell.began_after(pid, written):\n",
+   "site": "instance",
+   "why": "MEASURED 2026-10-26 in CTRMap: the window check's editor is ended from outside and leaves build/.editor-running naming its pid, so every build refuses while any process holds that number - a refusal a plant drive reads as a plant not red. This plant asks the pid alone again."
   },
   "test_bundle.py::AStartedJVMOpensNoWindowEither::test_every_jvm_command_here_starts_it_headless": {
    "file": "tests/test_bundle.py",
@@ -5023,6 +5039,38 @@
    "site": "evasion",
    "why": "THE CHEAPEST WAY PAST A CHECK FOR THE WORD `git` is the path to it: `& \"C:/Program Files/Git/cmd/git.exe\" commit -n` is git, and a program name compared whole is not the word git."
   },
+  "test_bundle_action.py::TheDeclaredBundlesInstallerRunsAsAStackTool::test_a_change_in_the_bundles_checkout_is_not_the_bundle_as_released::edited": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "the installer edited in place ran as the stack's own tool",
+   "new": "    if changed is None:",
+   "old": "    if changed is None or changed.strip():",
+   "site": "evasion",
+   "why": "The declared installer edited in its own checkout, or a module dropped beside it that it imports, runs as the stack's tool: the bundle a session is allowed to run would be whatever the session last wrote there."
+  },
+  "test_bundle_action.py::TheDeclaredBundlesInstallerRunsAsAStackTool::test_a_commit_the_bundles_github_does_not_hold_is_not_released::unpushed": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "an installer at a commit nobody pushed ran as the stack's own tool",
+   "new": "    return True",
+   "old": "    return bool(held_by) and any(line.strip().endswith(\"/main\") for line in held_by.splitlines())",
+   "site": "elsewhere",
+   "why": "A commit made in the bundle and never pushed runs as the stack's tool: committing is the session's own act, and only the push needs the owner's yes, so an unpushed installer is code nobody released."
+  },
+  "test_bundle_action.py::TheDeclaredBundlesInstallerRunsAsAStackTool::test_the_declared_installer_at_a_released_commit_runs_and_no_other_does::any_installer": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "an installer outside the declared bundle ran as a stack tool",
+   "new": "    if False:\n        return False",
+   "old": "    if os.path.normcase(os.path.realpath(path)) != os.path.normcase(os.path.realpath(installer)):\n        return False",
+   "site": "evasion",
+   "why": "The cheapest way past it: any file called install.py runs as the stack's own tool, so a script written to a scratch folder under that name writes every hook."
+  },
+  "test_bundle_action.py::TheDeclaredBundlesInstallerRunsAsAStackTool::test_the_declared_installer_at_a_released_commit_runs_and_no_other_does::refused": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "the declared bundle's installer, clean and released, was refused as a write of the stack",
+   "new": "        return _within(path, root, folders, files)",
+   "old": "        return _within(path, root, folders, files) or _the_declared_installer(path, root)",
+   "site": "instance",
+   "why": "THE GUARD AS IT WAS (F261, 2026-10-18): the bundle's installer named a hook on its command line and was refused as a write of the stack, so no session could ever take the bundle's copy of a hook and every install went to the owner's terminal."
+  },
   "test_bundle_action.py::TheGuardStackCannotBeSwitchedOffByACommand::test_a_WORKTREES_git_folder_is_the_git_folder_too::folders": {
    "file": ".claude/bundle-hooks/guard_command_rules.py",
    "must_say": "writing the worktree's real git folder was allowed",
@@ -5160,7 +5208,7 @@
    "why": "A TREE THAT NEVER MOVES. The after-hook skips a call that left the tree as it was; a state that does not change when a file does is the cheapest way never to be asked again, and it looks exactly like a quiet session."
   },
   "test_bundle_gates.py::ABundleIsFoundWhereverItsProjectDeclaresIt::test_a_relative_entry_is_found_beside_claude_not_inside_it::elsewhere": {
-   "file": "tools/bundle_install.py",
+   "file": ".claude/bundle-hooks/bundle_rules.py",
    "must_say": "resolved against .claude/ rather than",
    "new": "    return here",
    "old": "    return os.path.dirname(here) if os.path.basename(here) == \".claude\" else here",
@@ -5168,7 +5216,7 @@
    "why": "The wrong base arriving through the other half of the resolver: the project is the folder HOLDING .claude/, and resolved against .claude/ itself a relative entry is looked for inside it and never found."
   },
   "test_bundle_gates.py::ABundleIsFoundWhereverItsProjectDeclaresIt::test_a_relative_entry_is_found_from_the_project_wherever_the_commit_runs::evasion": {
-   "file": "tools/bundle_install.py",
+   "file": ".claude/bundle-hooks/bundle_rules.py",
    "must_say": "resolved against the WORKING DIRECTORY",
    "new": "        path = entry",
    "old": "        path = entry if os.path.isabs(entry) else os.path.join(project, entry)",
@@ -5176,7 +5224,7 @@
    "why": "The cheapest way to support a relative entry is to hand it to the filesystem as it stands, which passes every test run from the project root and fails the same commit run from tools/ - a verdict that depends on where you stood."
   },
   "test_bundle_gates.py::ABundleIsFoundWhereverItsProjectDeclaresIt::test_the_first_listed_folder_that_exists_is_the_bundle": {
-   "file": "tools/bundle_install.py",
+   "file": ".claude/bundle-hooks/bundle_rules.py",
    "must_say": "a listed bundle that is NOT a folder was taken",
    "new": "        if True:",
    "old": "        if os.path.isdir(path):",
@@ -5728,13 +5776,45 @@
    "site": "instance",
    "why": "MEASURED 2026-10-10: a test faked subprocess.run for code that had moved onto bounded.run, went red on the bundle's own tree, and the gate drove its held plant red and let 5c11639 through. A clean run that never reports a red test is a check that passes every tree it is shown."
   },
+  "test_bundle_gates.py::AHeldPlantIsDrivenAgainWhenItsFileChanges::test_every_child_the_gate_starts_but_its_own_git_is_handed_an_environment::elsewhere": {
+   "file": "tools/commit_gate.py",
+   "must_say": "these start a child that inherits the hook's environment",
+   "new": "                               text=True, timeout=CHECKER_TIMEOUT,\n",
+   "old": "                               text=True, env=checker_env(), timeout=CHECKER_TIMEOUT,\n",
+   "site": "elsewhere",
+   "why": "A guard at a call site is one call site from broken: checker_env was added at the checker's call on 2026-10-07 and the plant driver ten lines on went without it for 19 days. This plant drops it from the OTHER call site, the checker's, so the walk is proven on a site the fix never touched."
+  },
+  "test_bundle_gates.py::AHeldPlantIsDrivenAgainWhenItsFileChanges::test_every_child_the_gate_starts_but_its_own_git_is_handed_an_environment::evasion": {
+   "file": "tools/commit_gate.py",
+   "must_say": "these start a child that inherits the hook's environment",
+   "new": "        done = bounded.run(argv, cwd=ROOT, capture_output=True, text=True, env=dict(os.environ),\n",
+   "old": "        done = bounded.run(argv, cwd=ROOT, capture_output=True, text=True, env=checker_env(),\n",
+   "site": "evasion",
+   "why": "The cheapest way past a walk that asks only whether an environment is named: name one that copies this one whole, git's place with it - the 2026-10-26 index loss of 830 entries, by a spelling the first walk passed. This plant does exactly that."
+  },
   "test_bundle_gates.py::AHeldPlantIsDrivenAgainWhenItsFileChanges::test_the_DECLARED_exit_code_reads_as_UNKNOWN_and_no_other": {
    "file": "tools/commit_gate.py",
    "must_say": "UNKNOWN: the driver's declared could-not-ask code read as an answer",
-   "new": "    if False:\n        return None, said\n",
-   "old": "    if unknown is not None and done.returncode == unknown:\n        return None, said\n",
+   "new": "    red = None if False else done.returncode == 0\n",
+   "old": "    red = None if unknown is not None and done.returncode == unknown else done.returncode == 0\n",
    "site": "instance",
-   "why": "THE SAME DEFECT AT ITS SOURCE: the project's driver said, with its own exit code, that it could not ask a plant here, and every non-zero exit read as survived."
+   "why": "THE SAME DEFECT AT ITS SOURCE: the project's driver said, with its own exit code, that it could not ask a plant here, and every non-zero exit read as survived. RE-ANCHORED 2026-10-26: the verdict is decided once, before a plant that is not red has its driver's words kept."
+  },
+  "test_bundle_gates.py::AHeldPlantIsDrivenAgainWhenItsFileChanges::test_the_projects_plant_driver_runs_in_ITS_OWN_repository_not_the_hooks": {
+   "file": "tools/commit_gate.py",
+   "must_say": "the project's plant driver inherited the hook's git location",
+   "new": "        done = bounded.run(argv, cwd=ROOT, capture_output=True, text=True, env=None,\n",
+   "old": "        done = bounded.run(argv, cwd=ROOT, capture_output=True, text=True, env=checker_env(),\n",
+   "site": "instance",
+   "why": "MEASURED 2026-10-26 in CTRMap: run with the hook's GIT_INDEX_FILE, the project's plant driver's mutate2 selftest wrote a scratch repository's entries into the project's index - 830 tracked files gone from it, rebuilt from HEAD by hand. This plant hands the driver the hook's environment again."
+  },
+  "test_bundle_gates.py::AHeldPlantIsDrivenAgainWhenItsFileChanges::test_what_the_projects_driver_said_is_KEPT_not_cut_to_its_last_line": {
+   "file": "tools/commit_gate.py",
+   "must_say": "the refusal names no file holding what the driver said",
+   "new": "        said = \"it ended: %s\" % said\n",
+   "old": "        said = \"what it said is kept at %s; it ended: %s\" % (_keep_said(key, whole), said)\n",
+   "site": "instance",
+   "why": "MEASURED 2026-10-26 in CTRMap: 1 of 47 held plants read as not red inside the gate and red driven alone twice, and the refusal said only the driver's closing summary; why it was not red could not be asked again. This plant keeps the last line alone."
   },
   "test_bundle_gates.py::APlantLeavesTheLedgerOnlyByAnActTheCommitAsksAgain::test_a_RETIRED_plant_is_driven_and_must_run_to_a_pass": {
    "file": "tools/commit_gate.py",
@@ -6233,7 +6313,7 @@
    "why": "TWO COPIES, ONE PICKED. A copy left behind by a move, and every tool silently chose one - a guess reported as a fact."
   },
   "test_bundle_gates.py::TheInstallIsAskedAtEveryCommit::test_a_bundle_that_CANNOT_BE_READ_refuses": {
-   "file": "tools/bundle_install.py",
+   "file": ".claude/bundle-hooks/bundle_rules.py",
    "must_say": "False is not true",
    "new": "        return path, None",
    "old": "        tried.append(path)",

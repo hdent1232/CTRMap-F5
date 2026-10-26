@@ -2997,13 +2997,35 @@ class ARunThatDeclaresItselfByALockIsWitnessedByIt(unittest.TestCase):
         """Past ABANDONED too: a run that is still alive is a run, however long it has taken -
         and only a lock whose process is READ can say so, in either spelling a writer uses."""
         old = 91 * 60
+        #a writer began before it wrote: this process stands for a run that started before its old lock
+        began = time.time() - old - 60
         for body, age in (("started now" + LF + "pid=%d" % os.getpid() + LF + "what=the battery"
                            + LF, old),
                           ("src/a.py" + LF + "%d-0123456789abcdef" % os.getpid() + LF, old),
                           ("started now, naming no process" + LF, 0)):
-            with self.subTest(body=body):
+            with self.subTest(body=body), mock.patch.object(self.runs.bundle_shell, "process_started_at",
+                                                            lambda pid: began):
                 self.assertEqual(self.held(body, age=age), 2,
                                  "a run that declared itself by its lock let a write through")
+
+    def test_a_pid_REUSED_after_the_lock_was_written_holds_nothing(self):
+        """A PID IS A NUMBER THE OPERATING SYSTEM REUSES, and `bundle_shell.alive` says so - yet lock_runs asked it the
+        pid alone. MEASURED 2026-10-26 in CTRMap: the window check's editor is ended from outside, so its
+        build/.editor-running stays behind naming a pid, and every build refuses while ANY process holds that number.
+        A lock's writer began before it wrote the lock; a process that began after is somebody else."""
+        with io.open(self.lock, "w", encoding="utf-8") as handle:
+            handle.write("pid=%d" % os.getpid() + LF)
+        written = os.path.getmtime(self.lock)
+        battery = (("build/.battery-running", "the battery"),)
+        with mock.patch.object(self.runs.bundle_shell, "process_started_at", lambda pid: written + 60):
+            self.assertEqual(self.runs.lock_runs(self.root, battery), [],
+                             "a process that began a minute after the lock was written was read as its writer")
+        with mock.patch.object(self.runs.bundle_shell, "process_started_at", lambda pid: written - 60):
+            self.assertEqual(len(self.runs.lock_runs(self.root, battery)), 1,
+                             "CONTROL: the process that began before the lock no longer holds it")
+        with mock.patch.object(self.runs.bundle_shell, "process_started_at", lambda pid: None):
+            self.assertEqual(len(self.runs.lock_runs(self.root, battery)), 1,
+                             "a process whose start cannot be read was called somebody else - unknown is alive")
 
     def test_a_lock_whose_run_is_over_holds_nothing(self):
         self.assertEqual(self.held("pid=%d" % self.gone() + LF), 0,

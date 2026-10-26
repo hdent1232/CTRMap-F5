@@ -1175,6 +1175,17 @@ SHAPES_A_MODEL = frozenset(LAUNCH_KEYS) | frozenset(("prompt", "model", "isolati
                                                      "agent_type", "team_name"))
 
 
+def handed_over_by_the_harness(given, to):
+    """Does this input carry the harness's own copies of a message - `type` "message" and `recipient` the name
+    it is sent to - as the harness's SendMessage is handed over? A SHAPE, not the tool's name.
+
+    2026-10-25: `message_recipient` told the harness's SendMessage from every other tool by its NAME, and the
+    bundle's own check refuses a hook that decides by name unless the name can only add refusals - this one
+    took the key allow-list away. The copies are what the harness adds beside the words, so a tool of any
+    other name that hands words over without them keeps the strict shape."""
+    return given.get("type") == "message" and str(given.get("recipient") or "").strip() == to.strip()
+
+
 def message_recipient(payload):
     """The name a call hands words to, when it ONLY hands words to a recipient by name - the shape
     `message_to_session` asks of a SendMessage - or '' for any other call. ONE shape test: the guard that
@@ -1190,13 +1201,13 @@ def message_recipient(payload):
     given = payload.get("tool_input") if isinstance(payload, dict) else None
     if not isinstance(given, dict):
         return ""
-    if str(payload.get("tool_name") or "") == "SendMessage":
+    to, words = given.get("to"), given.get("message")
+    if not (isinstance(to, str) and to.strip() and isinstance(words, str)):
+        return ""
+    if handed_over_by_the_harness(given, to):
         if set(given) & SHAPES_A_MODEL:
             return ""
     elif not set(given) <= MESSAGE_ONLY:
-        return ""
-    to, words = given.get("to"), given.get("message")
-    if not (isinstance(to, str) and to.strip() and isinstance(words, str)):
         return ""
     to = to.strip()
     # the harness's own copies must say the same thing, or a listed name fronts for another recipient
@@ -1414,6 +1425,20 @@ def process_started_at(pid):
         return time.time() - uptime + float(fields[19]) / os.sysconf("SC_CLK_TCK")
     except (OSError, ValueError, IndexError, AttributeError):
         return None
+
+
+def began_after(pid, epoch, slack=2.0):
+    """Is the process holding `pid` KNOWN to have begun after `epoch` - so it cannot be what wrote something then?
+    NO whenever it cannot tell. A lock's writer began before it wrote the lock, so a lock read by its file's time needs
+    no start time of its own: a process that began after the file was written holds a reused number. `slack` covers a
+    file system that keeps times to two seconds."""
+    began = process_started_at(pid)
+    if began is None or epoch is None:
+        return False
+    try:
+        return float(began) > float(epoch) + slack
+    except (TypeError, ValueError):
+        return False
 
 
 def same_process(pid, started_epoch):

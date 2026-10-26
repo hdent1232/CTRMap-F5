@@ -71,7 +71,12 @@ def lock_runs(root, locks=None):
     `locks`, given, is read IN PLACE OF LOCKS and by the same rule: a project's own reader of one lock
     asks here rather than answering by a rule of its own. CTRMap's battery lock had four readers on
     2026-10-11 - deciding by pid, by age, by bare presence, and by this - so whether a battery was
-    running depended on who asked."""
+    running depended on who asked.
+
+    A PID IS A NUMBER THE OPERATING SYSTEM REUSES, and this asked it alone. Measured in CTRMap 2026-10-26: an
+    editor ended from outside leaves build/.editor-running naming its pid, and every build refuses while any
+    process at all holds that number. The lock's writer began before it wrote the file, so a process that began
+    after the file's time is somebody else (`bundle_shell.began_after`); one whose start cannot be read is alive."""
     import time
     found = []
     for rel, what in (LOCKS if locks is None else locks):
@@ -81,14 +86,16 @@ def lock_runs(root, locks=None):
         try:
             with open(path, encoding="utf-8", errors="replace") as handle:
                 body = handle.read()
-            age = time.time() - os.path.getmtime(path)
+            written = os.path.getmtime(path)
+            age = time.time() - written
         except OSError as exc:
             found.append("%s, by its lock %s, which cannot be read (%s)" % (what, rel, exc))
             continue
         named = (re.search(r"\bpid\s*=\s*(\d+)", body)
                  or re.search(r"(?m)^(\d+)-[0-9a-f]{16}\s*$", body))
         if named:
-            if bundle_shell.alive(int(named.group(1))):
+            pid = int(named.group(1))
+            if bundle_shell.alive(pid) and not bundle_shell.began_after(pid, written):
                 found.append("%s, by its lock %s (pid %s)" % (what, rel, named.group(1)))
         elif age <= ABANDONED:
             found.append("%s, by its lock %s (it names no process and was written %d minute(s) "

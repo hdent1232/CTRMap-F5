@@ -20234,28 +20234,15 @@
   },
   {
    "id": "a-printed-nocompile-is-reused",
-   "why": "A nocompile is the harness's failure, not a measurement of the file; share 7 printed 1 (BchMapModel 84). This plant lets a log's printed nocompile be taken, so the file goes into the baseline 1 line unmeasured for good.",
+   "why": "A nocompile is the harness's failure, not a measurement of the file; share 7 printed 1 (BchMapModel 84). This plant lets a log's printed nocompile be taken, so the file goes into the baseline 1 line unmeasured for good. RE-ANCHORED (2026-10-26): a nocompile is measured again alone now (measure_again), not its whole file refused, and a printed log's record and a share's are asked that at this one place; the plant takes a nocompile as a verdict there. 1 nocompile each had cost 6 whole files 328 minutes.",
    "file": "tools/mutate2.py",
-   "find": "            if any(v == \"nocompile\" for _l, _k, v, _d in lines):\n",
-   "replace": "            if False:\n",
+   "find": "            or r[\"verdict\"] == \"nocompile\"]\n",
+   "replace": "            ]\n",
    "suite": "ctrmap.tests.MutationBaselineTest",
    "args": [
     "src"
    ],
    "must_say": "FAIL: a printed nocompile is never reused",
-   "no_rebuild": true
-  },
-  {
-   "id": "a-shared-nocompile-is-reused",
-   "why": "The same refusal where a share's results file is read: this plant drops it there alone, so 1 nocompile a share recorded - BchMapModel 84 in share 7's - goes into the baseline unmeasured.",
-   "file": "tools/mutate2.py",
-   "find": "            elif any(r.get(\"verdict\") == \"nocompile\" for r in unit.get(\"results\", [])):\n",
-   "replace": "            elif False:\n",
-   "suite": "ctrmap.tests.MutationBaselineTest",
-   "args": [
-    "src"
-   ],
-   "must_say": "FAIL: and a nocompile a share recorded is never reused either",
    "no_rebuild": true
   },
   {
@@ -20273,10 +20260,10 @@
   },
   {
    "id": "a-file-changed-since-an-older-share-is-taken-from-it",
-   "why": "The same question asked where a share's results file is read: this plant drops it there alone, so 1 file a share measured at an older commit is taken though it moved - a guard at one call site of two. Re-pointed 2026-10-14: the nocompile refusal now follows it.",
+   "why": "The same question asked where a share's results file is read: this plant drops it there alone, so 1 file a share measured at an older commit is taken though it moved - a guard at one call site of two. Re-pointed 2026-10-14: the nocompile refusal now follows it. RE-ANCHORED (2026-10-26): the whole-record nocompile refusal it ended on is gone (a nocompile is measured again alone); the same check, anchored on the line that now follows it - 1 file a share measured at an older commit taken though it moved.",
    "file": "tools/mutate2.py",
-   "find": "            if not self.unchanged(measured, path):\n                self.refused.append(\"%s %s: %s measured it at %s, and it has changed since\"\n                                    % (cid, path, source, measured[:7]))\n            elif any(r.get",
-   "replace": "            if False:\n                self.refused.append(\"%s %s: %s measured it at %s, and it has changed since\"\n                                    % (cid, path, source, measured[:7]))\n            elif any(r.get",
+   "find": "            if not self.unchanged(measured, path):\n                self.refused.append(\"%s %s: %s measured it at %s, and it has changed since\"\n                                    % (cid, path, source, measured[:7]))\n            elif unit.get(",
+   "replace": "            if False:\n                self.refused.append(\"%s %s: %s measured it at %s, and it has changed since\"\n                                    % (cid, path, source, measured[:7]))\n            elif unit.get(",
    "suite": "ctrmap.tests.MutationBaselineTest",
    "args": [
     "src"
@@ -21730,10 +21717,10 @@
   },
   {
    "id": "an-unconfirmed-kill-is-taken",
-   "why": "MEASURED 2026-10-14: the shares that took one failing run as a kill credited SetupWizardTest with 3 kills of files it never runs, and OffscreenRenderTest with ItemTable 392's, which no test names. This plant takes a reused kill whether or not its run confirmed it, so those stand in the baseline.",
+   "why": "MEASURED 2026-10-14: the shares that took one failing run as a kill credited SetupWizardTest with 3 kills of files it never runs, and OffscreenRenderTest with ItemTable 392's, which no test names. This plant takes a reused kill whether or not its run confirmed it, so those stand in the baseline. RE-ANCHORED (2026-10-26): measure_again gained the nocompile clause after this one; the same defect - every unconfirmed kill taken - planted in front of it.",
    "file": "tools/mutate2.py",
-   "find": "            or (not confirmed and r[\"verdict\"] == \"killed\")]\n",
-   "replace": "            ]\n",
+   "find": "            or (not confirmed and r[\"verdict\"] == \"killed\")\n            or r[\"verdict\"] == \"nocompile\"]\n",
+   "replace": "            or r[\"verdict\"] == \"nocompile\"]\n",
    "suite": "ctrmap.tests.MutationBaselineTest",
    "args": [
     "src"
@@ -26357,6 +26344,30 @@
     "src"
    ],
    "must_say": "FAIL: a file a run records says so on its claim"
+  },
+  {
+   "id": "a-gate-section-that-throws-fails-no-check",
+   "why": "MEASURED by the 2026-10-25 sweep: DialogSeamTest, a gate of the build, died with a stack trace on 9 mutants (CtrmapMainframe 624, Ui 575 and 637, UndoHistory 121, 135, 188 and 193, Forms 205, PokePickers 172, NPCEditForm 121) and failed no check, so each was filed as the harness's nocompile and its whole file measured again every sweep - 328 minutes in the a562275 writer. This plant lets a section's throw escape the runner again. PLANTED SO IT BUILDS (2026-10-26): the runner lets the section's throw escape, as the suite did before it - 1 plant that dropped the catch whole left a checked exception undeclared and could not build. RE-ANCHORED (2026-10-26): the runner says it on the stream it is handed, so its own check redirects nothing - SourceSeamTest refused the 2 System.setOut lines the first version used.",
+   "file": "src/ctrmap/tests/DialogSeamTest.java",
+   "find": "\t\t} catch (Throwable t) {\n\t\t\tout.println(\"  FAIL: the section \" + name + \" threw \" + t);\n\t\t\tfails++;\n\t\t}\n",
+   "replace": "\t\t} catch (Throwable t) {\n\t\t\tthrow new RuntimeException(t);\n\t\t}\n",
+   "suite": "ctrmap.tests.DialogSeamTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: a section that throws is one FAIL that names it and what it threw"
+  },
+  {
+   "id": "a-nocompiles-file-is-measured-again-whole",
+   "why": "THE COST THIS CLOSES, put back: a record holding a nocompile refused whole, so the 9 deterministic nocompiles made the a562275 writer measure 6 files whole again, 328 minutes, and every sweep after would have. This plant refuses a share's record for its nocompile, as before.",
+   "file": "tools/mutate2.py",
+   "find": "            elif unit.get(\"expected\") == expected:\n",
+   "replace": "            elif any(r.get(\"verdict\") == \"nocompile\" for r in unit.get(\"results\", [])):\n                pass\n            elif unit.get(\"expected\") == expected:\n",
+   "suite": "ctrmap.tests.MutationBaselineTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: and a nocompile a share recorded is measured again alone"
   }
  ],
  "retired": [
@@ -26518,6 +26529,20 @@
    "args": [],
    "must_say": "FAIL: the stream reader says where it ran out",
    "retired": "2026-10-24: the code it planted into is gone, and so is the check that watched it. F204 deleted the stream string reader - nothing in the program read a string from a stream - and StringUtils now reads only from a byte array (cString), refusing a string with no NUL inside its data; BchSectionsTest's check 'the stream reader says where it ran out' went with it. Its anchor `if (read < 0)` matches nothing in StringUtils.java and its must_say appears in no suite. 0240c1a (Release 1.0.4) dropped it from the ledger with no record, and the owed-plant record kept owing it; recorded here instead."
+  },
+  {
+   "id": "a-shared-nocompile-is-reused",
+   "why": "The same refusal where a share's results file is read: this plant drops it there alone, so 1 nocompile a share recorded - BchMapModel 84 in share 7's - goes into the baseline unmeasured.",
+   "file": "tools/mutate2.py",
+   "find": "            elif any(r.get(\"verdict\") == \"nocompile\" for r in unit.get(\"results\", [])):\n",
+   "replace": "            elif False:\n",
+   "suite": "ctrmap.tests.MutationBaselineTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: and a nocompile a share recorded is never reused either",
+   "no_rebuild": true,
+   "retired": "2026-10-26: the code it planted into is gone, and so is the check that watched it. A record holding a nocompile is no longer refused whole - the nocompile alone is measured again (measure_again), and a share's record and a printed log are asked that at one place, which a-printed-nocompile-is-reused now plants. Its anchor, the shared path's whole-record refusal, matches nothing in mutate2.py, and the selftest check 'and a nocompile a share recorded is never reused either' is now 'measured again alone, the rest of its file taken', planted by a-nocompiles-file-is-measured-again-whole."
   }
  ],
  "no_cost_ceiling": 0,
