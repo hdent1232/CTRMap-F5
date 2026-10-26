@@ -2170,7 +2170,12 @@ both would have blocked every measurement forever:
           holds nothing for (`python -B tools/whole_tree.py check`, 2026-10-18; the 251 written here was its stale
           ceiling, now recorded down to 118) and the rest measured only on the lines one round changed. About 4,900
           candidate lines (estimated 2026-10-13), ~8-9 days of machine time at 24 lines an hour - and every survivor it
-          finds guarded the same way.
+          finds guarded the same way. THE ROUND IS BUILT (2026-10-26): ROUNDS["whole-tree"], based on git's empty
+          tree, measured after every other round and only on the lines of a file no other round placed - so the 2,229
+          candidates the baseline holds are not measured twice; every line placed by its number, which closes the 366
+          added lines the audit round skipped as not uniquely relocatable, and an added `++i;` no longer dropped as a
+          header. 7 plants red. whole_tree.py's ceiling recorded down to 116 of 306 modules. OPEN: the sweep itself,
+          over the commit that lands the round, and its survivors guarded.
       (d) F132: THE BASELINE MEASURED WITHOUT --anyway, over a committed tree with this queue empty, so
           MutationBaselineTest is green.
       (e) F025: ZONES PAST 536 RUN NO ZONE SCRIPTS - why, from the game's executable, and the fix.

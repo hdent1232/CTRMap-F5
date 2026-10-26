@@ -26368,6 +26368,90 @@
     "src"
    ],
    "must_say": "FAIL: and a nocompile a share recorded is measured again alone"
+  },
+  {
+   "id": "a-text-written-twice-is-skipped-though-its-number-is-known",
+   "why": "MEASURED 2026-10-26: the audit round skipped 366 added lines as not uniquely relocatable though its tip was the very commit measured - each line's number was in the diff and thrown away. This plant places by text alone again.",
+   "file": "tools/mutate2.py",
+   "find": "    if at and held_at(src, at):\n",
+   "replace": "    if False:\n",
+   "suite": "ctrmap.tests.MutationBaselineTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: a text written twice is two placed lines where today's file holds each at its number"
+  },
+  {
+   "id": "the-whole-tree-measures-a-line-another-round-measures",
+   "why": "THE COST THE DEDUPE AVOIDS: the whole tree adds every line of 306 modules, about 4,900 candidates, of which the baseline already measured 2,229 under their own rounds; measured again under the whole tree, about 9 days at 24 lines an hour would grow by the half they share. This plant takes every line the whole tree placed.",
+   "file": "tools/mutate2.py",
+   "find": "        return [n for n in lines if n not in held]\n",
+   "replace": "        return lines\n",
+   "suite": "ctrmap.tests.MutationBaselineTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: the whole tree takes the lines of a file no other round placed"
+  },
+  {
+   "id": "the-whole-tree-is-measured-before-the-rounds-it-defers-to",
+   "why": "The dedupe reads what earlier rounds placed, so it holds only if the whole tree runs last: before them it takes every line, and each round then measures its own a second time - the 2,229 shared candidates twice. This plant leaves the rounds in the order they were resolved.",
+   "file": "tools/mutate2.py",
+   "find": "    ordered = dict((k, v) for k, v in resolved.items() if k != WHOLE_TREE)\n    ordered[WHOLE_TREE] = resolved[WHOLE_TREE]\n    return ordered\n",
+   "replace": "    return resolved\n",
+   "suite": "ctrmap.tests.MutationBaselineTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: the whole tree is measured after every other round"
+  },
+  {
+   "id": "the-empty-tree-is-refused-as-a-rounds-base",
+   "why": "The whole tree's base is git's empty tree, which no commit holds, and resolve_round asked only for a commit: the round would stop every sweep before a single mutant, refusing as unreadable the round that measures 116 modules nothing else does. This plant asks for a commit alone.",
+   "file": "tools/mutate2.py",
+   "find": "    if not before and base_rev == EMPTY_TREE:\n",
+   "replace": "    if False:\n",
+   "suite": "ctrmap.tests.MutationBaselineTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: the whole tree's base, git's empty tree, resolves though no commit holds it"
+  },
+  {
+   "id": "an-added-line-beginning-with-plus-plus-is-dropped-as-a-header",
+   "why": "An added `++i;` is written `+++i;` in a diff, and added_lines dropped every line starting `+++` as a file header, so each such line of every round went unmeasured, counted nowhere - 0 recorded of however many there were. This plant drops them again.",
+   "file": "tools/mutate2.py",
+   "find": "        elif line.startswith(\"+\") and path:\n",
+   "replace": "        elif line.startswith(\"+\") and not line.startswith(\"+++\") and path:\n",
+   "suite": "ctrmap.tests.MutationBaselineTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: every line of the tree is added at its own number"
+  },
+  {
+   "id": "a-skipped-line-is-counted-measured-wherever-the-whole-tree-ran",
+   "why": "The report said 366 added lines were skipped; with the whole tree they are measured, but only in a file it placed by number - counting every skipped line as measured would hide the ones it did not, the confident zero this report exists to refuse. This plant counts them all.",
+   "file": "tools/mutate2.py",
+   "find": "    later = [s for s in skipped if s[2] in whole]\n",
+   "replace": "    later = list(skipped)\n",
+   "suite": "ctrmap.tests.MutationBaselineTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: a line its round skipped counts as measured only where the whole tree placed its file by number"
+  },
+  {
+   "id": "the-sweep-places-a-rounds-lines-by-text-alone",
+   "why": "The selftest asks relocate with numbers, and the sweep's own call is what decides: handed none, every round places by text and the 366 lines are skipped again while the selftest stays green. This plant drops the numbers at the sweep's call.",
+   "file": "tools/mutate2.py",
+   "find": "    return unplaced(cid, path, relocate(path, [t for _, t in numbered], numbered), placed)\n",
+   "replace": "    return unplaced(cid, path, relocate(path, [t for _, t in numbered]), placed)\n",
+   "suite": "ctrmap.tests.MutationBaselineTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: the sweep's own call places a round's lines by number"
   }
  ],
  "retired": [

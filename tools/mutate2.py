@@ -184,8 +184,17 @@ CLUSTERS = {
 # mutants_for over `git diff a93ef21`: 2,017 mutants in 161 production files - the owner chose the whole
 # round over the 848 in game-data writers alone ("All of this round"). The tip is HEAD: the measurement
 # commit the sweep is run on.
+#
+# THE WHOLE TREE (F191): every production line, as a round whose base is git's empty tree, so the range to the measured
+# commit adds every line of every file - 116 of 306 modules held no record at all on 2026-10-26 (whole_tree.py check).
+# It runs LAST and measures only the lines of a file no other round placed (unplaced): those are measured by their own
+# round, whose records are still taken, so no line is measured twice - and a line another round could not place, its
+# text not unique in today's file, is measured here by its number instead of going unmeasured.
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+WHOLE_TREE = "whole-tree"
 ROUNDS = {
     "audit-2026-10": ("a93ef21", "HEAD"),
+    WHOLE_TREE: (EMPTY_TREE, "HEAD"),
 }
 
 SUBST = {
@@ -293,14 +302,37 @@ def resolve_round(name, base_rev, tip_rev):
     """(before sha, tip sha) of a round, or SystemExit naming the rev git could not resolve.
 
     A ROUND THAT CANNOT BE FOUND IS NOT AN EMPTY ONE: skipping it would score the tree as though the round
-    had added nothing, which is the confident empty this file exists to refuse."""
+    had added nothing, which is the confident empty this file exists to refuse. A base is a commit, or git's
+    empty tree - the whole-tree round's, which no commit holds."""
     before = git("rev-parse", "--verify", "--quiet", base_rev + "^{commit}").stdout.strip()
+    if not before and base_rev == EMPTY_TREE:
+        before = git("rev-parse", "--verify", "--quiet", base_rev + "^{tree}").stdout.strip()
     tip = git("rev-parse", "--verify", "--quiet", tip_rev + "^{commit}").stdout.strip()
     if not before or not tip:
         raise SystemExit("round %s names %s..%s, and git does not resolve %s - a round that cannot be read"
                          " is not one with nothing in it" % (name, base_rev, tip_rev,
                                                              base_rev if not before else tip_rev))
     return before, tip
+
+
+def whole_tree_last(resolved):
+    """The rounds in the order they are measured, the whole tree after every other: it takes what they did not place,
+    so a round measured after it would measure its lines a second time."""
+    if WHOLE_TREE not in resolved:
+        return resolved
+    ordered = dict((k, v) for k, v in resolved.items() if k != WHOLE_TREE)
+    ordered[WHOLE_TREE] = resolved[WHOLE_TREE]
+    return ordered
+
+
+def unplaced(cid, path, lines, placed):
+    """The lines of `path` round `cid` measures: every one it placed - except, for the whole tree, those a round before
+    it placed, which that round measures and records. Each other round's lines are written into `placed`."""
+    if cid == WHOLE_TREE:
+        held = placed.get(path, set())
+        return [n for n in lines if n not in held]
+    placed.setdefault(path, set()).update(lines)
+    return lines
 
 
 def resolve_clusters():
@@ -322,6 +354,7 @@ def resolve_clusters():
         resolved[branch] = (base[:7], picked)
     for name, (base_rev, tip_rev) in ROUNDS.items():
         resolved[name] = (resolve_round(name, base_rev, tip_rev), [])
+    resolved = whole_tree_last(resolved)
     # How many suites this table cannot see. Measured, not asserted: when this
     # check was first written as a refusal it named 48 of the 85 suites test.ps1
     # registers - more than half the battery, invisible to the sweep. That is
@@ -529,25 +562,40 @@ def whole_diff_or_refuse(diff, before="", tip=""):
     return diff
 
 
-def added_lines(before, tip):
-    """{path: [text of each line this merge ADDED]} - the fix's own new code.
+HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 
-    Text, not line numbers: numbers from this diff belong to the branch's copy
-    of the file, and eleven other branches have interleaved edits into today's
-    tree since. Each line is relocated by its text in the current file before
-    it is mutated, and skipped when that text is not unique there.
+
+def added_at(before, tip):
+    """{path: [(its line number in tip's copy, text)]} for each line this merge or round ADDED - the fix's own new code.
+
+    The number belongs to tip's copy of the file, and eleven other branches have interleaved edits into today's
+    tree since a merge, so relocate places a line by it only where today's file holds that text there; elsewhere by
+    the text alone, and a text that is not unique is skipped. A round whose tip is the measured commit - the audit
+    round, the whole tree - is placed by number, every line. And a line is a header only before the first hunk of its
+    file: an added `++i;` reads `+++i;`, and the old test of the first three characters dropped it as one.
     """
-    diff = git("diff", "-U0", before + ".." + tip, "--", "src",
-               ":!src/ctrmap/tests").stdout
+    diff = git("diff", "-U0", before, tip, "--", "src", ":!src/ctrmap/tests").stdout
     whole_diff_or_refuse(diff, before, tip)
-    out, path = {}, None
+    out, path, at, header = {}, None, 0, False
     for line in diff.splitlines():
-        if line.startswith("+++ b/"):
-            path = line[6:]
-            out.setdefault(path, [])
-        elif line.startswith("+") and not line.startswith("+++") and path:
-            out[path].append(line[1:])
+        if line.startswith("diff --git "):
+            path, header = None, True
+        elif line.startswith("@@"):
+            found = HUNK.match(line)
+            at, header = (int(found.group(1)) if found else 0), False
+        elif header:
+            if line.startswith("+++ b/"):
+                path = line[6:]
+                out.setdefault(path, [])
+        elif line.startswith("+") and path:
+            out[path].append((at, line[1:]))
+            at += 1
     return {p: v for p, v in out.items() if v}
+
+
+def added_lines(before, tip):
+    """{path: [text of each line this merge ADDED]} - added_at without the numbers."""
+    return {p: [t for _, t in v] for p, v in added_at(before, tip).items()}
 
 
 SKIPPED_AMBIGUOUS = []
@@ -579,8 +627,11 @@ def write_src(path, text):
         handle.write(text)
 
 
-def relocate(path, texts):
-    """Current line numbers of the given line texts in the tree under test.
+def relocate(path, texts, at=None):
+    """Current line numbers of the given line texts in the tree under test - by the numbers in `at`, added_at's
+    (number, text) pairs, when today's file holds every one of those texts at its number: then the file is the
+    round's tip's copy, and a text written twice is still two placed lines. MEASURED 2026-10-26: the audit round
+    skipped 366 added lines as "not uniquely relocatable" though its tip was the very commit measured.
 
     TWO ways a fix line fails to reach the measurement, and both must be
     counted. A line whose text appears MORE than once cannot be placed without
@@ -610,6 +661,8 @@ def relocate(path, texts):
     the lines and leaves the judgement to a reader, rather than dropping both.
     """
     src = read_src(path).splitlines()
+    if at and held_at(src, at):
+        return sorted(set(n for n, _ in at))
     index = {}
     for n, line in enumerate(src, 1):
         index.setdefault(line.strip(), []).append(n)
@@ -624,10 +677,34 @@ def relocate(path, texts):
         elif not eligible:
             continue
         elif len(hits) > 1:
-            SKIPPED_AMBIGUOUS.append((path.split("/")[-1], t.strip()[:60]))
+            SKIPPED_AMBIGUOUS.append((path.split("/")[-1], t.strip()[:60], path))
         else:
-            SKIPPED_GONE.append((path.split("/")[-1], t.strip()[:60]))
+            SKIPPED_GONE.append((path.split("/")[-1], t.strip()[:60], path))
     return sorted(set(found))
+
+
+def held_at(src, at):
+    """Does today's file - `src`, its lines - hold every (number, text) of `at` at that number?"""
+    return all(0 < n <= len(src) and src[n - 1] == t for n, t in at)
+
+
+WHOLE_BY_NUMBER = set()                  # the files the whole-tree round placed every line of by its number
+
+
+def lines_to_measure(cid, path, numbered, placed, whole_by_number):
+    """The lines of `path` round `cid` measures: placed by number where today's file holds them there (relocate),
+    less those a round before it placed when `cid` is the whole tree (unplaced). A file the whole tree placed every
+    line of by number is written into `whole_by_number`, so the report can say its skipped lines were measured."""
+    if cid == WHOLE_TREE and held_at(read_src(path).splitlines(), numbered):
+        whole_by_number.add(path)
+    return unplaced(cid, path, relocate(path, [t for _, t in numbered], numbered), placed)
+
+
+def measured_after_all(skipped, whole):
+    """(skipped lines the whole-tree round measured, the ones nothing did): a line its own round could not place
+    is measured by the whole tree when that round placed every line of its file by number - `whole`."""
+    later = [s for s in skipped if s[2] in whole]
+    return later, [s for s in skipped if s[2] not in whole]
 
 
 # ---- reading Java well enough to emit something that compiles ----------------
@@ -2053,6 +2130,44 @@ def selftest():
               "a fix line whose text now appears twice is still the AMBIGUOUS bucket")
         del SKIPPED_AMBIGUOUS[:]
         del SKIPPED_GONE[:]
+        # A LINE IS PLACED BY ITS NUMBER WHERE TODAY'S FILE HOLDS IT THERE (F191, 2026-10-26): the audit round skipped
+        # 366 added lines as not uniquely relocatable, its tip the very commit measured. Given added_at's numbers,
+        # both copies of `dup` are placed and nothing is skipped; numbers the file no longer holds fall back to text.
+        where = [(n, t) for n, t in enumerate(read_src("src/t/T.java").splitlines(), 1) if t == dup]
+        placed = relocate("src/t/T.java", [t for _, t in where], where)
+        check(len(where) == 2 and placed == [n for n, _ in where] and not SKIPPED_AMBIGUOUS,
+              "a text written twice is two placed lines where today's file holds each at its number (got %r of %r)"
+              % (placed, where))
+        moved = [(n + 1, t) for n, t in where]
+        relocate("src/t/T.java", [t for _, t in moved], moved)
+        check(len(SKIPPED_AMBIGUOUS) == 2,
+              "...and by its text, not uniquely relocatable, where the file no longer holds it at that number (got %r)"
+              % (SKIPPED_AMBIGUOUS,))
+        del SKIPPED_AMBIGUOUS[:]
+        # THE WHOLE TREE MEASURES WHAT NO OTHER ROUND PLACED, after every other round (F191): a line both measured is
+        # measured twice, and a line neither placed is measured by neither
+        held = {}
+        took = unplaced("audit-2026-10", "src/a/X.java", [3, 7], held)
+        rest = unplaced(WHOLE_TREE, "src/a/X.java", [1, 3, 5, 7], held)
+        check(took == [3, 7] and rest == [1, 5] and unplaced(WHOLE_TREE, "src/a/Y.java", [2, 4], held) == [2, 4],
+              "the whole tree takes the lines of a file no other round placed, and every line of one no round touched"
+              " (got %r, %r)" % (took, rest))
+        order = list(whole_tree_last({WHOLE_TREE: 1, "a": 2, "b": 3}))
+        check(order == ["a", "b", WHOLE_TREE], "the whole tree is measured after every other round (got %r)" % order)
+        #...AND THE SWEEP ASKS IT SO: the loop's own call, over this tree - a round places both copies of `dup` by
+        #number, then the whole tree takes every other line of the file, and says it placed the file by number
+        every = list(enumerate(read_src("src/t/T.java").splitlines(), 1))
+        held, whole = {}, set()
+        mine = lines_to_measure("audit-2026-10", "src/t/T.java", where, held, whole)
+        theirs = lines_to_measure(WHOLE_TREE, "src/t/T.java", every, held, whole)
+        check(mine == [n for n, _ in where] and theirs == [n for n, _ in every if n not in mine]
+              and whole == {"src/t/T.java"} and not SKIPPED_AMBIGUOUS,
+              "the sweep's own call places a round's lines by number and gives the whole tree the rest of the file"
+              " (got %r, %d of %d, %r)" % (mine, len(theirs), len(every), whole))
+        later, left = measured_after_all([("A.java", "x", "src/A.java"), ("B.java", "y", "src/B.java")],
+                                         {"src/A.java"})
+        check([s[2] for s in later] == ["src/A.java"] and [s[2] for s in left] == ["src/B.java"],
+              "a line its round skipped counts as measured only where the whole tree placed its file by number")
 
         # DEFECT 5: an exclusion that has drifted onto another line is refused.
         # The excluded (path, line) pairs come from EXCLUSIONS rather than being
@@ -2332,6 +2447,21 @@ def selftest():
             refused = str(stop)
         check("no-such-rev-ctrmap" in refused and "nothing in it" in refused,
               "a round git cannot resolve is refused, naming the rev - never scored as one that added nothing")
+        #THE WHOLE TREE (F191): its base is git's empty tree, which no commit holds, and every line of every file is
+        #an added line at its own number - an added `++i;` too, which the diff writes `+++i;`
+        (WT / "src/x").mkdir(parents=True)
+        (WT / "src/x/A.java").write_text("class A {\n++i;\n}\n", encoding="utf-8")
+        git("add", "-A")
+        git("-c", "user.name=selftest", "-c", "user.email=selftest@example.invalid", "commit", "-q", "-m", "third")
+        try:
+            empty = resolve_round(WHOLE_TREE, EMPTY_TREE, "HEAD")
+        except SystemExit:
+            empty = None
+        check(empty is not None and empty[0] == EMPTY_TREE,
+              "the whole tree's base, git's empty tree, resolves though no commit holds it (got %r)" % (empty,))
+        every = added_at(EMPTY_TREE, "HEAD") if empty else {}
+        check(every == {"src/x/A.java": [(1, "class A {"), (2, "++i;"), (3, "}")]},
+              "every line of the tree is added at its own number, `++i;` included (got %r)" % (every,))
     finally:
         WT = saved_wt_rounds
         shutil.rmtree(str(rounds_dir), ignore_errors=True)
@@ -2918,13 +3048,14 @@ def _judges():
 
 JUDGES = _judges()
 
+PLACED = {}                              # path -> the lines a round before the whole tree placed in it
 for cid, (base, suites) in RESOLVED.items():
     before, tip = base
     print("\n=== %s (merged from %s onto %s)" % (cid, tip[:7], before[:7]), flush=True)
-    for path, texts in added_lines(before, tip).items():
+    for path, numbered in added_at(before, tip).items():
         if not (WT / path).is_file():
             continue                     # a file the fix added and a later merge removed
-        cands, noted = mutants_for(path, relocate(path, texts))
+        cands, noted = mutants_for(path, lines_to_measure(cid, path, numbered, PLACED, WHOLE_BY_NUMBER))
         if not cands and not noted:
             continue
         step = max(1, len(cands) // CAP) if cands else 1
@@ -3050,11 +3181,18 @@ scored = tally.get("killed", 0) + len(survived)
 print("\n%d measurement(s) in %d min, on %d DISTINCT (file, line, kind) mutant(s) - a line "
       "touched by several branches is measured once per branch and counted once"
       % (len(results), (time.time() - t0) / 60, len(lines_)))
+_WHOLE_AMBIGUOUS, SKIPPED_AMBIGUOUS[:] = measured_after_all(SKIPPED_AMBIGUOUS, WHOLE_BY_NUMBER)
+_WHOLE_GONE, SKIPPED_GONE[:] = measured_after_all(SKIPPED_GONE, WHOLE_BY_NUMBER)
+if _WHOLE_AMBIGUOUS or _WHOLE_GONE:
+    # measured, and said so: the whole tree takes every line of a file it placed by number that no round before it did
+    print("   %d added line(s) their own round could not place - %d not unique, %d gone from the tree - were measured "
+          "as today's file stands by the whole-tree round, which placed every line of it by number"
+          % (len(_WHOLE_AMBIGUOUS) + len(_WHOLE_GONE), len(_WHOLE_AMBIGUOUS), len(_WHOLE_GONE)))
 if SKIPPED_AMBIGUOUS:
     # not measured, and said so: a line whose text is not unique in today's
     # file cannot be relocated from the branch's diff without guessing
     print("   %d added line(s) skipped as not uniquely relocatable, e.g. %s"
-          % (len(SKIPPED_AMBIGUOUS), "; ".join("%s: %s" % s for s in SKIPPED_AMBIGUOUS[:3])))
+          % (len(SKIPPED_AMBIGUOUS), "; ".join("%s: %s" % s[:2] for s in SKIPPED_AMBIGUOUS[:3])))
 if SKIPPED_GONE:
     # the other half of "not measured", which used to be recorded nowhere. See
     # relocate(): a later merge edited or removed the line, so its text is not
@@ -3064,7 +3202,7 @@ if SKIPPED_GONE:
     print("   %d added line(s) skipped because their text is no longer in the tree - a later "
           "merge\n       edited or removed them. Measured under the editing branch where that "
           "branch is\n       in CLUSTERS; not measured at all where it is not. e.g. %s"
-          % (len(SKIPPED_GONE), "; ".join("%s: %s" % s for s in SKIPPED_GONE[:3])))
+          % (len(SKIPPED_GONE), "; ".join("%s: %s" % s[:2] for s in SKIPPED_GONE[:3])))
 for v in PRECEDENCE:
     print("   %-10s %d" % (v, tally.get(v, 0)))
 if floods:
